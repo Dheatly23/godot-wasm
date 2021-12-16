@@ -6,5 +6,22 @@ edition = "2018"
 [lib]
 crate-type = ["cdylib"]
 
+[profile.release]
+lto = true
+
 [dependencies]
 gdnative = "0.9"
+gdnative-bindings = "0.9"
+parking_lot = "0.11"
+anyhow = "1.0"
+indexmap = "1.7"
+hashbrown = "0.11"
+
+[dependencies.wasmtime]
+version = "0.32"
+default-features = false
+features = [
+  "wat",
+  "parallel-compilation",
+  "cranelift"
+]
