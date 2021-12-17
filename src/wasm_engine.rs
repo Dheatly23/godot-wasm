@@ -6,6 +6,8 @@ use indexmap::IndexMap;
 use parking_lot::RwLock;
 use wasmtime::{Config, Engine, Module};
 
+use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64};
+
 #[derive(NativeClass)]
 #[inherit(Resource)]
 #[user_data(gdnative::nativescript::user_data::ArcData<WasmEngine>)]
@@ -44,6 +46,9 @@ impl WasmEngine {
         let mut modules = self.modules.write();
         for i in module.imports() {
             let name = i.module();
+            if name == "host" {
+                continue; // Ignore host function(s)
+            }
             match modules.get_full(name) {
                 Some((ix, _, d)) => {
                     deps.insert(ix);
@@ -63,6 +68,26 @@ impl WasmEngine {
 // Godot exported methods
 #[methods]
 impl WasmEngine {
+    /// Register properties
+    fn register_builder(builder: &ClassBuilder<Self>) {
+        builder
+            .add_property::<u32>("TYPE_I32")
+            .with_getter(|_, _| TYPE_I32)
+            .done();
+        builder
+            .add_property::<u32>("TYPE_I64")
+            .with_getter(|_, _| TYPE_I64)
+            .done();
+        builder
+            .add_property::<u32>("TYPE_F32")
+            .with_getter(|_, _| TYPE_F32)
+            .done();
+        builder
+            .add_property::<u32>("TYPE_F64")
+            .with_getter(|_, _| TYPE_F64)
+            .done();
+    }
+
     /// Load a module
     #[export]
     fn load_module(&self, _owner: &Resource, name: String, path: String) -> u32 {

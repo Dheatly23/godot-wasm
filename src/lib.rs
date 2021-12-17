@@ -1,10 +1,15 @@
-mod wasm_engine;
-mod wasm_object;
+pub mod wasm_engine;
+pub mod wasm_object;
 
 use gdnative::prelude::*;
 
 pub use crate::wasm_engine::*;
 pub use crate::wasm_object::*;
+
+pub const TYPE_I32: u32 = 1;
+pub const TYPE_I64: u32 = 2;
+pub const TYPE_F32: u32 = 3;
+pub const TYPE_F64: u32 = 4;
 
 // Function that registers all exposed classes to Godot
 fn init(handle: InitHandle) {

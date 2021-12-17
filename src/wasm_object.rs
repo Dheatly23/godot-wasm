@@ -1,10 +1,13 @@
 use std::iter::FromIterator;
+use std::mem::take;
 
 use anyhow::{bail, Result};
 use gdnative::prelude::*;
-use wasmtime::{Linker, Store, Val, ValType};
+use hashbrown::HashMap;
+use wasmtime::{FuncType, Linker, Store, Trap, Val, ValRaw, ValType};
 
 use crate::wasm_engine::*;
+use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64};
 
 macro_rules! unwrap_ext {
     {$v:expr; $e:expr} => {
@@ -21,13 +24,15 @@ macro_rules! unwrap_ext {
     };
 }
 
-type StoreData = Instance<WasmEngine, Shared>;
+type HostMap = HashMap<GodotString, (Ref<Object, Shared>, GodotString, FuncType)>;
+type StoreData = (Instance<WasmEngine, Shared>, HostMap);
 
 #[derive(NativeClass)]
 #[inherit(Object)]
 #[user_data(gdnative::nativescript::user_data::MutexData<WasmObject>)]
 pub struct WasmObject {
     data: Option<WasmObjectData<StoreData>>,
+    host: HostMap,
 }
 
 pub struct WasmObjectData<T> {
@@ -36,10 +41,12 @@ pub struct WasmObjectData<T> {
 }
 
 impl WasmObject {
-
     /// Create new WasmEngine
     fn new(_owner: &Object) -> Self {
-        Self { data: None }
+        Self {
+            data: None,
+            host: HostMap::default(),
+        }
     }
 
     fn get_data(&self) -> &WasmObjectData<StoreData> {
@@ -58,8 +65,63 @@ impl WasmObject {
     fn register_builder(builder: &ClassBuilder<Self>) {
         builder
             .add_property::<Instance<WasmEngine, Shared>>("engine")
-            .with_getter(|this, _| this.get_data().store.data().clone())
+            .with_getter(|this, _| this.get_data().store.data().0.clone())
             .done();
+    }
+
+    /// Register new function handle. MUST be called before initialize()
+    #[export]
+    fn register_host_handle(
+        &mut self,
+        _owner: &Object,
+        name: GodotString,
+        signature: Dictionary,
+        object: Ref<Object, Shared>,
+        method: GodotString,
+    ) {
+        if self.data.is_some() {
+            godot_warn!("WASM object already initialized!");
+            return;
+        }
+
+        fn to_valtypes(sig: Variant) -> Vec<ValType> {
+            let f = |v| match v {
+                TYPE_I32 => ValType::I32,
+                TYPE_I64 => ValType::I64,
+                TYPE_F32 => ValType::F32,
+                TYPE_F64 => ValType::F64,
+                _ => panic!("Cannot convert signature!"),
+            };
+            if let Some(x) = sig.try_to_byte_array() {
+                x.read()
+                    .as_slice()
+                    .iter()
+                    .map(|&v| v as u32)
+                    .map(f)
+                    .collect()
+            } else if let Some(x) = sig.try_to_int32_array() {
+                x.read()
+                    .as_slice()
+                    .iter()
+                    .map(|&v| v as u32)
+                    .map(f)
+                    .collect()
+            } else if let Ok(x) = VariantArray::from_variant(&sig) {
+                x.iter()
+                    .map(|v| u32::from_variant(&v).expect("Cannot convert signature!"))
+                    .map(f)
+                    .collect()
+            } else {
+                panic!("Cannot convert signature!")
+            }
+        }
+
+        let params = to_valtypes(signature.get("params"));
+        let results = to_valtypes(signature.get("results"));
+
+        let ft = FuncType::new(params, results);
+
+        self.host.insert(name, (object, method, ft));
     }
 
     /// Initialize WASM object. MUST be called before calling anything else.
@@ -71,6 +133,8 @@ impl WasmObject {
         name: String,
     ) -> Variant {
         let eobj = engine.clone();
+        let host = take(&mut self.host);
+
         let (store, inst) = match unsafe { engine.assume_safe() }.map(move |v, _| -> Result<_> {
             let WasmEngine { engine, modules } = v;
             let modules = modules.read();
@@ -80,15 +144,83 @@ impl WasmObject {
                 None => bail!("No module named {}", name),
             };
 
-            let mut store = Store::new(&engine, eobj);
+            let mut store = Store::new(&engine, (eobj, host));
             let mut linker = Linker::new(&engine);
+
+            unsafe fn set_raw(
+                v: *mut ValRaw,
+                t: ValType,
+                var: Variant,
+            ) -> Result<(), FromVariantError> {
+                match t {
+                    ValType::I32 => (*v).i32 = i32::from_variant(&var)?,
+                    ValType::I64 => (*v).i64 = i64::from_variant(&var)?,
+                    ValType::F32 => (*v).f32 = f32::from_variant(&var)?.to_bits(),
+                    ValType::F64 => (*v).f64 = f64::from_variant(&var)?.to_bits(),
+                    _ => unreachable!("Unsupported type"),
+                };
+                Ok(())
+            }
+
+            for (name, (_, _, ty)) in store.data().1.iter() {
+                let name = name.clone();
+                unsafe {
+                    linker.func_new_unchecked(
+                        "host",
+                        &name.to_string(),
+                        ty.clone(),
+                        move |caller, raw| {
+                            let data: &StoreData = caller.data();
+                            let (object, method, ty) = data.1.get(&name).unwrap();
+
+                            let params = ty.params();
+                            let mut input = Vec::with_capacity(params.len());
+                            for (i, p) in params.enumerate() {
+                                let v = raw.add(i);
+                                input.push(match p {
+                                    ValType::I32 => (*v).i32.to_variant(),
+                                    ValType::I64 => (*v).i64.to_variant(),
+                                    ValType::F32 => f32::from_bits((*v).f32).to_variant(),
+                                    ValType::F64 => f64::from_bits((*v).f64).to_variant(),
+                                    _ => unreachable!("Unsupported type"),
+                                });
+                            }
+
+                            let object = match object.assume_safe_if_sane() {
+                                Some(v) => v,
+                                None => return Err(Trap::new("Object has been deleted")),
+                            };
+                            let output = object.call(method.clone(), &input);
+
+                            let ef = |v| Trap::from(Box::new(v) as Box<_>);
+
+                            let mut results = ty.results();
+                            if results.len() == 0 {
+                                return Ok(());
+                            } else if (results.len() == 1)
+                                && VariantArray::from_variant(&output).is_err()
+                            {
+                                return set_raw(raw, results.next().unwrap(), output).map_err(ef);
+                            }
+                            let output = VariantArray::from_variant(&output).map_err(ef)?;
+                            if (output.len() as usize) < results.len() {
+                                return Err(Trap::new("Array too short"));
+                            }
+                            for (i, (t, v)) in results.zip(output.iter()).enumerate() {
+                                set_raw(raw.add(i), t, v).map_err(ef)?;
+                            }
+                            Ok(())
+                        },
+                    )
+                }?;
+            }
 
             let mut it = modules.iter();
             let mut prev = 0;
             for &i in deps.iter() {
                 match it.nth(i - prev) {
                     Some((k, x)) => linker.module(&mut store, k, &x.module)?,
-                    None => bail!("Iterator overrun"),
+                    None => unreachable!("Iterator overrun"),
                 };
                 prev = i;
             }
@@ -107,10 +239,7 @@ impl WasmObject {
                 return Variant::new();
             }
         };
-        self.data = Some(WasmObjectData {
-            store,
-            inst,
-        });
+        self.data = Some(WasmObjectData { store, inst });
 
         return _owner.to_variant();
     }
@@ -214,8 +343,8 @@ impl WasmObject {
 
         unwrap_ext! {
             func.call(&mut *store, &params, &mut results);
-            {
-                godot_error!("Function invocation error!");
+            e => {
+                godot_error!("Function invocation error: {}", e);
                 return Variant::new();
             }
         };
