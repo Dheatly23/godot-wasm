@@ -10,6 +10,7 @@ use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64};
 
 #[derive(NativeClass)]
 #[inherit(Resource)]
+#[register_with(Self::register_properties)]
 #[user_data(gdnative::nativescript::user_data::ArcData<WasmEngine>)]
 pub struct WasmEngine {
     pub(crate) engine: Engine,
@@ -69,7 +70,7 @@ impl WasmEngine {
 #[methods]
 impl WasmEngine {
     /// Register properties
-    fn register_builder(builder: &ClassBuilder<Self>) {
+    fn register_properties(builder: &ClassBuilder<Self>) {
         builder
             .add_property::<u32>("TYPE_I32")
             .with_getter(|_, _| TYPE_I32)

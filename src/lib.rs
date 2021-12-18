@@ -1,5 +1,6 @@
 pub mod wasm_engine;
 pub mod wasm_object;
+pub mod wasm_store;
 
 use gdnative::prelude::*;
 
