@@ -5,10 +5,11 @@ use gdnative::prelude::*;
 use wasmtime::{FuncType, Linker, Store, ValType};
 
 use crate::wasm_engine::*;
+use crate::wasm_externref_godot::*;
 use crate::wasm_store::*;
-use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64};
+use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64, TYPE_VARIANT};
 
-type StoreData = (Instance<WasmEngine, Shared>, HostMap);
+type StoreData = (Instance<WasmEngine, Shared>,);
 
 #[derive(NativeClass)]
 #[inherit(Reference)]
@@ -37,26 +38,15 @@ impl WasmObject {
         self.data.as_mut().expect("Object uninitialized!")
     }
 
-    /// Register new function handle. MUST be called before initialize()
-    fn register_host_handle(
-        host: &mut HostMap,
-        name: GodotString,
-        params: Variant,
-        results: Variant,
-        object: Variant,
-        method: GodotString,
-    ) {
-        if !object.has_method(method.clone()) {
-            godot_error!("Object does not have method {}", method);
-            return;
-        }
-
+    /// Register new function handle.
+    fn create_signature(params: Variant, results: Variant) -> FuncType {
         fn to_valtypes(sig: Variant) -> Vec<ValType> {
             let f = |v| match v {
                 TYPE_I32 => ValType::I32,
                 TYPE_I64 => ValType::I64,
                 TYPE_F32 => ValType::F32,
                 TYPE_F64 => ValType::F64,
+                TYPE_VARIANT => ValType::ExternRef,
                 _ => panic!("Cannot convert signature!"),
             };
             if let Some(x) = sig.try_to_byte_array() {
@@ -86,9 +76,7 @@ impl WasmObject {
         let params = to_valtypes(params);
         let results = to_valtypes(results);
 
-        let ft = FuncType::new(params, results);
-
-        host.insert(name, (GodotMethod { object, method }, ft));
+        FuncType::new(params, results)
     }
 }
 
@@ -123,14 +111,15 @@ impl WasmObject {
                         godot_error!("Unknown function name {:?}: {:#}", k, e);
                         return Variant::new();
                     }
-                };
+                }
+                .to_string();
 
                 #[derive(FromVariant)]
                 struct FuncData {
                     params: Variant,
                     results: Variant,
                     object: Variant,
-                    method: GodotString,
+                    method: String,
                 }
 
                 let FuncData {
@@ -141,12 +130,23 @@ impl WasmObject {
                 } = match FuncData::from_variant(&v) {
                     Ok(v) => v,
                     Err(e) => {
-                        godot_error!("Unknown function attribute {:?}: {:#}", k, e);
+                        godot_error!("Unknown function attribute {:?}: {:#}", v, e);
                         return Variant::new();
                     }
                 };
 
-                Self::register_host_handle(&mut host, name, params, results, object, method);
+                if !object.has_method(&method) {
+                    godot_error!("Object does not have method {}", method);
+                    return Variant::new();
+                }
+
+                host.insert(
+                    name,
+                    (
+                        GodotMethod { object, method },
+                        Self::create_signature(params, results),
+                    ),
+                );
             }
         }
 
@@ -159,10 +159,11 @@ impl WasmObject {
                 None => bail!("No module named {}", name),
             };
 
-            let mut store = Store::new(&engine, (eobj, host));
+            let mut store = Store::new(&engine, (eobj,));
             let mut linker = Linker::new(&engine);
 
-            register_hostmap(&store, &mut linker, |v| &v.1)?;
+            register_godot_externref(&mut linker)?;
+            register_hostmap(&mut linker, host)?;
 
             let mut it = modules.iter();
             let mut prev = 0;

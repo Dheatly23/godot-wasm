@@ -6,7 +6,9 @@ use std::mem::drop;
 use anyhow::Result;
 use gdnative::prelude::*;
 use hashbrown::HashMap;
-use wasmtime::{FuncType, Instance, Linker, Store, Trap, Val, ValRaw, ValType};
+use wasmtime::{ExternRef, FuncType, Instance, Linker, Store, Trap, Val, ValRaw, ValType};
+
+use crate::wasm_externref_godot::{externref_to_variant, variant_to_externref};
 
 macro_rules! unwrap_ext {
     {$v:expr; $e:expr} => {
@@ -85,6 +87,7 @@ where
                         return Variant::new();
                     }
                 }),
+                ValType::ExternRef => Val::ExternRef(variant_to_externref(a)),
                 _ => panic!("Unconvertible WASM argument type!"),
             });
         }
@@ -96,6 +99,7 @@ where
                 ValType::I64 => Val::I64(0),
                 ValType::F32 => Val::F32(0.0f32.to_bits()),
                 ValType::F64 => Val::F64(0.0f64.to_bits()),
+                ValType::ExternRef => Val::ExternRef(None),
                 _ => panic!("Unconvertible WASM argument type!"),
             })
             .collect();
@@ -114,6 +118,10 @@ where
         Val::I64(v) => v.to_variant(),
         Val::F32(v) => f32::from_bits(v).to_variant(),
         Val::F64(v) => f64::from_bits(v).to_variant(),
+        Val::ExternRef(v) => externref_to_variant(v).unwrap_or_else(|e| {
+            godot_error!("{}", e);
+            Variant::new()
+        }),
         _ => panic!("Unconvertible WASM argument type!"),
     }))
     .into_shared()
@@ -124,7 +132,7 @@ where
 #[derive(Clone, Debug)]
 pub struct GodotMethod {
     pub object: Variant,
-    pub method: GodotString,
+    pub method: String,
 }
 
 impl Display for GodotMethod {
@@ -135,7 +143,7 @@ impl Display for GodotMethod {
 }
 
 /// Host function map
-pub type HostMap = HashMap<GodotString, (GodotMethod, FuncType)>;
+pub type HostMap = HashMap<String, (GodotMethod, FuncType)>;
 
 #[derive(Debug)]
 struct GodotReturnError {
@@ -156,10 +164,10 @@ impl Error for GodotReturnError {
 }
 
 impl GodotReturnError {
-    fn new(source: impl Error + Send + Sync + 'static, method: &GodotMethod) -> Self {
+    fn new(source: impl Error + Send + Sync + 'static, method: GodotMethod) -> Self {
         Self {
             source: Box::new(source) as Box<_>,
-            method: method.clone(),
+            method: method,
         }
     }
 }
@@ -168,32 +176,32 @@ impl GodotReturnError {
 pub const HOST_MODULE: &str = "host";
 
 /// Register hostmap to linker
-pub fn register_hostmap<T, F>(
-    store: &Store<T>,
-    linker: &mut Linker<T>,
-    get_hostmap: F,
-) -> Result<()>
-where
-    F: Fn(&T) -> &HostMap + Send + Sync + Copy + 'static,
-{
-    unsafe fn set_raw(v: *mut ValRaw, t: ValType, var: Variant) -> Result<(), FromVariantError> {
+pub fn register_hostmap<T>(linker: &mut Linker<T>, hostmap: HostMap) -> Result<()> {
+    unsafe fn set_raw(
+        ctx: impl wasmtime::AsContextMut,
+        v: *mut ValRaw,
+        t: ValType,
+        var: Variant,
+    ) -> Result<(), FromVariantError> {
         match t {
             ValType::I32 => (*v).i32 = i32::from_variant(&var)?,
             ValType::I64 => (*v).i64 = i64::from_variant(&var)?,
             ValType::F32 => (*v).f32 = f32::from_variant(&var)?.to_bits(),
             ValType::F64 => (*v).f64 = f64::from_variant(&var)?.to_bits(),
+            ValType::ExternRef => {
+                (*v).externref = match variant_to_externref(var) {
+                    Some(v) => v.to_raw(ctx),
+                    None => 0,
+                }
+            }
             _ => unreachable!("Unsupported type"),
         };
         Ok(())
     }
 
-    for (name, (_, ty)) in get_hostmap(store.data()).iter() {
-        let name = name.clone();
+    for (name, (method, ty)) in hostmap {
         unsafe {
-            linker.func_new_unchecked("host", &name.to_string(), ty.clone(), move |caller, raw| {
-                let data: &HostMap = get_hostmap(caller.data());
-                let (method, ty) = data.get(&name).unwrap();
-
+            linker.func_new_unchecked("host", &name, ty.clone(), move |mut ctx, raw| {
                 let params = ty.params();
                 let mut input = Vec::with_capacity(params.len());
                 for (i, p) in params.enumerate() {
@@ -203,29 +211,34 @@ where
                         ValType::I64 => (*v).i64.to_variant(),
                         ValType::F32 => f32::from_bits((*v).f32).to_variant(),
                         ValType::F64 => f64::from_bits((*v).f64).to_variant(),
+                        ValType::ExternRef => {
+                            externref_to_variant(ExternRef::from_raw((*v).externref))?
+                        }
                         _ => unreachable!("Unsupported type"),
                     });
                 }
 
-                let output = method.object.clone().call(method.method.clone(), &input);
-                drop(input);
-
-                let ef = |e| Trap::from(Box::new(GodotReturnError::new(e, method)) as Box<_>);
-                let output = output
+                let output = method
+                    .object
+                    .clone()
+                    .call(&method.method, &input)
                     .map_err(|e| Trap::from(anyhow::Error::new(e).context(method.clone())))?;
+                drop(input);
+                let ef =
+                    |e| Trap::from(Box::new(GodotReturnError::new(e, method.clone())) as Box<_>);
 
                 let mut results = ty.results();
                 if results.len() == 0 {
                     return Ok(());
                 } else if (results.len() == 1) && VariantArray::from_variant(&output).is_err() {
-                    return set_raw(raw, results.next().unwrap(), output).map_err(ef);
+                    return set_raw(&mut ctx, raw, results.next().unwrap(), output).map_err(ef);
                 }
                 let output = VariantArray::from_variant(&output).map_err(ef)?;
                 if (output.len() as usize) < results.len() {
                     return Err(Trap::new("Array too short"));
                 }
                 for (i, (t, v)) in results.zip(output.iter()).enumerate() {
-                    set_raw(raw.add(i), t, v).map_err(ef)?;
+                    set_raw(&mut ctx, raw.add(i), t, v).map_err(ef)?;
                 }
 
                 Ok(())

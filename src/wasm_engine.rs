@@ -6,7 +6,11 @@ use indexmap::IndexMap;
 use parking_lot::RwLock;
 use wasmtime::{Config, Engine, Module};
 
-use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64};
+use crate::wasm_externref_godot::GODOT_MODULE;
+use crate::wasm_store::HOST_MODULE;
+use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64, TYPE_VARIANT};
+
+const MODULE_INCLUDES: [&str; 2] = [HOST_MODULE, GODOT_MODULE];
 
 #[derive(NativeClass)]
 #[inherit(Resource)]
@@ -30,10 +34,12 @@ impl WasmEngine {
         // - Fuel consumption disabled
         // - Only dynamic memory
         // - No guard region
+        // - Reference Type proposal enabled
         let mut config = Config::new();
         config
             //.async_support(false)
             .consume_fuel(false)
+            .wasm_reference_types(true)
             .static_memory_maximum_size(0)
             .dynamic_memory_guard_size(0);
         Self {
@@ -47,7 +53,7 @@ impl WasmEngine {
         let mut modules = self.modules.write();
         for i in module.imports() {
             let name = i.module();
-            if name == "host" {
+            if MODULE_INCLUDES.contains(&name) {
                 continue; // Ignore host function(s)
             }
             match modules.get_full(name) {
@@ -86,6 +92,10 @@ impl WasmEngine {
         builder
             .add_property::<u32>("TYPE_F64")
             .with_getter(|_, _| TYPE_F64)
+            .done();
+        builder
+            .add_property::<u32>("TYPE_VARIANT")
+            .with_getter(|_, _| TYPE_VARIANT)
             .done();
     }
 
