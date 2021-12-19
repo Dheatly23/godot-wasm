@@ -1,6 +1,5 @@
 use anyhow::{bail, Result};
 use gdnative::prelude::*;
-use gdnative_bindings::Resource;
 use hashbrown::HashSet;
 use indexmap::IndexMap;
 use parking_lot::RwLock;
@@ -13,7 +12,7 @@ use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64, TYPE_VARIANT};
 const MODULE_INCLUDES: [&str; 2] = [HOST_MODULE, GODOT_MODULE];
 
 #[derive(NativeClass)]
-#[inherit(Resource)]
+#[inherit(Reference)]
 #[register_with(Self::register_properties)]
 #[user_data(gdnative::nativescript::user_data::ArcData<WasmEngine>)]
 pub struct WasmEngine {
@@ -28,7 +27,7 @@ pub struct ModuleData {
 
 impl WasmEngine {
     /// Create new WasmEngine
-    fn new(_owner: &Resource) -> Self {
+    fn new(_owner: &Reference) -> Self {
         // Create new configuration with:
         // - Async disabled
         // - Fuel consumption disabled
@@ -101,7 +100,7 @@ impl WasmEngine {
 
     /// Load a module
     #[export]
-    fn load_module(&self, _owner: &Resource, name: String, path: String) -> u32 {
+    fn load_module(&self, _owner: &Reference, name: String, path: String) -> u32 {
         #[inline(always)]
         fn f(this: &WasmEngine, name: String, path: String) -> Result<()> {
             this._load_module(name, Module::from_file(&this.engine, path)?)
@@ -117,7 +116,7 @@ impl WasmEngine {
 
     /// Load a WAT module
     #[export]
-    fn load_module_wat(&self, _owner: &Resource, name: String, code: String) -> u32 {
+    fn load_module_wat(&self, _owner: &Reference, name: String, code: String) -> u32 {
         #[inline(always)]
         fn f(this: &WasmEngine, name: String, code: String) -> Result<()> {
             this._load_module(name, Module::new(&this.engine, &code)?)
