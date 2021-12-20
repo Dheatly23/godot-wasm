@@ -2,22 +2,20 @@
 name = "godot-wasm"
 version = "0.1.0"
 edition = "2018"
+resolver = "2"
 
 [lib]
 crate-type = ["cdylib"]
 
-[profile.release]
-lto = true
-
 [dependencies]
-gdnative = "0.9"
-parking_lot = "0.11"
-anyhow = "1.0"
-indexmap = "1.7"
-hashbrown = "0.11"
+gdnative = "^0.9"
+parking_lot = "^0.11"
+anyhow = "^1.0"
+indexmap = "^1.7"
+hashbrown = "^0.11"
 
 [dependencies.wasmtime]
-version = "0.32"
+version = "^0.32"
 default-features = false
 features = [
   "wat",

@@ -1,2 +1,6 @@
 [build]
 target = "x86_64-pc-windows-gnu"
+
+[profile.release]
+lto = true
+codegen-units = 1
