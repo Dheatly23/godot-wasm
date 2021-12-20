@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::ptr::copy_nonoverlapping;
 
 use gdnative::prelude::*;
 use wasmtime::{Caller, ExternRef, Func, Linker, Trap};
@@ -212,6 +213,9 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 
     object_new!(linker, VariantArray<Unique>, "arr.create");
     object_new!(linker, Dictionary<Unique>, "dict.create");
+    object_new!(linker, ByteArray, "bytearr.create");
+    object_new!(linker, Int32Array, "intarr.create");
+    object_new!(linker, Float32Array, "floatarr.create");
 
     object_call!(linker, fn "arr.duplicate"(v: VariantArray) {
         variant_to_externref(v.duplicate().owned_to_variant())
@@ -261,6 +265,173 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         let x = externref_to_variant(x)?;
         for j in i..(i + n) {
             v.set(j, x.clone());
+        }
+    });
+
+    linker.func_wrap(
+        GODOT_MODULE,
+        "bytearr.create",
+        |mut ctx: Caller<_>, s: u32, n: u32| {
+            let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
+                Some(mem) => mem,
+                None => return Err(Trap::new("No memory exported")),
+            }
+            .data(&mut ctx);
+
+            if let Some(s) = mem.get((s as usize)..((s + n) as usize)) {
+                Ok(variant_to_externref(ByteArray::from_slice(s).to_variant()))
+            } else {
+                Err(Trap::new("Out of bound"))
+            }
+        },
+    )?;
+
+    object_call!(linker, fn "bytearr.size"(a: ByteArray) {
+        a.len()
+    });
+
+    object_call!(linker, fn "bytearr.get"(a: ByteArray, i) {
+        if (i < 0) || (i >= a.len()) {
+            return Err(Trap::new("Out of bound"));
+        }
+        a.get(i) as i32
+    });
+
+    object_call!(linker, fn "bytearr.read"(mut ctx, a: ByteArray, i: u32, s: u32, n: u32) {
+        let a = a.read();
+        let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
+            Some(mem) => mem,
+            None => return Err(Trap::new("No memory exported")),
+        }
+        .data_mut(&mut ctx);
+
+        if let (Some(d), Some(s)) =
+            (
+                mem.get_mut((s as usize)..((s + n) as usize)),
+                a.get((i as usize)..((i + n) as usize)),
+            )
+        {
+            d.copy_from_slice(s);
+        } else {
+            return Err(Trap::new("Out of bound"));
+        }
+    });
+
+    linker.func_wrap(
+        GODOT_MODULE,
+        "intarr.create",
+        |mut ctx: Caller<_>, s: u32, n: u32| {
+            let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
+                Some(mem) => mem,
+                None => return Err(Trap::new("No memory exported")),
+            }
+            .data(&mut ctx);
+
+            if let Some(s) = mem.get((s as usize)..((s + n * 4) as usize)) {
+                let mut d = Int32Array::new();
+                d.resize(n as i32);
+                {
+                    let d = &mut d.write();
+                    let pd = d.as_mut_ptr() as *mut u8;
+                    let ps = s.as_ptr();
+                    unsafe { copy_nonoverlapping(ps, pd, (n * 4) as usize) };
+                }
+                Ok(variant_to_externref(d.owned_to_variant()))
+            } else {
+                Err(Trap::new("Out of bound"))
+            }
+        },
+    )?;
+
+    object_call!(linker, fn "intarr.size"(a: Int32Array) {
+        a.len()
+    });
+
+    object_call!(linker, fn "intarr.get"(a: Int32Array, i) {
+        if (i < 0) || (i >= a.len()) {
+            return Err(Trap::new("Out of bound"));
+        }
+        a.get(i)
+    });
+
+    object_call!(linker, fn "intarr.read"(mut ctx, a: Int32Array, i: u32, s: u32, n: u32) {
+        let a = a.read();
+        let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
+            Some(mem) => mem,
+            None => return Err(Trap::new("No memory exported")),
+        }
+        .data_mut(&mut ctx);
+
+        if let (Some(d), Some(s)) =
+            (
+                mem.get_mut((s as usize)..((s + n * 4) as usize)),
+                a.get((i as usize)..((i + n) as usize)),
+            )
+        {
+            let pd = d.as_mut_ptr();
+            let ps = s.as_ptr() as *const u8;
+            unsafe { copy_nonoverlapping(ps, pd, (n * 4) as usize) };
+        } else {
+            return Err(Trap::new("Out of bound"));
+        }
+    });
+
+    linker.func_wrap(
+        GODOT_MODULE,
+        "floatarr.create",
+        |mut ctx: Caller<_>, s: u32, n: u32| {
+            let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
+                Some(mem) => mem,
+                None => return Err(Trap::new("No memory exported")),
+            }
+            .data(&mut ctx);
+
+            if let Some(s) = mem.get((s as usize)..((s + n * 4) as usize)) {
+                let mut d = Float32Array::new();
+                d.resize(n as i32);
+                {
+                    let d = &mut d.write();
+                    let pd = d.as_mut_ptr() as *mut u8;
+                    let ps = s.as_ptr();
+                    unsafe { copy_nonoverlapping(ps, pd, (n * 4) as usize) };
+                }
+                Ok(variant_to_externref(d.owned_to_variant()))
+            } else {
+                Err(Trap::new("Out of bound"))
+            }
+        },
+    )?;
+
+    object_call!(linker, fn "floatarr.size"(a: Float32Array) {
+        a.len()
+    });
+
+    object_call!(linker, fn "floatarr.get"(a: Float32Array, i) {
+        if (i < 0) || (i >= a.len()) {
+            return Err(Trap::new("Out of bound"));
+        }
+        a.get(i)
+    });
+
+    object_call!(linker, fn "floatarr.read"(mut ctx, a: Float32Array, i: u32, s: u32, n: u32) {
+        let a = a.read();
+        let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
+            Some(mem) => mem,
+            None => return Err(Trap::new("No memory exported")),
+        }
+        .data_mut(&mut ctx);
+
+        if let (Some(d), Some(s)) =
+            (
+                mem.get_mut((s as usize)..((s + n * 4) as usize)),
+                a.get((i as usize)..((i + n) as usize)),
+            )
+        {
+            let pd = d.as_mut_ptr();
+            let ps = s.as_ptr() as *const u8;
+            unsafe { copy_nonoverlapping(ps, pd, (n * 4) as usize) };
+        } else {
+            return Err(Trap::new("Out of bound"));
         }
     });
 
