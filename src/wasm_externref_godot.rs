@@ -213,9 +213,9 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 
     object_new!(linker, VariantArray<Unique>, "arr.create");
     object_new!(linker, Dictionary<Unique>, "dict.create");
-    object_new!(linker, ByteArray, "bytearr.create");
-    object_new!(linker, Int32Array, "intarr.create");
-    object_new!(linker, Float32Array, "floatarr.create");
+    object_new!(linker, ByteArray, "bytearr.empty");
+    object_new!(linker, Int32Array, "intarr.empty");
+    object_new!(linker, Float32Array, "floatarr.empty");
 
     object_call!(linker, fn "arr.duplicate"(v: VariantArray) {
         variant_to_externref(v.duplicate().owned_to_variant())
