@@ -121,7 +121,11 @@ impl WasmEngine {
                         deps.extend(d.deps.iter());
                     }
                     None => match modules.get(name) {
-                        Some(Data(_, Marker::Unmarked)) => ix = f(&*orig, modules, name, ix)?,
+                        Some(Data(_, Marker::Unmarked)) => {
+                            ix = f(&*orig, modules, name, ix)?;
+                            deps.insert(ix - 1);
+                            deps.extend(modules[name].0.deps.iter());
+                        }
                         None => bail!("Unknown module {}", name),
                         Some(Data(_, Marker::TempMarked)) => {
                             bail!("Detected cycle on module {}", name)
