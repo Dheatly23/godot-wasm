@@ -47,7 +47,7 @@ impl WasmEngine {
         }
     }
 
-    fn _load_module(&self, name: String, module: Module) -> Result<()> {
+    fn _register_module(&self, name: String, module: Module) -> Result<()> {
         let mut deps = HashSet::new();
         let mut modules = self.modules.write();
         for i in module.imports() {
@@ -70,7 +70,7 @@ impl WasmEngine {
         Ok(())
     }
 
-    fn _load_modules(&self, modules: impl Iterator<Item = (String, Module)>) -> Result<()> {
+    fn _register_modules(&self, modules: impl Iterator<Item = (String, Module)>) -> Result<()> {
         use std::mem::transmute;
 
         enum Marker {
@@ -169,6 +169,16 @@ impl WasmEngine {
 
         Ok(())
     }
+
+    fn _load_module(&self, module: Variant) -> Result<Module> {
+        if let Ok(m) = ByteArray::from_variant(&module) {
+            Module::new(&self.engine, &*m.read())
+        } else if let Ok(m) = String::from_variant(&module) {
+            Module::new(&self.engine, &m)
+        } else {
+            bail!("Module type is not string nor byte array")
+        }
+    }
 }
 
 // Godot exported methods
@@ -199,29 +209,14 @@ impl WasmEngine {
     }
 
     /// Load a module
+    ///
+    /// Data can be either a WAT string or WASM binary byte array
     #[export]
-    fn load_module(&self, _owner: &Reference, name: String, path: String) -> u32 {
-        #[inline(always)]
-        fn f(this: &WasmEngine, name: String, path: String) -> Result<()> {
-            this._load_module(name, Module::from_file(&this.engine, path)?)
-        }
-        match f(self, name, path) {
-            Err(e) => {
-                godot_error!("Load WASM module failed: {}", e);
-                GodotError::Failed as u32
-            }
-            Ok(_) => 0,
-        }
-    }
-
-    /// Load a WAT module
-    #[export]
-    fn load_module_wat(&self, _owner: &Reference, name: String, code: String) -> u32 {
-        #[inline(always)]
-        fn f(this: &WasmEngine, name: String, code: String) -> Result<()> {
-            this._load_module(name, Module::new(&this.engine, &code)?)
-        }
-        match f(self, name, code) {
+    fn load_module(&self, _owner: &Reference, name: String, data: Variant) -> u32 {
+        match self
+            ._load_module(data)
+            .and_then(|m| self._register_module(name, m))
+        {
             Err(e) => {
                 godot_error!("Load WASM module failed: {}", e);
                 GodotError::Failed as u32
@@ -233,17 +228,16 @@ impl WasmEngine {
     /// Load multiple modules
     #[export]
     fn load_modules(&self, _owner: &Reference, modules: Dictionary) -> u32 {
-        match self._load_modules(modules.iter().map(|(k, v)| {
-            let k = String::from_variant(&k).unwrap();
-            let v = String::from_variant(&v).unwrap();
-
-            let v = match Module::from_file(&self.engine, v) {
-                Ok(v) => v,
-                Err(e) => panic!("Load WASM module failed: {}", e),
-            };
-
-            (k, v)
-        })) {
+        match modules
+            .iter()
+            .try_fold(Vec::with_capacity(modules.len() as _), |mut v, (k, m)| {
+                let k = String::from_variant(&k).map_err(anyhow::Error::from)?;
+                let m = self._load_module(m)?;
+                v.push((k, m));
+                Ok(v)
+            })
+            .and_then(|v| self._register_modules(v.into_iter()))
+        {
             Ok(()) => 0,
             Err(e) => {
                 godot_error!("{}", e);
