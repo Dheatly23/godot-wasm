@@ -1,6 +1,6 @@
 use anyhow::{bail, Result};
 use gdnative::prelude::*;
-use hashbrown::HashSet;
+use hashbrown::{HashMap, HashSet};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
 use wasmtime::{Config, Engine, Module};
@@ -69,6 +69,106 @@ impl WasmEngine {
         modules.insert(name, ModuleData { module, deps });
         Ok(())
     }
+
+    fn _load_modules(&self, modules: impl Iterator<Item = (String, Module)>) -> Result<()> {
+        use std::mem::transmute;
+
+        enum Marker {
+            Unmarked,
+            TempMarked,
+            PermMarked(usize),
+        }
+        struct Data(ModuleData, Marker);
+
+        let mut modules: HashMap<String, Data> = modules
+            .map(|(k, v)| {
+                (
+                    k,
+                    Data(
+                        ModuleData {
+                            module: v,
+                            deps: Vec::new(),
+                        },
+                        Marker::Unmarked,
+                    ),
+                )
+            })
+            .collect();
+        let mut orig = self.modules.write();
+
+        fn f(
+            orig: &IndexMap<String, ModuleData>,
+            modules: &mut HashMap<String, Data>,
+            k: &str,
+            mut ix: usize,
+        ) -> Result<usize> {
+            // SAFETY: We never insert/delete modules,
+            // so map items never gets moved
+            let v = unsafe { transmute::<&mut Data, &mut Data>(modules.get_mut(k).unwrap()) };
+            v.1 = Marker::TempMarked;
+
+            let mut deps = HashSet::new();
+            for i in v.0.module.imports() {
+                let name = i.module();
+                if MODULE_INCLUDES.contains(&name) {
+                    continue; // Ignore host function(s)
+                }
+                match orig.get_full(name) {
+                    Some((ix, _, d)) => {
+                        deps.insert(ix);
+                        deps.extend(d.deps.iter());
+                    }
+                    None => match modules.get(name) {
+                        Some(Data(_, Marker::Unmarked)) => ix = f(&*orig, modules, name, ix)?,
+                        None => bail!("Unknown module {}", name),
+                        Some(Data(_, Marker::TempMarked)) => {
+                            bail!("Detected cycle on module {}", name)
+                        }
+                        Some(Data(d, Marker::PermMarked(ix))) => {
+                            deps.insert(*ix);
+                            deps.extend(d.deps.iter());
+                        }
+                    },
+                };
+            }
+
+            v.0.deps.extend(deps.drain());
+            v.0.deps.shrink_to_fit();
+            v.0.deps.sort_unstable();
+
+            v.1 = Marker::PermMarked(ix);
+            Ok(ix + 1)
+        }
+
+        let mut ix = orig.len();
+        while let Some((k, _)) = modules
+            .iter()
+            .filter(|(_, Data(_, v))| matches!(v, Marker::Unmarked))
+            .next()
+        {
+            // SAFETY: We never insert/delete modules,
+            // so map items never gets moved
+            let k = unsafe { transmute::<&str, &str>(k) };
+
+            ix = f(&orig, &mut modules, k, ix)?;
+        }
+
+        let mut modules: Vec<_> = modules.drain().collect();
+        modules.sort_unstable_by_key(|(_, Data(_, v))| match v {
+            Marker::PermMarked(ix) => *ix,
+            _ => unreachable!("Algorithm error, temp/unmarked module"),
+        });
+
+        for (k, Data(m, v)) in modules.into_iter() {
+            match v {
+                Marker::PermMarked(i) if i == orig.len() => (),
+                _ => unreachable!("Algorithm error, value got skipped"),
+            };
+            orig.insert(k, m);
+        }
+
+        Ok(())
+    }
 }
 
 // Godot exported methods
@@ -127,6 +227,28 @@ impl WasmEngine {
                 GodotError::Failed as u32
             }
             Ok(_) => 0,
+        }
+    }
+
+    /// Load multiple modules
+    #[export]
+    fn load_modules(&self, _owner: &Reference, modules: Dictionary) -> u32 {
+        match self._load_modules(modules.iter().map(|(k, v)| {
+            let k = String::from_variant(&k).unwrap();
+            let v = String::from_variant(&v).unwrap();
+
+            let v = match Module::from_file(&self.engine, v) {
+                Ok(v) => v,
+                Err(e) => panic!("Load WASM module failed: {}", e),
+            };
+
+            (k, v)
+        })) {
+            Ok(()) => 0,
+            Err(e) => {
+                godot_error!("{}", e);
+                GodotError::Failed as _
+            }
         }
     }
 }
