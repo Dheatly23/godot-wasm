@@ -1,9 +1,11 @@
+use std::iter::FromIterator;
+
 use anyhow::{bail, Result};
 use gdnative::prelude::*;
 use hashbrown::{HashMap, HashSet};
 use indexmap::IndexMap;
 use parking_lot::RwLock;
-use wasmtime::{Config, Engine, Module};
+use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::wasm_externref_godot::GODOT_MODULE;
 use crate::wasm_store::HOST_MODULE;
@@ -242,6 +244,31 @@ impl WasmEngine {
             Err(e) => {
                 godot_error!("{}", e);
                 GodotError::Failed as _
+            }
+        }
+    }
+
+    /// Get all module names available
+    #[export]
+    fn get_module_names(&self, _owner: &Reference) -> StringArray {
+        StringArray::from_iter(self.modules.read().keys().map(GodotString::from_str))
+    }
+
+    /// Gets exported functions
+    #[export]
+    fn get_exports(&self, _owner: &Reference, name: String) -> Variant {
+        match self.modules.read().get(&name) {
+            Some(m) => VariantArray::from_iter(m.module.exports().filter_map(|v| {
+                if matches!(v.ty(), ExternType::Func(_)) {
+                    Some(GodotString::from(v.name()).to_variant())
+                } else {
+                    None
+                }
+            }))
+            .owned_to_variant(),
+            None => {
+                godot_error!("No module named {}", name);
+                Variant::new()
             }
         }
     }
