@@ -58,7 +58,7 @@ macro_rules! variant_convert {
         })?;
 
         $l.func_wrap(GODOT_MODULE, $to, |v| -> Result<($($t2),*), Trap> {
-            externref_to_object::<$t>(v).map(|v| v.into())
+            Ok(externref_to_object::<$t>(v)?.into())
         })?;
     }};
     ($l:ident, $t:ty => $t2:ty, ($from:literal, $to:literal)) => {{
@@ -67,7 +67,18 @@ macro_rules! variant_convert {
         })?;
 
         $l.func_wrap(GODOT_MODULE, $to, |v| -> Result<$t2, Trap> {
-            externref_to_object::<$t>(v).map(|v| v.into())
+            Ok(externref_to_object::<$t>(v)?.into())
+        })?;
+    }};
+    ($l:ident, $o:pat = $t:ty => ($($v:ident $(: $t2:ty)?),+), ($from:literal $ef:expr, $to:literal $et:expr)) => {{
+        $l.func_wrap(GODOT_MODULE, $from, |$($v $(: $t2)?),+| {
+            variant_to_externref(($ef).to_variant())
+        })?;
+
+        $l.func_wrap(GODOT_MODULE, $to, |v| -> Result<_, Trap> {
+            let $o = externref_to_object::<$t>(v)?;
+            let ($($v,)+) = $et;
+            Ok(($($v),+))
         })?;
     }};
 }
@@ -120,6 +131,10 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
     variant_typecheck!(linker, VariantType::Bool, "var.is_bool");
     variant_typecheck!(linker, VariantType::Vector2, "var.is_vec2");
     variant_typecheck!(linker, VariantType::Vector3, "var.is_vec3");
+    variant_typecheck!(linker, VariantType::Quat, "var.is_quat");
+    variant_typecheck!(linker, VariantType::Rect2, "var.is_rect2");
+    variant_typecheck!(linker, VariantType::Aabb, "var.is_aabb");
+    variant_typecheck!(linker, VariantType::Color, "var.is_color");
     variant_typecheck!(linker, VariantType::VariantArray, "var.is_array");
     variant_typecheck!(linker, VariantType::Dictionary, "var.is_dictionary");
     variant_typecheck!(linker, VariantType::GodotString, "var.is_string");
@@ -129,14 +144,71 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
     variant_convert!(linker, i64, ("var.from_i64", "var.to_i64"));
     variant_convert!(linker, f32, ("var.from_f32", "var.to_f32"));
     variant_convert!(linker, f64, ("var.from_f64", "var.to_f64"));
-    linker.func_wrap(GODOT_MODULE, "var.from_bool", |v: i32| {
-        variant_to_externref((v != 0).to_variant())
-    })?;
-    linker.func_wrap(GODOT_MODULE, "var.to_bool", |v| {
-        externref_to_object::<bool>(v).map(|v| if v { 1 } else { 0 })
-    })?;
+    variant_convert!(
+        linker,
+        v = bool => (v: i32),
+        (
+            "var.from_bool" (v != 0),
+            "var.to_bool" (if v { 1 } else { 0 },)
+        )
+    );
     variant_convert!(linker, Vector2 => (x: f32, y: f32), ("var.from_vec2", "var.to_vec2"));
     variant_convert!(linker, Vector3 => (x: f32, y: f32, z: f32), ("var.from_vec3", "var.to_vec3"));
+    variant_convert!(
+        linker,
+        Quat { i, j, k, r, .. } = Quat => (r, i, j, k),
+        (
+            "var.from_quat" Quat::quaternion(i, j, k, r),
+            "var.to_quat" (i, j, k, r)
+        )
+    );
+    variant_convert!(
+        linker,
+        Plane { normal: Vector3 { x, y, z, .. }, d } = Plane => (a, b, c, d),
+        (
+            "var.from_plane" Plane {
+                normal: Vector3::new(a, b, c),
+                d,
+            },
+            "var.to_plane" (x, y, z, d)
+        )
+    );
+    variant_convert!(
+        linker,
+        Rect2 {
+            origin: Point2 { x, y, .. },
+            size: Size2 { width, height, .. },
+        } = Rect2 => (x, y, w, h),
+        (
+            "var.from_rect2" Rect2 {
+                origin: Point2::new(x, y),
+                size: Size2::new(w, h),
+            },
+            "var.to_rect2" (x, y, width, height)
+        )
+    );
+    variant_convert!(
+        linker,
+        Aabb {
+            position: Vector3 { x, y, z, .. },
+            size: Vector3 { x: w, y: h, z: t, .. },
+        } = Aabb => (x, y, z, w, h, t),
+        (
+            "var.from_aabb" Aabb {
+                position: Vector3::new(x, y, z),
+                size: Vector3::new(w, h, t),
+            },
+            "var.to_aabb" (x, y, z, w, h, t)
+        )
+    );
+    variant_convert!(
+        linker,
+        Color { r, g, b, a } = Color => (r, g, b, a),
+        (
+            "var.from_color" Color { r, g, b, a },
+            "var.to_color" (r, g, b, a)
+        )
+    );
 
     object_new!(linker, VariantArray<Unique>, "arr.create");
     object_new!(linker, Dictionary<Unique>, "dict.create");
@@ -351,6 +423,22 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 
     object_call!(linker, fn "str.ends_with"(s: GodotString, o) {
         s.ends_with(&externref_to_object(o)?) as i32
+    });
+
+    object_call!(linker, fn "color.h"(c: Color) {
+        c.h()
+    });
+
+    object_call!(linker, fn "color.s"(c: Color) {
+        c.s()
+    });
+
+    object_call!(linker, fn "color.v"(c: Color) {
+        c.v()
+    });
+
+    object_call!(linker, fn "color.lerp"(c: Color, o, w: f32) {
+        variant_to_externref(c.lerp(externref_to_object(o)?, w).to_variant())
     });
 
     Ok(())
