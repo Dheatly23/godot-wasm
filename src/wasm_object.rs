@@ -2,12 +2,11 @@ use std::iter::FromIterator;
 
 use anyhow::{bail, Result};
 use gdnative::prelude::*;
-use wasmtime::{FuncType, Linker, Store, ValType};
+use wasmtime::{Linker, Store};
 
 use crate::wasm_engine::*;
 use crate::wasm_externref_godot::*;
 use crate::wasm_store::*;
-use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64, TYPE_VARIANT};
 
 type StoreData = (Instance<WasmEngine, Shared>,);
 
@@ -37,47 +36,6 @@ impl WasmObject {
     fn get_data_mut(&mut self) -> &mut WasmObjectData<StoreData> {
         self.data.as_mut().expect("Object uninitialized!")
     }
-
-    /// Register new function handle.
-    fn create_signature(params: Variant, results: Variant) -> FuncType {
-        fn to_valtypes(sig: Variant) -> Vec<ValType> {
-            let f = |v| match v {
-                TYPE_I32 => ValType::I32,
-                TYPE_I64 => ValType::I64,
-                TYPE_F32 => ValType::F32,
-                TYPE_F64 => ValType::F64,
-                TYPE_VARIANT => ValType::ExternRef,
-                _ => panic!("Cannot convert signature!"),
-            };
-            if let Some(x) = sig.try_to_byte_array() {
-                x.read()
-                    .as_slice()
-                    .iter()
-                    .map(|&v| v as u32)
-                    .map(f)
-                    .collect()
-            } else if let Some(x) = sig.try_to_int32_array() {
-                x.read()
-                    .as_slice()
-                    .iter()
-                    .map(|&v| v as u32)
-                    .map(f)
-                    .collect()
-            } else if let Ok(x) = VariantArray::from_variant(&sig) {
-                x.iter()
-                    .map(|v| u32::from_variant(&v).expect("Cannot convert signature!"))
-                    .map(f)
-                    .collect()
-            } else {
-                panic!("Cannot convert signature!")
-            }
-        }
-
-        let params = to_valtypes(params);
-        let results = to_valtypes(results);
-
-        FuncType::new(params, results)
-    }
 }
 
 // Godot exported methods
@@ -101,53 +59,18 @@ impl WasmObject {
         #[opt] host_bindings: Option<Dictionary>,
     ) -> Variant {
         let eobj = engine.clone();
-        let mut host = HostMap::default();
+        let host;
 
         if let Some(host_bindings) = host_bindings {
-            for (k, v) in host_bindings.iter() {
-                let name = match GodotString::from_variant(&k) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        godot_error!("Unknown function name {:?}: {:#}", k, e);
-                        return Variant::new();
-                    }
-                }
-                .to_string();
-
-                #[derive(FromVariant)]
-                struct FuncData {
-                    params: Variant,
-                    results: Variant,
-                    object: Variant,
-                    method: String,
-                }
-
-                let FuncData {
-                    params,
-                    results,
-                    object,
-                    method,
-                } = match FuncData::from_variant(&v) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        godot_error!("Unknown function attribute {:?}: {:#}", v, e);
-                        return Variant::new();
-                    }
-                };
-
-                if !object.has_method(&method) {
-                    godot_error!("Object does not have method {}", method);
+            host = match create_hostmap(host_bindings) {
+                Ok(v) => v,
+                Err(e) => {
+                    godot_error!("{:?}", e);
                     return Variant::new();
                 }
-
-                host.insert(
-                    name,
-                    (
-                        GodotMethod { object, method },
-                        Self::create_signature(params, results),
-                    ),
-                );
-            }
+            };
+        } else {
+            host = HostMap::default();
         }
 
         let (store, inst) = match unsafe { engine.assume_safe() }.map(move |v, _| -> Result<_> {

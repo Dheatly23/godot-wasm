@@ -3,12 +3,13 @@ use std::fmt::{Display, Formatter};
 use std::iter::FromIterator;
 use std::mem::drop;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use gdnative::prelude::*;
 use hashbrown::HashMap;
 use wasmtime::{ExternRef, FuncType, Instance, Linker, Store, Trap, Val, ValRaw, ValType};
 
 use crate::wasm_externref_godot::{externref_to_variant, variant_to_externref};
+use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64, TYPE_VARIANT};
 
 macro_rules! unwrap_ext {
     {$v:expr; $e:expr} => {
@@ -144,6 +145,99 @@ impl Display for GodotMethod {
 
 /// Host function map
 pub type HostMap = HashMap<String, (GodotMethod, FuncType)>;
+
+/// Try to convert godot dictionary to hostmap
+pub fn create_hostmap(host_bindings: Dictionary) -> Result<HostMap> {
+    let mut host = HostMap::with_capacity(host_bindings.len() as usize);
+
+    for (k, v) in host_bindings.iter() {
+        let name = match GodotString::from_variant(&k) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(
+                    anyhow::Error::from(e).context(format!("Unknown function name {:?}", k))
+                );
+            }
+        }
+        .to_string();
+
+        #[derive(FromVariant)]
+        struct FuncData {
+            params: Variant,
+            results: Variant,
+            object: Variant,
+            method: String,
+        }
+
+        let FuncData {
+            params,
+            results,
+            object,
+            method,
+        } = match FuncData::from_variant(&v) {
+            Ok(v) => v,
+            Err(e) => {
+                return Err(
+                    anyhow::Error::from(e).context(format!("Unknown function attribute {:?}", v))
+                );
+            }
+        };
+
+        if !object.has_method(&method) {
+            bail!("Object does not have method {}", method);
+        }
+
+        host.insert(
+            name,
+            (
+                GodotMethod { object, method },
+                create_signature(params, results)?,
+            ),
+        );
+    }
+
+    Ok(host)
+}
+
+/// Process new function type.
+pub fn create_signature(params: Variant, results: Variant) -> Result<FuncType> {
+    fn to_valtypes(sig: Variant) -> Result<Vec<ValType>> {
+        fn f(v: u32) -> Result<ValType> {
+            Ok(match v {
+                TYPE_I32 => ValType::I32,
+                TYPE_I64 => ValType::I64,
+                TYPE_F32 => ValType::F32,
+                TYPE_F64 => ValType::F64,
+                TYPE_VARIANT => ValType::ExternRef,
+                _ => bail!("Cannot convert signature!"),
+            })
+        }
+        let mut v;
+
+        if let Some(x) = sig.try_to_byte_array() {
+            v = Vec::with_capacity(x.len() as usize);
+            for &i in x.read().iter() {
+                v.push(f(i as u32)?);
+            }
+        } else if let Some(x) = sig.try_to_int32_array() {
+            v = Vec::with_capacity(x.len() as usize);
+            for &i in x.read().iter() {
+                v.push(f(i as u32)?);
+            }
+        } else if let Ok(x) = VariantArray::from_variant(&sig) {
+            v = Vec::with_capacity(x.len() as usize);
+            for i in x.iter() {
+                v.push(f(u32::from_variant(&i)?)?);
+            }
+        } else {
+            bail!("Cannot convert signature!");
+        }
+
+        Ok(v)
+    }
+
+    Ok(FuncType::new(to_valtypes(params)?, to_valtypes(results)?))
+}
 
 #[derive(Debug)]
 struct GodotReturnError {
