@@ -2,7 +2,7 @@ use std::io::Write;
 use std::ptr::copy_nonoverlapping;
 
 use gdnative::prelude::*;
-use wasmtime::{Caller, ExternRef, Func, Linker, Trap};
+use wasmtime::{Caller, Extern, ExternRef, Func, Linker, Memory, Trap};
 
 /// Godot module name
 pub const GODOT_MODULE: &str = "godot";
@@ -122,6 +122,13 @@ macro_rules! object_call {
 
 /// Register godot module
 pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()> {
+    fn get_memory<T>(store: &mut Caller<T>) -> Result<Memory, Trap> {
+        match store.get_export("memory") {
+            Some(Extern::Memory(m)) => Ok(m),
+            _ => Err(Trap::new("No memory exported")),
+        }
+    }
+
     linker.func_wrap(GODOT_MODULE, "var.is_var", |v: Option<ExternRef>| {
         v.map(|v| v.data().downcast_ref::<Variant>().is_some())
             .unwrap_or(false) as i32
@@ -272,11 +279,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         GODOT_MODULE,
         "bytearr.create",
         |mut ctx: Caller<_>, s: u32, n: u32| {
-            let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
-                Some(mem) => mem,
-                None => return Err(Trap::new("No memory exported")),
-            }
-            .data(&mut ctx);
+            let mem = get_memory(&mut ctx)?.data(&mut ctx);
 
             if let Some(s) = mem.get((s as usize)..((s + n) as usize)) {
                 Ok(variant_to_externref(ByteArray::from_slice(s).to_variant()))
@@ -299,11 +302,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 
     object_call!(linker, fn "bytearr.read"(mut ctx, a: ByteArray, i: u32, s: u32, n: u32) {
         let a = a.read();
-        let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
-            Some(mem) => mem,
-            None => return Err(Trap::new("No memory exported")),
-        }
-        .data_mut(&mut ctx);
+        let mem = get_memory(&mut ctx)?.data_mut(&mut ctx);
 
         if let (Some(d), Some(s)) =
             (
@@ -321,11 +320,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         GODOT_MODULE,
         "intarr.create",
         |mut ctx: Caller<_>, s: u32, n: u32| {
-            let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
-                Some(mem) => mem,
-                None => return Err(Trap::new("No memory exported")),
-            }
-            .data(&mut ctx);
+            let mem = get_memory(&mut ctx)?.data(&mut ctx);
 
             if let Some(s) = mem.get((s as usize)..((s + n * 4) as usize)) {
                 let mut d = Int32Array::new();
@@ -356,11 +351,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 
     object_call!(linker, fn "intarr.read"(mut ctx, a: Int32Array, i: u32, s: u32, n: u32) {
         let a = a.read();
-        let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
-            Some(mem) => mem,
-            None => return Err(Trap::new("No memory exported")),
-        }
-        .data_mut(&mut ctx);
+        let mem = get_memory(&mut ctx)?.data_mut(&mut ctx);
 
         if let (Some(d), Some(s)) =
             (
@@ -380,11 +371,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         GODOT_MODULE,
         "floatarr.create",
         |mut ctx: Caller<_>, s: u32, n: u32| {
-            let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
-                Some(mem) => mem,
-                None => return Err(Trap::new("No memory exported")),
-            }
-            .data(&mut ctx);
+            let mem = get_memory(&mut ctx)?.data(&mut ctx);
 
             if let Some(s) = mem.get((s as usize)..((s + n * 4) as usize)) {
                 let mut d = Float32Array::new();
@@ -415,11 +402,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
 
     object_call!(linker, fn "floatarr.read"(mut ctx, a: Float32Array, i: u32, s: u32, n: u32) {
         let a = a.read();
-        let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
-            Some(mem) => mem,
-            None => return Err(Trap::new("No memory exported")),
-        }
-        .data_mut(&mut ctx);
+        let mem = get_memory(&mut ctx)?.data_mut(&mut ctx);
 
         if let (Some(d), Some(s)) =
             (
@@ -478,11 +461,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         GODOT_MODULE,
         "str.create",
         |mut ctx: Caller<_>, s: u32, n: u32| {
-            let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
-                Some(mem) => mem,
-                None => return Err(Trap::new("No memory exported")),
-            }
-            .data(&ctx);
+            let mem = get_memory(&mut ctx)?.data(&ctx);
 
             if let Some(s) = mem.get((s as usize)..((s + n) as usize)) {
                 Ok(variant_to_externref(
@@ -495,11 +474,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
     )?;
 
     object_call!(linker, fn "str.read"(mut ctx, v: GodotString, s: u32, n: u32) {
-        let mem = match ctx.get_export("memory").and_then(|mem| mem.into_memory()) {
-            Some(mem) => mem,
-            None => return Err(Trap::new("No memory exported")),
-        }
-        .data_mut(&mut ctx);
+        let mem = get_memory(&mut ctx)?.data_mut(&mut ctx);
 
         if let Some(s) = mem.get_mut((s as usize)..((s + n) as usize)) {
             write!(&mut *s, "{}", v).map_err(|e| Trap::from(anyhow::Error::new(e)))
