@@ -143,6 +143,36 @@ impl WasmObject {
         .into_shared()
     }
 
+    /// Gets function signature
+    #[export]
+    fn get_signature(&mut self, _owner: &Reference, name: String) -> Variant {
+        let WasmObjectData {
+            ref mut inst,
+            ref mut store,
+            ..
+        } = self.get_data_mut();
+        let f = match inst.get_func(&mut *store, &name) {
+            Some(v) => v,
+            None => {
+                godot_error!("No function named {}", name);
+                return Variant::new();
+            }
+        };
+
+        match from_signature(f.ty(&mut *store)) {
+            Ok((p, r)) => {
+                let d = Dictionary::new();
+                d.insert(GodotString::from_str("params"), p);
+                d.insert(GodotString::from_str("results"), r);
+                d.owned_to_variant()
+            }
+            Err(e) => {
+                godot_error!("{}", e);
+                Variant::new()
+            }
+        }
+    }
+
     /// Call WASM function
     #[export]
     fn call_wasm(&mut self, _owner: &Reference, name: String, args: VariantArray) -> Variant {

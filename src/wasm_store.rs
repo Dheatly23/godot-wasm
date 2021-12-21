@@ -191,7 +191,7 @@ pub fn create_hostmap(host_bindings: Dictionary) -> Result<HostMap> {
             name,
             (
                 GodotMethod { object, method },
-                create_signature(params, results)?,
+                to_signature(params, results)?,
             ),
         );
     }
@@ -199,8 +199,8 @@ pub fn create_hostmap(host_bindings: Dictionary) -> Result<HostMap> {
     Ok(host)
 }
 
-/// Process new function type.
-pub fn create_signature(params: Variant, results: Variant) -> Result<FuncType> {
+/// Convert to function signature
+pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType> {
     fn to_valtypes(sig: Variant) -> Result<Vec<ValType>> {
         fn f(v: u32) -> Result<ValType> {
             Ok(match v {
@@ -237,6 +237,34 @@ pub fn create_signature(params: Variant, results: Variant) -> Result<FuncType> {
     }
 
     Ok(FuncType::new(to_valtypes(params)?, to_valtypes(results)?))
+}
+
+/// Convert from function signature
+pub fn from_signature(sig: FuncType) -> Result<(ByteArray, ByteArray)> {
+    let p = sig.params();
+    let r = sig.results();
+
+    let mut pr = ByteArray::new();
+    let mut rr = ByteArray::new();
+
+    pr.resize(p.len() as _);
+    rr.resize(r.len() as _);
+
+    for (s, d) in p
+        .zip(pr.write().iter_mut())
+        .chain(r.zip(rr.write().iter_mut()))
+    {
+        *d = match s {
+            ValType::I32 => TYPE_I32,
+            ValType::I64 => TYPE_I64,
+            ValType::F32 => TYPE_F32,
+            ValType::F64 => TYPE_F64,
+            ValType::ExternRef => TYPE_VARIANT,
+            _ => bail!("Unconvertible signture"),
+        } as _;
+    }
+
+    Ok((pr, rr))
 }
 
 #[derive(Debug)]

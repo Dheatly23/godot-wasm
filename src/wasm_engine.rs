@@ -8,7 +8,7 @@ use parking_lot::RwLock;
 use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::wasm_externref_godot::GODOT_MODULE;
-use crate::wasm_store::HOST_MODULE;
+use crate::wasm_store::{from_signature, HOST_MODULE};
 use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64, TYPE_VARIANT};
 
 const MODULE_INCLUDES: [&str; 2] = [HOST_MODULE, GODOT_MODULE];
@@ -275,5 +275,38 @@ impl WasmEngine {
                 Variant::new()
             }
         }
+    }
+
+    /// Gets host imports signature
+    #[export]
+    fn get_host_imports(&self, _owner: &Reference, name: String) -> Variant {
+        let modules = self.modules.read();
+        let m = match modules.get(&name) {
+            Some(ModuleData { module, .. }) => module,
+            None => {
+                godot_error!("No module named {}", name);
+                return Variant::new();
+            }
+        };
+
+        Dictionary::from_iter(m.exports().filter_map(|v| {
+            if let ExternType::Func(f) = v.ty() {
+                match from_signature(f) {
+                    Ok((p, r)) => {
+                        let d = Dictionary::new();
+                        d.insert(GodotString::from_str("params"), p);
+                        d.insert(GodotString::from_str("results"), r);
+                        Some((GodotString::from_str(v.name()), d.owned_to_variant()))
+                    }
+                    Err(e) => {
+                        godot_error!("{}", e);
+                        Some((GodotString::from_str(v.name()), Variant::new()))
+                    }
+                }
+            } else {
+                None
+            }
+        }))
+        .owned_to_variant()
     }
 }
