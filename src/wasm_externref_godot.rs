@@ -30,7 +30,7 @@ pub fn externref_to_variant(ext: Option<ExternRef>) -> Result<Variant, Trap> {
 }
 
 #[inline(always)]
-fn externref_to_variant_nonnull(ext: Option<ExternRef>) -> Result<Variant, Trap> {
+pub fn externref_to_variant_nonnull(ext: Option<ExternRef>) -> Result<Variant, Trap> {
     ext.ok_or_else(|| Trap::new("Null value")).and_then(|v| {
         v.data()
             .downcast_ref::<Variant>()
@@ -40,7 +40,7 @@ fn externref_to_variant_nonnull(ext: Option<ExternRef>) -> Result<Variant, Trap>
 }
 
 #[inline(always)]
-fn externref_to_object<T: FromVariant>(ext: Option<ExternRef>) -> Result<T, Trap> {
+pub fn externref_to_object<T: FromVariant>(ext: Option<ExternRef>) -> Result<T, Trap> {
     externref_to_variant_nonnull(ext)
         .and_then(|v| T::from_variant(&v).map_err(|e| Trap::from(Box::new(e) as Box<_>)))
 }
@@ -587,14 +587,14 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         variant_to_externref(c.lerp(externref_to_object(o)?, w).to_variant())
     });
 
-    object_call!(linker, fn "object.callv"(o: Ref<Object, Shared>, name, args) {
+    object_call!(linker, fn "object.callv"(o: Ref<Object, Shared>, args, name) {
         let name: GodotString = externref_to_object(name)?;
         variant_to_externref(unsafe {
             o.assume_safe().callv(name, externref_to_object(args)?)
         })
     });
 
-    object_call!(linker, fn "object.callv_deferred"(o: Ref<Object, Shared>, name, args) {
+    object_call!(linker, fn "object.callv_deferred"(o: Ref<Object, Shared>, args, name) {
         let name: GodotString = externref_to_object(name)?;
         let args: Vec<_> = externref_to_object::<VariantArray>(args)?.iter().collect();
         unsafe {

@@ -298,7 +298,7 @@ impl GodotReturnError {
 pub const HOST_MODULE: &str = "host";
 
 /// Register hostmap to linker
-pub fn register_hostmap<T>(linker: &mut Linker<T>, hostmap: HostMap) -> Result<()> {
+pub fn register_hostmap<T>(linker: &mut Linker<T>, hostmap: &HostMap) -> Result<()> {
     unsafe fn set_raw(
         ctx: impl wasmtime::AsContextMut,
         v: *mut ValRaw,
@@ -321,9 +321,11 @@ pub fn register_hostmap<T>(linker: &mut Linker<T>, hostmap: HostMap) -> Result<(
         Ok(())
     }
 
-    for (name, (method, ty)) in hostmap {
+    for (name, (method, ty)) in hostmap.iter() {
+        let method = method.clone();
+        let ty = ty.clone();
         unsafe {
-            linker.func_new_unchecked("host", &name, ty.clone(), move |mut ctx, raw| {
+            linker.func_new_unchecked("host", name, ty.clone(), move |mut ctx, raw| {
                 let params = ty.params();
                 let mut input = Vec::with_capacity(params.len());
                 for (i, p) in params.enumerate() {
