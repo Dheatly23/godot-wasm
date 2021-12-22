@@ -129,6 +129,52 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         }
     }
 
+    linker.func_wrap(
+        GODOT_MODULE,
+        "print",
+        |mut ctx: Caller<_>, s: u32, n: u32| {
+            let mem = get_memory(&mut ctx)?.data(&ctx);
+
+            if let Some(s) = mem.get((s as usize)..((s + n) as usize)) {
+                godot_print!("{}", String::from_utf8_lossy(s));
+                Ok(())
+            } else {
+                Err(Trap::new("Out of bound"))
+            }
+        },
+    )?;
+
+    linker.func_wrap(
+        GODOT_MODULE,
+        "warn",
+        |mut ctx: Caller<_>, s: u32, n: u32| {
+            let mem = get_memory(&mut ctx)?.data(&ctx);
+
+            if let Some(s) = mem.get((s as usize)..((s + n) as usize)) {
+                godot_warn!("{}", String::from_utf8_lossy(s));
+                Ok(())
+            } else {
+                Err(Trap::new("Out of bound"))
+            }
+        },
+    )?;
+
+    linker.func_wrap(
+        GODOT_MODULE,
+        "error",
+        |mut ctx: Caller<_>, s: u32, n: u32| -> Result<(), Trap> {
+            let mem = get_memory(&mut ctx)?.data(&ctx);
+
+            if let Some(s) = mem.get((s as usize)..((s + n) as usize)) {
+                let s = String::from_utf8_lossy(s);
+                godot_error!("{}", s);
+                Err(Trap::new(s))
+            } else {
+                Err(Trap::new("Out of bound"))
+            }
+        },
+    )?;
+
     linker.func_wrap(GODOT_MODULE, "var.is_var", |v: Option<ExternRef>| {
         v.map(|v| v.data().downcast_ref::<Variant>().is_some())
             .unwrap_or(false) as i32

@@ -118,7 +118,7 @@ impl WasmNode {
             Ok(mut v) => {
                 v.store.data_mut().1 = None;
                 Some(v)
-            },
+            }
             Err(e) => {
                 godot_error!("{}", e);
                 return Variant::new();
