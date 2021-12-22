@@ -28,6 +28,12 @@ where
 {
     fn register_linker(&self, store: &mut Store<T>, linker: &mut Linker<T>) -> Result<()> {
         let f = self.0;
+        linker.func_wrap(THISOBJ_NODE, "queue_free", move |mut ctx: Caller<T>| {
+            let o = f(ctx.data_mut());
+            o.queue_free();
+        })?;
+
+        let f = self.0;
         linker.func_wrap(THISOBJ_NODE, "get_name", move |mut ctx: Caller<T>| {
             let o = f(ctx.data_mut());
             Ok(variant_to_externref(o.name().to_variant()))
