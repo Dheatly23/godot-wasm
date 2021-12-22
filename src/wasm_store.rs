@@ -26,11 +26,11 @@ macro_rules! unwrap_ext {
     };
 }
 
-pub fn call_func<T, I>(store: &mut Store<T>, inst: &Instance, name: String, args: I) -> Variant
+pub fn call_func<T, I>(store: &mut Store<T>, inst: &Instance, name: &str, args: I) -> Variant
 where
     I: Iterator<Item = Variant>,
 {
-    let func = match inst.get_func(&mut *store, &name) {
+    let func = match inst.get_func(&mut *store, name) {
         Some(f) => f,
         None => {
             godot_error!("WASM Function {} does not exist!", name);

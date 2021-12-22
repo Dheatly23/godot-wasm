@@ -99,8 +99,8 @@ impl<T: 'static> InstanceData<T> {
     }
 
     /// Check if function exists
-    pub fn is_function_exists(&mut self, name: String) -> bool {
-        self.inst.get_func(&mut self.store, &name).is_some()
+    pub fn is_function_exists(&mut self, name: &str) -> bool {
+        self.inst.get_func(&mut self.store, name).is_some()
     }
 
     /// Gets exported functions
@@ -113,8 +113,8 @@ impl<T: 'static> InstanceData<T> {
     }
 
     /// Gets function signature
-    fn get_signature(&mut self, name: String) -> Variant {
-        let f = match self.inst.get_func(&mut self.store, &name) {
+    fn get_signature(&mut self, name: &str) -> Variant {
+        let f = match self.inst.get_func(&mut self.store, name) {
             Some(v) => v,
             None => {
                 godot_error!("No function named {}", name);
@@ -137,7 +137,7 @@ impl<T: 'static> InstanceData<T> {
     }
 
     #[inline(always)]
-    pub fn call(&mut self, name: String, args: VariantArray) -> Variant {
+    pub fn call(&mut self, name: &str, args: VariantArray) -> Variant {
         call_func(&mut self.store, &self.inst, name, args.iter())
     }
 }

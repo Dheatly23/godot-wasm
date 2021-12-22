@@ -217,7 +217,7 @@ impl WasmReference {
         self.data
             .as_mut()
             .expect("Object uninitialized!")
-            .is_function_exists(name)
+            .is_function_exists(&name)
     }
 
     /// Gets exported functions
@@ -235,7 +235,7 @@ impl WasmReference {
         self.data
             .as_mut()
             .expect("Object uninitialized!")
-            .get_signature(name)
+            .get_signature(&name)
     }
 
     /// Call WASM function
@@ -243,7 +243,7 @@ impl WasmReference {
     fn call_wasm(&mut self, owner: TRef<Reference>, name: String, args: VariantArray) -> Variant {
         let data = self.data.as_mut().expect("Object uninitialized!");
         data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
-        let ret = data.call(name, args);
+        let ret = data.call(&name, args);
         data.store.data_mut().1 = None;
         ret
     }

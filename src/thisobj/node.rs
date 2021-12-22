@@ -8,6 +8,7 @@ use crate::thisobj::object::ObjectRegistry;
 use crate::thisobj::{FuncRegistry, InstanceData};
 use crate::wasm_engine::WasmEngine;
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
+use crate::wasm_store::call_func;
 
 pub const THISOBJ_NODE: &str = "this/node";
 
@@ -197,7 +198,7 @@ impl WasmNode {
         self.data
             .as_mut()
             .expect("Object uninitialized!")
-            .is_function_exists(name)
+            .is_function_exists(&name)
     }
 
     /// Gets exported functions
@@ -215,7 +216,7 @@ impl WasmNode {
         self.data
             .as_mut()
             .expect("Object uninitialized!")
-            .get_signature(name)
+            .get_signature(&name)
     }
 
     /// Call WASM function
@@ -223,8 +224,78 @@ impl WasmNode {
     fn call_wasm(&mut self, owner: TRef<Node>, name: String, args: VariantArray) -> Variant {
         let data = self.data.as_mut().expect("Object uninitialized!");
         data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
-        let ret = data.call(name, args);
+        let ret = data.call(&name, args);
         data.store.data_mut().1 = None;
         ret
+    }
+
+    #[export]
+    fn _ready(&mut self, owner: TRef<Node>) {
+        let data = self.data.as_mut().expect("Object uninitialized!");
+        if data.is_function_exists("_ready") {
+            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            call_func(&mut data.store, &data.inst, "_ready", std::iter::empty());
+            data.store.data_mut().1 = None;
+        }
+    }
+
+    #[export]
+    fn _process(&mut self, owner: TRef<Node>, v: Variant) {
+        let data = self.data.as_mut().expect("Object uninitialized!");
+        if data.is_function_exists("_process") {
+            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            call_func(
+                &mut data.store,
+                &data.inst,
+                "_process",
+                (&[v]).iter().cloned(),
+            );
+            data.store.data_mut().1 = None;
+        }
+    }
+
+    #[export]
+    fn _physics_process(&mut self, owner: TRef<Node>, v: Variant) {
+        let data = self.data.as_mut().expect("Object uninitialized!");
+        if data.is_function_exists("_physics_process") {
+            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            call_func(
+                &mut data.store,
+                &data.inst,
+                "_physics_process",
+                (&[v]).iter().cloned(),
+            );
+            data.store.data_mut().1 = None;
+        }
+    }
+
+    #[export]
+    fn _enter_tree(&mut self, owner: TRef<Node>) {
+        let data = self.data.as_mut().expect("Object uninitialized!");
+        if data.is_function_exists("_enter_tree") {
+            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            call_func(
+                &mut data.store,
+                &data.inst,
+                "_enter_tree",
+                std::iter::empty(),
+            );
+            data.store.data_mut().1 = None;
+        }
+    }
+
+    #[export]
+    fn _exit_tree(&mut self, owner: TRef<Node>) {
+        let data = self.data.as_mut().expect("Object uninitialized!");
+        if data.is_function_exists("_exit_tree") {
+            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            call_func(
+                &mut data.store,
+                &data.inst,
+                "_exit_tree",
+                std::iter::empty(),
+            );
+            data.store.data_mut().1 = None;
+        }
     }
 }
