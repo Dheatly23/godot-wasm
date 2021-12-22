@@ -590,7 +590,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
     object_call!(linker, fn "object.callv"(o: Ref<Object, Shared>, name, args) {
         let name: GodotString = externref_to_object(name)?;
         variant_to_externref(unsafe {
-            o.assume_unique().callv(name, externref_to_object(args)?)
+            o.assume_safe().callv(name, externref_to_object(args)?)
         })
     });
 
@@ -598,7 +598,7 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         let name: GodotString = externref_to_object(name)?;
         let args: Vec<_> = externref_to_object::<VariantArray>(args)?.iter().collect();
         unsafe {
-            o.assume_unique().call_deferred(name, &args);
+            o.assume_safe().call_deferred(name, &args);
         }
     });
 
