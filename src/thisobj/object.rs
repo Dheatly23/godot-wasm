@@ -101,6 +101,49 @@ where
             },
         )?;
 
+        let f = self.0;
+        linker.func_wrap(
+            THISOBJ_OBJECT,
+            "emit_signal",
+            move |mut ctx: Caller<T>, s, a| {
+                let o = f(ctx.data_mut());
+                let s: GodotString = externref_to_object(s)?;
+                let a: Vec<_> = externref_to_object::<VariantArray>(a)?.iter().collect();
+                o.emit_signal(s, &a);
+                Ok(())
+            },
+        )?;
+
+        let f = self.0;
+        linker.func_wrap(
+            THISOBJ_OBJECT,
+            "get_instance_id",
+            move |mut ctx: Caller<T>| {
+                let o = f(ctx.data_mut());
+                Ok(o.get_instance_id())
+            },
+        )?;
+
+        let f = self.0;
+        linker.func_wrap(
+            THISOBJ_OBJECT,
+            "get_class",
+            move |mut ctx: Caller<T>| {
+                let o = f(ctx.data_mut());
+                Ok(variant_to_externref(o.get_class().to_variant()))
+            },
+        )?;
+
+        let f = self.0;
+        linker.func_wrap(
+            THISOBJ_OBJECT,
+            "get_incoming_connections",
+            move |mut ctx: Caller<T>| {
+                let o = f(ctx.data_mut());
+                Ok(variant_to_externref(o.get_incoming_connections().to_variant()))
+            },
+        )?;
+
         Ok(())
     }
 }
