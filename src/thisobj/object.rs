@@ -192,7 +192,7 @@ impl WasmReference {
             engine.clone(),
             &name,
             host_bindings,
-            (engine, None),
+            (engine, Some(unsafe { owner.claim().assume_unique() })),
             |store, linker| {
                 ObjectRegistry::new(|(_, v): &mut (_, Option<Ref<Reference, Unique>>)| {
                     v.as_ref().expect("No this supplied").as_ref().upcast()
@@ -200,7 +200,10 @@ impl WasmReference {
                 .register_linker(store, linker)
             },
         ) {
-            Ok(v) => Some(v),
+            Ok(mut v) => {
+                v.store.data_mut().1 = None;
+                Some(v)
+            },
             Err(e) => {
                 godot_error!("{}", e);
                 return Variant::new();

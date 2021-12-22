@@ -103,7 +103,7 @@ impl WasmNode {
             engine.clone(),
             &name,
             host_bindings,
-            (engine, None),
+            (engine, Some(unsafe { owner.claim().assume_unique() })),
             |store, linker| {
                 NodeRegistry::new(|(_, v): &mut (_, Option<Ref<Node, Unique>>)| {
                     v.as_ref().expect("No this supplied").as_ref()
@@ -115,7 +115,10 @@ impl WasmNode {
                 .register_linker(store, linker)
             },
         ) {
-            Ok(v) => Some(v),
+            Ok(mut v) => {
+                v.store.data_mut().1 = None;
+                Some(v)
+            },
             Err(e) => {
                 godot_error!("{}", e);
                 return Variant::new();
