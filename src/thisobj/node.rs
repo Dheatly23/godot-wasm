@@ -26,7 +26,7 @@ impl<T, F> FuncRegistry<T> for NodeRegistry<T, F>
 where
     for<'r> F: Fn(&'r mut T) -> TRef<'r, Node, Unique> + Send + Sync + Copy + 'static,
 {
-    fn register_linker(&self, _store: &mut Store<T>, linker: &mut Linker<T>) -> Result<()> {
+    fn register_linker(&self, store: &mut Store<T>, linker: &mut Linker<T>) -> Result<()> {
         let f = self.0;
         linker.func_wrap(THISOBJ_NODE, "get_name", move |mut ctx: Caller<T>| {
             let o = f(ctx.data_mut());
@@ -115,7 +115,8 @@ where
             },
         )?;
 
-        Ok(())
+        let f = self.0;
+        ObjectRegistry::new(move |v| f(v).upcast()).register_linker(store, linker)
     }
 }
 
@@ -167,10 +168,6 @@ impl WasmNode {
             |store, linker| {
                 NodeRegistry::new(|(_, v): &mut (_, Option<Ref<Node, Unique>>)| {
                     v.as_ref().expect("No this supplied").as_ref()
-                })
-                .register_linker(store, linker)?;
-                ObjectRegistry::new(|(_, v): &mut (_, Option<Ref<Node, Unique>>)| {
-                    v.as_ref().expect("No this supplied").as_ref().upcast()
                 })
                 .register_linker(store, linker)
             },
