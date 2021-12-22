@@ -55,6 +55,66 @@ where
             Ok(())
         })?;
 
+        let f = self.0;
+        linker.func_wrap(THISOBJ_NODE, "get_tree", move |mut ctx: Caller<T>| {
+            let o = f(ctx.data_mut());
+            Ok(variant_to_externref(o.get_tree().to_variant()))
+        })?;
+
+        let f = self.0;
+        linker.func_wrap(THISOBJ_NODE, "get_parent", move |mut ctx: Caller<T>| {
+            let o = f(ctx.data_mut());
+            Ok(variant_to_externref(o.get_parent().to_variant()))
+        })?;
+
+        let f = self.0;
+        linker.func_wrap(
+            THISOBJ_NODE,
+            "get_child_count",
+            move |mut ctx: Caller<T>| {
+                let o = f(ctx.data_mut());
+                Ok(o.get_child_count())
+            },
+        )?;
+
+        let f = self.0;
+        linker.func_wrap(THISOBJ_NODE, "get_child", move |mut ctx: Caller<T>, i| {
+            let o = f(ctx.data_mut());
+            Ok(variant_to_externref(o.get_child(i).to_variant()))
+        })?;
+
+        let f = self.0;
+        linker.func_wrap(THISOBJ_NODE, "get_index", move |mut ctx: Caller<T>| {
+            let o = f(ctx.data_mut());
+            Ok(o.get_index())
+        })?;
+
+        let f = self.0;
+        linker.func_wrap(THISOBJ_NODE, "get_node", move |mut ctx: Caller<T>, n| {
+            let o = f(ctx.data_mut());
+            let n: GodotString = externref_to_object(n)?;
+            Ok(variant_to_externref(o.get_node_or_null(n).to_variant()))
+        })?;
+
+        let f = self.0;
+        linker.func_wrap(THISOBJ_NODE, "get_path", move |mut ctx: Caller<T>| {
+            let o = f(ctx.data_mut());
+            let p: GodotString = o.get_path().into();
+            Ok(variant_to_externref(p.to_variant()))
+        })?;
+
+        let f = self.0;
+        linker.func_wrap(
+            THISOBJ_NODE,
+            "add_child",
+            move |mut ctx: Caller<T>, c, b: i32| {
+                let o = f(ctx.data_mut());
+                let c: Ref<Node, Shared> = externref_to_object(c)?;
+                o.add_child(c, b != 0);
+                Ok(())
+            },
+        )?;
+
         Ok(())
     }
 }
