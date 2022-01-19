@@ -1,0 +1,54 @@
+[env]
+GODOT_DIR = "Test WASM/godot_wasm"
+
+[tasks.build_all_release]
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.build_all_debug]
+command = "cargo"
+args = ["build"]
+
+[tasks.build_all]
+run_task = [
+  { name = "build_all_debug", condition = { profiles = ["development"] } },
+  { name = "build_all_release", condition = { profiles = ["production"] } },
+]
+
+[tasks.deploy]
+dependencies = ["build_all"]
+script_runner = "@duckscript"
+script = '''
+is_release = eq ${CARGO_MAKE_PROFILE} "production"
+
+target_dirs = array %{CARGO_MAKE_RUST_TARGET_TRIPLE}
+file_globs = array *.so *.dll
+
+for p in ${target_dirs}
+  if ${is_release}
+    src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${p} /release
+  else
+    src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${p} /debug
+  end
+
+  dst_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${GODOT_DIR} ${p}
+  dst_dir = canonicalize ${dst_dir}
+  echo Destination directory: ${dst_dir}
+  mkdir ${dst_dir}
+
+  for f in ${file_globs}
+    src = join_path ${src_dir} ${f}
+    src = glob_array ${src}
+    for s in ${src}
+      fname = basename ${s}
+      dst = join_path ${dst_dir} ${fname}
+      echo Copying: ${fname}
+      cp ${s} ${dst}
+    end
+    release ${src}
+  end
+end
+
+release ${target_dirs}
+release ${file_globs}
+'''
