@@ -129,14 +129,29 @@ where
 #[register_with(Self::register_properties)]
 #[user_data(gdnative::nativescript::user_data::MutexData<WasmNode>)]
 pub struct WasmNode {
-    data: Option<InstanceData<(Instance<WasmEngine, Shared>, Option<TRef<'static, Node>>)>>,
+    data: Option<InstanceData<NodeData>>,
 }
 
 unsafe impl Send for WasmNode {}
+unsafe impl Sync for WasmNode {}
+
+type NodeData = (Instance<WasmEngine, Shared>, Option<TRef<'static, Node>>);
 
 impl WasmNode {
     fn new(_owner: &Node) -> Self {
         Self { data: None }
+    }
+
+    fn _guard_section<R>(
+        data: &mut InstanceData<NodeData>,
+        owner: TRef<Node>,
+        f: impl FnOnce(&mut InstanceData<NodeData>) -> R,
+    ) -> R {
+        data.store.data_mut().1 =
+            Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
+        let ret = f(&mut *data);
+        data.store.data_mut().1 = None;
+        ret
     }
 }
 
@@ -228,21 +243,16 @@ impl WasmNode {
     #[export]
     fn call_wasm(&mut self, owner: TRef<Node>, name: String, args: VariantArray) -> Variant {
         let data = self.data.as_mut().expect("Object uninitialized!");
-        data.store.data_mut().1 =
-            Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
-        let ret = data.call(&name, args);
-        data.store.data_mut().1 = None;
-        ret
+        Self::_guard_section(data, owner, |data| data.call(&name, args))
     }
 
     #[export]
     fn _ready(&mut self, owner: TRef<Node>) {
         let data = self.data.as_mut().expect("Object uninitialized!");
         if data.is_function_exists("_ready") {
-            data.store.data_mut().1 =
-                Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
-            call_func(&mut data.store, &data.inst, "_ready", std::iter::empty());
-            data.store.data_mut().1 = None;
+            Self::_guard_section(data, owner, |data| {
+                call_func(&mut data.store, &data.inst, "_ready", std::iter::empty())
+            });
         }
     }
 
@@ -250,15 +260,14 @@ impl WasmNode {
     fn _process(&mut self, owner: TRef<Node>, v: Variant) {
         let data = self.data.as_mut().expect("Object uninitialized!");
         if data.is_function_exists("_process") {
-            data.store.data_mut().1 =
-                Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
-            call_func(
-                &mut data.store,
-                &data.inst,
-                "_process",
-                (&[v]).iter().cloned(),
-            );
-            data.store.data_mut().1 = None;
+            Self::_guard_section(data, owner, |data| {
+                call_func(
+                    &mut data.store,
+                    &data.inst,
+                    "_process",
+                    (&[v]).iter().cloned(),
+                )
+            });
         }
     }
 
@@ -266,15 +275,14 @@ impl WasmNode {
     fn _physics_process(&mut self, owner: TRef<Node>, v: Variant) {
         let data = self.data.as_mut().expect("Object uninitialized!");
         if data.is_function_exists("_physics_process") {
-            data.store.data_mut().1 =
-                Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
-            call_func(
-                &mut data.store,
-                &data.inst,
-                "_physics_process",
-                (&[v]).iter().cloned(),
-            );
-            data.store.data_mut().1 = None;
+            Self::_guard_section(data, owner, |data| {
+                call_func(
+                    &mut data.store,
+                    &data.inst,
+                    "_physics_process",
+                    (&[v]).iter().cloned(),
+                )
+            });
         }
     }
 
