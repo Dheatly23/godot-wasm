@@ -18,31 +18,32 @@ pub fn variant_to_externref(object: Variant) -> Option<ExternRef> {
 
 #[inline]
 pub fn externref_to_variant(ext: Option<ExternRef>) -> Result<Variant, Trap> {
-    ext.map_or_else(
-        || Ok(Variant::new()),
-        |v| {
-            v.data()
-                .downcast_ref::<Variant>()
-                .cloned()
-                .ok_or_else(|| Trap::new("External reference is not a Godot variant"))
+    match ext {
+        None => Ok(Variant::new()),
+        Some(v) => match v.data().downcast_ref::<Variant>() {
+            None => Err(Trap::new("External reference is not a Godot variant")),
+            Some(v) => Ok(v.clone()),
         },
-    )
+    }
 }
 
 #[inline(always)]
 pub fn externref_to_variant_nonnull(ext: Option<ExternRef>) -> Result<Variant, Trap> {
-    ext.ok_or_else(|| Trap::new("Null value")).and_then(|v| {
-        v.data()
-            .downcast_ref::<Variant>()
-            .cloned()
-            .ok_or_else(|| Trap::new("External reference is not a Godot variant"))
-    })
+    match ext {
+        None => Err(Trap::new("Null value")),
+        Some(v) => match v.data().downcast_ref::<Variant>() {
+            None => Err(Trap::new("External reference is not a Godot variant")),
+            Some(v) => Ok(v.clone()),
+        },
+    }
 }
 
 #[inline(always)]
 pub fn externref_to_object<T: FromVariant>(ext: Option<ExternRef>) -> Result<T, Trap> {
-    externref_to_variant_nonnull(ext)
-        .and_then(|v| T::from_variant(&v).map_err(|e| Trap::from(Box::new(e) as Box<_>)))
+    match T::from_variant(&externref_to_variant_nonnull(ext)?) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(Trap::from(Box::new(e) as Box<_>)),
+    }
 }
 
 macro_rules! variant_convert {
@@ -87,12 +88,13 @@ macro_rules! variant_convert {
 macro_rules! variant_typecheck {
     ($l:ident, $t:pat, $is:literal) => {
         $l.func_wrap(GODOT_MODULE, $is, |v: Option<ExternRef>| {
-            v.and_then(|v| {
-                v.data()
-                    .downcast_ref::<Variant>()
-                    .map(|v| matches!(v.get_type(), $t))
-            })
-            .unwrap_or(false) as i32
+            (match v {
+                Some(v) => match v.data().downcast_ref::<Variant>() {
+                    Some(v) => matches!(v.get_type(), $t),
+                    _ => false,
+                },
+                _ => false,
+            }) as i32
         })?
     };
 }
@@ -176,8 +178,13 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
     )?;
 
     linker.func_wrap(GODOT_MODULE, "var.is_var", |v: Option<ExternRef>| {
-        v.map(|v| v.data().downcast_ref::<Variant>().is_some())
-            .unwrap_or(false) as i32
+        (match v {
+            Some(v) => match v.data().downcast_ref::<Variant>() {
+                Some(_) => true,
+                None => false,
+            },
+            _ => false,
+        }) as i32
     })?;
 
     variant_typecheck!(linker, VariantType::I64, "var.is_int");
@@ -489,11 +496,13 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
     });
 
     object_call!(linker, fn "dict.iter"(mut ctx, d: Dictionary, f: Option<Func>) {
-        let f = f.ok_or_else(|| Trap::new("Function is null"))
-            .and_then(|f| {
-                f.typed::<(Option<ExternRef>, Option<ExternRef>), i32, _>(&ctx)
-                    .map_err(Trap::from)
-            })?;
+        let f = match f {
+            None => return Err(Trap::new("Function is null")),
+            Some(f) => match f.typed::<(Option<ExternRef>, Option<ExternRef>), i32, _>(&ctx) {
+                Ok(f) => f,
+                Err(e) => return Err(Trap::from(e)),
+            },
+        };
         for (k, v) in d.iter() {
             if f.call(&mut ctx, (variant_to_externref(k), variant_to_externref(v)))?
                 != 0
@@ -523,7 +532,9 @@ pub fn register_godot_externref<T>(linker: &mut Linker<T>) -> anyhow::Result<()>
         let mem = get_memory(&mut ctx)?.data_mut(&mut ctx);
 
         if let Some(s) = mem.get_mut((s as usize)..((s + n) as usize)) {
-            write!(&mut *s, "{}", v).map_err(|e| Trap::from(anyhow::Error::new(e)))
+            if let Err(e) = write!(&mut *s, "{}", v) {
+                return Err(Trap::from(anyhow::Error::new(e)));
+            }
         } else {
             return Err(Trap::new("Out of bound"));
         }
