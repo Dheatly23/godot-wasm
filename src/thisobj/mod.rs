@@ -2,12 +2,13 @@ pub mod node;
 pub mod object;
 
 use std::iter::FromIterator;
+use std::mem::transmute;
 
 use anyhow::{bail, Result};
 use gdnative::prelude::*;
-use wasmtime::{Linker, Store};
+use wasmtime::{Engine, Linker, Store};
 
-use crate::wasm_engine::{ModuleData, WasmEngine};
+use crate::wasm_engine::{ModuleData, WasmModule};
 use crate::wasm_externref_godot::register_godot_externref;
 use crate::wasm_store::{call_func, create_hostmap, from_signature, register_hostmap, HostMap};
 
@@ -22,26 +23,23 @@ impl<T> FuncRegistry<T> for HostMap {
 }
 
 pub struct DepLoader<'a> {
-    pub engine: &'a WasmEngine,
-    pub name: &'a str,
+    pub deps: &'a [Instance<WasmModule, Shared>],
 }
 
 impl<'a, T: 'static> FuncRegistry<T> for DepLoader<'a> {
     fn register_linker(&self, store: &mut Store<T>, linker: &mut Linker<T>) -> Result<()> {
-        let WasmEngine { modules, .. } = self.engine;
-        let modules = modules.read();
-        let deps = match modules.get(self.name) {
-            Some(ModuleData { deps, .. }) => deps,
-            None => bail!("No module named {}", self.name),
-        };
-        let mut it = modules.iter();
-        let mut prev = 0;
-        for &i in deps.iter() {
-            match it.nth(i - prev) {
-                Some((k, x)) => linker.module(&mut *store, k, &x.module)?,
-                None => unreachable!("Iterator overrun"),
-            };
-            prev = i;
+        for i in self.deps {
+            // SAFETY: Dependency is assumed to be valid
+            let i = unsafe { i.assume_safe() };
+            match i.map(|i, _| match i.data {
+                Some(ModuleData { ref module, .. }) => {
+                    linker.module(&mut *store, module.name().unwrap(), module)
+                }
+                None => bail!("Uninitialized!"),
+            }) {
+                Ok(v) => v,
+                Err(_) => unreachable!(),
+            }?;
         }
         Ok(())
     }
@@ -55,8 +53,7 @@ pub struct InstanceData<T: 'static> {
 impl<T: 'static> InstanceData<T> {
     /// Initialize instance data
     pub fn initialize<Fr>(
-        engine: Instance<WasmEngine, Shared>,
-        name: &str,
+        module: Instance<WasmModule, Shared>,
         host_bindings: Option<Dictionary>,
         t: T,
         register: Fr,
@@ -64,29 +61,36 @@ impl<T: 'static> InstanceData<T> {
     where
         Fr: FnOnce(&mut Store<T>, &mut Linker<T>) -> Result<()>,
     {
-        match unsafe { engine.assume_safe() }.map(move |v, _| -> Result<_> {
-            let WasmEngine { engine, modules } = &*v;
+        match unsafe { module.assume_safe() }.map(move |v, _| -> Result<_> {
+            let ModuleData {
+                engine,
+                module,
+                deps,
+            } = match v.data.as_ref() {
+                Some(v) => v,
+                None => bail!("Uninitialized!"),
+            };
 
-            let mut store = Store::new(&engine, t);
-            let mut linker = Linker::new(&engine);
+            // SAFETY: This reference lifetime is smaller than engine object lifetime
+            let engine: &Engine = unsafe {
+                match engine
+                    .assume_safe()
+                    .map(|e, _| transmute::<&Engine, &Engine>(&e.engine))
+                {
+                    Ok(v) => v,
+                    Err(_) => unreachable!(),
+                }
+            };
+
+            let mut store = Store::new(&*engine, t);
+            let mut linker = Linker::new(&*engine);
 
             register_godot_externref(&mut linker)?;
             register(&mut store, &mut linker)?;
             if let Some(host_bindings) = host_bindings {
                 create_hostmap(host_bindings)?.register_linker(&mut store, &mut linker)?;
             }
-            DepLoader {
-                engine: v,
-                name: &*name,
-            }
-            .register_linker(&mut store, &mut linker)?;
-
-            let modules = modules.read();
-
-            let ModuleData { module, .. } = match modules.get(name) {
-                Some(v) => v,
-                None => bail!("No module named {}", name),
-            };
+            DepLoader { deps: &deps }.register_linker(&mut store, &mut linker)?;
 
             let inst = linker.instantiate(&mut store, module)?;
 

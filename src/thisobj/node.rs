@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::mem::transmute;
 
 use anyhow::Result;
 use gdnative::prelude::*;
@@ -6,7 +7,7 @@ use wasmtime::{Caller, Linker, Store};
 
 use crate::thisobj::object::ObjectRegistry;
 use crate::thisobj::{FuncRegistry, InstanceData};
-use crate::wasm_engine::WasmEngine;
+use crate::wasm_engine::{WasmEngine, WasmModule};
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
 use crate::wasm_store::call_func;
 
@@ -16,7 +17,7 @@ pub struct NodeRegistry<T, F>(F, PhantomData<T>);
 
 impl<T, F> NodeRegistry<T, F>
 where
-    for<'r> F: Fn(&'r mut T) -> TRef<'r, Node, Unique> + Send + Sync + Copy + 'static,
+    for<'r> F: Fn(&'r T) -> TRef<'r, Node> + Send + Sync + Copy + 'static,
 {
     pub fn new(f: F) -> Self {
         Self(f, PhantomData)
@@ -25,87 +26,83 @@ where
 
 impl<T, F> FuncRegistry<T> for NodeRegistry<T, F>
 where
-    for<'r> F: Fn(&'r mut T) -> TRef<'r, Node, Unique> + Send + Sync + Copy + 'static,
+    for<'r> F: Fn(&'r T) -> TRef<'r, Node> + Send + Sync + Copy + 'static,
 {
     fn register_linker(&self, store: &mut Store<T>, linker: &mut Linker<T>) -> Result<()> {
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "queue_free", move |mut ctx: Caller<T>| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "queue_free", move |ctx: Caller<T>| {
+            let o = f(ctx.data());
             o.queue_free();
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "get_name", move |mut ctx: Caller<T>| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "get_name", move |ctx: Caller<T>| {
+            let o = f(ctx.data());
             Ok(variant_to_externref(o.name().to_variant()))
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "set_name", move |mut ctx: Caller<T>, n| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "set_name", move |ctx: Caller<T>, n| {
+            let o = f(ctx.data());
             let n: GodotString = externref_to_object(n)?;
             o.set_name(n);
             Ok(())
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "get_owner", move |mut ctx: Caller<T>| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "get_owner", move |ctx: Caller<T>| {
+            let o = f(ctx.data());
             Ok(variant_to_externref(o.owner().to_variant()))
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "set_owner", move |mut ctx: Caller<T>, w| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "set_owner", move |ctx: Caller<T>, w| {
+            let o = f(ctx.data());
             let w: Ref<Node, Shared> = externref_to_object(w)?;
             o.set_owner(w);
             Ok(())
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "get_tree", move |mut ctx: Caller<T>| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "get_tree", move |ctx: Caller<T>| {
+            let o = f(ctx.data());
             Ok(variant_to_externref(o.get_tree().to_variant()))
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "get_parent", move |mut ctx: Caller<T>| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "get_parent", move |ctx: Caller<T>| {
+            let o = f(ctx.data());
             Ok(variant_to_externref(o.get_parent().to_variant()))
         })?;
 
         let f = self.0;
-        linker.func_wrap(
-            THISOBJ_NODE,
-            "get_child_count",
-            move |mut ctx: Caller<T>| {
-                let o = f(ctx.data_mut());
-                Ok(o.get_child_count())
-            },
-        )?;
+        linker.func_wrap(THISOBJ_NODE, "get_child_count", move |ctx: Caller<T>| {
+            let o = f(ctx.data());
+            Ok(o.get_child_count())
+        })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "get_child", move |mut ctx: Caller<T>, i| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "get_child", move |ctx: Caller<T>, i| {
+            let o = f(ctx.data());
             Ok(variant_to_externref(o.get_child(i).to_variant()))
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "get_index", move |mut ctx: Caller<T>| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "get_index", move |ctx: Caller<T>| {
+            let o = f(ctx.data());
             Ok(o.get_index())
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "get_node", move |mut ctx: Caller<T>, n| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "get_node", move |ctx: Caller<T>, n| {
+            let o = f(ctx.data());
             let n: GodotString = externref_to_object(n)?;
             Ok(variant_to_externref(o.get_node_or_null(n).to_variant()))
         })?;
 
         let f = self.0;
-        linker.func_wrap(THISOBJ_NODE, "get_path", move |mut ctx: Caller<T>| {
-            let o = f(ctx.data_mut());
+        linker.func_wrap(THISOBJ_NODE, "get_path", move |ctx: Caller<T>| {
+            let o = f(ctx.data());
             let p: GodotString = o.get_path().into();
             Ok(variant_to_externref(p.to_variant()))
         })?;
@@ -114,8 +111,8 @@ where
         linker.func_wrap(
             THISOBJ_NODE,
             "add_child",
-            move |mut ctx: Caller<T>, c, b: i32| {
-                let o = f(ctx.data_mut());
+            move |ctx: Caller<T>, c, b: i32| {
+                let o = f(ctx.data());
                 let c: Ref<Node, Shared> = externref_to_object(c)?;
                 o.add_child(c, b != 0);
                 Ok(())
@@ -132,8 +129,10 @@ where
 #[register_with(Self::register_properties)]
 #[user_data(gdnative::nativescript::user_data::MutexData<WasmNode>)]
 pub struct WasmNode {
-    data: Option<InstanceData<(Instance<WasmEngine, Shared>, Option<Ref<Node, Unique>>)>>,
+    data: Option<InstanceData<(Instance<WasmEngine, Shared>, Option<TRef<'static, Node>>)>>,
 }
+
+unsafe impl Send for WasmNode {}
 
 impl WasmNode {
     fn new(_owner: &Node) -> Self {
@@ -163,18 +162,24 @@ impl WasmNode {
     fn initialize(
         &mut self,
         owner: TRef<Node>,
-        engine: Instance<WasmEngine, Shared>,
-        name: String,
+        module: Instance<WasmModule, Shared>,
         #[opt] host_bindings: Option<Dictionary>,
     ) -> Variant {
         self.data = match InstanceData::initialize(
-            engine.clone(),
-            &name,
+            module.clone(),
             host_bindings,
-            (engine, Some(unsafe { owner.claim().assume_unique() })),
+            (
+                unsafe {
+                    module
+                        .assume_safe()
+                        .map(|v, _| v.data.as_ref().expect("Uninitialized!").engine.clone())
+                        .unwrap()
+                },
+                Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) }),
+            ),
             |store, linker| {
-                NodeRegistry::new(|(_, v): &mut (_, Option<Ref<Node, Unique>>)| {
-                    v.as_ref().expect("No this supplied").as_ref()
+                NodeRegistry::new(|(_, v): &(_, Option<TRef<Node>>)| {
+                    *v.as_ref().expect("No this supplied")
                 })
                 .register_linker(store, linker)
             },
@@ -223,7 +228,8 @@ impl WasmNode {
     #[export]
     fn call_wasm(&mut self, owner: TRef<Node>, name: String, args: VariantArray) -> Variant {
         let data = self.data.as_mut().expect("Object uninitialized!");
-        data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+        data.store.data_mut().1 =
+            Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
         let ret = data.call(&name, args);
         data.store.data_mut().1 = None;
         ret
@@ -233,7 +239,8 @@ impl WasmNode {
     fn _ready(&mut self, owner: TRef<Node>) {
         let data = self.data.as_mut().expect("Object uninitialized!");
         if data.is_function_exists("_ready") {
-            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            data.store.data_mut().1 =
+                Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
             call_func(&mut data.store, &data.inst, "_ready", std::iter::empty());
             data.store.data_mut().1 = None;
         }
@@ -243,7 +250,8 @@ impl WasmNode {
     fn _process(&mut self, owner: TRef<Node>, v: Variant) {
         let data = self.data.as_mut().expect("Object uninitialized!");
         if data.is_function_exists("_process") {
-            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            data.store.data_mut().1 =
+                Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
             call_func(
                 &mut data.store,
                 &data.inst,
@@ -258,7 +266,8 @@ impl WasmNode {
     fn _physics_process(&mut self, owner: TRef<Node>, v: Variant) {
         let data = self.data.as_mut().expect("Object uninitialized!");
         if data.is_function_exists("_physics_process") {
-            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            data.store.data_mut().1 =
+                Some(unsafe { transmute::<TRef<Node>, TRef<'static, Node>>(owner) });
             call_func(
                 &mut data.store,
                 &data.inst,
@@ -273,7 +282,7 @@ impl WasmNode {
     fn _enter_tree(&mut self, owner: TRef<Node>) {
         let data = self.data.as_mut().expect("Object uninitialized!");
         if data.is_function_exists("_enter_tree") {
-            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            data.store.data_mut().1 = Some(unsafe { transmute(owner) });
             call_func(
                 &mut data.store,
                 &data.inst,
@@ -288,7 +297,7 @@ impl WasmNode {
     fn _exit_tree(&mut self, owner: TRef<Node>) {
         let data = self.data.as_mut().expect("Object uninitialized!");
         if data.is_function_exists("_exit_tree") {
-            data.store.data_mut().1 = Some(unsafe { owner.claim().assume_unique() });
+            data.store.data_mut().1 = Some(unsafe { transmute(owner) });
             call_func(
                 &mut data.store,
                 &data.inst,

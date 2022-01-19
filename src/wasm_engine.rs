@@ -1,10 +1,10 @@
 use std::iter::FromIterator;
+use std::mem::transmute;
 
-use anyhow::{bail, Result};
+use anyhow::bail;
 use gdnative::prelude::*;
-use hashbrown::{HashMap, HashSet};
-use indexmap::IndexMap;
-use parking_lot::RwLock;
+use hashbrown::{hash_map::Entry, HashMap};
+use parking_lot::Once;
 use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::wasm_externref_godot::GODOT_MODULE;
@@ -19,12 +19,6 @@ const MODULE_INCLUDES: [&str; 2] = [HOST_MODULE, GODOT_MODULE];
 #[user_data(gdnative::nativescript::user_data::ArcData<WasmEngine>)]
 pub struct WasmEngine {
     pub(crate) engine: Engine,
-    pub(crate) modules: RwLock<IndexMap<String, ModuleData>>,
-}
-
-pub struct ModuleData {
-    pub(crate) module: Module,
-    pub(crate) deps: Vec<usize>,
 }
 
 impl WasmEngine {
@@ -45,144 +39,6 @@ impl WasmEngine {
             .dynamic_memory_guard_size(0);
         Self {
             engine: Engine::new(&config).expect("Cannot create engine"),
-            modules: RwLock::new(IndexMap::new()),
-        }
-    }
-
-    fn _register_module(&self, name: String, module: Module) -> Result<()> {
-        let mut deps = HashSet::new();
-        let mut modules = self.modules.write();
-        for i in module.imports() {
-            let name = i.module();
-            if MODULE_INCLUDES.contains(&name) {
-                continue; // Ignore host function(s)
-            }
-            match modules.get_full(name) {
-                Some((ix, _, d)) => {
-                    deps.insert(ix);
-                    deps.extend(d.deps.iter());
-                }
-                None => bail!("Unknown module {}", name),
-            }
-        }
-        let mut deps: Vec<_> = deps.drain().collect();
-        deps.shrink_to_fit();
-        deps.sort_unstable();
-        modules.insert(name, ModuleData { module, deps });
-        Ok(())
-    }
-
-    fn _register_modules(&self, modules: impl Iterator<Item = (String, Module)>) -> Result<()> {
-        use std::mem::transmute;
-
-        enum Marker {
-            Unmarked,
-            TempMarked,
-            PermMarked(usize),
-        }
-        struct Data(ModuleData, Marker);
-
-        let mut modules: HashMap<String, Data> = modules
-            .map(|(k, v)| {
-                (
-                    k,
-                    Data(
-                        ModuleData {
-                            module: v,
-                            deps: Vec::new(),
-                        },
-                        Marker::Unmarked,
-                    ),
-                )
-            })
-            .collect();
-        let mut orig = self.modules.write();
-
-        fn f(
-            orig: &IndexMap<String, ModuleData>,
-            modules: &mut HashMap<String, Data>,
-            k: &str,
-            mut ix: usize,
-        ) -> Result<usize> {
-            // SAFETY: We never insert/delete modules,
-            // so map items never gets moved
-            let v = unsafe { transmute::<&mut Data, &mut Data>(modules.get_mut(k).unwrap()) };
-            v.1 = Marker::TempMarked;
-
-            let mut deps = HashSet::new();
-            for i in v.0.module.imports() {
-                let name = i.module();
-                if MODULE_INCLUDES.contains(&name) {
-                    continue; // Ignore host function(s)
-                }
-                match orig.get_full(name) {
-                    Some((ix, _, d)) => {
-                        deps.insert(ix);
-                        deps.extend(d.deps.iter());
-                    }
-                    None => match modules.get(name) {
-                        Some(Data(_, Marker::Unmarked)) => {
-                            ix = f(&*orig, modules, name, ix)?;
-                            deps.insert(ix - 1);
-                            deps.extend(modules[name].0.deps.iter());
-                        }
-                        None => bail!("Unknown module {}", name),
-                        Some(Data(_, Marker::TempMarked)) => {
-                            bail!("Detected cycle on module {}", name)
-                        }
-                        Some(Data(d, Marker::PermMarked(ix))) => {
-                            deps.insert(*ix);
-                            deps.extend(d.deps.iter());
-                        }
-                    },
-                };
-            }
-
-            v.0.deps.extend(deps.drain());
-            v.0.deps.shrink_to_fit();
-            v.0.deps.sort_unstable();
-
-            v.1 = Marker::PermMarked(ix);
-            Ok(ix + 1)
-        }
-
-        let mut ix = orig.len();
-        while let Some((k, _)) = modules
-            .iter()
-            .filter(|(_, Data(_, v))| matches!(v, Marker::Unmarked))
-            .next()
-        {
-            // SAFETY: We never insert/delete modules,
-            // so map items never gets moved
-            let k = unsafe { transmute::<&str, &str>(k) };
-
-            ix = f(&orig, &mut modules, k, ix)?;
-        }
-
-        let mut modules: Vec<_> = modules.drain().collect();
-        modules.sort_unstable_by_key(|(_, Data(_, v))| match v {
-            Marker::PermMarked(ix) => *ix,
-            _ => unreachable!("Algorithm error, temp/unmarked module"),
-        });
-
-        for (k, Data(m, v)) in modules.into_iter() {
-            match v {
-                Marker::PermMarked(i) if i == orig.len() => (),
-                _ => unreachable!("Algorithm error, value got skipped"),
-            };
-            orig.insert(k, m);
-        }
-
-        Ok(())
-    }
-
-    fn _load_module(&self, module: Variant) -> Result<Module> {
-        if let Ok(m) = ByteArray::from_variant(&module) {
-            Module::new(&self.engine, &*m.read())
-        } else if let Ok(m) = String::from_variant(&module) {
-            Module::new(&self.engine, &m)
-        } else {
-            bail!("Module type is not string nor byte array")
         }
     }
 }
@@ -213,55 +69,194 @@ impl WasmEngine {
             .with_getter(|_, _| TYPE_VARIANT)
             .done();
     }
+}
 
-    /// Load a module
-    ///
-    /// Data can be either a WAT string or WASM binary byte array
-    #[export]
-    fn load_module(&self, _owner: &Reference, name: String, data: Variant) -> u32 {
-        match self
-            ._load_module(data)
-            .and_then(|m| self._register_module(name, m))
-        {
-            Err(e) => {
-                godot_error!("Load WASM module failed: {}", e);
-                GodotError::Failed as u32
-            }
-            Ok(_) => 0,
+#[derive(NativeClass)]
+#[inherit(Reference)]
+#[register_with(Self::register_properties)]
+#[user_data(gdnative::nativescript::user_data::ArcData<WasmModule>)]
+pub struct WasmModule {
+    once: Once,
+    pub(crate) data: Option<ModuleData>,
+}
+
+pub struct ModuleData {
+    pub(crate) engine: Instance<WasmEngine, Shared>,
+    pub(crate) module: Module,
+    pub(crate) deps: Vec<Instance<WasmModule, Shared>>,
+}
+
+impl WasmModule {
+    fn new(_owner: &Reference) -> Self {
+        Self {
+            once: Once::new(),
+            data: None,
         }
     }
+}
 
-    /// Load multiple modules
-    #[export]
-    fn load_modules(&self, _owner: &Reference, modules: Dictionary) -> u32 {
-        match modules
-            .iter()
-            .try_fold(Vec::with_capacity(modules.len() as _), |mut v, (k, m)| {
-                let k = String::from_variant(&k).map_err(anyhow::Error::from)?;
-                let m = self._load_module(m)?;
-                v.push((k, m));
-                Ok(v)
+#[methods]
+impl WasmModule {
+    /// Register properties
+    fn register_properties(builder: &ClassBuilder<Self>) {
+        builder
+            .add_property::<Option<Instance<WasmEngine, Shared>>>("engine")
+            .with_getter(|v, _| match v.data.as_ref() {
+                Some(ModuleData { engine, .. }) => Some(engine.clone()),
+                None => None,
             })
-            .and_then(|v| self._register_modules(v.into_iter()))
-        {
-            Ok(()) => 0,
-            Err(e) => {
-                godot_error!("{}", e);
-                GodotError::Failed as _
-            }
-        }
+            .done();
     }
 
-    /// Get all module names available
+    /// Initialize and loads module.
+    /// MUST be called for the first time and only once.
     #[export]
-    fn get_module_names(&self, _owner: &Reference) -> StringArray {
-        StringArray::from_iter(self.modules.read().keys().map(GodotString::from_str))
+    fn initialize(
+        &self,
+        owner: TRef<Reference>,
+        engine: Instance<WasmEngine, Shared>,
+        name: String,
+        data: Variant,
+        imports: VariantArray,
+    ) -> Option<Ref<Reference>> {
+        let mut r = true;
+        let ret = &mut r;
+
+        self.once.call_once(move || {
+            // SAFETY: Engine is assumed to be a valid WasmEngine
+            let e = unsafe { engine.assume_safe() };
+            let module = e.map(|engine, _| {
+                if let Ok(m) = ByteArray::from_variant(&data) {
+                    Module::new_with_name(&engine.engine, &*m.read(), &name)
+                } else if let Ok(m) = String::from_variant(&data) {
+                    Module::new_with_name(&engine.engine, &m, &name)
+                } else {
+                    bail!("Module type is not string nor byte array");
+                }
+            });
+
+            let module = match module {
+                Ok(Ok(m)) => m,
+                Ok(Err(e)) => {
+                    godot_error!("{}", e);
+                    *ret = false;
+                    return;
+                }
+                Err(e) => {
+                    godot_error!("{}", e);
+                    *ret = false;
+                    return;
+                }
+            };
+
+            // SAFETY: Imports is assumed to be unique
+            let imports = unsafe { imports.assume_unique() };
+
+            let mut deps = Vec::with_capacity(imports.len() as usize);
+
+            for m in imports.iter() {
+                deps.push(match <Instance<WasmModule, Shared>>::from_variant(&m) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        godot_error!("{}", e);
+                        *ret = false;
+                        return;
+                    }
+                });
+            }
+
+            {
+                let mut dname = HashMap::with_capacity(deps.len());
+                for m in deps.iter() {
+                    // SAFETY: m is assumed to be valid WasmModule
+                    if unsafe {
+                        m.assume_safe()
+                            .map(|m, _| {
+                                let m = &m.data.as_ref().expect("Uninitialized!").module;
+                                // SAFETY: deps will outlast dname
+                                match dname.entry(transmute::<&str, &str>(
+                                    m.name().expect("Unnamed module"),
+                                )) {
+                                    entry @ Entry::Vacant(_) => {
+                                        entry.or_insert(transmute::<&Module, &Module>(m));
+                                        false
+                                    }
+                                    Entry::Occupied(e) => {
+                                        godot_error!("Duplicate module name {}", e.key());
+                                        true
+                                    }
+                                }
+                            })
+                            .unwrap_or(true)
+                    } {
+                        *ret = false;
+                        return;
+                    }
+                }
+
+                for i in module.imports() {
+                    if MODULE_INCLUDES.contains(&i.module()) {
+                        continue;
+                    }
+                    let m = match dname.get(i.module()) {
+                        Some(m) => m,
+                        None => {
+                            godot_error!("Unknown imported module {}", i.module());
+                            *ret = false;
+                            return;
+                        }
+                    };
+                    let j = match m.get_export(i.name().expect("Unnamed item")) {
+                        Some(m) => m,
+                        None => {
+                            godot_error!(
+                                "Unknown imported item {} in {}",
+                                i.name().unwrap_or(""),
+                                i.module()
+                            );
+                            *ret = false;
+                            return;
+                        }
+                    };
+                    match (i.ty(), j) {
+                        (ExternType::Func(a), ExternType::Func(b)) if a == b => (),
+                        (ExternType::Global(a), ExternType::Global(b)) if a == b => (),
+                        (ExternType::Table(a), ExternType::Table(b)) if a == b => (),
+                        (ExternType::Memory(a), ExternType::Memory(b)) if a == b => (),
+                        _ => {
+                            godot_error!(
+                                "Imported item type mismatch! ({} in {})",
+                                i.name().unwrap_or(""),
+                                i.module()
+                            );
+                            *ret = false;
+                            return;
+                        }
+                    };
+                }
+            }
+
+            // SAFETY: Should be called only once
+            #[allow(mutable_transmutes)]
+            let this = unsafe { transmute::<&Self, &mut Self>(self) };
+            this.data = Some(ModuleData {
+                engine,
+                module,
+                deps,
+            });
+        });
+
+        if r {
+            Some(owner.claim())
+        } else {
+            None
+        }
     }
 
     /// Gets exported functions
     #[export]
-    fn get_exports(&self, _owner: &Reference, name: String) -> Variant {
-        match self.modules.read().get(&name) {
+    fn get_exports(&self, _owner: &Reference) -> Variant {
+        match self.data.as_ref() {
             Some(m) => VariantArray::from_iter(m.module.exports().filter_map(|v| {
                 if matches!(v.ty(), ExternType::Func(_)) {
                     Some(GodotString::from(v.name()).to_variant())
@@ -271,7 +266,7 @@ impl WasmEngine {
             }))
             .owned_to_variant(),
             None => {
-                godot_error!("No module named {}", name);
+                godot_error!("Uninitialized!");
                 Variant::new()
             }
         }
@@ -279,12 +274,11 @@ impl WasmEngine {
 
     /// Gets host imports signature
     #[export]
-    fn get_host_imports(&self, _owner: &Reference, name: String) -> Variant {
-        let modules = self.modules.read();
-        let m = match modules.get(&name) {
+    fn get_host_imports(&self, _owner: &Reference) -> Variant {
+        let m = match self.data.as_ref() {
             Some(ModuleData { module, .. }) => module,
             None => {
-                godot_error!("No module named {}", name);
+                godot_error!("Uninitialized!");
                 return Variant::new();
             }
         };
