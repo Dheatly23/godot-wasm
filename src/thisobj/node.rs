@@ -169,11 +169,11 @@ make_funcdef! {
 
 #[derive(Default)]
 pub struct NodeExtra {
-    _enter_tree: Option<TypedFunc<(), ()>>,
-    _exit_tree: Option<TypedFunc<(), ()>>,
-    _ready: Option<TypedFunc<(), ()>>,
-    _process: Option<TypedFunc<(f64,), ()>>,
-    _physics_process: Option<TypedFunc<(f64,), ()>>,
+    pub _enter_tree: Option<TypedFunc<(), ()>>,
+    pub _exit_tree: Option<TypedFunc<(), ()>>,
+    pub _ready: Option<TypedFunc<(), ()>>,
+    pub _process: Option<TypedFunc<(f64,), ()>>,
+    pub _physics_process: Option<TypedFunc<(f64,), ()>>,
 }
 
 make_nativeclass! {

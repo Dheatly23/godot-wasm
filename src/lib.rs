@@ -5,7 +5,7 @@ pub mod wasm_store;
 
 use gdnative::prelude::*;
 
-use crate::thisobj::{node::WasmNode, object::*};
+use crate::thisobj::{node::WasmNode, node2d::WasmNode2D, object::*};
 use crate::wasm_engine::{WasmEngine, WasmModule};
 
 pub const TYPE_I32: u32 = 1;
@@ -21,6 +21,7 @@ fn init(handle: InitHandle) {
     handle.add_class::<WasmObject>();
     handle.add_class::<WasmReference>();
     handle.add_class::<WasmNode>();
+    handle.add_class::<WasmNode2D>();
 }
 // Macro that creates the entry-points of the dynamic library.
 godot_init!(init);

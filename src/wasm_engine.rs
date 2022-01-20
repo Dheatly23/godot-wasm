@@ -7,11 +7,18 @@ use hashbrown::{hash_map::Entry, HashMap};
 use parking_lot::Once;
 use wasmtime::{Config, Engine, ExternType, Module};
 
+use crate::thisobj::{node::THISOBJ_NODE, node2d::THISOBJ_NODE2D, object::THISOBJ_OBJECT};
 use crate::wasm_externref_godot::GODOT_MODULE;
 use crate::wasm_store::{from_signature, HOST_MODULE};
 use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64, TYPE_VARIANT};
 
-const MODULE_INCLUDES: [&str; 2] = [HOST_MODULE, GODOT_MODULE];
+const MODULE_INCLUDES: &[&str] = &[
+    HOST_MODULE,
+    GODOT_MODULE,
+    THISOBJ_OBJECT,
+    THISOBJ_NODE,
+    THISOBJ_NODE2D,
+];
 
 #[derive(NativeClass)]
 #[inherit(Reference)]

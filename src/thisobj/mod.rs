@@ -1,5 +1,6 @@
 mod helper_macros;
 pub mod node;
+pub mod node2d;
 pub mod object;
 
 use std::iter::FromIterator;
