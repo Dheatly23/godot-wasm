@@ -129,9 +129,9 @@ macro_rules! make_nativeclass {
             }
 
             /// Register properties
-            fn register_properties(builder: &ClassBuilder<Self>) {
+            fn register_properties(builder: &gdnative::nativescript::ClassBuilder<Self>) {
                 builder
-                    .add_property::<Instance<WasmEngine, Shared>>("engine")
+                    .add_property::<gdnative::nativescript::Instance<$crate::wasm_engine::WasmEngine, gdnative::thread_access::Shared>>("engine")
                     .with_getter(|this, _| {
                         this.data
                             .as_ref()

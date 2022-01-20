@@ -2,7 +2,6 @@ use gdnative::prelude::*;
 use wasmtime::TypedFunc;
 
 use crate::thisobj::object::ObjectRegistry;
-use crate::wasm_engine::WasmEngine;
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
 use crate::{make_funcdef, make_nativeclass};
 
