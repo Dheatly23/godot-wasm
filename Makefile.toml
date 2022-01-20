@@ -15,8 +15,17 @@ run_task = [
   { name = "build_all_release", condition = { profiles = ["production"] } },
 ]
 
+[tasks.check_all]
+command = "cargo"
+args = ["check"]
+
+[tasks.format]
+dependencies = ["check_all"]
+command = "cargo"
+args = ["fmt"]
+
 [tasks.deploy]
-dependencies = ["build_all"]
+dependencies = ["format", "build_all"]
 script_runner = "@duckscript"
 script = '''
 is_release = eq ${CARGO_MAKE_PROFILE} "production"

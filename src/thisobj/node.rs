@@ -1,14 +1,14 @@
 use gdnative::prelude::*;
 
-use crate::{make_funcdef, make_nativeclass};
 use crate::thisobj::object::ObjectRegistry;
 use crate::wasm_engine::WasmEngine;
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
 use crate::wasm_store::call_func;
+use crate::{make_funcdef, make_nativeclass};
 
 pub const THISOBJ_NODE: &str = "this/node";
 
-make_funcdef!{
+make_funcdef! {
     impl NodeRegistry<Node> [THISOBJ_NODE] {
         fn queue_free(o) {
             o.queue_free();
@@ -74,7 +74,7 @@ make_funcdef!{
     }
 }
 
-make_nativeclass!{
+make_nativeclass! {
     impl WasmNode<NodeRegistry, Node> {
         #[export]
         fn _ready(&mut self, owner: TRef<Node>) {
@@ -107,17 +107,12 @@ impl WasmNode {
     #[inline(always)]
     fn _maybe_call_func<I>(&mut self, owner: TRef<Node>, fname: &str, i: I) -> Variant
     where
-        I: Iterator<Item = Variant>
+        I: Iterator<Item = Variant>,
     {
         let data = self._get_data();
         if data.is_function_exists(fname) {
             Self::_guard_section(data, owner, move |data| {
-                call_func(
-                    &mut data.store,
-                    &data.inst,
-                    fname,
-                    i,
-                )
+                call_func(&mut data.store, &data.inst, fname, i)
             })
         } else {
             Variant::new()

@@ -4,14 +4,14 @@ use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::Trap;
 
-use crate::{make_funcdef};
+use crate::make_funcdef;
 use crate::thisobj::{FuncRegistry, InstanceData};
 use crate::wasm_engine::{WasmEngine, WasmModule};
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
 
 pub const THISOBJ_OBJECT: &str = "this/object";
 
-make_funcdef!{
+make_funcdef! {
     impl ObjectRegistry<Object> [THISOBJ_OBJECT] {
         fn callv(o, a, n) {
             let n: GodotString = externref_to_object(n)?;
