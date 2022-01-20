@@ -4,10 +4,10 @@ use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::Trap;
 
-use crate::make_funcdef;
 use crate::thisobj::{FuncRegistry, InstanceData};
 use crate::wasm_engine::{WasmEngine, WasmModule};
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
+use crate::{make_funcdef, make_nativeclass};
 
 pub const THISOBJ_OBJECT: &str = "this/object";
 
@@ -77,6 +77,10 @@ make_funcdef! {
             Ok(variant_to_externref(o.get_incoming_connections().to_variant()))
         }
     }
+}
+
+make_nativeclass! {
+    impl WasmObject<ObjectRegistry, Object> {}
 }
 
 #[derive(NativeClass)]
