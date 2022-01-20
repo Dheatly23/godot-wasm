@@ -1,3 +1,4 @@
+mod helper_macros;
 pub mod node;
 pub mod object;
 

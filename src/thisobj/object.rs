@@ -1,145 +1,81 @@
-use std::marker::PhantomData;
 use std::mem::transmute;
 
-use anyhow::{Error, Result};
+use anyhow::Error;
 use gdnative::prelude::*;
-use wasmtime::{Caller, Linker, Store, Trap};
+use wasmtime::Trap;
 
+use crate::{make_funcdef};
 use crate::thisobj::{FuncRegistry, InstanceData};
 use crate::wasm_engine::{WasmEngine, WasmModule};
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
 
 pub const THISOBJ_OBJECT: &str = "this/object";
 
-pub struct ObjectRegistry<T, F>(F, PhantomData<T>);
-
-impl<T, F> ObjectRegistry<T, F>
-where
-    for<'r> F: Fn(&'r T) -> TRef<'r, Object> + Send + Sync + Copy + 'static,
-{
-    pub fn new(f: F) -> Self {
-        Self(f, PhantomData)
-    }
-}
-
-impl<T, F> FuncRegistry<T> for ObjectRegistry<T, F>
-where
-    for<'r> F: Fn(&'r T) -> TRef<'r, Object> + Send + Sync + Copy + 'static,
-{
-    fn register_linker(&self, _store: &mut Store<T>, linker: &mut Linker<T>) -> Result<()> {
-        let f = self.0;
-        linker.func_wrap(THISOBJ_OBJECT, "callv", move |ctx: Caller<T>, a, n| {
-            let o = f(ctx.data());
+make_funcdef!{
+    impl ObjectRegistry<Object> [THISOBJ_OBJECT] {
+        fn callv(o, a, n) {
             let n: GodotString = externref_to_object(n)?;
             Ok(variant_to_externref(unsafe {
                 o.callv(n, externref_to_object(a)?)
             }))
-        })?;
+        }
 
-        let f = self.0;
-        linker.func_wrap(
-            THISOBJ_OBJECT,
-            "callv_deferred",
-            move |ctx: Caller<T>, a, n| {
-                let o = f(ctx.data());
-                let n: GodotString = externref_to_object(n)?;
-                let a: Vec<_> = externref_to_object::<VariantArray>(a)?.iter().collect();
-                unsafe { o.call_deferred(n, &a) };
-                Ok(())
-            },
-        )?;
+        fn callv_deferred(o, a, n) {
+            let n: GodotString = externref_to_object(n)?;
+            let a: Vec<_> = externref_to_object::<VariantArray>(a)?.iter().collect();
+            unsafe { o.call_deferred(n, &a) };
+            Ok(())
+        }
 
-        let f = self.0;
-        linker.func_wrap(
-            THISOBJ_OBJECT,
-            "add_user_signal",
-            move |ctx: Caller<T>, n, a| {
-                let o = f(ctx.data());
-                let n: GodotString = externref_to_object(n)?;
-                o.add_user_signal(n, externref_to_object(a)?);
-                Ok(())
-            },
-        )?;
+        fn add_user_signal(o, n, a) {
+            let n: GodotString = externref_to_object(n)?;
+            o.add_user_signal(n, externref_to_object(a)?);
+            Ok(())
+        }
 
-        let f = self.0;
-        linker.func_wrap(
-            THISOBJ_OBJECT,
-            "connect",
-            move |ctx: Caller<T>, n, t, m, b, f_| {
-                let o = f(ctx.data());
-                let n: GodotString = externref_to_object(n)?;
-                let t: Ref<Object, Shared> = externref_to_object(t)?;
-                let m: GodotString = externref_to_object(m)?;
-                o.connect(n, t, m, externref_to_object(b)?, f_)
-                    .map_err(|e| Trap::from(Error::new(e)))
-            },
-        )?;
+        fn connect(o, n, t, m, b, f) {
+            let n: GodotString = externref_to_object(n)?;
+            let t: Ref<Object, Shared> = externref_to_object(t)?;
+            let m: GodotString = externref_to_object(m)?;
+            match o.connect(n, t, m, externref_to_object(b)?, f) {
+                Ok(r) => Ok(r),
+                Err(e) => Err(Trap::from(Error::new(e))),
+            }
+        }
 
-        let f = self.0;
-        linker.func_wrap(
-            THISOBJ_OBJECT,
-            "disconnect",
-            move |ctx: Caller<T>, n, t, m| {
-                let o = f(ctx.data());
-                let n: GodotString = externref_to_object(n)?;
-                let t: Ref<Object, Shared> = externref_to_object(t)?;
-                let m: GodotString = externref_to_object(m)?;
-                o.disconnect(n, t, m);
-                Ok(())
-            },
-        )?;
+        fn disconnect(o, n, t, m) {
+            let n: GodotString = externref_to_object(n)?;
+            let t: Ref<Object, Shared> = externref_to_object(t)?;
+            let m: GodotString = externref_to_object(m)?;
+            o.disconnect(n, t, m);
+            Ok(())
+        }
 
-        let f = self.0;
-        linker.func_wrap(
-            THISOBJ_OBJECT,
-            "is_connected",
-            move |ctx: Caller<T>, n, t, m| {
-                let o = f(ctx.data());
-                let n: GodotString = externref_to_object(n)?;
-                let t: Ref<Object, Shared> = externref_to_object(t)?;
-                let m: GodotString = externref_to_object(m)?;
-                Ok(o.is_connected(n, t, m) as u32)
-            },
-        )?;
+        fn is_connected(o, n, t, m) {
+            let n: GodotString = externref_to_object(n)?;
+            let t: Ref<Object, Shared> = externref_to_object(t)?;
+            let m: GodotString = externref_to_object(m)?;
+            Ok(o.is_connected(n, t, m) as u32)
+        }
 
-        let f = self.0;
-        linker.func_wrap(
-            THISOBJ_OBJECT,
-            "emit_signal",
-            move |ctx: Caller<T>, s, a| {
-                let o = f(ctx.data());
-                let s: GodotString = externref_to_object(s)?;
-                let a: Vec<_> = externref_to_object::<VariantArray>(a)?.iter().collect();
-                o.emit_signal(s, &a);
-                Ok(())
-            },
-        )?;
+        fn emit_signal(o, s, a) {
+            let s: GodotString = externref_to_object(s)?;
+            let a: Vec<_> = externref_to_object::<VariantArray>(a)?.iter().collect();
+            o.emit_signal(s, &a);
+            Ok(())
+        }
 
-        let f = self.0;
-        linker.func_wrap(THISOBJ_OBJECT, "get_instance_id", move |ctx: Caller<T>| {
-            let o = f(ctx.data());
+        fn get_instance_id(o) {
             Ok(o.get_instance_id())
-        })?;
+        }
 
-        let f = self.0;
-        linker.func_wrap(THISOBJ_OBJECT, "get_class", move |ctx: Caller<T>| {
-            let o = f(ctx.data());
+        fn get_class(o) {
             Ok(variant_to_externref(o.get_class().to_variant()))
-        })?;
+        }
 
-        let f = self.0;
-        linker.func_wrap(
-            THISOBJ_OBJECT,
-            "get_incoming_connections",
-            move |ctx: Caller<T>| {
-                let o = f(ctx.data());
-                Ok(variant_to_externref(
-                    o.get_incoming_connections().to_variant(),
-                ))
-            },
-        )?;
-
-        Ok(())
+        fn get_incoming_connections(o) {
+            Ok(variant_to_externref(o.get_incoming_connections().to_variant()))
+        }
     }
 }
 
