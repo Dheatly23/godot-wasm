@@ -20,6 +20,7 @@ command = "cargo"
 args = ["check"]
 
 [tasks.format]
+condition = { profiles = ["production"] }
 dependencies = ["check_all"]
 command = "cargo"
 args = ["fmt"]
@@ -33,6 +34,13 @@ is_release = eq ${CARGO_MAKE_PROFILE} "production"
 target_dirs = array %{CARGO_MAKE_RUST_TARGET_TRIPLE}
 file_globs = array *.so *.dll
 
+dst_root_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${GODOT_DIR}
+dst_root_dir = canonicalize ${dst_root_dir}
+if not is_path_exists ${dst_root_dir}
+  echo No path exist: ${dst_root_dir}
+  exit 1
+end
+
 for p in ${target_dirs}
   if ${is_release}
     src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${p} /release
@@ -40,20 +48,24 @@ for p in ${target_dirs}
     src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${p} /debug
   end
 
-  dst_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${GODOT_DIR} ${p}
-  dst_dir = canonicalize ${dst_dir}
-  echo Destination directory: ${dst_dir}
-  mkdir ${dst_dir}
+  dst_dir = join_path ${dst_root_dir} ${p}
+  echo Destination:
+  echo ${dst_dir}
+  if not not is_path_exists ${dst_dir}
+    mkdir ${dst_dir}
+  end
 
   for f in ${file_globs}
     src = join_path ${src_dir} ${f}
     src = glob_array ${src}
+
     for s in ${src}
       fname = basename ${s}
       dst = join_path ${dst_dir} ${fname}
-      echo Copying: ${fname}
+      ls -l ${s}
       cp ${s} ${dst}
     end
+
     release ${src}
   end
 end
