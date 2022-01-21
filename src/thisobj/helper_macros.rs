@@ -1,38 +1,31 @@
+#[doc(hidden)]
 #[macro_export]
 macro_rules! make_funcdef {
-    (impl $rname:ident <$obj:ty> [$modname:expr] {$(fn $fname:ident($($(mut)? ctx,)? $o:ident $(, $arg:ident $(: $t:ty)?)* $(,)?) $( -> $ret:ty)? $code:block)* $(<$($parent:ident),+>)?}) => {
-        pub struct $rname<T, F>(F, core::marker::PhantomData<T>);
+    (impl $rname:ident <$obj:ty> [$modname:expr] {$(fn $fname:ident($($(mut)? ctx,)? $o:ident $(, $arg:ident $(: $t:ty)?)* $(,)?) $code:block)* $(<$($parent:ident),+>)?}) => {
+        #[derive(Default)]
+        pub struct $rname();
 
-        impl<T, F> $rname<T, F>
-        where
-            for<'r> F: Fn(&'r T) -> gdnative::TRef<'r, $obj> + Send + Sync + Copy + 'static,
+        impl $crate::thisobj::FuncRegistry<$crate::thisobj::StoreData> for $rname
         {
-            pub fn new(f: F) -> Self {
-                Self(f, core::marker::PhantomData)
-            }
-        }
-
-        impl<T, F> $crate::thisobj::FuncRegistry<T> for $rname<T, F>
-        where
-            for<'r> F: Fn(&'r T) -> gdnative::TRef<'r, $obj> + Send + Sync + Copy + 'static,
-        {
-            fn register_linker(&self, _store: &mut wasmtime::Store<T>, linker: &mut wasmtime::Linker<T>) -> anyhow::Result<()> {
-                $({
-                    let $o = self.0;
+            fn register_linker(
+                &self,
+                _store: &mut wasmtime::Store<$crate::thisobj::StoreData>,
+                linker: &mut wasmtime::Linker<$crate::thisobj::StoreData>
+            ) -> anyhow::Result<()> {
+                $(
                     linker.func_wrap(
                         $modname,
                         stringify!($fname),
-                        move |ctx: wasmtime::Caller<T> $(, $arg $(: $t)?)*| $( -> $ret)? {
-                            let $o = $o(ctx.data());
-                            $code
+                        move |ctx: wasmtime::Caller<$crate::thisobj::StoreData> $(, $arg $(: $t)?)*| {
+                            let $o: gdnative::TRef<$obj> = ctx.data().try_downcast()?;
+                            Ok($code)
                         }
                     )?;
-                })*
+                )*
 
-                $($({
-                    let f = self.0;
-                    $parent::new(move |v| f(v).upcast()).register_linker(_store, linker)?;
-                })+)?
+                $($(
+                    $parent::default().register_linker(_store, linker)?;
+                )+)?
 
                 Ok(())
             }
@@ -40,6 +33,7 @@ macro_rules! make_funcdef {
     };
 }
 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! make_nativeclass {
     (impl $name:ident <$registry:ident, $owner:ty> {$($rest:tt)*}) => {
@@ -50,7 +44,7 @@ macro_rules! make_nativeclass {
         }
 
         $crate::make_nativeclass!{
-            #[members()]
+            #[members((), ())]
             impl $name <$registry, $owner> {$($rest)*}
         }
     };
@@ -73,23 +67,14 @@ macro_rules! make_nativeclass {
             impl $name <$registry, $owner> {$($rest)*}
         }
     };
-    (#[members($($extra:ty, $init:expr)?)] impl $name:ident <$registry:ident, $owner:ty> {$($rest:tt)*}) => {
+    (#[members($extra:ty, $init:expr)] impl $name:ident <$registry:ident, $owner:ty> {$($rest:tt)*}) => {
         #[derive(gdnative::NativeClass)]
         #[inherit($owner)]
         #[register_with(Self::register_properties)]
         #[user_data(gdnative::nativescript::user_data::MutexData<$name>)]
         pub struct $name {
-            data: Option<
-                $crate::thisobj::InstanceData<(
-                    gdnative::nativescript::Instance<$crate::wasm_engine::WasmEngine, gdnative::thread_access::Shared>,
-                    Option<gdnative::TRef<'static, $owner>>,
-                    $($extra,)?
-                )>,
-            >,
+            data: Option<$crate::thisobj::InstanceData<$crate::thisobj::StoreData>>,
         }
-
-        unsafe impl Send for $name {}
-        unsafe impl Sync for $name {}
 
         impl $name {
             fn new(_owner: &$owner) -> Self {
@@ -99,46 +84,33 @@ macro_rules! make_nativeclass {
             }
 
             #[inline(always)]
-            fn _get_data(&mut self) -> &mut $crate::thisobj::InstanceData<(
-                gdnative::nativescript::Instance<$crate::wasm_engine::WasmEngine, gdnative::thread_access::Shared>,
-                Option<gdnative::TRef<'static, $owner>>,
-                $($extra)?
-            )> {
+            fn _get_data(&mut self) -> &mut $crate::thisobj::InstanceData<$crate::thisobj::StoreData> {
                 self.data.as_mut().expect("Object uninitialized!")
             }
 
             #[inline(always)]
             fn _guard_section<R>(
-                data: &mut $crate::thisobj::InstanceData<(
-                    gdnative::nativescript::Instance<$crate::wasm_engine::WasmEngine, gdnative::thread_access::Shared>,
-                    Option<gdnative::TRef<'static, $owner>>,
-                    $($extra)?
-                )>,
+                data: &mut $crate::thisobj::InstanceData<$crate::thisobj::StoreData>,
                 owner: gdnative::TRef<$owner>,
-                f: impl FnOnce(&mut $crate::thisobj::InstanceData<(
-                    gdnative::nativescript::Instance<$crate::wasm_engine::WasmEngine, gdnative::thread_access::Shared>,
-                    Option<gdnative::TRef<'static, $owner>>,
-                    $($extra)?
-                )>) -> R,
+                f: impl FnOnce(&mut $crate::thisobj::InstanceData<$crate::thisobj::StoreData>) -> R,
             ) -> R {
-                data.store.data_mut().1 =
-                    Some(unsafe { core::mem::transmute::<gdnative::TRef<$owner>, gdnative::TRef<'static, $owner>>(owner) });
+                data.store.data_mut().set_tref(
+                    unsafe { core::mem::transmute::<gdnative::TRef<$owner>, gdnative::TRef<'static, $owner>>(owner) }
+                );
                 let ret = f(&mut *data);
-                data.store.data_mut().1 = None;
+                data.store.data_mut().clear_tref();
                 ret
             }
 
             /// Register properties
             fn register_properties(builder: &gdnative::nativescript::ClassBuilder<Self>) {
                 builder
-                    .add_property::<gdnative::nativescript::Instance<$crate::wasm_engine::WasmEngine, gdnative::thread_access::Shared>>("engine")
+                    .add_property::<gdnative::nativescript::Instance<$crate::wasm_engine::WasmModule, gdnative::thread_access::Shared>>("module")
                     .with_getter(|this, _| {
                         this.data
                             .as_ref()
                             .expect("Uninitialized!")
-                            .store
-                            .data()
-                            .0
+                            .module
                             .clone()
                     })
                     .done();
@@ -155,26 +127,16 @@ macro_rules! make_nativeclass {
                 #[opt] host_bindings: Option<gdnative::core_types::Dictionary>,
             ) -> gdnative::core_types::Variant {
                 self.data = match $crate::thisobj::InstanceData::initialize(
-                    module.clone(),
+                    module,
                     host_bindings,
-                    (
-                        unsafe {
-                            module
-                                .assume_safe()
-                                .map(|v, _| v.data.as_ref().expect("Uninitialized!").engine.clone())
-                                .unwrap()
-                        },
-                        Some(unsafe { core::mem::transmute::<gdnative::TRef<$owner>, gdnative::TRef<'static, $owner>>(owner) }),
-                        $($init)?
+                    $crate::thisobj::StoreData::new(
+                        unsafe { core::mem::transmute::<gdnative::TRef<$owner>, gdnative::TRef<'static, $owner>>(owner) },
+                        $init
                     ),
-                    |store, linker| {
-                        (&$registry::new(|v: &(_, Option<gdnative::TRef<$owner>> $(, $extra)?)| {
-                            *v.1.as_ref().expect("No this supplied")
-                        }) as &dyn $crate::thisobj::FuncRegistry<_>).register_linker(store, linker)
-                    },
+                    |store, linker| (&$registry::default() as &dyn $crate::thisobj::FuncRegistry<_>).register_linker(store, linker)
                 ) {
                     Ok(mut v) => {
-                        v.store.data_mut().1 = None;
+                        v.store.data_mut().clear_tref();
                         Some(v)
                     }
                     Err(e) => {

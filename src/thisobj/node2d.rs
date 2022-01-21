@@ -1,6 +1,7 @@
 use gdnative::prelude::*;
 
 use crate::thisobj::node::{NodeExtra, NodeRegistry};
+use crate::thisobj::{InstanceData, StoreData};
 use crate::{make_funcdef, make_nativeclass};
 
 pub const THISOBJ_NODE2D: &str = "this/node2d";
@@ -17,7 +18,7 @@ make_nativeclass! {
         #[export]
         fn _ready(&mut self, owner: TRef<Node2D>) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._ready {
+            if let Some(f) = Self::_get_extra(data)._ready {
                 Self::_guard_section(
                     data,
                     owner,
@@ -32,7 +33,7 @@ make_nativeclass! {
         #[export]
         fn _process(&mut self, owner: TRef<Node2D>, v: f64) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._process {
+            if let Some(f) = Self::_get_extra(data)._process {
                 Self::_guard_section(
                     data,
                     owner,
@@ -47,7 +48,7 @@ make_nativeclass! {
         #[export]
         fn _physics_process(&mut self, owner: TRef<Node2D>, v: f64) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._physics_process {
+            if let Some(f) = Self::_get_extra(data)._physics_process {
                 Self::_guard_section(
                     data,
                     owner,
@@ -62,7 +63,7 @@ make_nativeclass! {
         #[export]
         fn _enter_tree(&mut self, owner: TRef<Node2D>) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._enter_tree {
+            if let Some(f) = Self::_get_extra(data)._enter_tree {
                 Self::_guard_section(
                     data,
                     owner,
@@ -77,7 +78,7 @@ make_nativeclass! {
         #[export]
         fn _exit_tree(&mut self, owner: TRef<Node2D>) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._exit_tree {
+            if let Some(f) = Self::_get_extra(data)._exit_tree {
                 Self::_guard_section(
                     data,
                     owner,
@@ -93,9 +94,23 @@ make_nativeclass! {
 
 impl WasmNode2D {
     #[inline(always)]
+    fn _get_extra(data: &InstanceData<StoreData>) -> &NodeExtra {
+        data.store
+            .data()
+            .extra
+            .downcast_ref()
+            .expect("Data type mismatch")
+    }
+
+    #[inline(always)]
     fn _postinit(&mut self) {
         let data = self._get_data();
-        data.store.data_mut().2 = NodeExtra {
+        *data
+            .store
+            .data_mut()
+            .extra
+            .downcast_mut()
+            .expect("Data type mismatch") = NodeExtra {
             _enter_tree: data
                 .inst
                 .get_typed_func(&mut data.store, "_enter_tree")

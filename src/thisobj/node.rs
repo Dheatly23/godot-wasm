@@ -2,6 +2,7 @@ use gdnative::prelude::*;
 use wasmtime::TypedFunc;
 
 use crate::thisobj::object::ObjectRegistry;
+use crate::thisobj::{InstanceData, StoreData};
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
 use crate::{make_funcdef, make_nativeclass};
 
@@ -14,80 +15,75 @@ make_funcdef! {
         }
 
         fn get_name(o) {
-            Ok(variant_to_externref(o.name().to_variant()))
+            variant_to_externref(o.name().to_variant())
         }
 
         fn set_name(o, n) {
             let n: GodotString = externref_to_object(n)?;
             o.set_name(n);
-            Ok(())
         }
 
         fn get_owner(o) {
-            Ok(variant_to_externref(o.owner().to_variant()))
+            variant_to_externref(o.owner().to_variant())
         }
 
         fn set_owner(o, w) {
             let w: Ref<Node, Shared> = externref_to_object(w)?;
             o.set_owner(w);
-            Ok(())
         }
 
         fn get_tree(o) {
-            Ok(variant_to_externref(o.get_tree().to_variant()))
+            variant_to_externref(o.get_tree().to_variant())
         }
 
         fn get_viewport(o) {
-            Ok(variant_to_externref(o.get_viewport().to_variant()))
+            variant_to_externref(o.get_viewport().to_variant())
         }
 
         fn get_parent(o) {
-            Ok(variant_to_externref(o.get_parent().to_variant()))
+            variant_to_externref(o.get_parent().to_variant())
         }
 
         fn is_parent_of(o, n) {
             let n: Ref<Node> = externref_to_object(n)?;
-            Ok(o.is_a_parent_of(n) as i32)
+            o.is_a_parent_of(n) as i32
         }
 
         fn get_child_count(o) {
-            Ok(o.get_child_count())
+            o.get_child_count()
         }
 
         fn get_child(o, i) {
-            Ok(variant_to_externref(o.get_child(i).to_variant()))
+            variant_to_externref(o.get_child(i).to_variant())
         }
 
         fn get_index(o) {
-            Ok(o.get_index())
+            o.get_index()
         }
 
         fn get_node(o, n) {
             let n: GodotString = externref_to_object(n)?;
-            Ok(variant_to_externref(o.get_node_or_null(n).to_variant()))
+            variant_to_externref(o.get_node_or_null(n).to_variant())
         }
 
         fn get_path(o) {
             let p: GodotString = o.get_path().into();
-            Ok(variant_to_externref(p.to_variant()))
+            variant_to_externref(p.to_variant())
         }
 
         fn add_child(o, c, b: i32) {
             let c: Ref<Node, Shared> = externref_to_object(c)?;
             o.add_child(c, b != 0);
-            Ok(())
         }
 
         fn move_child(o, c, p: i64) {
             let c: Ref<Node, Shared> = externref_to_object(c)?;
             o.move_child(c, p);
-            Ok(())
         }
 
         fn remove_child(o, c) {
             let c: Ref<Node, Shared> = externref_to_object(c)?;
             o.remove_child(c);
-            Ok(())
         }
 
         fn get_groups(o) {
@@ -97,18 +93,16 @@ make_funcdef! {
         fn add_to_group(o, g, p: i32) {
             let g: GodotString = externref_to_object(g)?;
             o.add_to_group(g, p != 0);
-            Ok(())
         }
 
         fn remove_from_group(o, g) {
             let g: GodotString = externref_to_object(g)?;
             o.remove_from_group(g);
-            Ok(())
         }
 
         fn is_in_group(o, g) {
             let g: GodotString = externref_to_object(g)?;
-            Ok(o.is_in_group(g) as i32)
+            o.is_in_group(g) as i32
         }
 
         fn can_process(o) {
@@ -182,7 +176,7 @@ make_nativeclass! {
         #[export]
         fn _ready(&mut self, owner: TRef<Node>) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._ready {
+            if let Some(f) = Self::_get_extra(data)._ready {
                 Self::_guard_section(
                     data,
                     owner,
@@ -197,7 +191,7 @@ make_nativeclass! {
         #[export]
         fn _process(&mut self, owner: TRef<Node>, v: f64) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._process {
+            if let Some(f) = Self::_get_extra(data)._process {
                 Self::_guard_section(
                     data,
                     owner,
@@ -212,7 +206,7 @@ make_nativeclass! {
         #[export]
         fn _physics_process(&mut self, owner: TRef<Node>, v: f64) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._physics_process {
+            if let Some(f) = Self::_get_extra(data)._physics_process {
                 Self::_guard_section(
                     data,
                     owner,
@@ -227,7 +221,7 @@ make_nativeclass! {
         #[export]
         fn _enter_tree(&mut self, owner: TRef<Node>) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._enter_tree {
+            if let Some(f) = Self::_get_extra(data)._enter_tree {
                 Self::_guard_section(
                     data,
                     owner,
@@ -242,7 +236,7 @@ make_nativeclass! {
         #[export]
         fn _exit_tree(&mut self, owner: TRef<Node>) {
             let data = self._get_data();
-            if let Some(f) = data.store.data_mut().2._exit_tree {
+            if let Some(f) = Self::_get_extra(data)._exit_tree {
                 Self::_guard_section(
                     data,
                     owner,
@@ -258,9 +252,23 @@ make_nativeclass! {
 
 impl WasmNode {
     #[inline(always)]
+    fn _get_extra(data: &InstanceData<StoreData>) -> &NodeExtra {
+        data.store
+            .data()
+            .extra
+            .downcast_ref()
+            .expect("Data type mismatch")
+    }
+
+    #[inline(always)]
     fn _postinit(&mut self) {
         let data = self._get_data();
-        data.store.data_mut().2 = NodeExtra {
+        *data
+            .store
+            .data_mut()
+            .extra
+            .downcast_mut()
+            .expect("Data type mismatch") = NodeExtra {
             _enter_tree: data
                 .inst
                 .get_typed_func(&mut data.store, "_enter_tree")

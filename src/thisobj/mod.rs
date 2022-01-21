@@ -3,12 +3,13 @@ pub mod node;
 pub mod node2d;
 pub mod object;
 
+use std::any::Any;
 use std::iter::FromIterator;
 use std::mem::transmute;
 
 use anyhow::{bail, Result};
 use gdnative::prelude::*;
-use wasmtime::{Engine, Linker, Store};
+use wasmtime::{Engine, Linker, Store, Trap};
 
 use crate::wasm_engine::{ModuleData, WasmModule};
 use crate::wasm_externref_godot::register_godot_externref;
@@ -48,6 +49,7 @@ impl<'a, T: 'static> FuncRegistry<T> for DepLoader<'a> {
 }
 
 pub struct InstanceData<T: 'static> {
+    pub(crate) module: Instance<WasmModule, Shared>,
     pub(crate) store: Store<T>,
     pub(crate) inst: wasmtime::Instance,
 }
@@ -63,6 +65,7 @@ impl<T: 'static> InstanceData<T> {
     where
         Fr: FnOnce(&mut Store<T>, &mut Linker<T>) -> Result<()>,
     {
+        let m = module.clone();
         match unsafe { module.assume_safe() }.map(move |v, _| -> Result<_> {
             let ModuleData {
                 engine,
@@ -96,7 +99,11 @@ impl<T: 'static> InstanceData<T> {
 
             let inst = linker.instantiate(&mut store, module)?;
 
-            Ok(Self { store, inst })
+            Ok(Self {
+                module: m,
+                store,
+                inst,
+            })
         }) {
             Ok(Ok(v)) => Ok(v),
             Err(e) => bail!("{}", e),
@@ -145,5 +152,57 @@ impl<T: 'static> InstanceData<T> {
     #[inline(always)]
     pub fn call(&mut self, name: &str, args: VariantArray) -> Variant {
         call_func(&mut self.store, &self.inst, name, args.iter())
+    }
+}
+
+pub struct StoreData {
+    pub(crate) tref: Option<TRef<'static, Object>>,
+    pub extra: Box<dyn Any + Send + Sync>,
+}
+
+unsafe impl Send for StoreData {}
+unsafe impl Sync for StoreData {}
+
+impl StoreData {
+    pub fn new<T, E: Any + Send + Sync>(tref: TRef<'static, T>, extra: E) -> Self
+    where
+        T: GodotObject + SubClass<Object>,
+    {
+        Self {
+            tref: Some(tref.upcast()),
+            extra: Box::new(extra),
+        }
+    }
+
+    pub fn set_tref<T>(&mut self, tref: TRef<'static, T>)
+    where
+        T: GodotObject + SubClass<Object>,
+    {
+        self.tref = Some(tref.upcast());
+    }
+
+    pub fn clear_tref(&mut self) {
+        self.tref = None;
+    }
+
+    pub fn try_downcast<T>(&'_ self) -> std::result::Result<TRef<'_, T>, Trap>
+    where
+        T: GodotObject + SubClass<Object>,
+    {
+        match self.tref {
+            Some(t) => match t.cast() {
+                Some(t) => Ok(t),
+                None => Err(Trap::new("Cannot cast this")),
+            },
+            None => Err(Trap::new("No this provided")),
+        }
+    }
+
+    pub fn cast_extra_ref<T: Any + Send + Sync>(&self) -> Option<&T> {
+        self.extra.downcast_ref()
+    }
+
+    pub fn cast_extra_mut<T: Any + Send + Sync>(&mut self) -> Option<&mut T> {
+        self.extra.downcast_mut()
     }
 }
