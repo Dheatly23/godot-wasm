@@ -1,7 +1,7 @@
 use gdnative::prelude::*;
 
 use crate::thisobj::node::{NodeExtra, NodeRegistry};
-use crate::thisobj::{InstanceData, StoreData};
+use crate::thisobj::InstanceData;
 use crate::{make_funcdef, make_nativeclass};
 
 pub const THISOBJ_NODE2D: &str = "this/node2d";
@@ -94,7 +94,7 @@ make_nativeclass! {
 
 impl WasmNode2D {
     #[inline(always)]
-    fn _get_extra(data: &InstanceData<StoreData>) -> &NodeExtra {
+    fn _get_extra(data: &InstanceData) -> &NodeExtra {
         data.store
             .data()
             .extra

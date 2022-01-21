@@ -5,14 +5,12 @@ pub mod object;
 
 use std::any::Any;
 use std::iter::FromIterator;
-use std::mem::transmute;
 
 use anyhow::{bail, Result};
 use gdnative::prelude::*;
-use wasmtime::{Engine, Linker, Store, Trap};
+use wasmtime::{Linker, Store, Trap};
 
-use crate::wasm_engine::{ModuleData, WasmModule};
-use crate::wasm_externref_godot::register_godot_externref;
+use crate::wasm_engine::{LinkerCacheIndex, ModuleData, WasmModule};
 use crate::wasm_store::{call_func, create_hostmap, from_signature, register_hostmap, HostMap};
 
 pub trait FuncRegistry<T> {
@@ -48,22 +46,23 @@ impl<'a, T: 'static> FuncRegistry<T> for DepLoader<'a> {
     }
 }
 
-pub struct InstanceData<T: 'static> {
+pub struct InstanceData {
     pub(crate) module: Instance<WasmModule, Shared>,
-    pub(crate) store: Store<T>,
+    pub(crate) store: Store<StoreData>,
     pub(crate) inst: wasmtime::Instance,
 }
 
-impl<T: 'static> InstanceData<T> {
+impl InstanceData {
     /// Initialize instance data
-    pub fn initialize<Fr>(
+    pub(crate) fn initialize<Fr>(
         module: Instance<WasmModule, Shared>,
+        linker_index: LinkerCacheIndex,
         host_bindings: Option<Dictionary>,
-        t: T,
+        t: StoreData,
         register: Fr,
     ) -> Result<Self>
     where
-        Fr: FnOnce(&mut Store<T>, &mut Linker<T>) -> Result<()>,
+        Fr: FnOnce(&mut Store<StoreData>, &mut Linker<StoreData>) -> Result<()>,
     {
         let m = module.clone();
         match unsafe { module.assume_safe() }.map(move |v, _| -> Result<_> {
@@ -76,22 +75,19 @@ impl<T: 'static> InstanceData<T> {
                 None => bail!("Uninitialized!"),
             };
 
-            // SAFETY: This reference lifetime is smaller than engine object lifetime
-            let engine: &Engine = unsafe {
-                match engine
-                    .assume_safe()
-                    .map(|e, _| transmute::<&Engine, &Engine>(&e.engine))
-                {
-                    Ok(v) => v,
-                    Err(_) => unreachable!(),
-                }
+            let (mut store, mut linker) = match unsafe { engine.assume_safe() }.map(move |e, _| {
+                let mut store = Store::new(&e.engine, t);
+                let linker = e.get_linker_cache(linker_index, || {
+                    let mut linker = e.get_default_linker_cache();
+                    register(&mut store, &mut linker).unwrap();
+                    linker
+                });
+                (store, linker)
+            }) {
+                Ok(v) => v,
+                Err(e) => bail!("{}", e),
             };
 
-            let mut store = Store::new(&*engine, t);
-            let mut linker = Linker::new(&*engine);
-
-            register_godot_externref(&mut linker)?;
-            register(&mut store, &mut linker)?;
             if let Some(host_bindings) = host_bindings {
                 create_hostmap(host_bindings)?.register_linker(&mut store, &mut linker)?;
             }

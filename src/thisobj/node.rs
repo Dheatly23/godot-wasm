@@ -2,7 +2,7 @@ use gdnative::prelude::*;
 use wasmtime::TypedFunc;
 
 use crate::thisobj::object::ObjectRegistry;
-use crate::thisobj::{InstanceData, StoreData};
+use crate::thisobj::InstanceData;
 use crate::wasm_externref_godot::{externref_to_object, variant_to_externref};
 use crate::{make_funcdef, make_nativeclass};
 
@@ -252,7 +252,7 @@ make_nativeclass! {
 
 impl WasmNode {
     #[inline(always)]
-    fn _get_extra(data: &InstanceData<StoreData>) -> &NodeExtra {
+    fn _get_extra(data: &InstanceData) -> &NodeExtra {
         data.store
             .data()
             .extra

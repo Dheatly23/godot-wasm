@@ -1,3 +1,5 @@
+use std::cell::UnsafeCell;
+use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 use std::mem::transmute;
 
@@ -8,6 +10,7 @@ use parking_lot::Once;
 use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::thisobj::{node::THISOBJ_NODE, node2d::THISOBJ_NODE2D, object::THISOBJ_OBJECT};
+use crate::wasm_externref_godot::register_godot_externref;
 use crate::wasm_externref_godot::GODOT_MODULE;
 use crate::wasm_store::{from_signature, HOST_MODULE};
 use crate::{TYPE_F32, TYPE_F64, TYPE_I32, TYPE_I64, TYPE_VARIANT};
@@ -20,13 +23,30 @@ const MODULE_INCLUDES: &[&str] = &[
     THISOBJ_NODE2D,
 ];
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(usize)]
+pub(crate) enum LinkerCacheIndex {
+    #[allow(dead_code)]
+    Default = 0,
+    Object,
+    Reference,
+    Node,
+    Node2D,
+    End,
+}
+
+type LinkerType = wasmtime::Linker<crate::thisobj::StoreData>;
+
 #[derive(NativeClass)]
 #[inherit(Reference)]
 #[register_with(Self::register_properties)]
 #[user_data(gdnative::nativescript::user_data::ArcData<WasmEngine>)]
 pub struct WasmEngine {
     pub(crate) engine: Engine,
+    linker_cache: (Vec<Once>, Vec<UnsafeCell<Option<Box<LinkerType>>>>),
 }
+
+unsafe impl Sync for WasmEngine {}
 
 impl WasmEngine {
     /// Create new WasmEngine
@@ -44,8 +64,50 @@ impl WasmEngine {
             .wasm_reference_types(true)
             .static_memory_maximum_size(0)
             .dynamic_memory_guard_size(0);
-        Self {
+        let len = LinkerCacheIndex::End as usize;
+        let mut ret = Self {
             engine: Engine::new(&config).expect("Cannot create engine"),
+            linker_cache: (Vec::new(), Vec::new()),
+        };
+        ret.linker_cache.0.resize_with(len, Once::default);
+        ret.linker_cache.1.resize_with(len, UnsafeCell::default);
+        unsafe {
+            let ptr = ret.linker_cache.1[0].get();
+            ret.linker_cache.0[0].call_once(|| {
+                let mut linker = LinkerType::new(&ret.engine);
+                register_godot_externref(&mut linker).unwrap();
+                *ptr = Some(Box::new(linker));
+            });
+        }
+        ret
+    }
+
+    pub(crate) fn get_default_linker_cache(&self) -> LinkerType {
+        unsafe { (**(*self.linker_cache.1[0].get()).as_ref().unwrap()).clone() }
+    }
+
+    pub(crate) fn get_linker_cache(
+        &self,
+        index: LinkerCacheIndex,
+        f: impl FnOnce() -> LinkerType,
+    ) -> LinkerType {
+        let index = match index {
+            LinkerCacheIndex::Default => unsafe {
+                return (**(*self.linker_cache.1[0].get()).as_ref().unwrap()).clone();
+            },
+            LinkerCacheIndex::End => panic!("Out of bound!"),
+            i => i as usize,
+        };
+        let ptr = self.linker_cache.1[index].get();
+        unsafe {
+            let ptr = ptr;
+            self.linker_cache.0[index].call_once(move || *ptr = Some(Box::new(f())));
+        }
+        unsafe {
+            match (*ptr).as_ref() {
+                Some(l) => (**l).clone(),
+                None => unreachable_unchecked(),
+            }
         }
     }
 }
