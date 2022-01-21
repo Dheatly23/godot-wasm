@@ -2,5 +2,5 @@
 target = "x86_64-pc-windows-msvc"
 
 [profile.release]
-lto = true
+lto = "thin"
 codegen-units = 1

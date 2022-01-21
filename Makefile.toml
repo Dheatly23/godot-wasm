@@ -20,13 +20,16 @@ command = "cargo"
 args = ["check"]
 
 [tasks.format]
-condition = { profiles = ["production"] }
 dependencies = ["check_all"]
 command = "cargo"
 args = ["fmt"]
 
+[tasks.format_only_release]
+extend = "format"
+condition = { profiles = ["production"] }
+
 [tasks.deploy]
-dependencies = ["format", "build_all"]
+dependencies = ["format_only_release", "build_all"]
 script_runner = "@duckscript"
 script = '''
 is_release = eq ${CARGO_MAKE_PROFILE} "production"
