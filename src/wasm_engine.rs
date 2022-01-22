@@ -50,6 +50,7 @@ unsafe impl Sync for WasmEngine {}
 
 impl WasmEngine {
     /// Create new WasmEngine
+    #[profiled]
     fn new(_owner: &Reference) -> Self {
         // Create new configuration with:
         // - Async disabled
@@ -140,6 +141,7 @@ impl WasmEngine {
     }
 
     #[export]
+    #[profiled]
     fn create_module(
         &self,
         owner: TRef<Reference>,
@@ -159,6 +161,7 @@ impl WasmEngine {
     }
 
     #[export]
+    #[profiled]
     fn create_modules(
         &self,
         owner: TRef<Reference>,
@@ -565,6 +568,7 @@ impl WasmModule {
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
     #[export]
+    #[profiled]
     fn initialize(
         &self,
         owner: TRef<Reference>,

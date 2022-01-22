@@ -120,6 +120,7 @@ macro_rules! make_nativeclass {
         #[gdnative::methods]
         impl $name {
             #[export]
+            #[gdnative::profiled]
             fn initialize(
                 &mut self,
                 owner: gdnative::TRef<$owner>,
@@ -170,6 +171,7 @@ macro_rules! make_nativeclass {
 
             /// Call WASM function
             #[export]
+            #[gdnative::profiled]
             fn call_wasm(&mut self, owner: gdnative::TRef<$owner>, name: String, args: gdnative::core_types::VariantArray) -> gdnative::core_types::Variant {
                 let data = self._get_data();
                 Self::_guard_section(data, owner, |data| data.call(&name, args))
