@@ -138,6 +138,249 @@ impl WasmEngine {
             .with_getter(|_, _| TYPE_VARIANT)
             .done();
     }
+
+    #[export]
+    fn create_module(
+        &self,
+        owner: TRef<Reference>,
+        name: String,
+        data: Variant,
+        imports: VariantArray,
+    ) -> Option<Instance<WasmModule, Shared>> {
+        let ret = WasmModule {
+            once: Once::new(),
+            data: None,
+        };
+        if ret._initialize(owner.cast_instance().unwrap().claim(), name, data, imports) {
+            Some(Instance::emplace(ret).into_shared())
+        } else {
+            None
+        }
+    }
+
+    #[export]
+    fn create_modules(
+        &self,
+        owner: TRef<Reference>,
+        modules: VariantArray,
+        imports: VariantArray,
+    ) -> Option<VariantArray> {
+        #[derive(FromVariant)]
+        struct ModuleInput {
+            name: String,
+            data: Variant,
+        }
+
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum DepMark {
+            Unmarked,
+            TempMarked,
+            PermMarked(usize),
+        }
+
+        // modules gets mutated in check_recursive
+        #[allow(unused_mut)]
+        let mut modules = {
+            let m = unsafe { modules.assume_unique() };
+            let mut r = HashMap::with_capacity(m.len() as usize);
+            for i in m.iter() {
+                match ModuleInput::from_variant(&i) {
+                    Ok(ModuleInput { name, data }) => {
+                        let data = if let Ok(m) = ByteArray::from_variant(&data) {
+                            Module::new_with_name(&self.engine, &*m.read(), &name)
+                        } else if let Ok(m) = String::from_variant(&data) {
+                            Module::new_with_name(&self.engine, &m, &name)
+                        } else {
+                            godot_error!("Module type is not string nor byte array");
+                            return None;
+                        };
+                        let data = match data {
+                            Ok(d) => d,
+                            Err(e) => {
+                                godot_error!("{}", e);
+                                return None;
+                            }
+                        };
+                        match r.entry(name) {
+                            Entry::Vacant(e) => {
+                                e.insert((data, DepMark::Unmarked));
+                            }
+                            Entry::Occupied(e) => {
+                                godot_error!("Duplicate module name {}", e.key());
+                                return None;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        godot_error!("{}", e);
+                        return None;
+                    }
+                }
+            }
+            r
+        };
+
+        let imports = {
+            let m = unsafe { imports.assume_unique() };
+            let mut r = HashMap::with_capacity(m.len() as usize);
+            for i in m.iter() {
+                match <Instance<WasmModule, Shared>>::from_variant(&i) {
+                    Ok(i) => {
+                        // SAFETY: Import should be safe to get
+                        match unsafe {
+                            i.assume_safe().map(|i, _| {
+                                let m = &i.data.as_ref().expect("Uninitialized!").module;
+                                // SAFETY: Key lives shorter than value (?)
+                                (
+                                    transmute::<&str, &str>(m.name().expect("Unnamed module")),
+                                    transmute::<&Module, &Module>(m),
+                                )
+                            })
+                        } {
+                            Ok((k, m)) => match r.entry(k) {
+                                Entry::Vacant(e) => {
+                                    e.insert((m, i));
+                                }
+                                Entry::Occupied(e) => {
+                                    godot_error!("Duplicate module name {}", e.key());
+                                    return None;
+                                }
+                            },
+                            Err(e) => {
+                                godot_error!("{}", e);
+                                return None;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        godot_error!("{}", e);
+                        return None;
+                    }
+                }
+            }
+            r
+        };
+
+        fn check_recursive(
+            engine: &Instance<WasmEngine, Shared>,
+            (m, mark): &(Module, DepMark),
+            modules: &HashMap<String, (Module, DepMark)>,
+            imports: &HashMap<&str, (&Module, Instance<WasmModule, Shared>)>,
+            module_list: &mut Vec<Instance<WasmModule, Shared>>,
+        ) -> Option<usize> {
+            // SAFETY: Nobody else holds mark at the moment
+            #[allow(mutable_transmutes)]
+            unsafe {
+                *transmute::<&DepMark, &mut DepMark>(mark) = DepMark::TempMarked;
+            }
+            let mut deps = HashMap::new();
+            for i in m.imports() {
+                if MODULE_INCLUDES.contains(&i.module()) {
+                    continue;
+                }
+                let j = match imports.get_key_value(i.module()) {
+                    Some((k, (m, inst))) => {
+                        deps.insert(*k, inst.clone());
+                        match m.get_export(i.name().expect("Unnamed item")) {
+                            Some(e) => e,
+                            None => {
+                                godot_error!("No export named {} in {}", i.name().unwrap(), k);
+                                return None;
+                            }
+                        }
+                    }
+                    None => match modules.get_key_value(i.module()) {
+                        Some((k, v)) => {
+                            let ix = match v.1 {
+                                DepMark::TempMarked => {
+                                    godot_error!("Detected cycle involving {}", k);
+                                    return None;
+                                }
+                                DepMark::PermMarked(ix) => ix,
+                                DepMark::Unmarked => match check_recursive(
+                                    engine,
+                                    v,
+                                    modules,
+                                    imports,
+                                    &mut *module_list,
+                                ) {
+                                    Some(ix) => ix,
+                                    None => return None,
+                                },
+                            };
+                            deps.insert(&**k, module_list[ix].clone());
+                            match v.0.get_export(i.name().expect("Unnamed item")) {
+                                Some(e) => e,
+                                None => {
+                                    godot_error!("No export named {} in {}", i.name().unwrap(), k);
+                                    return None;
+                                }
+                            }
+                        }
+                        None => {
+                            godot_error!("No module named {}", i.module());
+                            return None;
+                        }
+                    },
+                };
+                if !cmp_extern_type(&i.ty(), &j) {
+                    return None;
+                }
+            }
+            let ix = module_list.len();
+            // SAFETY: Nobody else holds mark at the moment
+            #[allow(mutable_transmutes)]
+            unsafe {
+                *transmute::<&DepMark, &mut DepMark>(mark) = DepMark::PermMarked(ix);
+            }
+            module_list.push(
+                Instance::emplace({
+                    let once = Once::new();
+                    once.call_once(|| ());
+                    WasmModule {
+                        once,
+                        data: Some(ModuleData {
+                            engine: engine.clone(),
+                            module: m.clone(),
+                            deps: deps.into_iter().map(|(_, v)| v).collect(),
+                        }),
+                    }
+                })
+                .into_shared(),
+            );
+            Some(ix)
+        }
+
+        let mut module_list = Vec::with_capacity(modules.len());
+
+        while let Some((_, v)) = modules
+            .iter()
+            .filter(|(_, (_, mark))| mark == &DepMark::Unmarked)
+            .next()
+        {
+            if let None = check_recursive(
+                &owner.cast_instance().unwrap().claim(),
+                v,
+                &modules,
+                &imports,
+                &mut module_list,
+            ) {
+                return None;
+            }
+        }
+
+        Some(VariantArray::from_iter(module_list.into_iter().map(|v| v.to_variant())).into_shared())
+    }
+}
+
+fn cmp_extern_type(t1: &ExternType, t2: &ExternType) -> bool {
+    match (t1, t2) {
+        (ExternType::Func(a), ExternType::Func(b)) => a == b,
+        (ExternType::Global(a), ExternType::Global(b)) => a == b,
+        (ExternType::Table(a), ExternType::Table(b)) => a == b,
+        (ExternType::Memory(a), ExternType::Memory(b)) => a == b,
+        _ => false,
+    }
 }
 
 #[derive(NativeClass)]
@@ -162,32 +405,14 @@ impl WasmModule {
             data: None,
         }
     }
-}
 
-#[methods]
-impl WasmModule {
-    /// Register properties
-    fn register_properties(builder: &ClassBuilder<Self>) {
-        builder
-            .add_property::<Option<Instance<WasmEngine, Shared>>>("engine")
-            .with_getter(|v, _| match v.data.as_ref() {
-                Some(ModuleData { engine, .. }) => Some(engine.clone()),
-                None => None,
-            })
-            .done();
-    }
-
-    /// Initialize and loads module.
-    /// MUST be called for the first time and only once.
-    #[export]
-    fn initialize(
+    fn _initialize(
         &self,
-        owner: TRef<Reference>,
         engine: Instance<WasmEngine, Shared>,
         name: String,
         data: Variant,
         imports: VariantArray,
-    ) -> Option<Ref<Reference>> {
+    ) -> bool {
         let mut r = true;
         let ret = &mut r;
 
@@ -246,8 +471,8 @@ impl WasmModule {
                                 match dname.entry(transmute::<&str, &str>(
                                     m.name().expect("Unnamed module"),
                                 )) {
-                                    entry @ Entry::Vacant(_) => {
-                                        entry.or_insert(transmute::<&Module, &Module>(m));
+                                    Entry::Vacant(e) => {
+                                        e.insert(transmute::<&Module, &Module>(m));
                                         false
                                     }
                                     Entry::Occupied(e) => {
@@ -287,21 +512,15 @@ impl WasmModule {
                             return;
                         }
                     };
-                    match (i.ty(), j) {
-                        (ExternType::Func(a), ExternType::Func(b)) if a == b => (),
-                        (ExternType::Global(a), ExternType::Global(b)) if a == b => (),
-                        (ExternType::Table(a), ExternType::Table(b)) if a == b => (),
-                        (ExternType::Memory(a), ExternType::Memory(b)) if a == b => (),
-                        _ => {
-                            godot_error!(
-                                "Imported item type mismatch! ({} in {})",
-                                i.name().unwrap_or(""),
-                                i.module()
-                            );
-                            *ret = false;
-                            return;
-                        }
-                    };
+                    if cmp_extern_type(&i.ty(), &j) {
+                        godot_error!(
+                            "Imported item type mismatch! ({} in {})",
+                            i.name().unwrap_or(""),
+                            i.module()
+                        );
+                        *ret = false;
+                        return;
+                    }
                 }
             }
 
@@ -315,7 +534,35 @@ impl WasmModule {
             });
         });
 
-        if r {
+        r
+    }
+}
+
+#[methods]
+impl WasmModule {
+    /// Register properties
+    fn register_properties(builder: &ClassBuilder<Self>) {
+        builder
+            .add_property::<Option<Instance<WasmEngine, Shared>>>("engine")
+            .with_getter(|v, _| match v.data.as_ref() {
+                Some(ModuleData { engine, .. }) => Some(engine.clone()),
+                None => None,
+            })
+            .done();
+    }
+
+    /// Initialize and loads module.
+    /// MUST be called for the first time and only once.
+    #[export]
+    fn initialize(
+        &self,
+        owner: TRef<Reference>,
+        engine: Instance<WasmEngine, Shared>,
+        name: String,
+        data: Variant,
+        imports: VariantArray,
+    ) -> Option<Ref<Reference>> {
+        if self._initialize(engine, name, data, imports) {
             Some(owner.claim())
         } else {
             None
