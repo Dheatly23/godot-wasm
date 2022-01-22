@@ -549,6 +549,17 @@ impl WasmModule {
                 None => None,
             })
             .done();
+
+        builder
+            .add_property::<Option<GodotString>>("name")
+            .with_getter(|v, _| match v.data.as_ref() {
+                Some(ModuleData { module, .. }) => match module.name() {
+                    Some(n) => Some(GodotString::from_str(n)),
+                    None => None,
+                },
+                None => None,
+            })
+            .done();
     }
 
     /// Initialize and loads module.
