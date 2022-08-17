@@ -7,17 +7,14 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-gdnative = "^0.9"
+gdnative = "^0.10"
 parking_lot = "^0.11"
 anyhow = "^1.0"
-indexmap = "^1.7"
-hashbrown = "^0.11"
+lazy_static = "^1.4"
 
-[dependencies.wasmtime]
-version = "^0.32"
-default-features = false
+[dependencies.wasmer]
+version = "^2.3"
 features = [
-  "wat",
-  "parallel-compilation",
-  "cranelift"
+  "default-cranelift",
+  "default-universal",
 ]
