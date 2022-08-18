@@ -170,9 +170,23 @@ impl WasmModule {
         }
     }
 
+    #[export]
+    fn get_imported_modules(&self, _owner: &Reference) -> Option<VariantArray> {
+        match self
+            .get_data()
+            .and_then(|m| Ok(VariantArray::from_iter(m.imports.values().cloned()).into_shared()))
+        {
+            Ok(v) => Some(v),
+            Err(e) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
     /// Gets exported functions
     #[export]
-    fn get_exports(&self, _owner: &Reference) -> Variant {
+    fn get_exports(&self, _owner: &Reference) -> Option<Dictionary> {
         match self.get_data().and_then(|m| {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
@@ -189,19 +203,19 @@ impl WasmModule {
                     );
                 }
             }
-            Ok(ret.owned_to_variant())
+            Ok(ret.into_shared())
         }) {
-            Ok(v) => v,
+            Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
-                Variant::nil()
+                None
             }
         }
     }
 
     /// Gets host imports signature
     #[export]
-    fn get_host_imports(&self, _owner: &Reference) -> Variant {
+    fn get_host_imports(&self, _owner: &Reference) -> Option<Dictionary> {
         match self.get_data().and_then(|m| {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
@@ -221,12 +235,12 @@ impl WasmModule {
                     );
                 }
             }
-            Ok(ret.owned_to_variant())
+            Ok(ret.into_shared())
         }) {
-            Ok(v) => v,
+            Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
-                Variant::nil()
+                None
             }
         }
     }
