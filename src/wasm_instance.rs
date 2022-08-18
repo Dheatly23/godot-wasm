@@ -10,7 +10,7 @@ use wasmer::{
 };
 
 use crate::wasm_engine::{ModuleData, WasmModule};
-use crate::wasm_util::{make_host_module, HOST_MODULE};
+use crate::wasm_util::{from_signature, make_host_module, HOST_MODULE};
 
 #[derive(NativeClass)]
 #[inherit(Reference)]
@@ -219,6 +219,35 @@ impl WasmInstance {
             }
 
             Ok(ret.into_shared())
+        }) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
+    #[export]
+    fn has_function(&self, _owner: &Reference, name: String) -> bool {
+        match self
+            .get_data()
+            .and_then(|m| Ok(m.instance.exports.get_function(&name).is_ok()))
+        {
+            Ok(v) => v,
+            Err(e) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
+
+    #[export]
+    fn get_signature(&self, _owner: &Reference, name: String) -> Option<Dictionary> {
+        match self.get_data().and_then(|m| {
+            let f = m.instance.exports.get_function(&name)?;
+            let (p, r) = from_signature(f.ty())?;
+            Ok(Dictionary::from_iter([("params", p), ("results", r)].into_iter()).into_shared())
         }) {
             Ok(v) => Some(v),
             Err(e) => {
