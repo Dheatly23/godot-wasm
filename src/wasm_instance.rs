@@ -177,7 +177,7 @@ impl WasmInstance {
     #[export]
     fn call_wasm(
         &self,
-        _owner: TRef<Reference>,
+        _owner: &Reference,
         name: String,
         args: VariantArray,
     ) -> Option<VariantArray> {
@@ -283,16 +283,16 @@ impl WasmInstance {
     fn memory_write(&self, _owner: &Reference, i: usize, a: ByteArray) -> bool {
         match self.get_data().and_then(|m| {
             let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
-            let n = a.len() as usize;
 
             // SAFETY: It's up to the user to not access this object concurrently
             // (See Godot's policy on concurrency)
             unsafe {
-                let s = match mem.data_unchecked_mut().get_mut(i..i + n) {
+                let s_ = &*a.read();
+                let s = match mem.data_unchecked_mut().get_mut(i..i + s_.len()) {
                     Some(v) => v,
                     None => bail!("Out of bounds!"),
                 };
-                s.copy_from_slice(a.read().as_slice());
+                s.copy_from_slice(s_);
                 Ok(())
             }
         }) {
