@@ -245,6 +245,51 @@ impl WasmModule {
         }
     }
 
+    #[export]
+    fn has_function(&self, _owner: &Reference, name: String) -> bool {
+        match self.get_data().and_then(|m| {
+            Ok(m.exports
+                .iter()
+                .any(|v| matches!(v.ty(), ExternType::Function(_)) && v.name() == name))
+        }) {
+            Ok(v) => v,
+            Err(e) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
+
+    #[export]
+    fn get_signature(&self, _owner: &Reference, name: String) -> Option<Dictionary> {
+        match self.get_data().and_then(|m| {
+            let f = match m
+                .exports
+                .iter()
+                .filter_map(|v| {
+                    if let ExternType::Function(f) = v.ty() {
+                        if v.name() == name {
+                            return Some(f);
+                        }
+                    }
+                    None
+                })
+                .next()
+            {
+                Some(v) => v,
+                None => bail!("No function named {}", name),
+            };
+            let (p, r) = from_signature(f)?;
+            Ok(Dictionary::from_iter([("params", p), ("results", r)].into_iter()).into_shared())
+        }) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
     // Instantiate module
     #[export]
     fn instantiate(

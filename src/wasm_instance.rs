@@ -227,33 +227,4 @@ impl WasmInstance {
             }
         }
     }
-
-    #[export]
-    fn has_function(&self, _owner: &Reference, name: String) -> bool {
-        match self
-            .get_data()
-            .and_then(|m| Ok(m.instance.exports.get_function(&name).is_ok()))
-        {
-            Ok(v) => v,
-            Err(e) => {
-                godot_error!("{}", e);
-                false
-            }
-        }
-    }
-
-    #[export]
-    fn get_signature(&self, _owner: &Reference, name: String) -> Option<Dictionary> {
-        match self.get_data().and_then(|m| {
-            let f = m.instance.exports.get_function(&name)?;
-            let (p, r) = from_signature(f.ty())?;
-            Ok(Dictionary::from_iter([("params", p), ("results", r)].into_iter()).into_shared())
-        }) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                godot_error!("{}", e);
-                None
-            }
-        }
-    }
 }
