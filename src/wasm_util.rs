@@ -40,6 +40,56 @@ pub fn from_signature(sig: &FunctionType) -> Result<(ByteArray, ByteArray), Erro
     Ok((pr, rr))
 }
 
+pub fn to_signature(params: Variant, results: Variant) -> Result<FunctionType, Error> {
+    let p;
+    let r;
+
+    fn f(it: impl Iterator<Item = Result<u32, Error>>) -> Result<Vec<Type>, Error> {
+        let mut ret = match it.size_hint() {
+            (_, Some(n)) => Vec::with_capacity(n),
+            (n, None) => Vec::with_capacity(n),
+        };
+
+        for i in it {
+            ret.push(match i? {
+                TYPE_I32 => Type::I32,
+                TYPE_I64 => Type::I64,
+                TYPE_F32 => Type::F32,
+                TYPE_F64 => Type::F64,
+                v => bail!("Unknown enumeration value {}", v),
+            });
+        }
+
+        Ok(ret)
+    }
+
+    if let Ok(v) = VariantArray::from_variant(&params) {
+        p = f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?)))?;
+    } else if let Ok(v) = ByteArray::from_variant(&params) {
+        p = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
+    } else if let Ok(v) = Int32Array::from_variant(&params) {
+        p = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
+    } else if let Ok(v) = Float32Array::from_variant(&params) {
+        p = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
+    } else {
+        bail!("Unconvertible value {}", params);
+    }
+
+    if let Ok(v) = VariantArray::from_variant(&results) {
+        r = f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?)))?;
+    } else if let Ok(v) = ByteArray::from_variant(&results) {
+        r = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
+    } else if let Ok(v) = Int32Array::from_variant(&results) {
+        r = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
+    } else if let Ok(v) = Float32Array::from_variant(&results) {
+        r = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
+    } else {
+        bail!("Unconvertible value {}", results);
+    }
+
+    Ok(FunctionType::new(p, r))
+}
+
 #[derive(WasmerEnv, Clone)]
 struct GodotMethodEnv {
     ty: FunctionType,
@@ -135,8 +185,8 @@ pub fn make_host_module(dict: Dictionary) -> Result<Exports, Error> {
 
         #[derive(FromVariant)]
         struct Data {
-            params: VariantArray,
-            results: VariantArray,
+            params: Variant,
+            results: Variant,
             object: Variant,
             method: GodotString,
         }
@@ -146,32 +196,13 @@ pub fn make_host_module(dict: Dictionary) -> Result<Exports, Error> {
             bail!("Object {} has no method {}", data.object, data.method);
         }
 
-        let mut params = Vec::with_capacity(data.params.len() as _);
-        let mut results = Vec::with_capacity(data.results.len() as _);
-
-        for v in &data.params {
-            params.push(match u32::from_variant(&v)? {
-                TYPE_I32 => Type::I32,
-                TYPE_I64 => Type::I64,
-                TYPE_F32 => Type::F32,
-                TYPE_F64 => Type::F64,
-                v => bail!("Unknown enumeration value {}", v),
-            });
-        }
-
-        for v in &data.results {
-            results.push(match u32::from_variant(&v)? {
-                TYPE_I32 => Type::I32,
-                TYPE_I64 => Type::I64,
-                TYPE_F32 => Type::F32,
-                TYPE_F64 => Type::F64,
-                v => bail!("Unknown enumeration value {}", v),
-            });
-        }
-
         ret.insert(
             k,
-            wrap_godot_method(FunctionType::new(params, results), data.object, data.method),
+            wrap_godot_method(
+                to_signature(data.params, data.results)?,
+                data.object,
+                data.method,
+            ),
         );
     }
 
