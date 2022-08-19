@@ -14,6 +14,8 @@ pub const HOST_MODULE: &str = "host";
 
 pub const MODULE_INCLUDES: &[&str] = &[HOST_MODULE];
 
+pub const MEMORY_EXPORT: &str = "memory";
+
 pub fn from_signature(sig: &FunctionType) -> Result<(ByteArray, ByteArray), Error> {
     let p = sig.params().iter();
     let r = sig.results().iter();

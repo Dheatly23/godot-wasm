@@ -10,7 +10,7 @@ use wasmer::{
 };
 
 use crate::wasm_engine::{ModuleData, WasmModule};
-use crate::wasm_util::{from_signature, make_host_module, HOST_MODULE};
+use crate::wasm_util::{make_host_module, HOST_MODULE, MEMORY_EXPORT};
 
 #[derive(NativeClass)]
 #[inherit(Reference)]
@@ -224,6 +224,82 @@ impl WasmInstance {
             Err(e) => {
                 godot_error!("{}", e);
                 None
+            }
+        }
+    }
+
+    #[export]
+    fn has_memory(&self, _owner: &Reference) -> bool {
+        match self
+            .get_data()
+            .and_then(|m| Ok(m.instance.exports.get_memory(MEMORY_EXPORT).is_ok()))
+        {
+            Ok(v) => v,
+            Err(e) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
+
+    #[export]
+    fn memory_size(&self, _owner: &Reference) -> u64 {
+        match self.get_data().and_then(|m| {
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            Ok(mem.data_size())
+        }) {
+            Ok(v) => v,
+            Err(e) => {
+                godot_error!("{}", e);
+                0
+            }
+        }
+    }
+
+    #[export]
+    fn memory_read(&self, _owner: &Reference, i: usize, n: usize) -> Option<ByteArray> {
+        match self.get_data().and_then(|m| {
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+
+            // SAFETY: It's up to the user to not access this object concurrently
+            // (See Godot's policy on concurrency)
+            unsafe {
+                let s = match mem.data_unchecked().get(i..i + n) {
+                    Some(v) => v,
+                    None => bail!("Out of bounds!"),
+                };
+                Ok(ByteArray::from_slice(s))
+            }
+        }) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
+    #[export]
+    fn memory_write(&self, _owner: &Reference, i: usize, a: ByteArray) -> bool {
+        match self.get_data().and_then(|m| {
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let n = a.len() as usize;
+
+            // SAFETY: It's up to the user to not access this object concurrently
+            // (See Godot's policy on concurrency)
+            unsafe {
+                let s = match mem.data_unchecked_mut().get_mut(i..i + n) {
+                    Some(v) => v,
+                    None => bail!("Out of bounds!"),
+                };
+                s.copy_from_slice(a.read().as_slice());
+                Ok(())
+            }
+        }) {
+            Ok(()) => true,
+            Err(e) => {
+                godot_error!("{}", e);
+                false
             }
         }
     }
