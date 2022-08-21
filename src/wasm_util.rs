@@ -16,6 +16,31 @@ pub const MODULE_INCLUDES: &[&str] = &[HOST_MODULE];
 
 pub const MEMORY_EXPORT: &str = "memory";
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! variant_typecast {
+    (($e:expr) { $($i:ident : $t:ty => $v:expr ,)+ _ @ $ei:ident => $else:expr $(,)? }) => {{
+        let $ei = $e;
+        $(
+            if let Ok($i) = <$t>::from_variant(&$ei) {
+                $v
+            } else
+        )+ {
+            $else
+        }
+    }};
+    (($e:expr) { $($i:ident : $t:ty => $v:expr ,)+ _ => $else:expr $(,)? }) => {{
+        let r#__variant = $e;
+        $(
+            if let Ok($i) = <$t>::from_variant(&r#__variant) {
+                $v
+            } else
+        )+ {
+            $else
+        }
+    }};
+}
+
 pub fn from_signature(sig: &FunctionType) -> Result<(ByteArray, ByteArray), Error> {
     let p = sig.params().iter();
     let r = sig.results().iter();
@@ -65,29 +90,21 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FunctionType, E
         Ok(ret)
     }
 
-    if let Ok(v) = VariantArray::from_variant(&params) {
-        p = f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?)))?;
-    } else if let Ok(v) = ByteArray::from_variant(&params) {
-        p = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
-    } else if let Ok(v) = Int32Array::from_variant(&params) {
-        p = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
-    } else if let Ok(v) = Float32Array::from_variant(&params) {
-        p = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
-    } else {
-        bail!("Unconvertible value {}", params);
-    }
+    p = variant_typecast!((params) {
+        v: VariantArray => f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?)))?,
+        v: ByteArray => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
+        v: Int32Array => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
+        v: Float32Array => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
+        _ @ params => bail!("Unconvertible value {}", params),
+    });
 
-    if let Ok(v) = VariantArray::from_variant(&results) {
-        r = f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?)))?;
-    } else if let Ok(v) = ByteArray::from_variant(&results) {
-        r = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
-    } else if let Ok(v) = Int32Array::from_variant(&results) {
-        r = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
-    } else if let Ok(v) = Float32Array::from_variant(&results) {
-        r = f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?;
-    } else {
-        bail!("Unconvertible value {}", results);
-    }
+    r = variant_typecast!((results) {
+        v: VariantArray => f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?)))?,
+        v: ByteArray => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
+        v: Int32Array => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
+        v: Float32Array => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
+        _ @ results => bail!("Unconvertible value {}", results),
+    });
 
     Ok(FunctionType::new(p, r))
 }

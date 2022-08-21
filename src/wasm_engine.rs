@@ -11,6 +11,7 @@ use wasmer::{
     UniversalEngine,
 };
 
+use crate::variant_typecast;
 use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::{from_signature, make_host_module, HOST_MODULE, MODULE_INCLUDES};
 
@@ -51,7 +52,7 @@ impl WasmModule {
     }
 
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
-        let f = || -> Result<(), Error> {
+        let f = move || -> Result<(), Error> {
             let compile_engine = {
                 let target = Target::default();
                 let mut features = Features::default();
@@ -70,13 +71,15 @@ impl WasmModule {
                 ))
             };
 
-            let module = if let Ok(m) = ByteArray::from_variant(&data) {
-                Module::new(&compile_engine, &*m.read())?
-            } else if let Ok(m) = String::from_variant(&data) {
-                Module::new(&compile_engine, &m)?
-            } else {
-                bail!("Module type is not string nor byte array");
-            };
+            let module = variant_typecast!((data) {
+                m: ByteArray => Module::new(&compile_engine, &*m.read())?,
+                m: String => Module::new(&compile_engine, &m)?,
+                m: Ref<gdnative::api::File> => unsafe {
+                    let m = m.assume_safe();
+                    Module::new(&compile_engine, &*m.get_buffer(m.get_len()).read())?
+                },
+                _ @ v => bail!("Unknown module value {}", v),
+            });
 
             let mut deps_map = HashMap::with_capacity(imports.len() as _);
             for (k, v) in imports.iter() {
