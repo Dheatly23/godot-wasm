@@ -1,4 +1,5 @@
 use anyhow::{bail, Error};
+use gdnative::api::WeakRef;
 use gdnative::prelude::*;
 use wasmer::{Exports, Function, FunctionType, RuntimeError, Type, Val, WasmerEnv};
 
@@ -143,7 +144,11 @@ impl GodotMethodEnv {
             });
         }
 
-        let r = unsafe { wrap_err(this.obj.clone().call(this.method.clone(), &p))? };
+        let mut obj = match <Ref<WeakRef, Shared>>::from_variant(&this.obj) {
+            Ok(obj) => unsafe { obj.assume_safe().get_ref() },
+            Err(_) => this.obj.clone(),
+        };
+        let r = unsafe { wrap_err(obj.call(this.method.clone(), &p))? };
 
         let results = this.ty.results();
         let mut ret = Vec::with_capacity(results.len());
@@ -211,8 +216,12 @@ pub fn make_host_module(dict: Dictionary) -> Result<Exports, Error> {
         }
 
         let data = Data::from_variant(&v)?;
-        if !data.object.has_method(GodotString::clone(&data.method)) {
-            bail!("Object {} has no method {}", data.object, data.method);
+        let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
+            Ok(obj) => unsafe { obj.assume_safe().get_ref() },
+            Err(_) => data.object.clone(),
+        };
+        if !obj.has_method(GodotString::clone(&data.method)) {
+            bail!("Object {} has no method {}", obj, data.method);
         }
 
         ret.insert(
