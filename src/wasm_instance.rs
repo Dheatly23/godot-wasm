@@ -4,12 +4,13 @@ use std::mem::transmute;
 use anyhow::{bail, Error};
 use gdnative::export::user_data::Map;
 use gdnative::prelude::*;
-use parking_lot::{Once, OnceState};
+use parking_lot::{Once, OnceState, ReentrantMutex};
 use wasmer::{
-    Export, Exportable, Exports, Instance as InstanceWasm, LikeNamespace, NamedResolver, Type, Val,
+    AsStoreMut, Engine, Exports, Extern, Imports, Instance as InstanceWasm, Store, Type, Value,
+    WasmRef,
 };
 
-use crate::wasm_engine::{ModuleData, WasmModule};
+use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
 use crate::wasm_util::{make_host_module, HOST_MODULE, MEMORY_EXPORT};
 
 #[derive(NativeClass)]
@@ -22,71 +23,68 @@ pub struct WasmInstance {
 }
 
 pub struct InstanceData {
+    store: ReentrantMutex<Store>,
     instance: InstanceWasm,
     module: Instance<WasmModule, Shared>,
 }
 
 impl InstanceData {
     pub fn instantiate(
+        mut store: Store,
         module: Instance<WasmModule, Shared>,
-        host: &Option<Exports>,
+        host: Option<Dictionary>,
     ) -> Result<Self, Error> {
         type InstMap = HashMap<Ref<Reference, Shared>, InstanceWasm>;
 
-        struct Res<'a> {
-            host: Option<&'a Exports>,
-            imports: &'a HashMap<String, Instance<WasmModule, Shared>>,
-            insts: &'a InstMap,
-        }
-
-        impl<'a> NamedResolver for Res<'a> {
-            fn resolve_by_name(&self, module: &str, field: &str) -> Option<Export> {
-                if let Some(host) = self.host.as_ref() {
-                    if module == HOST_MODULE {
-                        return host.get_extern(field).map(|v| v.to_export());
-                    }
-                }
-                self.insts
-                    .get(&self.imports.get(module)?.base())
-                    .and_then(|inst| inst.exports.get_namespace_export(field))
-            }
+        fn g((k, v): (&String, &Extern)) -> (String, Extern) {
+            (k.clone(), v.clone())
         }
 
         fn f(
+            store: &mut Store,
             module: &ModuleData,
             insts: &mut InstMap,
             host: &Option<Exports>,
         ) -> Result<InstanceWasm, Error> {
-            for v in module.imports.values() {
-                let v_ = v.base();
-                if insts.get(v_).is_some() {
-                    continue;
-                }
-                let v = v
-                    .script()
-                    .map(|m| f(m.get_data()?, &mut *insts, host))
-                    .unwrap()?;
-                insts.insert(Ref::clone(v_), v);
+            let mut imports = Imports::new();
+            if let Some(host) = host.as_ref() {
+                imports.register_namespace(HOST_MODULE, host.into_iter().map(g));
             }
-            Ok(InstanceWasm::new(
-                &module.module,
-                &Res {
-                    host: host.as_ref(),
-                    imports: &module.imports,
-                    insts,
-                },
-            )?)
+
+            for (k, v) in module.imports.iter() {
+                let inst = loop {
+                    match insts.get(v.base()) {
+                        Some(i) => break i,
+                        None => {
+                            let i = v
+                                .script()
+                                .map(|m| f(&mut *store, m.get_data()?, &mut *insts, host))
+                                .unwrap()?;
+                            insts.insert(Ref::clone(v.base()), i);
+                        }
+                    };
+                };
+                imports.register_namespace(k, (&inst.exports).into_iter().map(g));
+            }
+
+            InstanceWasm::new(store, &module.module, &imports).map_err(Error::from)
         }
 
+        let host = host.map(|h| make_host_module(&mut store, h)).transpose()?;
+
+        let sp = &mut store;
+        let instance = module
+            .script()
+            .map(move |m| {
+                let mut insts = HashMap::new();
+                f(sp, m.get_data()?, &mut insts, &host)
+            })
+            .unwrap()?;
+
         Ok(Self {
-            instance: module
-                .script()
-                .map(move |m| {
-                    let mut insts = HashMap::new();
-                    f(m.get_data()?, &mut insts, host)
-                })
-                .unwrap()?,
+            instance: instance,
             module: module,
+            store: ReentrantMutex::new(store),
         })
     }
 }
@@ -110,13 +108,17 @@ impl WasmInstance {
     pub fn initialize_(
         &self,
         module: Instance<WasmModule, Shared>,
-        host: &Option<Exports>,
+        host: Option<Dictionary>,
     ) -> bool {
         let mut r = true;
         let ret = &mut r;
 
-        self.once
-            .call_once(move || match InstanceData::instantiate(module, host) {
+        self.once.call_once(move || {
+            match InstanceData::instantiate(
+                Store::new(Engine::clone(ENGINE.engine())),
+                module,
+                host,
+            ) {
                 Ok(v) => {
                     // SAFETY: Should be called only once and nobody else can read module data
                     #[allow(mutable_transmutes)]
@@ -129,35 +131,10 @@ impl WasmInstance {
                     godot_error!("{}", e);
                     *ret = false;
                 }
-            });
+            }
+        });
 
         r
-    }
-
-    fn read_memory<F, R>(&self, f: F) -> Result<R, Error>
-    where
-        F: FnOnce(&[u8]) -> R,
-    {
-        self.get_data().and_then(|m| {
-            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
-
-            // SAFETY: It's up to the user to not access this object concurrently
-            // (See Godot's policy on concurrency)
-            unsafe { Ok(f(mem.data_unchecked())) }
-        })
-    }
-
-    fn write_memory<F, R>(&self, f: F) -> Result<R, Error>
-    where
-        F: FnOnce(&mut [u8]) -> R,
-    {
-        self.get_data().and_then(|m| {
-            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
-
-            // SAFETY: It's up to the user to not access this object concurrently
-            // (See Godot's policy on concurrency)
-            unsafe { Ok(f(mem.data_unchecked_mut())) }
-        })
     }
 }
 
@@ -179,67 +156,64 @@ impl WasmInstance {
 
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
-    #[export]
+    #[method]
     fn initialize(
         &self,
-        owner: TRef<Reference>,
+        #[base] owner: TRef<Reference>,
         module: Instance<WasmModule, Shared>,
         #[opt] host: Option<Dictionary>,
     ) -> Option<Ref<Reference>> {
-        let host = match host.map(|h| make_host_module(h)).transpose() {
-            Ok(v) => v,
-            Err(e) => {
-                godot_error!("{}", e);
-                return None;
-            }
-        };
-        if self.initialize_(module, &host) {
+        if self.initialize_(module, host) {
             Some(owner.claim())
         } else {
             None
         }
     }
 
-    #[export]
-    fn call_wasm(
-        &self,
-        _owner: &Reference,
-        name: String,
-        args: VariantArray,
-    ) -> Option<VariantArray> {
+    #[method]
+    fn call_wasm(&self, name: String, args: VariantArray) -> Option<VariantArray> {
         match self.get_data().and_then(|m| {
+            let store = m.store.lock();
+            // SAFETY: Store should be safe to mutate within thread?
+            #[allow(mutable_transmutes)]
+            let mut store = unsafe { transmute::<&Store, &mut Store>(&store).as_store_mut() };
             let f = m.instance.exports.get_function(&name)?;
 
-            let params = f.ty().params();
-            let mut p = Vec::with_capacity(params.len());
+            let mut p;
 
-            for (ix, t) in params.iter().enumerate() {
-                let v = args.get(ix as _);
-                p.push(match t {
-                    Type::I32 => Val::I32(i32::from_variant(&v)?),
-                    Type::I64 => Val::I64(i64::from_variant(&v)?),
-                    Type::F32 => Val::F32(f32::from_variant(&v)?),
-                    Type::F64 => Val::F64(f64::from_variant(&v)?),
-                    _ => bail!("Unsupported WASM type conversion {}", t),
-                });
-            }
+            {
+                let ty = f.ty(&store);
+                let params = ty.params();
+                p = Vec::with_capacity(params.len());
 
-            for t in f.ty().results() {
-                match t {
-                    Type::I32 | Type::I64 | Type::F32 | Type::F64 => (),
-                    _ => bail!("Unsupported WASM type conversion {}", t),
+                for (ix, t) in params.iter().enumerate() {
+                    let v = args.get(ix as _);
+                    p.push(match t {
+                        Type::I32 => i32::from_variant(&v)?.into(),
+                        Type::I64 => i64::from_variant(&v)?.into(),
+                        Type::F32 => f32::from_variant(&v)?.into(),
+                        Type::F64 => f64::from_variant(&v)?.into(),
+                        _ => bail!("Unsupported WASM type conversion {}", t),
+                    });
+                }
+
+                for t in ty.results() {
+                    match t {
+                        Type::I32 | Type::I64 | Type::F32 | Type::F64 => (),
+                        _ => bail!("Unsupported WASM type conversion {}", t),
+                    }
                 }
             }
 
-            let r = f.call(&p)?;
+            let r = f.call(&mut store, &p)?;
 
             let ret = VariantArray::new();
             for i in r.iter() {
                 ret.push(match i {
-                    Val::I32(v) => v.to_variant(),
-                    Val::I64(v) => v.to_variant(),
-                    Val::F32(v) => v.to_variant(),
-                    Val::F64(v) => v.to_variant(),
+                    Value::I32(v) => v.to_variant(),
+                    Value::I64(v) => v.to_variant(),
+                    Value::F32(v) => v.to_variant(),
+                    Value::F64(v) => v.to_variant(),
                     _ => bail!("Unsupported WASM type conversion"),
                 });
             }
@@ -254,8 +228,8 @@ impl WasmInstance {
         }
     }
 
-    #[export]
-    fn has_memory(&self, _owner: &Reference) -> bool {
+    #[method]
+    fn has_memory(&self) -> bool {
         match self
             .get_data()
             .and_then(|m| Ok(m.instance.exports.get_memory(MEMORY_EXPORT).is_ok()))
@@ -268,11 +242,13 @@ impl WasmInstance {
         }
     }
 
-    #[export]
-    fn memory_size(&self, _owner: &Reference) -> u64 {
+    #[method]
+    fn memory_size(&self) -> usize {
         match self.get_data().and_then(|m| {
+            let store = m.store.lock();
             let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
-            Ok(mem.data_size())
+            let view = mem.view(&*store);
+            Ok(view.size().bytes().0)
         }) {
             Ok(v) => v,
             Err(e) => {
@@ -282,285 +258,247 @@ impl WasmInstance {
         }
     }
 
-    #[export]
-    fn memory_read(&self, _owner: &Reference, i: usize, n: usize) -> Option<ByteArray> {
-        match self.read_memory(move |s| match s.get(i..i + n) {
-            Some(s) => Ok(ByteArray::from_slice(s)),
-            None => bail!("Out of bounds!"),
+    #[method]
+    fn memory_read(&self, i: usize, n: usize) -> Option<ByteArray> {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+            let mut v = vec![0u8; n];
+
+            view.read(i as _, &mut v)?;
+            Ok(ByteArray::from_vec(v))
         }) {
-            Ok(Ok(v)) => Some(v),
-            Err(e) | Ok(Err(e)) => {
+            Ok(v) => Some(v),
+            Err(e) => {
                 godot_error!("{}", e);
                 None
             }
         }
     }
 
-    #[export]
-    fn memory_write(&self, _owner: &Reference, i: usize, a: ByteArray) -> bool {
-        match self.write_memory(move |s| {
-            let s_ = &*a.read();
-            match s.get_mut(i..i + s_.len()) {
-                Some(s) => s.copy_from_slice(s_),
-                None => bail!("Out of bounds!"),
-            };
+    #[method]
+    fn memory_write(&self, i: usize, a: ByteArray) -> bool {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            view.write(i as _, &a.read())?;
             Ok(())
         }) {
-            Ok(Ok(())) => true,
-            Err(e) | Ok(Err(e)) => {
+            Ok(()) => true,
+            Err(e) => {
                 godot_error!("{}", e);
                 false
             }
         }
     }
 
-    #[export]
-    fn get_8(&self, _owner: &Reference, i: usize) -> Option<u8> {
-        match self.read_memory(move |s| match s.get(i) {
-            Some(v) => Ok(*v),
-            None => bail!("Out of bounds!"),
+    #[method]
+    fn get_8(&self, i: usize) -> Option<u8> {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            Ok(WasmRef::new(&view, i as _).read()?)
         }) {
-            Ok(Ok(v)) => Some(v),
-            Err(e) | Ok(Err(e)) => {
+            Ok(v) => Some(v),
+            Err(e) => {
                 godot_error!("{}", e);
                 None
             }
         }
     }
 
-    #[export]
-    fn store_8(&self, _owner: &Reference, i: usize, v: u8) -> bool {
-        match self.write_memory(move |s| {
-            match s.get_mut(i) {
-                Some(s) => *s = v,
-                None => bail!("Out of bounds!"),
-            }
+    #[method]
+    fn store_8(&self, i: usize, v: u8) -> bool {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            WasmRef::new(&view, i as _).write(v)?;
             Ok(())
         }) {
-            Ok(Ok(())) => true,
-            Err(e) | Ok(Err(e)) => {
+            Ok(()) => true,
+            Err(e) => {
                 godot_error!("{}", e);
                 false
             }
         }
     }
 
-    #[export]
-    fn get_16(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<u16> {
-        match self.read_memory(move |s| match s.get(i..i + 2) {
-            Some(s) => {
-                let s = s.try_into().unwrap();
-                Ok(if is_be.unwrap_or(false) {
-                    u16::from_le_bytes(s)
-                } else {
-                    u16::from_be_bytes(s)
-                })
-            }
-            None => bail!("Out of bounds!"),
+    #[method]
+    fn get_16(&self, i: usize) -> Option<u16> {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            Ok(WasmRef::new(&view, i as _).read()?)
         }) {
-            Ok(Ok(v)) => Some(v),
-            Err(e) | Ok(Err(e)) => {
+            Ok(v) => Some(v),
+            Err(e) => {
                 godot_error!("{}", e);
                 None
             }
         }
     }
 
-    #[export]
-    fn store_16(&self, _owner: &Reference, i: usize, v: u16, #[opt] is_be: Option<bool>) -> bool {
-        match self.write_memory(move |s| {
-            match s.get_mut(i..i + 2) {
-                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
-                    v.to_le_bytes()
-                } else {
-                    v.to_be_bytes()
-                }),
-                None => bail!("Out of bounds!"),
-            }
+    #[method]
+    fn store_16(&self, i: usize, v: u16) -> bool {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            WasmRef::new(&view, i as _).write(v)?;
             Ok(())
         }) {
-            Ok(Ok(())) => true,
-            Err(e) | Ok(Err(e)) => {
+            Ok(()) => true,
+            Err(e) => {
                 godot_error!("{}", e);
                 false
             }
         }
     }
 
-    #[export]
-    fn get_32(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<u32> {
-        match self.read_memory(move |s| match s.get(i..i + 4) {
-            Some(s) => {
-                let s = s.try_into().unwrap();
-                Ok(if is_be.unwrap_or(false) {
-                    u32::from_le_bytes(s)
-                } else {
-                    u32::from_be_bytes(s)
-                })
-            }
-            None => bail!("Out of bounds!"),
+    #[method]
+    fn get_32(&self, i: usize) -> Option<u32> {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            Ok(WasmRef::new(&view, i as _).read()?)
         }) {
-            Ok(Ok(v)) => Some(v),
-            Err(e) | Ok(Err(e)) => {
+            Ok(v) => Some(v),
+            Err(e) => {
                 godot_error!("{}", e);
                 None
             }
         }
     }
 
-    #[export]
-    fn store_32(&self, _owner: &Reference, i: usize, v: u32, #[opt] is_be: Option<bool>) -> bool {
-        match self.write_memory(move |s| {
-            match s.get_mut(i..i + 4) {
-                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
-                    v.to_le_bytes()
-                } else {
-                    v.to_be_bytes()
-                }),
-                None => bail!("Out of bounds!"),
-            }
+    #[method]
+    fn store_32(&self, i: usize, v: u32) -> bool {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            WasmRef::new(&view, i as _).write(v)?;
             Ok(())
         }) {
-            Ok(Ok(())) => true,
-            Err(e) | Ok(Err(e)) => {
+            Ok(()) => true,
+            Err(e) => {
                 godot_error!("{}", e);
                 false
             }
         }
     }
 
-    #[export]
-    fn get_64(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<i64> {
-        match self.read_memory(move |s| match s.get(i..i + 8) {
-            Some(s) => {
-                let s = s.try_into().unwrap();
-                Ok(if is_be.unwrap_or(false) {
-                    i64::from_le_bytes(s)
-                } else {
-                    i64::from_be_bytes(s)
-                })
-            }
-            None => bail!("Out of bounds!"),
+    #[method]
+    fn get_64(&self, i: usize) -> Option<i64> {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            Ok(WasmRef::new(&view, i as _).read()?)
         }) {
-            Ok(Ok(v)) => Some(v),
-            Err(e) | Ok(Err(e)) => {
+            Ok(v) => Some(v),
+            Err(e) => {
                 godot_error!("{}", e);
                 None
             }
         }
     }
 
-    #[export]
-    fn store_64(&self, _owner: &Reference, i: usize, v: i64, #[opt] is_be: Option<bool>) -> bool {
-        match self.write_memory(move |s| {
-            match s.get_mut(i..i + 8) {
-                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
-                    v.to_le_bytes()
-                } else {
-                    v.to_be_bytes()
-                }),
-                None => bail!("Out of bounds!"),
-            }
+    #[method]
+    fn store_64(&self, i: usize, v: i64) -> bool {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            WasmRef::new(&view, i as _).write(v)?;
             Ok(())
         }) {
-            Ok(Ok(())) => true,
-            Err(e) | Ok(Err(e)) => {
+            Ok(()) => true,
+            Err(e) => {
                 godot_error!("{}", e);
                 false
             }
         }
     }
 
-    #[export]
-    fn get_float(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<f32> {
-        match self.read_memory(move |s| match s.get(i..i + 4) {
-            Some(s) => {
-                let s = s.try_into().unwrap();
-                Ok(if is_be.unwrap_or(false) {
-                    f32::from_le_bytes(s)
-                } else {
-                    f32::from_be_bytes(s)
-                })
-            }
-            None => bail!("Out of bounds!"),
+    #[method]
+    fn get_float(&self, i: usize) -> Option<f32> {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            Ok(WasmRef::new(&view, i as _).read()?)
         }) {
-            Ok(Ok(v)) => Some(v),
-            Err(e) | Ok(Err(e)) => {
+            Ok(v) => Some(v),
+            Err(e) => {
                 godot_error!("{}", e);
                 None
             }
         }
     }
 
-    #[export]
-    fn store_float(
-        &self,
-        _owner: &Reference,
-        i: usize,
-        v: f32,
-        #[opt] is_be: Option<bool>,
-    ) -> bool {
-        match self.write_memory(move |s| {
-            match s.get_mut(i..i + 4) {
-                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
-                    v.to_le_bytes()
-                } else {
-                    v.to_be_bytes()
-                }),
-                None => bail!("Out of bounds!"),
-            }
+    #[method]
+    fn store_float(&self, i: usize, v: f32) -> bool {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            WasmRef::new(&view, i as _).write(v)?;
             Ok(())
         }) {
-            Ok(Ok(())) => true,
-            Err(e) | Ok(Err(e)) => {
+            Ok(()) => true,
+            Err(e) => {
                 godot_error!("{}", e);
                 false
             }
         }
     }
 
-    #[export]
-    fn get_double(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<f64> {
-        match self.read_memory(move |s| match s.get(i..i + 8) {
-            Some(s) => {
-                let s = s.try_into().unwrap();
-                Ok(if is_be.unwrap_or(false) {
-                    f64::from_le_bytes(s)
-                } else {
-                    f64::from_be_bytes(s)
-                })
-            }
-            None => bail!("Out of bounds!"),
+    #[method]
+    fn get_double(&self, i: usize) -> Option<f64> {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            Ok(WasmRef::new(&view, i as _).read()?)
         }) {
-            Ok(Ok(v)) => Some(v),
-            Err(e) | Ok(Err(e)) => {
+            Ok(v) => Some(v),
+            Err(e) => {
                 godot_error!("{}", e);
                 None
             }
         }
     }
 
-    #[export]
-    fn store_double(
-        &self,
-        _owner: &Reference,
-        i: usize,
-        v: f64,
-        #[opt] is_be: Option<bool>,
-    ) -> bool {
-        match self.write_memory(move |s| {
-            match s.get_mut(i..i + 8) {
-                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
-                    v.to_le_bytes()
-                } else {
-                    v.to_be_bytes()
-                }),
-                None => bail!("Out of bounds!"),
-            }
+    #[method]
+    fn store_double(&self, i: usize, v: f64) -> bool {
+        match self.get_data().and_then(move |m| {
+            let store = m.store.lock();
+            let mem = m.instance.exports.get_memory(MEMORY_EXPORT)?;
+            let view = mem.view(&*store);
+
+            WasmRef::new(&view, i as _).write(v)?;
             Ok(())
         }) {
-            Ok(Ok(())) => true,
-            Err(e) | Ok(Err(e)) => {
+            Ok(()) => true,
+            Err(e) => {
                 godot_error!("{}", e);
                 false
             }

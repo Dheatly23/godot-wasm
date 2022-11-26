@@ -6,17 +6,14 @@ use gdnative::export::user_data::Map;
 use gdnative::prelude::*;
 use lazy_static::lazy_static;
 use parking_lot::{Once, OnceState};
-use wasmer::{
-    CompilerConfig, Cranelift, ExportType, ExternType, Features, Module, Store, Target,
-    UniversalEngine,
-};
+use wasmer::{Cranelift, Engine, ExportType, ExternType, Features, Module, Store, Target};
 
 use crate::variant_typecast;
 use crate::wasm_instance::WasmInstance;
-use crate::wasm_util::{from_signature, make_host_module, HOST_MODULE, MODULE_INCLUDES};
+use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
 
 lazy_static! {
-    pub static ref ENGINE: Store = Store::new(&UniversalEngine::headless());
+    pub static ref ENGINE: Store = Store::new(&Engine::headless());
 }
 
 #[derive(NativeClass)]
@@ -54,8 +51,12 @@ impl WasmModule {
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
             let compile_engine = {
+                let mut compiler = Cranelift::default();
                 let target = Target::default();
                 let mut features = Features::default();
+                compiler
+                    .canonicalize_nans(false)
+                    .opt_level(wasmer::CraneliftOptLevel::SpeedAndSize);
                 features
                     .reference_types(true)
                     .simd(true)
@@ -64,11 +65,7 @@ impl WasmModule {
                     .multi_memory(true)
                     .memory64(true);
 
-                Store::new(&UniversalEngine::new(
-                    Cranelift::compiler(Box::new(Cranelift::new())),
-                    target,
-                    features,
-                ))
+                Store::new(&Engine::new(Box::new(compiler), target, features))
             };
 
             let module = variant_typecast!((data) {
@@ -117,7 +114,7 @@ impl WasmModule {
             let this = unsafe { transmute::<&Self, &mut Self>(self) };
             this.data = Some(ModuleData {
                 name,
-                module: unsafe { Module::deserialize(&ENGINE, &module.serialize()?)? },
+                module: unsafe { Module::deserialize(&*ENGINE, module.serialize()?)? },
                 imports: deps_map,
                 exports: module.exports().collect(),
             });
@@ -158,10 +155,10 @@ impl WasmModule {
 
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
-    #[export]
+    #[method]
     fn initialize(
         &self,
-        owner: TRef<Reference>,
+        #[base] owner: TRef<Reference>,
         name: GodotString,
         data: Variant,
         imports: Dictionary,
@@ -173,8 +170,8 @@ impl WasmModule {
         }
     }
 
-    #[export]
-    fn get_imported_modules(&self, _owner: &Reference) -> Option<VariantArray> {
+    #[method]
+    fn get_imported_modules(&self) -> Option<VariantArray> {
         match self
             .get_data()
             .and_then(|m| Ok(VariantArray::from_iter(m.imports.values().cloned()).into_shared()))
@@ -188,8 +185,8 @@ impl WasmModule {
     }
 
     /// Gets exported functions
-    #[export]
-    fn get_exports(&self, _owner: &Reference) -> Option<Dictionary> {
+    #[method]
+    fn get_exports(&self) -> Option<Dictionary> {
         match self.get_data().and_then(|m| {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
@@ -217,8 +214,8 @@ impl WasmModule {
     }
 
     /// Gets host imports signature
-    #[export]
-    fn get_host_imports(&self, _owner: &Reference) -> Option<Dictionary> {
+    #[method]
+    fn get_host_imports(&self) -> Option<Dictionary> {
         match self.get_data().and_then(|m| {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
@@ -248,8 +245,8 @@ impl WasmModule {
         }
     }
 
-    #[export]
-    fn has_function(&self, _owner: &Reference, name: String) -> bool {
+    #[method]
+    fn has_function(&self, name: String) -> bool {
         match self.get_data().and_then(|m| {
             Ok(m.exports
                 .iter()
@@ -263,8 +260,8 @@ impl WasmModule {
         }
     }
 
-    #[export]
-    fn get_signature(&self, _owner: &Reference, name: String) -> Option<Dictionary> {
+    #[method]
+    fn get_signature(&self, name: String) -> Option<Dictionary> {
         match self.get_data().and_then(|m| {
             let f = match m
                 .exports
@@ -294,23 +291,16 @@ impl WasmModule {
     }
 
     // Instantiate module
-    #[export]
+    #[method]
     fn instantiate(
         &self,
-        owner: TRef<Reference>,
+        #[base] owner: TRef<Reference>,
         #[opt] host: Option<Dictionary>,
     ) -> Option<Instance<WasmInstance, Shared>> {
-        let host = match host.map(|h| make_host_module(h)).transpose() {
-            Ok(v) => v,
-            Err(e) => {
-                godot_error!("{}", e);
-                return None;
-            }
-        };
         let inst = WasmInstance::new_instance();
         if let Ok(true) = inst.map(|v, _| {
             if let Some(i) = Instance::from_base(owner.claim()) {
-                v.initialize_(i, &host)
+                v.initialize_(i, host)
             } else {
                 false
             }

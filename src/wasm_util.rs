@@ -1,9 +1,9 @@
 use anyhow::{bail, Error};
 use gdnative::api::WeakRef;
 use gdnative::prelude::*;
-use wasmer::{Exports, Function, FunctionType, RuntimeError, Type, Val, WasmerEnv};
-
-use crate::wasm_engine::ENGINE;
+use wasmer::{
+    Exports, Function, FunctionEnv, FunctionEnvMut, FunctionType, RuntimeError, Store, Type, Value,
+};
 
 pub const TYPE_I32: u32 = 1;
 pub const TYPE_I64: u32 = 2;
@@ -110,7 +110,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FunctionType, E
     Ok(FunctionType::new(p, r))
 }
 
-#[derive(WasmerEnv, Clone)]
+#[derive(Clone)]
 struct GodotMethodEnv {
     ty: FunctionType,
     obj: Variant,
@@ -118,7 +118,11 @@ struct GodotMethodEnv {
 }
 
 impl GodotMethodEnv {
-    fn call_method(this: &Self, args: &[Val]) -> Result<Vec<Val>, RuntimeError> {
+    fn call_method(
+        this: FunctionEnvMut<GodotMethodEnv>,
+        args: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let this = this.data();
         fn wrap_err<T, E: std::error::Error + Sync + Send + 'static>(
             v: Result<T, E>,
         ) -> Result<T, RuntimeError> {
@@ -131,10 +135,10 @@ impl GodotMethodEnv {
         let mut p = Vec::with_capacity(args.len());
         for v in args {
             p.push(match v {
-                Val::I32(v) => v.to_variant(),
-                Val::I64(v) => v.to_variant(),
-                Val::F32(v) => v.to_variant(),
-                Val::F64(v) => v.to_variant(),
+                Value::I32(v) => v.to_variant(),
+                Value::I64(v) => v.to_variant(),
+                Value::F32(v) => v.to_variant(),
+                Value::F64(v) => v.to_variant(),
                 _ => {
                     return Err(RuntimeError::new(format!(
                         "Cannot format WASM value {:?}",
@@ -157,10 +161,10 @@ impl GodotMethodEnv {
             for (ix, t) in results.iter().enumerate() {
                 let v = r.get(ix as _);
                 ret.push(match t {
-                    Type::I32 => Val::I32(wrap_err(i32::from_variant(&v))?),
-                    Type::I64 => Val::I64(wrap_err(i64::from_variant(&v))?),
-                    Type::F32 => Val::F32(wrap_err(f32::from_variant(&v))?),
-                    Type::F64 => Val::F64(wrap_err(f64::from_variant(&v))?),
+                    Type::I32 => Value::I32(wrap_err(i32::from_variant(&v))?),
+                    Type::I64 => Value::I64(wrap_err(i64::from_variant(&v))?),
+                    Type::F32 => Value::F32(wrap_err(f32::from_variant(&v))?),
+                    Type::F64 => Value::F64(wrap_err(f64::from_variant(&v))?),
                     _ => {
                         return Err(RuntimeError::new(format!(
                             "Unsupported WASM type conversion {}",
@@ -171,10 +175,10 @@ impl GodotMethodEnv {
             }
         } else if results.len() == 1 {
             ret.push(match results[0] {
-                Type::I32 => Val::I32(wrap_err(i32::from_variant(&r))?),
-                Type::I64 => Val::I64(wrap_err(i64::from_variant(&r))?),
-                Type::F32 => Val::F32(wrap_err(f32::from_variant(&r))?),
-                Type::F64 => Val::F64(wrap_err(f64::from_variant(&r))?),
+                Type::I32 => Value::I32(wrap_err(i32::from_variant(&r))?),
+                Type::I64 => Value::I64(wrap_err(i64::from_variant(&r))?),
+                Type::F32 => Value::F32(wrap_err(f32::from_variant(&r))?),
+                Type::F64 => Value::F64(wrap_err(f64::from_variant(&r))?),
                 t => {
                     return Err(RuntimeError::new(format!(
                         "Unsupported WASM type conversion {}",
@@ -193,16 +197,24 @@ impl GodotMethodEnv {
     }
 }
 
-pub fn wrap_godot_method(ty: FunctionType, obj: Variant, method: GodotString) -> Function {
-    Function::new_with_env(
-        &ENGINE,
-        FunctionType::clone(&ty),
-        GodotMethodEnv { ty, obj, method },
-        GodotMethodEnv::call_method,
-    )
+pub fn wrap_godot_method(
+    store: &mut Store,
+    ty: FunctionType,
+    obj: Variant,
+    method: GodotString,
+) -> Function {
+    let env = FunctionEnv::new(
+        &mut *store,
+        GodotMethodEnv {
+            ty: FunctionType::clone(&ty),
+            obj,
+            method,
+        },
+    );
+    Function::new_with_env(store, &env, ty, GodotMethodEnv::call_method)
 }
 
-pub fn make_host_module(dict: Dictionary) -> Result<Exports, Error> {
+pub fn make_host_module(store: &mut Store, dict: Dictionary) -> Result<Exports, Error> {
     let mut ret = Exports::new();
     for (k, v) in dict.iter() {
         let k = GodotString::from_variant(&k)?.to_string();
@@ -227,6 +239,7 @@ pub fn make_host_module(dict: Dictionary) -> Result<Exports, Error> {
         ret.insert(
             k,
             wrap_godot_method(
+                &mut *store,
                 to_signature(data.params, data.results)?,
                 data.object,
                 data.method,
