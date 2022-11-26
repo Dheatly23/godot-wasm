@@ -313,4 +313,257 @@ impl WasmInstance {
             }
         }
     }
+
+    #[export]
+    fn get_8(&self, _owner: &Reference, i: usize) -> Option<u8> {
+        match self.read_memory(move |s| match s.get(i) {
+            Some(v) => Ok(*v),
+            None => bail!("Out of bounds!"),
+        }) {
+            Ok(Ok(v)) => Some(v),
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
+    #[export]
+    fn store_8(&self, _owner: &Reference, i: usize, v: u8) -> bool {
+        match self.write_memory(move |s| {
+            match s.get_mut(i) {
+                Some(s) => *s = v,
+                None => bail!("Out of bounds!"),
+            }
+            Ok(())
+        }) {
+            Ok(Ok(())) => true,
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
+
+    #[export]
+    fn get_16(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<u16> {
+        match self.read_memory(move |s| match s.get(i..i + 2) {
+            Some(s) => {
+                let s = s.try_into().unwrap();
+                Ok(if is_be.unwrap_or(false) {
+                    u16::from_le_bytes(s)
+                } else {
+                    u16::from_be_bytes(s)
+                })
+            }
+            None => bail!("Out of bounds!"),
+        }) {
+            Ok(Ok(v)) => Some(v),
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
+    #[export]
+    fn store_16(&self, _owner: &Reference, i: usize, v: u16, #[opt] is_be: Option<bool>) -> bool {
+        match self.write_memory(move |s| {
+            match s.get_mut(i..i + 2) {
+                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
+                    v.to_le_bytes()
+                } else {
+                    v.to_be_bytes()
+                }),
+                None => bail!("Out of bounds!"),
+            }
+            Ok(())
+        }) {
+            Ok(Ok(())) => true,
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
+
+    #[export]
+    fn get_32(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<u32> {
+        match self.read_memory(move |s| match s.get(i..i + 4) {
+            Some(s) => {
+                let s = s.try_into().unwrap();
+                Ok(if is_be.unwrap_or(false) {
+                    u32::from_le_bytes(s)
+                } else {
+                    u32::from_be_bytes(s)
+                })
+            }
+            None => bail!("Out of bounds!"),
+        }) {
+            Ok(Ok(v)) => Some(v),
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
+    #[export]
+    fn store_32(&self, _owner: &Reference, i: usize, v: u32, #[opt] is_be: Option<bool>) -> bool {
+        match self.write_memory(move |s| {
+            match s.get_mut(i..i + 4) {
+                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
+                    v.to_le_bytes()
+                } else {
+                    v.to_be_bytes()
+                }),
+                None => bail!("Out of bounds!"),
+            }
+            Ok(())
+        }) {
+            Ok(Ok(())) => true,
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
+
+    #[export]
+    fn get_64(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<i64> {
+        match self.read_memory(move |s| match s.get(i..i + 8) {
+            Some(s) => {
+                let s = s.try_into().unwrap();
+                Ok(if is_be.unwrap_or(false) {
+                    i64::from_le_bytes(s)
+                } else {
+                    i64::from_be_bytes(s)
+                })
+            }
+            None => bail!("Out of bounds!"),
+        }) {
+            Ok(Ok(v)) => Some(v),
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
+    #[export]
+    fn store_64(&self, _owner: &Reference, i: usize, v: i64, #[opt] is_be: Option<bool>) -> bool {
+        match self.write_memory(move |s| {
+            match s.get_mut(i..i + 8) {
+                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
+                    v.to_le_bytes()
+                } else {
+                    v.to_be_bytes()
+                }),
+                None => bail!("Out of bounds!"),
+            }
+            Ok(())
+        }) {
+            Ok(Ok(())) => true,
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
+
+    #[export]
+    fn get_float(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<f32> {
+        match self.read_memory(move |s| match s.get(i..i + 4) {
+            Some(s) => {
+                let s = s.try_into().unwrap();
+                Ok(if is_be.unwrap_or(false) {
+                    f32::from_le_bytes(s)
+                } else {
+                    f32::from_be_bytes(s)
+                })
+            }
+            None => bail!("Out of bounds!"),
+        }) {
+            Ok(Ok(v)) => Some(v),
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
+    #[export]
+    fn store_float(
+        &self,
+        _owner: &Reference,
+        i: usize,
+        v: f32,
+        #[opt] is_be: Option<bool>,
+    ) -> bool {
+        match self.write_memory(move |s| {
+            match s.get_mut(i..i + 4) {
+                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
+                    v.to_le_bytes()
+                } else {
+                    v.to_be_bytes()
+                }),
+                None => bail!("Out of bounds!"),
+            }
+            Ok(())
+        }) {
+            Ok(Ok(())) => true,
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
+
+    #[export]
+    fn get_double(&self, _owner: &Reference, i: usize, #[opt] is_be: Option<bool>) -> Option<f64> {
+        match self.read_memory(move |s| match s.get(i..i + 8) {
+            Some(s) => {
+                let s = s.try_into().unwrap();
+                Ok(if is_be.unwrap_or(false) {
+                    f64::from_le_bytes(s)
+                } else {
+                    f64::from_be_bytes(s)
+                })
+            }
+            None => bail!("Out of bounds!"),
+        }) {
+            Ok(Ok(v)) => Some(v),
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                None
+            }
+        }
+    }
+
+    #[export]
+    fn store_double(
+        &self,
+        _owner: &Reference,
+        i: usize,
+        v: f64,
+        #[opt] is_be: Option<bool>,
+    ) -> bool {
+        match self.write_memory(move |s| {
+            match s.get_mut(i..i + 8) {
+                Some(s) => s.copy_from_slice(&if is_be.unwrap_or(false) {
+                    v.to_le_bytes()
+                } else {
+                    v.to_be_bytes()
+                }),
+                None => bail!("Out of bounds!"),
+            }
+            Ok(())
+        }) {
+            Ok(Ok(())) => true,
+            Err(e) | Ok(Err(e)) => {
+                godot_error!("{}", e);
+                false
+            }
+        }
+    }
 }
