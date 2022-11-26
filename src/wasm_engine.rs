@@ -13,7 +13,23 @@ use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
 
 lazy_static! {
-    pub static ref ENGINE: Store = Store::new(&Engine::headless());
+    pub static ref ENGINE: Store = {
+        let mut compiler = Cranelift::default();
+        let target = Target::default();
+        let mut features = Features::default();
+        compiler
+            .canonicalize_nans(false)
+            .opt_level(wasmer::CraneliftOptLevel::SpeedAndSize);
+        features
+            .reference_types(true)
+            .simd(true)
+            .bulk_memory(true)
+            .multi_value(true)
+            .multi_memory(true)
+            .memory64(true);
+
+        Store::new(Engine::new(Box::new(compiler), target, features))
+    };
 }
 
 #[derive(NativeClass)]
@@ -50,30 +66,12 @@ impl WasmModule {
 
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
-            let compile_engine = {
-                let mut compiler = Cranelift::default();
-                let target = Target::default();
-                let mut features = Features::default();
-                compiler
-                    .canonicalize_nans(false)
-                    .opt_level(wasmer::CraneliftOptLevel::SpeedAndSize);
-                features
-                    .reference_types(true)
-                    .simd(true)
-                    .bulk_memory(true)
-                    .multi_value(true)
-                    .multi_memory(true)
-                    .memory64(true);
-
-                Store::new(&Engine::new(Box::new(compiler), target, features))
-            };
-
             let module = variant_typecast!((data) {
-                m: ByteArray => Module::new(&compile_engine, &*m.read())?,
-                m: String => Module::new(&compile_engine, &m)?,
+                m: ByteArray => Module::new(&*ENGINE, &*m.read())?,
+                m: String => Module::new(&*ENGINE, &m)?,
                 m: Ref<gdnative::api::File> => unsafe {
                     let m = m.assume_safe();
-                    Module::new(&compile_engine, &*m.get_buffer(m.get_len()).read())?
+                    Module::new(&*ENGINE, &*m.get_buffer(m.get_len()).read())?
                 },
                 _ @ v => bail!("Unknown module value {}", v),
             });
@@ -109,14 +107,16 @@ impl WasmModule {
                 }
             }
 
+            let exports = module.exports().collect();
+
             // SAFETY: Should be called only once and nobody else can read module data
             #[allow(mutable_transmutes)]
             let this = unsafe { transmute::<&Self, &mut Self>(self) };
             this.data = Some(ModuleData {
                 name,
-                module: unsafe { Module::deserialize(&*ENGINE, module.serialize()?)? },
+                module,
                 imports: deps_map,
-                exports: module.exports().collect(),
+                exports,
             });
 
             Ok(())

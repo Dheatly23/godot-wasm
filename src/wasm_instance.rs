@@ -6,8 +6,7 @@ use gdnative::export::user_data::Map;
 use gdnative::prelude::*;
 use parking_lot::{Once, OnceState, ReentrantMutex};
 use wasmer::{
-    AsStoreMut, Engine, Exports, Extern, Imports, Instance as InstanceWasm, Store, Type, Value,
-    WasmRef,
+    AsStoreMut, Exports, Extern, Imports, Instance as InstanceWasm, Store, Type, Value, WasmRef,
 };
 
 use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
@@ -114,11 +113,7 @@ impl WasmInstance {
         let ret = &mut r;
 
         self.once.call_once(move || {
-            match InstanceData::instantiate(
-                Store::new(Engine::clone(ENGINE.engine())),
-                module,
-                host,
-            ) {
+            match InstanceData::instantiate(Store::new(ENGINE.engine()), module, host) {
                 Ok(v) => {
                     // SAFETY: Should be called only once and nobody else can read module data
                     #[allow(mutable_transmutes)]
