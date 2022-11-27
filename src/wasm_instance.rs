@@ -376,8 +376,8 @@ impl WasmInstance {
 
     #[method]
     fn memory_write(&self, i: usize, a: ByteArray) -> bool {
-        let a = &a.read();
-        match self.write_memory(i, i + a.len(), |s| {
+        let a = &*a.read();
+        match self.write_memory(i, a.len(), |s| {
             s.copy_from_slice(a);
             Ok(())
         }) {
@@ -391,7 +391,7 @@ impl WasmInstance {
 
     #[method]
     fn get_8(&self, i: usize) -> Option<u8> {
-        match self.read_memory(i, i + 1, |s| Ok(s[0])) {
+        match self.read_memory(i, 1, |s| Ok(s[0])) {
             Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
@@ -402,7 +402,7 @@ impl WasmInstance {
 
     #[method]
     fn store_8(&self, i: usize, v: u8) -> bool {
-        match self.write_memory(i, i + 1, |s| {
+        match self.write_memory(i, 1, |s| {
             s[0] = v;
             Ok(())
         }) {
@@ -416,7 +416,7 @@ impl WasmInstance {
 
     #[method]
     fn get_16(&self, i: usize) -> Option<u16> {
-        match self.read_memory(i, i + 2, |s| Ok(u16::from_le_bytes(s.try_into().unwrap()))) {
+        match self.read_memory(i, 2, |s| Ok(u16::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
@@ -427,7 +427,7 @@ impl WasmInstance {
 
     #[method]
     fn store_16(&self, i: usize, v: u16) -> bool {
-        match self.write_memory(i, i + 2, |s| {
+        match self.write_memory(i, 2, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
@@ -441,7 +441,7 @@ impl WasmInstance {
 
     #[method]
     fn get_32(&self, i: usize) -> Option<u32> {
-        match self.read_memory(i, i + 4, |s| Ok(u32::from_le_bytes(s.try_into().unwrap()))) {
+        match self.read_memory(i, 4, |s| Ok(u32::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
@@ -452,7 +452,7 @@ impl WasmInstance {
 
     #[method]
     fn store_32(&self, i: usize, v: u32) -> bool {
-        match self.write_memory(i, i + 4, |s| {
+        match self.write_memory(i, 4, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
@@ -466,7 +466,7 @@ impl WasmInstance {
 
     #[method]
     fn get_64(&self, i: usize) -> Option<i64> {
-        match self.read_memory(i, i + 8, |s| Ok(i64::from_le_bytes(s.try_into().unwrap()))) {
+        match self.read_memory(i, 8, |s| Ok(i64::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
@@ -477,7 +477,7 @@ impl WasmInstance {
 
     #[method]
     fn store_64(&self, i: usize, v: i64) -> bool {
-        match self.write_memory(i, i + 8, |s| {
+        match self.write_memory(i, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
@@ -491,7 +491,7 @@ impl WasmInstance {
 
     #[method]
     fn get_float(&self, i: usize) -> Option<f32> {
-        match self.read_memory(i, i + 4, |s| Ok(f32::from_le_bytes(s.try_into().unwrap()))) {
+        match self.read_memory(i, 4, |s| Ok(f32::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
@@ -502,7 +502,7 @@ impl WasmInstance {
 
     #[method]
     fn store_float(&self, i: usize, v: f32) -> bool {
-        match self.write_memory(i, i + 4, |s| {
+        match self.write_memory(i, 4, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
@@ -516,7 +516,7 @@ impl WasmInstance {
 
     #[method]
     fn get_double(&self, i: usize) -> Option<f64> {
-        match self.read_memory(i, i + 8, |s| Ok(f64::from_le_bytes(s.try_into().unwrap()))) {
+        match self.read_memory(i, 8, |s| Ok(f64::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
@@ -527,7 +527,7 @@ impl WasmInstance {
 
     #[method]
     fn store_double(&self, i: usize, v: f64) -> bool {
-        match self.write_memory(i, i + 8, |s| {
+        match self.write_memory(i, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
