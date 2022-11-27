@@ -8,11 +8,11 @@ use gdnative::prelude::*;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
 use scopeguard::guard;
 use wasmtime::{
-    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw, ValType,
+    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
 };
 
 use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
-use crate::wasm_util::{make_host_module, HOST_MODULE, MEMORY_EXPORT};
+use crate::wasm_util::{from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT};
 
 #[derive(NativeClass)]
 #[inherit(Reference)]
@@ -253,6 +253,17 @@ impl WasmInstance {
                 }
             })
             .done();
+
+        builder
+            .signal("error_happened")
+            .with_param("message", VariantType::GodotString)
+            .done();
+    }
+
+    fn emit_error(&self, base: TRef<Reference>, err: Error) {
+        let err = err.to_string();
+        godot_error!("{}", err);
+        base.emit_signal("error_happened", &[err.to_variant()]);
     }
 
     /// Initialize and loads module.
@@ -272,7 +283,12 @@ impl WasmInstance {
     }
 
     #[method]
-    fn call_wasm(&self, name: String, args: VariantArray) -> Option<VariantArray> {
+    fn call_wasm(
+        &self,
+        #[base] base: TRef<Reference>,
+        name: String,
+        args: VariantArray,
+    ) -> Option<VariantArray> {
         match self.get_data().and_then(move |m| {
             m.acquire_store(move |m, mut store| {
                 let f = match m.instance.get_export(&mut store, &name) {
@@ -289,21 +305,7 @@ impl WasmInstance {
                 let mut arr = vec![ValRaw::i32(0); pi.len().max(ri.len())];
 
                 for (ix, t) in pi.enumerate() {
-                    let v = args.get(ix as _);
-                    arr[ix] = match t {
-                        ValType::I32 => ValRaw::i32(i32::from_variant(&v)?),
-                        ValType::I64 => ValRaw::i64(i64::from_variant(&v)?),
-                        ValType::F32 => ValRaw::f32(f32::from_variant(&v)?.to_bits()),
-                        ValType::F64 => ValRaw::f64(f64::from_variant(&v)?.to_bits()),
-                        _ => bail!("Unsupported WASM type conversion {}", t),
-                    };
-                }
-
-                for t in ty.results() {
-                    match t {
-                        ValType::I32 | ValType::I64 | ValType::F32 | ValType::F64 => (),
-                        _ => bail!("Unsupported WASM type conversion {}", t),
-                    }
+                    arr[ix] = unsafe { to_raw(t, args.get(ix as _))? };
                 }
 
                 // SAFETY: Array length is maximum of params and returns and initialized
@@ -313,14 +315,7 @@ impl WasmInstance {
 
                 let ret = VariantArray::new();
                 for (ix, t) in ri.enumerate() {
-                    let v = arr[ix];
-                    ret.push(match t {
-                        ValType::I32 => v.get_i32().to_variant(),
-                        ValType::I64 => v.get_i64().to_variant(),
-                        ValType::F32 => f32::from_bits(v.get_f32()).to_variant(),
-                        ValType::F64 => f64::from_bits(v.get_f64()).to_variant(),
-                        _ => bail!("Unsupported WASM type conversion {}", t),
-                    });
+                    ret.push(unsafe { from_raw(t, arr[ix])? });
                 }
 
                 Ok(ret.into_shared())
@@ -328,14 +323,14 @@ impl WasmInstance {
         }) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 None
             }
         }
     }
 
     #[method]
-    fn has_memory(&self) -> bool {
+    fn has_memory(&self, #[base] base: TRef<Reference>) -> bool {
         match self.get_data().and_then(|m| {
             m.acquire_store(|m, mut store| {
                 Ok(match m.instance.get_export(&mut store, MEMORY_EXPORT) {
@@ -346,36 +341,36 @@ impl WasmInstance {
         }) {
             Ok(v) => v,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 false
             }
         }
     }
 
     #[method]
-    fn memory_size(&self) -> usize {
+    fn memory_size(&self, #[base] base: TRef<Reference>) -> usize {
         match self.get_memory(|store, mem| Ok(mem.data_size(&store))) {
             Ok(v) => v,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 0
             }
         }
     }
 
     #[method]
-    fn memory_read(&self, i: usize, n: usize) -> Option<ByteArray> {
+    fn memory_read(&self, #[base] base: TRef<Reference>, i: usize, n: usize) -> Option<ByteArray> {
         match self.read_memory(i, n, |s| Ok(ByteArray::from_slice(s))) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 None
             }
         }
     }
 
     #[method]
-    fn memory_write(&self, i: usize, a: ByteArray) -> bool {
+    fn memory_write(&self, #[base] base: TRef<Reference>, i: usize, a: ByteArray) -> bool {
         let a = &*a.read();
         match self.write_memory(i, a.len(), |s| {
             s.copy_from_slice(a);
@@ -383,157 +378,157 @@ impl WasmInstance {
         }) {
             Ok(()) => true,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 false
             }
         }
     }
 
     #[method]
-    fn get_8(&self, i: usize) -> Option<u8> {
+    fn get_8(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u8> {
         match self.read_memory(i, 1, |s| Ok(s[0])) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 None
             }
         }
     }
 
     #[method]
-    fn put_8(&self, i: usize, v: u8) -> bool {
+    fn put_8(&self, #[base] base: TRef<Reference>, i: usize, v: u8) -> bool {
         match self.write_memory(i, 1, |s| {
             s[0] = v;
             Ok(())
         }) {
             Ok(()) => true,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 false
             }
         }
     }
 
     #[method]
-    fn get_16(&self, i: usize) -> Option<u16> {
+    fn get_16(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u16> {
         match self.read_memory(i, 2, |s| Ok(u16::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 None
             }
         }
     }
 
     #[method]
-    fn put_16(&self, i: usize, v: u16) -> bool {
+    fn put_16(&self, #[base] base: TRef<Reference>, i: usize, v: u16) -> bool {
         match self.write_memory(i, 2, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
             Ok(()) => true,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 false
             }
         }
     }
 
     #[method]
-    fn get_32(&self, i: usize) -> Option<u32> {
+    fn get_32(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u32> {
         match self.read_memory(i, 4, |s| Ok(u32::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 None
             }
         }
     }
 
     #[method]
-    fn put_32(&self, i: usize, v: u32) -> bool {
+    fn put_32(&self, #[base] base: TRef<Reference>, i: usize, v: u32) -> bool {
         match self.write_memory(i, 4, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
             Ok(()) => true,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 false
             }
         }
     }
 
     #[method]
-    fn get_64(&self, i: usize) -> Option<i64> {
+    fn get_64(&self, #[base] base: TRef<Reference>, i: usize) -> Option<i64> {
         match self.read_memory(i, 8, |s| Ok(i64::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 None
             }
         }
     }
 
     #[method]
-    fn put_64(&self, i: usize, v: i64) -> bool {
+    fn put_64(&self, #[base] base: TRef<Reference>, i: usize, v: i64) -> bool {
         match self.write_memory(i, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
             Ok(()) => true,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 false
             }
         }
     }
 
     #[method]
-    fn get_float(&self, i: usize) -> Option<f32> {
+    fn get_float(&self, #[base] base: TRef<Reference>, i: usize) -> Option<f32> {
         match self.read_memory(i, 4, |s| Ok(f32::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 None
             }
         }
     }
 
     #[method]
-    fn put_float(&self, i: usize, v: f32) -> bool {
+    fn put_float(&self, #[base] base: TRef<Reference>, i: usize, v: f32) -> bool {
         match self.write_memory(i, 4, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
             Ok(()) => true,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 false
             }
         }
     }
 
     #[method]
-    fn get_double(&self, i: usize) -> Option<f64> {
+    fn get_double(&self, #[base] base: TRef<Reference>, i: usize) -> Option<f64> {
         match self.read_memory(i, 8, |s| Ok(f64::from_le_bytes(s.try_into().unwrap()))) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 None
             }
         }
     }
 
     #[method]
-    fn put_double(&self, i: usize, v: f64) -> bool {
+    fn put_double(&self, #[base] base: TRef<Reference>, i: usize, v: f64) -> bool {
         match self.write_memory(i, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         }) {
             Ok(()) => true,
             Err(e) => {
-                godot_error!("{}", e);
+                self.emit_error(base, e);
                 false
             }
         }

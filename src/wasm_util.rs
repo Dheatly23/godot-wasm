@@ -86,7 +86,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 }
 
 // Mark this unsafe for future proofing
-unsafe fn to_raw(t: ValType, v: Variant) -> Result<ValRaw, Error> {
+pub unsafe fn to_raw(t: ValType, v: Variant) -> Result<ValRaw, Error> {
     Ok(match t {
         ValType::I32 => ValRaw::i32(i32::from_variant(&v)?),
         ValType::I64 => ValRaw::i64(i64::from_variant(&v)?),
@@ -97,7 +97,7 @@ unsafe fn to_raw(t: ValType, v: Variant) -> Result<ValRaw, Error> {
 }
 
 // Mark this unsafe for future proofing
-unsafe fn from_raw(t: ValType, v: ValRaw) -> Result<Variant, Error> {
+pub unsafe fn from_raw(t: ValType, v: ValRaw) -> Result<Variant, Error> {
     Ok(match t {
         ValType::I32 => v.get_i32().to_variant(),
         ValType::I64 => v.get_i64().to_variant(),
