@@ -6,30 +6,23 @@ use gdnative::export::user_data::Map;
 use gdnative::prelude::*;
 use lazy_static::lazy_static;
 use parking_lot::{Once, OnceState};
-use wasmer::{Cranelift, Engine, ExportType, ExternType, Features, Module, Store, Target};
+use wasmtime::{Config, Engine, ExternType, Module};
 
-use crate::variant_typecast;
 use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
 
 lazy_static! {
-    pub static ref ENGINE: Store = {
-        let mut compiler = Cranelift::default();
-        let target = Target::default();
-        let mut features = Features::default();
-        compiler
-            .canonicalize_nans(false)
-            .opt_level(wasmer::CraneliftOptLevel::SpeedAndSize);
-        features
-            .reference_types(true)
-            .simd(true)
-            .bulk_memory(true)
-            .multi_value(true)
-            .multi_memory(true)
-            .memory64(true);
-
-        Store::new(Engine::new(Box::new(compiler), target, features))
-    };
+    pub static ref ENGINE: Engine = Engine::new(
+        Config::new()
+            .cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
+            .wasm_reference_types(true)
+            .wasm_simd(true)
+            .wasm_bulk_memory(true)
+            .wasm_multi_value(true)
+            .wasm_multi_memory(true)
+            .wasm_memory64(true)
+    )
+    .unwrap();
 }
 
 #[derive(NativeClass)]
@@ -45,7 +38,6 @@ pub struct ModuleData {
     name: GodotString,
     pub module: Module,
     pub imports: HashMap<String, Instance<WasmModule, Shared>>,
-    pub exports: Vec<ExportType>,
 }
 
 impl WasmModule {
@@ -66,15 +58,16 @@ impl WasmModule {
 
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
-            let module = variant_typecast!((data) {
-                m: ByteArray => Module::new(&*ENGINE, &*m.read())?,
-                m: String => Module::new(&*ENGINE, &m)?,
-                m: Ref<gdnative::api::File> => unsafe {
-                    let m = m.assume_safe();
-                    Module::new(&*ENGINE, &*m.get_buffer(m.get_len()).read())?
-                },
-                _ @ v => bail!("Unknown module value {}", v),
-            });
+            let module = match VariantDispatch::from(&data) {
+                VariantDispatch::ByteArray(v) => Module::new(&*ENGINE, &*v.read()),
+                VariantDispatch::GodotString(v) => Module::new(&*ENGINE, &v.to_string()),
+                VariantDispatch::Object(v) => {
+                    let v = <Ref<gdnative::api::File>>::from_variant(&v)?;
+                    let v = unsafe { v.assume_safe() };
+                    Module::new(&*ENGINE, &*v.get_buffer(v.get_len()).read())
+                }
+                _ => bail!("Unknown module value {}", data),
+            }?;
 
             let mut deps_map = HashMap::with_capacity(imports.len() as _);
             for (k, v) in imports.iter() {
@@ -92,22 +85,37 @@ impl WasmModule {
                     None => bail!("Unknown module {}", i.module()),
                     Some(m) => m
                         .script()
-                        .map(|m| {
-                            if !m
-                                .get_data()?
-                                .exports
-                                .iter()
-                                .any(|j| i.name() == j.name() && i.ty() == j.ty())
-                            {
-                                bail!("No import in module {} named {}", i.module(), i.name());
-                            }
-                            Ok(())
-                        })
+                        .map(
+                            |m| match (i.ty(), m.get_data()?.module.get_export(i.name())) {
+                                (_, None) => {
+                                    bail!("No import in module {} named {}", i.module(), i.name())
+                                }
+                                (ExternType::Func(f1), Some(ExternType::Func(f2))) if f1 == f2 => {
+                                    Ok(())
+                                }
+                                (ExternType::Global(g1), Some(ExternType::Global(g2)))
+                                    if g1 == g2 =>
+                                {
+                                    Ok(())
+                                }
+                                (ExternType::Table(t1), Some(ExternType::Table(t2)))
+                                    if t1 == t2 =>
+                                {
+                                    Ok(())
+                                }
+                                (ExternType::Memory(m1), Some(ExternType::Memory(m2)))
+                                    if m1 == m2 =>
+                                {
+                                    Ok(())
+                                }
+                                (e1, Some(e2)) => {
+                                    bail!("Import type mismatch ({:?} != {:?})", e1, e2)
+                                }
+                            },
+                        )
                         .unwrap()?,
                 }
             }
-
-            let exports = module.exports().collect();
 
             // SAFETY: Should be called only once and nobody else can read module data
             #[allow(mutable_transmutes)]
@@ -116,7 +124,6 @@ impl WasmModule {
                 name,
                 module,
                 imports: deps_map,
-                exports,
             });
 
             Ok(())
@@ -191,8 +198,8 @@ impl WasmModule {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
-            for i in &m.exports {
-                if let ExternType::Function(f) = i.ty() {
+            for i in m.module.exports() {
+                if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
                     ret.insert(
                         i.name(),
@@ -224,7 +231,7 @@ impl WasmModule {
                 if i.module() != HOST_MODULE {
                     continue;
                 }
-                if let ExternType::Function(f) = i.ty() {
+                if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
                     ret.insert(
                         i.name(),
@@ -247,10 +254,9 @@ impl WasmModule {
 
     #[method]
     fn has_function(&self, name: String) -> bool {
-        match self.get_data().and_then(|m| {
-            Ok(m.exports
-                .iter()
-                .any(|v| matches!(v.ty(), ExternType::Function(_)) && v.name() == name))
+        match self.get_data().map(|m| match m.module.get_export(&name) {
+            Some(ExternType::Func(_)) => true,
+            _ => false,
         }) {
             Ok(v) => v,
             Err(e) => {
@@ -263,24 +269,15 @@ impl WasmModule {
     #[method]
     fn get_signature(&self, name: String) -> Option<Dictionary> {
         match self.get_data().and_then(|m| {
-            let f = match m
-                .exports
-                .iter()
-                .filter_map(|v| {
-                    if let ExternType::Function(f) = v.ty() {
-                        if v.name() == name {
-                            return Some(f);
-                        }
-                    }
-                    None
-                })
-                .next()
-            {
-                Some(v) => v,
-                None => bail!("No function named {}", name),
-            };
-            let (p, r) = from_signature(f)?;
-            Ok(Dictionary::from_iter([("params", p), ("results", r)].into_iter()).into_shared())
+            if let Some(ExternType::Func(f)) = m.module.get_export(&name) {
+                let (p, r) = from_signature(&f)?;
+                Ok(
+                    Dictionary::from_iter([("params", p), ("results", r)].into_iter())
+                        .into_shared(),
+                )
+            } else {
+                bail!("No function named {}", name);
+            }
         }) {
             Ok(v) => Some(v),
             Err(e) => {

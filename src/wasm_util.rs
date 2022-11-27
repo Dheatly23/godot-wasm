@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use anyhow::{bail, Error};
 use gdnative::api::WeakRef;
 use gdnative::prelude::*;
-use wasmer::{
-    Exports, Function, FunctionEnv, FunctionEnvMut, FunctionType, RuntimeError, Store, Type, Value,
-};
+use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
+
+use crate::wasm_instance::StoreData;
 
 pub const TYPE_I32: u32 = 1;
 pub const TYPE_I64: u32 = 2;
@@ -17,34 +19,9 @@ pub const MODULE_INCLUDES: &[&str] = &[HOST_MODULE];
 
 pub const MEMORY_EXPORT: &str = "memory";
 
-#[doc(hidden)]
-#[macro_export]
-macro_rules! variant_typecast {
-    (($e:expr) { $($i:ident : $t:ty => $v:expr ,)+ _ @ $ei:ident => $else:expr $(,)? }) => {{
-        let $ei = $e;
-        $(
-            if let Ok($i) = <$t>::from_variant(&$ei) {
-                $v
-            } else
-        )+ {
-            $else
-        }
-    }};
-    (($e:expr) { $($i:ident : $t:ty => $v:expr ,)+ _ => $else:expr $(,)? }) => {{
-        let r#__variant = $e;
-        $(
-            if let Ok($i) = <$t>::from_variant(&r#__variant) {
-                $v
-            } else
-        )+ {
-            $else
-        }
-    }};
-}
-
-pub fn from_signature(sig: &FunctionType) -> Result<(ByteArray, ByteArray), Error> {
-    let p = sig.params().iter();
-    let r = sig.results().iter();
+pub fn from_signature(sig: &FuncType) -> Result<(ByteArray, ByteArray), Error> {
+    let p = sig.params();
+    let r = sig.results();
 
     let mut pr = ByteArray::new();
     let mut rr = ByteArray::new();
@@ -57,10 +34,10 @@ pub fn from_signature(sig: &FunctionType) -> Result<(ByteArray, ByteArray), Erro
         .chain(r.zip(rr.write().iter_mut()))
     {
         *d = match s {
-            Type::I32 => TYPE_I32,
-            Type::I64 => TYPE_I64,
-            Type::F32 => TYPE_F32,
-            Type::F64 => TYPE_F64,
+            ValType::I32 => TYPE_I32,
+            ValType::I64 => TYPE_I64,
+            ValType::F32 => TYPE_F32,
+            ValType::F64 => TYPE_F64,
             _ => bail!("Unconvertible signture"),
         } as _;
     }
@@ -68,11 +45,11 @@ pub fn from_signature(sig: &FunctionType) -> Result<(ByteArray, ByteArray), Erro
     Ok((pr, rr))
 }
 
-pub fn to_signature(params: Variant, results: Variant) -> Result<FunctionType, Error> {
+pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error> {
     let p;
     let r;
 
-    fn f(it: impl Iterator<Item = Result<u32, Error>>) -> Result<Vec<Type>, Error> {
+    fn f(it: impl Iterator<Item = Result<u32, Error>>) -> Result<Vec<ValType>, Error> {
         let mut ret = match it.size_hint() {
             (_, Some(n)) => Vec::with_capacity(n),
             (n, None) => Vec::with_capacity(n),
@@ -80,10 +57,10 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FunctionType, E
 
         for i in it {
             ret.push(match i? {
-                TYPE_I32 => Type::I32,
-                TYPE_I64 => Type::I64,
-                TYPE_F32 => Type::F32,
-                TYPE_F64 => Type::F64,
+                TYPE_I32 => ValType::I32,
+                TYPE_I64 => ValType::I64,
+                TYPE_F32 => ValType::F32,
+                TYPE_F64 => ValType::F64,
                 v => bail!("Unknown enumeration value {}", v),
             });
         }
@@ -91,131 +68,91 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FunctionType, E
         Ok(ret)
     }
 
-    p = variant_typecast!((params) {
-        v: VariantArray => f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?)))?,
-        v: ByteArray => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
-        v: Int32Array => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
-        v: Float32Array => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
-        _ @ params => bail!("Unconvertible value {}", params),
-    });
+    p = match VariantDispatch::from(&params) {
+        VariantDispatch::VariantArray(v) => f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?))),
+        VariantDispatch::ByteArray(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
+        VariantDispatch::Int32Array(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
+        _ => bail!("Unconvertible value {}", params),
+    }?;
 
-    r = variant_typecast!((results) {
-        v: VariantArray => f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?)))?,
-        v: ByteArray => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
-        v: Int32Array => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
-        v: Float32Array => f(v.read().as_slice().iter().map(|v| Ok(*v as u32)))?,
-        _ @ results => bail!("Unconvertible value {}", results),
-    });
+    r = match VariantDispatch::from(&results) {
+        VariantDispatch::VariantArray(v) => f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?))),
+        VariantDispatch::ByteArray(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
+        VariantDispatch::Int32Array(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
+        _ => bail!("Unconvertible value {}", results),
+    }?;
 
-    Ok(FunctionType::new(p, r))
+    Ok(FuncType::new(p, r))
 }
 
-#[derive(Clone)]
-struct GodotMethodEnv {
-    ty: FunctionType,
+// Mark this unsafe for future proofing
+unsafe fn to_raw(t: ValType, v: Variant) -> Result<ValRaw, Error> {
+    Ok(match t {
+        ValType::I32 => ValRaw::i32(i32::from_variant(&v)?),
+        ValType::I64 => ValRaw::i64(i64::from_variant(&v)?),
+        ValType::F32 => ValRaw::f32(f32::from_variant(&v)?.to_bits()),
+        ValType::F64 => ValRaw::f64(f64::from_variant(&v)?.to_bits()),
+        _ => bail!("Unsupported WASM type conversion {}", t),
+    })
+}
+
+// Mark this unsafe for future proofing
+unsafe fn from_raw(t: ValType, v: ValRaw) -> Result<Variant, Error> {
+    Ok(match t {
+        ValType::I32 => v.get_i32().to_variant(),
+        ValType::I64 => v.get_i64().to_variant(),
+        ValType::F32 => f32::from_bits(v.get_f32()).to_variant(),
+        ValType::F64 => f64::from_bits(v.get_f64()).to_variant(),
+        _ => bail!("Unsupported WASM type conversion {}", t),
+    })
+}
+
+fn wrap_godot_method(
+    store: impl AsContextMut<Data = StoreData>,
+    ty: FuncType,
     obj: Variant,
     method: GodotString,
-}
-
-impl GodotMethodEnv {
-    fn call_method(
-        this: FunctionEnvMut<GodotMethodEnv>,
-        args: &[Value],
-    ) -> Result<Vec<Value>, RuntimeError> {
-        let this = this.data();
-        fn wrap_err<T, E: std::error::Error + Sync + Send + 'static>(
-            v: Result<T, E>,
-        ) -> Result<T, RuntimeError> {
-            match v {
-                Ok(v) => Ok(v),
-                Err(e) => Err(RuntimeError::user(Box::new(e))),
-            }
+) -> Func {
+    let ty_cloned = ty.clone();
+    let f = move |mut ctx: Caller<StoreData>, args: &mut [ValRaw]| -> Result<(), Error> {
+        let pi = ty.params();
+        let mut p = Vec::with_capacity(pi.len());
+        for (ix, t) in pi.enumerate() {
+            p.push(unsafe { from_raw(t, args[ix])? });
         }
 
-        let mut p = Vec::with_capacity(args.len());
-        for v in args {
-            p.push(match v {
-                Value::I32(v) => v.to_variant(),
-                Value::I64(v) => v.to_variant(),
-                Value::F32(v) => v.to_variant(),
-                Value::F64(v) => v.to_variant(),
-                _ => {
-                    return Err(RuntimeError::new(format!(
-                        "Cannot format WASM value {:?}",
-                        v
-                    )))
-                }
-            });
-        }
-
-        let mut obj = match <Ref<WeakRef, Shared>>::from_variant(&this.obj) {
+        let mut obj = match <Ref<WeakRef, Shared>>::from_variant(&obj) {
             Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-            Err(_) => this.obj.clone(),
+            Err(_) => obj.clone(),
         };
-        let r = unsafe { wrap_err(obj.call(this.method.clone(), &p))? };
+        let r = ctx
+            .data_mut()
+            .release_store(|| unsafe { obj.call(method.clone(), &p) })?;
 
-        let results = this.ty.results();
-        let mut ret = Vec::with_capacity(results.len());
-        if results.len() == 0 {
+        let mut ri = ty.results();
+        if ri.len() == 0 {
         } else if let Ok(r) = VariantArray::from_variant(&r) {
-            for (ix, t) in results.iter().enumerate() {
+            for (ix, t) in ri.enumerate() {
                 let v = r.get(ix as _);
-                ret.push(match t {
-                    Type::I32 => Value::I32(wrap_err(i32::from_variant(&v))?),
-                    Type::I64 => Value::I64(wrap_err(i64::from_variant(&v))?),
-                    Type::F32 => Value::F32(wrap_err(f32::from_variant(&v))?),
-                    Type::F64 => Value::F64(wrap_err(f64::from_variant(&v))?),
-                    _ => {
-                        return Err(RuntimeError::new(format!(
-                            "Unsupported WASM type conversion {}",
-                            t
-                        )))
-                    }
-                });
+                args[ix] = unsafe { to_raw(t, v)? };
             }
-        } else if results.len() == 1 {
-            ret.push(match results[0] {
-                Type::I32 => Value::I32(wrap_err(i32::from_variant(&r))?),
-                Type::I64 => Value::I64(wrap_err(i64::from_variant(&r))?),
-                Type::F32 => Value::F32(wrap_err(f32::from_variant(&r))?),
-                Type::F64 => Value::F64(wrap_err(f64::from_variant(&r))?),
-                t => {
-                    return Err(RuntimeError::new(format!(
-                        "Unsupported WASM type conversion {}",
-                        t
-                    )))
-                }
-            });
+        } else if ri.len() == 1 {
+            args[0] = unsafe { to_raw(ri.next().unwrap(), r)? };
         } else {
-            return Err(RuntimeError::new(format!(
-                "Unconvertible return value {}",
-                r
-            )));
+            bail!("Unconvertible return value {}", r);
         }
 
-        Ok(ret)
-    }
+        Ok(())
+    };
+
+    unsafe { Func::new_unchecked(store, ty_cloned, f) }
 }
 
-pub fn wrap_godot_method(
-    store: &mut Store,
-    ty: FunctionType,
-    obj: Variant,
-    method: GodotString,
-) -> Function {
-    let env = FunctionEnv::new(
-        &mut *store,
-        GodotMethodEnv {
-            ty: FunctionType::clone(&ty),
-            obj,
-            method,
-        },
-    );
-    Function::new_with_env(store, &env, ty, GodotMethodEnv::call_method)
-}
-
-pub fn make_host_module(store: &mut Store, dict: Dictionary) -> Result<Exports, Error> {
-    let mut ret = Exports::new();
+pub fn make_host_module(
+    store: &mut Store<StoreData>,
+    dict: Dictionary,
+) -> Result<HashMap<String, Extern>, Error> {
+    let mut ret = HashMap::new();
     for (k, v) in dict.iter() {
         let k = GodotString::from_variant(&k)?.to_string();
 
@@ -232,7 +169,7 @@ pub fn make_host_module(store: &mut Store, dict: Dictionary) -> Result<Exports, 
             Ok(obj) => unsafe { obj.assume_safe().get_ref() },
             Err(_) => data.object.clone(),
         };
-        if !obj.has_method(GodotString::clone(&data.method)) {
+        if !obj.has_method(data.method.clone()) {
             bail!("Object {} has no method {}", obj, data.method);
         }
 
@@ -243,7 +180,8 @@ pub fn make_host_module(store: &mut Store, dict: Dictionary) -> Result<Exports, 
                 to_signature(data.params, data.results)?,
                 data.object,
                 data.method,
-            ),
+            )
+            .into(),
         );
     }
 
