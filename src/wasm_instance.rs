@@ -401,7 +401,7 @@ impl WasmInstance {
     }
 
     #[method]
-    fn store_8(&self, i: usize, v: u8) -> bool {
+    fn put_8(&self, i: usize, v: u8) -> bool {
         match self.write_memory(i, 1, |s| {
             s[0] = v;
             Ok(())
@@ -426,7 +426,7 @@ impl WasmInstance {
     }
 
     #[method]
-    fn store_16(&self, i: usize, v: u16) -> bool {
+    fn put_16(&self, i: usize, v: u16) -> bool {
         match self.write_memory(i, 2, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
@@ -451,7 +451,7 @@ impl WasmInstance {
     }
 
     #[method]
-    fn store_32(&self, i: usize, v: u32) -> bool {
+    fn put_32(&self, i: usize, v: u32) -> bool {
         match self.write_memory(i, 4, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
@@ -476,7 +476,7 @@ impl WasmInstance {
     }
 
     #[method]
-    fn store_64(&self, i: usize, v: i64) -> bool {
+    fn put_64(&self, i: usize, v: i64) -> bool {
         match self.write_memory(i, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
@@ -501,7 +501,7 @@ impl WasmInstance {
     }
 
     #[method]
-    fn store_float(&self, i: usize, v: f32) -> bool {
+    fn put_float(&self, i: usize, v: f32) -> bool {
         match self.write_memory(i, 4, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
@@ -526,7 +526,7 @@ impl WasmInstance {
     }
 
     #[method]
-    fn store_double(&self, i: usize, v: f64) -> bool {
+    fn put_double(&self, i: usize, v: f64) -> bool {
         match self.write_memory(i, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
