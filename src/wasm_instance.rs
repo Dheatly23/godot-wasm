@@ -34,7 +34,7 @@ pub struct InstanceData {
 
 pub struct StoreData {
     mutex_raw: *const RawMutex,
-    config: Config,
+    pub config: Config,
 }
 
 // SAFETY: Store data is safely contained within instance data?

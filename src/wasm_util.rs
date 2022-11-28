@@ -144,6 +144,10 @@ fn wrap_godot_method(
             bail!("Unconvertible return value {}", r);
         }
 
+        if ctx.data().config.with_epoch {
+            ctx.as_context_mut().set_epoch_deadline(EPOCH_DEADLINE);
+        }
+
         Ok(())
     };
 
