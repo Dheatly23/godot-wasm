@@ -131,6 +131,10 @@ fn wrap_godot_method(
             .data_mut()
             .release_store(|| unsafe { obj.call(method.clone(), &p) })?;
 
+        if let Some(msg) = ctx.data_mut().error_signal.take() {
+            return Err(Error::msg(msg));
+        }
+
         let mut ri = ty.results();
         if ri.len() == 0 {
         } else if let Ok(r) = VariantArray::from_variant(&r) {

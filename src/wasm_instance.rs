@@ -35,6 +35,7 @@ pub struct InstanceData {
 pub struct StoreData {
     mutex_raw: *const RawMutex,
     pub config: Config,
+    pub error_signal: Option<String>,
 }
 
 // SAFETY: Store data is safely contained within instance data?
@@ -200,6 +201,7 @@ impl WasmInstance {
                             },
                             None => Config::default(),
                         },
+                        error_signal: None,
                     },
                 ),
                 module,
@@ -347,6 +349,37 @@ impl WasmInstance {
             })
         }) {
             Ok(v) => Some(v),
+            Err(e) => {
+                self.emit_error(base, e);
+                None
+            }
+        }
+    }
+
+    /// Emit trap when returning from host. Only used for host binding.
+    /// Returns previous error message, if any.
+    #[method]
+    fn signal_error(&self, #[base] base: TRef<Reference>, msg: String) -> Option<String> {
+        match self.get_data().and_then(|m| {
+            m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.replace(msg)))
+        }) {
+            Ok(v) => v,
+            Err(e) => {
+                self.emit_error(base, e);
+                None
+            }
+        }
+    }
+
+    /// Cancel effect of signal_error.
+    /// Returns previous error message, if any.
+    #[method]
+    fn signal_error_cancel(&self, #[base] base: TRef<Reference>) -> Option<String> {
+        match self
+            .get_data()
+            .and_then(|m| m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.take())))
+        {
+            Ok(v) => v,
             Err(e) => {
                 self.emit_error(base, e);
                 None
