@@ -176,6 +176,20 @@ impl WasmInstance {
         }
     }
 
+    pub fn unwrap_data<F, R>(&self, base: TRef<Reference>, f: F) -> Option<R>
+    where
+        F: FnOnce(&InstanceData) -> Result<R, Error>,
+    {
+        match self.get_data().and_then(f) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                godot_error!("{:?}", e);
+                base.emit_signal("error_happened", &[e.to_string().to_variant()]);
+                None
+            }
+        }
+    }
+
     pub fn initialize_(
         &self,
         module: Instance<WasmModule, Shared>,
@@ -225,39 +239,41 @@ impl WasmInstance {
         r
     }
 
-    fn get_memory<F, R>(&self, f: F) -> Result<R, Error>
+    fn get_memory<F, R>(&self, base: TRef<Reference>, f: F) -> Option<R>
     where
         for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> Result<R, Error>,
     {
-        self.get_data()?.acquire_store(move |m, mut store| {
-            match m.instance.get_memory(&mut store, MEMORY_EXPORT) {
-                Some(mem) => Ok(f(store, mem)?),
-                None => bail!("No memory exported"),
-            }
+        self.unwrap_data(base, |m| {
+            m.acquire_store(
+                |m, mut store| match m.instance.get_memory(&mut store, MEMORY_EXPORT) {
+                    Some(mem) => f(store, mem),
+                    None => bail!("No memory exported"),
+                },
+            )
         })
     }
 
-    fn read_memory<F, R>(&self, i: usize, n: usize, f: F) -> Result<R, Error>
+    fn read_memory<F, R>(&self, base: TRef<Reference>, i: usize, n: usize, f: F) -> Option<R>
     where
         F: FnOnce(&[u8]) -> Result<R, Error>,
     {
-        self.get_memory(|store, mem| {
+        self.get_memory(base, |store, mem| {
             let data = mem.data(&store);
             match data.get(i..i + n) {
-                Some(s) => Ok(f(s)?),
+                Some(s) => f(s),
                 None => bail!("Index out of bound {}-{}", i, i + n),
             }
         })
     }
 
-    fn write_memory<F, R>(&self, i: usize, n: usize, f: F) -> Result<R, Error>
+    fn write_memory<F, R>(&self, base: TRef<Reference>, i: usize, n: usize, f: F) -> Option<R>
     where
         for<'a> F: FnOnce(&'a mut [u8]) -> Result<R, Error>,
     {
-        self.get_memory(|mut store, mem| {
+        self.get_memory(base, |mut store, mem| {
             let data = mem.data_mut(&mut store);
             match data.get_mut(i..i + n) {
-                Some(s) => Ok(f(s)?),
+                Some(s) => f(s),
                 None => bail!("Index out of bound {}-{}", i, i + n),
             }
         })
@@ -270,25 +286,13 @@ impl WasmInstance {
     fn register_properties(builder: &ClassBuilder<Self>) {
         builder
             .property::<Option<Instance<WasmModule, Shared>>>("module")
-            .with_getter(|v, _| match v.get_data() {
-                Ok(m) => Some(Instance::clone(&m.module)),
-                Err(e) => {
-                    godot_error!("{}", e);
-                    None
-                }
-            })
+            .with_getter(|v, b| v.unwrap_data(b, |m| Ok(m.module.clone())))
             .done();
 
         builder
             .signal("error_happened")
             .with_param("message", VariantType::GodotString)
             .done();
-    }
-
-    fn emit_error(&self, base: TRef<Reference>, err: Error) {
-        let err = err.to_string();
-        godot_error!("{}", err);
-        base.emit_signal("error_happened", &[err.to_variant()]);
     }
 
     /// Initialize and loads module.
@@ -315,7 +319,7 @@ impl WasmInstance {
         name: String,
         args: VariantArray,
     ) -> Option<VariantArray> {
-        match self.get_data().and_then(move |m| {
+        self.unwrap_data(base, move |m| {
             m.acquire_store(move |m, mut store| {
                 let f = match m.instance.get_export(&mut store, &name) {
                     Some(f) => match f {
@@ -347,248 +351,154 @@ impl WasmInstance {
 
                 Ok(ret.into_shared())
             })
-        }) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        })
     }
 
     /// Emit trap when returning from host. Only used for host binding.
     /// Returns previous error message, if any.
     #[method]
     fn signal_error(&self, #[base] base: TRef<Reference>, msg: String) -> Option<String> {
-        match self.get_data().and_then(|m| {
+        self.unwrap_data(base, |m| {
             m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.replace(msg)))
-        }) {
-            Ok(v) => v,
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        })
+        .flatten()
     }
 
     /// Cancel effect of signal_error.
     /// Returns previous error message, if any.
     #[method]
     fn signal_error_cancel(&self, #[base] base: TRef<Reference>) -> Option<String> {
-        match self
-            .get_data()
-            .and_then(|m| m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.take())))
-        {
-            Ok(v) => v,
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        self.unwrap_data(base, |m| {
+            m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.take()))
+        })
+        .flatten()
     }
 
     #[method]
     fn has_memory(&self, #[base] base: TRef<Reference>) -> bool {
-        match self.get_data().and_then(|m| {
+        self.unwrap_data(base, |m| {
             m.acquire_store(|m, mut store| {
                 Ok(match m.instance.get_export(&mut store, MEMORY_EXPORT) {
                     Some(Extern::Memory(_)) => true,
                     _ => false,
                 })
             })
-        }) {
-            Ok(v) => v,
-            Err(e) => {
-                self.emit_error(base, e);
-                false
-            }
-        }
+        })
+        .unwrap_or_default()
     }
 
     #[method]
     fn memory_size(&self, #[base] base: TRef<Reference>) -> usize {
-        match self.get_memory(|store, mem| Ok(mem.data_size(&store))) {
-            Ok(v) => v,
-            Err(e) => {
-                self.emit_error(base, e);
-                0
-            }
-        }
+        self.get_memory(base, |store, mem| Ok(mem.data_size(&store)))
+            .unwrap_or_default()
     }
 
     #[method]
     fn memory_read(&self, #[base] base: TRef<Reference>, i: usize, n: usize) -> Option<ByteArray> {
-        match self.read_memory(i, n, |s| Ok(ByteArray::from_slice(s))) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        self.read_memory(base, i, n, |s| Ok(ByteArray::from_slice(s)))
     }
 
     #[method]
     fn memory_write(&self, #[base] base: TRef<Reference>, i: usize, a: ByteArray) -> bool {
         let a = &*a.read();
-        match self.write_memory(i, a.len(), |s| {
+        self.write_memory(base, i, a.len(), |s| {
             s.copy_from_slice(a);
             Ok(())
-        }) {
-            Ok(()) => true,
-            Err(e) => {
-                self.emit_error(base, e);
-                false
-            }
-        }
+        })
+        .is_some()
     }
 
     #[method]
     fn get_8(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u8> {
-        match self.read_memory(i, 1, |s| Ok(s[0])) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        self.read_memory(base, i, 1, |s| Ok(s[0]))
     }
 
     #[method]
     fn put_8(&self, #[base] base: TRef<Reference>, i: usize, v: u8) -> bool {
-        match self.write_memory(i, 1, |s| {
+        self.write_memory(base, i, 1, |s| {
             s[0] = v;
             Ok(())
-        }) {
-            Ok(()) => true,
-            Err(e) => {
-                self.emit_error(base, e);
-                false
-            }
-        }
+        })
+        .is_some()
     }
 
     #[method]
     fn get_16(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u16> {
-        match self.read_memory(i, 2, |s| Ok(u16::from_le_bytes(s.try_into().unwrap()))) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        self.read_memory(base, i, 2, |s| {
+            Ok(u16::from_le_bytes(s.try_into().unwrap()))
+        })
     }
 
     #[method]
     fn put_16(&self, #[base] base: TRef<Reference>, i: usize, v: u16) -> bool {
-        match self.write_memory(i, 2, |s| {
+        self.write_memory(base, i, 2, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
-        }) {
-            Ok(()) => true,
-            Err(e) => {
-                self.emit_error(base, e);
-                false
-            }
-        }
+        })
+        .is_some()
     }
 
     #[method]
     fn get_32(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u32> {
-        match self.read_memory(i, 4, |s| Ok(u32::from_le_bytes(s.try_into().unwrap()))) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        self.read_memory(base, i, 4, |s| {
+            Ok(u32::from_le_bytes(s.try_into().unwrap()))
+        })
     }
 
     #[method]
     fn put_32(&self, #[base] base: TRef<Reference>, i: usize, v: u32) -> bool {
-        match self.write_memory(i, 4, |s| {
+        self.write_memory(base, i, 4, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
-        }) {
-            Ok(()) => true,
-            Err(e) => {
-                self.emit_error(base, e);
-                false
-            }
-        }
+        })
+        .is_some()
     }
 
     #[method]
     fn get_64(&self, #[base] base: TRef<Reference>, i: usize) -> Option<i64> {
-        match self.read_memory(i, 8, |s| Ok(i64::from_le_bytes(s.try_into().unwrap()))) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        self.read_memory(base, i, 8, |s| {
+            Ok(i64::from_le_bytes(s.try_into().unwrap()))
+        })
     }
 
     #[method]
     fn put_64(&self, #[base] base: TRef<Reference>, i: usize, v: i64) -> bool {
-        match self.write_memory(i, 8, |s| {
+        self.write_memory(base, i, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
-        }) {
-            Ok(()) => true,
-            Err(e) => {
-                self.emit_error(base, e);
-                false
-            }
-        }
+        })
+        .is_some()
     }
 
     #[method]
     fn get_float(&self, #[base] base: TRef<Reference>, i: usize) -> Option<f32> {
-        match self.read_memory(i, 4, |s| Ok(f32::from_le_bytes(s.try_into().unwrap()))) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        self.read_memory(base, i, 4, |s| {
+            Ok(f32::from_le_bytes(s.try_into().unwrap()))
+        })
     }
 
     #[method]
     fn put_float(&self, #[base] base: TRef<Reference>, i: usize, v: f32) -> bool {
-        match self.write_memory(i, 4, |s| {
+        self.write_memory(base, i, 4, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
-        }) {
-            Ok(()) => true,
-            Err(e) => {
-                self.emit_error(base, e);
-                false
-            }
-        }
+        })
+        .is_some()
     }
 
     #[method]
     fn get_double(&self, #[base] base: TRef<Reference>, i: usize) -> Option<f64> {
-        match self.read_memory(i, 8, |s| Ok(f64::from_le_bytes(s.try_into().unwrap()))) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                self.emit_error(base, e);
-                None
-            }
-        }
+        self.read_memory(base, i, 8, |s| {
+            Ok(f64::from_le_bytes(s.try_into().unwrap()))
+        })
     }
 
     #[method]
     fn put_double(&self, #[base] base: TRef<Reference>, i: usize, v: f64) -> bool {
-        match self.write_memory(i, 8, |s| {
+        self.write_memory(base, i, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
-        }) {
-            Ok(()) => true,
-            Err(e) => {
-                self.emit_error(base, e);
-                false
-            }
-        }
+        })
+        .is_some()
     }
 }

@@ -115,6 +115,19 @@ impl WasmModule {
         }
     }
 
+    pub fn unwrap_data<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&ModuleData) -> Result<R, Error>,
+    {
+        match self.get_data().and_then(f) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                godot_error!("{:?}", e);
+                None
+            }
+        }
+    }
+
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
             let module = match VariantDispatch::from(&data) {
@@ -209,13 +222,7 @@ impl WasmModule {
     fn register_properties(builder: &ClassBuilder<Self>) {
         builder
             .property::<Option<GodotString>>("name")
-            .with_getter(|v, _| match v.get_data() {
-                Ok(m) => Some(GodotString::clone(&m.name)),
-                Err(e) => {
-                    godot_error!("{}", e);
-                    None
-                }
-            })
+            .with_getter(|v, _| v.unwrap_data(|m| Ok(m.name.clone())))
             .done();
     }
 
@@ -238,22 +245,13 @@ impl WasmModule {
 
     #[method]
     fn get_imported_modules(&self) -> Option<VariantArray> {
-        match self
-            .get_data()
-            .and_then(|m| Ok(VariantArray::from_iter(m.imports.values().cloned()).into_shared()))
-        {
-            Ok(v) => Some(v),
-            Err(e) => {
-                godot_error!("{}", e);
-                None
-            }
-        }
+        self.unwrap_data(|m| Ok(VariantArray::from_iter(m.imports.values().cloned()).into_shared()))
     }
 
     /// Gets exported functions
     #[method]
     fn get_exports(&self) -> Option<Dictionary> {
-        match self.get_data().and_then(|m| {
+        self.unwrap_data(|m| {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
@@ -270,19 +268,13 @@ impl WasmModule {
                 }
             }
             Ok(ret.into_shared())
-        }) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                godot_error!("{}", e);
-                None
-            }
-        }
+        })
     }
 
     /// Gets host imports signature
     #[method]
     fn get_host_imports(&self) -> Option<Dictionary> {
-        match self.get_data().and_then(|m| {
+        self.unwrap_data(|m| {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
@@ -302,32 +294,23 @@ impl WasmModule {
                 }
             }
             Ok(ret.into_shared())
-        }) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                godot_error!("{}", e);
-                None
-            }
-        }
+        })
     }
 
     #[method]
     fn has_function(&self, name: String) -> bool {
-        match self.get_data().map(|m| match m.module.get_export(&name) {
-            Some(ExternType::Func(_)) => true,
-            _ => false,
-        }) {
-            Ok(v) => v,
-            Err(e) => {
-                godot_error!("{}", e);
-                false
-            }
-        }
+        self.unwrap_data(|m| {
+            Ok(match m.module.get_export(&name) {
+                Some(ExternType::Func(_)) => true,
+                _ => false,
+            })
+        })
+        .unwrap_or_default()
     }
 
     #[method]
     fn get_signature(&self, name: String) -> Option<Dictionary> {
-        match self.get_data().and_then(|m| {
+        self.unwrap_data(|m| {
             if let Some(ExternType::Func(f)) = m.module.get_export(&name) {
                 let (p, r) = from_signature(&f)?;
                 Ok(
@@ -337,13 +320,7 @@ impl WasmModule {
             } else {
                 bail!("No function named {}", name);
             }
-        }) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                godot_error!("{}", e);
-                None
-            }
-        }
+        })
     }
 
     // Instantiate module
