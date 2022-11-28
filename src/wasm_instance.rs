@@ -11,8 +11,11 @@ use wasmtime::{
     AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
 };
 
-use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
-use crate::wasm_util::{from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT};
+use crate::wasm_config::Config;
+use crate::wasm_engine::{EpochThreadHandle, ModuleData, WasmModule, ENGINE, EPOCH};
+use crate::wasm_util::{
+    from_raw, make_host_module, to_raw, EPOCH_DEADLINE, HOST_MODULE, MEMORY_EXPORT,
+};
 
 #[derive(NativeClass)]
 #[inherit(Reference)]
@@ -31,6 +34,7 @@ pub struct InstanceData {
 
 pub struct StoreData {
     mutex_raw: *const RawMutex,
+    config: Config,
 }
 
 // SAFETY: Store data is safely contained within instance data?
@@ -45,12 +49,19 @@ impl InstanceData {
     ) -> Result<Self, Error> {
         type InstMap = HashMap<Ref<Reference, Shared>, InstanceWasm>;
 
-        fn f<T>(
-            store: &mut Store<T>,
+        fn f(
+            store: &mut Store<StoreData>,
             module: &ModuleData,
             insts: &mut InstMap,
             host: &Option<HashMap<String, Extern>>,
         ) -> Result<InstanceWasm, Error> {
+            if store.data().config.with_epoch {
+                store.epoch_deadline_trap();
+                EpochThreadHandle::spawn_thread(&EPOCH, || ENGINE.increment_epoch());
+            } else {
+                store.epoch_deadline_callback(|_| Ok(EPOCH_DEADLINE));
+            }
+
             let it = module.module.imports();
             let mut imports = Vec::with_capacity(it.len());
 
@@ -87,6 +98,7 @@ impl InstanceData {
                 bail!("Unknown import {:?}.{:?}", i.module(), i.name());
             }
 
+            store.set_epoch_deadline(EPOCH_DEADLINE);
             Ok(InstanceWasm::new(store, &module.module, &imports)?)
         }
 
@@ -167,6 +179,7 @@ impl WasmInstance {
         &self,
         module: Instance<WasmModule, Shared>,
         host: Option<Dictionary>,
+        config: Option<Variant>,
     ) -> bool {
         let mut r = true;
         let ret = &mut r;
@@ -177,6 +190,16 @@ impl WasmInstance {
                     &*ENGINE,
                     StoreData {
                         mutex_raw: ptr::null(),
+                        config: match config {
+                            Some(v) => match Config::from_variant(&v) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    godot_error!("{}", e);
+                                    Config::default()
+                                }
+                            },
+                            None => Config::default(),
+                        },
                     },
                 ),
                 module,
@@ -274,8 +297,9 @@ impl WasmInstance {
         #[base] owner: TRef<Reference>,
         module: Instance<WasmModule, Shared>,
         #[opt] host: Option<Dictionary>,
+        #[opt] config: Option<Variant>,
     ) -> Option<Ref<Reference>> {
-        if self.initialize_(module, host) {
+        if self.initialize_(module, host, config) {
             Some(owner.claim())
         } else {
             None
@@ -308,6 +332,7 @@ impl WasmInstance {
                     arr[ix] = unsafe { to_raw(t, args.get(ix as _))? };
                 }
 
+                store.set_epoch_deadline(EPOCH_DEADLINE);
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
                     f.call_unchecked(&mut store, arr.as_mut_ptr())?;

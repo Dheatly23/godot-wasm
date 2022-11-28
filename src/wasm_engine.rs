@@ -1,20 +1,78 @@
 use std::collections::HashMap;
 use std::mem::transmute;
+use std::sync::Arc;
+use std::thread;
+use std::time;
 
 use anyhow::{bail, Error};
 use gdnative::export::user_data::Map;
 use gdnative::prelude::*;
 use lazy_static::lazy_static;
-use parking_lot::{Once, OnceState};
+use parking_lot::{Condvar, Mutex, Once, OnceState};
 use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
 
+#[derive(Default)]
+pub struct EpochThreadHandle {
+    mutex: Mutex<(bool, Option<thread::JoinHandle<()>>)>,
+    cond: Condvar,
+    once: Once,
+}
+
+impl EpochThreadHandle {
+    pub fn spawn_thread<F>(this: &Arc<Self>, f: F)
+    where
+        F: Fn() -> () + 'static + Send,
+    {
+        this.once.call_once(move || {
+            let mut guard = this.mutex.lock();
+            let (t, h) = &mut *guard;
+            *t = false;
+
+            {
+                let this = this.clone();
+                *h = Some(thread::spawn(move || {
+                    const INTERVAL: time::Duration = time::Duration::from_secs(1);
+                    let mut timeout = time::Instant::now();
+                    let mut guard = this.mutex.lock();
+                    while !guard.0 {
+                        while timeout.elapsed() >= INTERVAL {
+                            f();
+                            timeout += INTERVAL;
+                        }
+                        this.cond.wait_until(&mut guard, timeout + INTERVAL);
+                    }
+                }));
+            }
+        });
+    }
+}
+
+impl Drop for EpochThreadHandle {
+    fn drop(&mut self) {
+        let handle;
+
+        {
+            let mut guard = self.mutex.lock();
+            let (t, h) = &mut *guard;
+            *t = true;
+            handle = h.take();
+        }
+
+        self.cond.notify_one();
+        if let Some(handle) = handle {
+            handle.join().unwrap();
+        }
+    }
+}
+
 lazy_static! {
     pub static ref ENGINE: Engine = Engine::new(
         Config::new()
             .cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
+            .epoch_interruption(true)
             .wasm_reference_types(true)
             .wasm_simd(true)
             .wasm_bulk_memory(true)
@@ -23,6 +81,7 @@ lazy_static! {
             .wasm_memory64(true)
     )
     .unwrap();
+    pub static ref EPOCH: Arc<EpochThreadHandle> = Arc::new(EpochThreadHandle::default());
 }
 
 #[derive(NativeClass)]
@@ -293,11 +352,12 @@ impl WasmModule {
         &self,
         #[base] owner: TRef<Reference>,
         #[opt] host: Option<Dictionary>,
+        #[opt] config: Option<Variant>,
     ) -> Option<Instance<WasmInstance, Shared>> {
         let inst = WasmInstance::new_instance();
         if let Ok(true) = inst.map(|v, _| {
             if let Some(i) = Instance::from_base(owner.claim()) {
-                v.initialize_(i, host)
+                v.initialize_(i, host, config)
             } else {
                 false
             }

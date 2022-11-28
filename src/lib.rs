@@ -1,3 +1,4 @@
+mod wasm_config;
 mod wasm_engine;
 mod wasm_instance;
 mod wasm_util;
