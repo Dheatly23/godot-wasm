@@ -7,7 +7,7 @@ use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValT
 
 use crate::wasm_instance::StoreData;
 
-pub const EPOCH_DEADLINE: u64 = 30;
+pub const EPOCH_DEADLINE: u64 = 5;
 
 pub const TYPE_I32: u32 = 1;
 pub const TYPE_I64: u32 = 2;
