@@ -420,16 +420,20 @@ impl WasmInstance {
     }
 
     #[method]
-    fn registry_get(&self, #[base] base: TRef<Reference>, ix: usize) -> Variant {
+    fn registry_get(&self, #[base] base: TRef<Reference>, ix: usize) -> Option<Variant> {
         self.unwrap_data(base, |m| {
             m.acquire_store(|_, store| Ok(store.data().get_registry()?.get(ix)))
         })
         .flatten()
-        .unwrap_or(Variant::nil())
     }
 
     #[method]
-    fn registry_set(&self, #[base] base: TRef<Reference>, ix: usize, obj: Variant) -> Variant {
+    fn registry_set(
+        &self,
+        #[base] base: TRef<Reference>,
+        ix: usize,
+        obj: Variant,
+    ) -> Option<Variant> {
         self.unwrap_data(base, |m| {
             m.acquire_store(|_, mut store| {
                 let reg = store.data_mut().get_registry_mut()?;
@@ -441,7 +445,14 @@ impl WasmInstance {
             })
         })
         .flatten()
-        .unwrap_or(Variant::nil())
+    }
+
+    #[method]
+    fn unregister_object(&self, #[base] base: TRef<Reference>, ix: usize) -> Option<Variant> {
+        self.unwrap_data(base, |m| {
+            m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.unregister(ix)))
+        })
+        .flatten()
     }
 
     #[method]
