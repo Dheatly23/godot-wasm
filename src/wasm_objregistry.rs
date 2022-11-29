@@ -74,6 +74,47 @@ macro_rules! is_typecheck {
     )*};
 }
 
+macro_rules! setget_value {
+    (#getter $x:ident as $ex:expr) => {$ex};
+    (#getter $x:ident) => {$x};
+    (
+        $linker:ident,
+        $(($name:literal =>
+            ($($x:ident : $tx:ty $(as $ex:expr)?),*) $($v:tt)*
+        )),* $(,)?
+    ) => {$(
+        #[allow(unused_parens)]
+        $linker.func_wrap(
+            OBJREGISTRY_MODULE,
+            concat!("get_", $name),
+            |ctx: Caller<StoreData>, i: u32| -> Result<($($tx),*), Error> {
+                let v = ctx.data().get_registry()?.get_with_err(i as _)?;
+                let $($v)* = <_>::from_variant(&v)?;
+                Ok(($(setget_value!(#getter $x $(as $ex)?)),*))
+            }
+        ).unwrap();
+
+        $linker.func_wrap(
+            OBJREGISTRY_MODULE,
+            concat!("set_", $name),
+            |mut ctx: Caller<StoreData>, i: u32, $($x : $tx),*| -> Result<(), Error> {
+                let v = $($v)*;
+                ctx.data_mut().get_registry_mut()?.replace(i as _, v.to_variant());
+                Ok(())
+            }
+        ).unwrap();
+
+        $linker.func_wrap(
+            OBJREGISTRY_MODULE,
+            concat!("new_", $name),
+            |mut ctx: Caller<StoreData>, $($x : $tx),*| -> Result<u32, Error> {
+                let v = $($v)*;
+                Ok(ctx.data_mut().get_registry_mut()?.register(v.to_variant()) as _)
+            }
+        ).unwrap();
+    )*};
+}
+
 lazy_static! {
     pub static ref OBJREGISTRY_LINKER: Linker<StoreData> = {
         let mut linker: Linker<StoreData> = Linker::new(&ENGINE);
@@ -174,27 +215,64 @@ lazy_static! {
             )
             .unwrap();
 
-        linker
-            .func_wrap(
-                OBJREGISTRY_MODULE,
-                "get_int",
-                |ctx: Caller<StoreData>, i: u32| -> Result<_, Error> {
-                    let v = ctx.data().get_registry()?.get_with_err(i as _)?;
-                    Ok(i64::from_variant(&v)?)
-                },
-            )
-            .unwrap();
-
-        linker
-            .func_wrap(
-                OBJREGISTRY_MODULE,
-                "get_float",
-                |ctx: Caller<StoreData>, i: u32| -> Result<_, Error> {
-                    let v = ctx.data().get_registry()?.get_with_err(i as _)?;
-                    Ok(f64::from_variant(&v)?)
-                },
-            )
-            .unwrap();
+        setget_value!(
+            linker,
+            ("bool" => (v: u32 as {let v: bool = v; v as _}) v),
+            ("int" => (v: i64) v),
+            ("float" => (v: f64) v),
+            ("vector2" => (x: f32, y: f32) Vector2 {x, y}),
+            ("vector3" => (x: f32, y: f32, z: f32) Vector3 {x, y, z}),
+            ("quat" => (x: f32, y: f32, z: f32, w: f32) Quat {x, y, z, w}),
+            ("rect2" => (x: f32, y: f32, w: f32, h: f32) Rect2 {
+                position: Vector2 {x, y},
+                size: Vector2 {x: w, y: h},
+            }),
+            ("transform2d" =>
+                (ax: f32, ay: f32, bx: f32, by: f32, ox: f32, oy: f32)
+                Transform2D {
+                    a: Vector2 {x: ax, y: ay},
+                    b: Vector2 {x: bx, y: by},
+                    origin: Vector2 {x: ox, y: oy},
+                }
+            ),
+            ("plane" => (a: f32, b: f32, c: f32, d: f32) Plane {
+                normal: Vector3 {x: a, y: b, z: c},
+                d,
+            }),
+            ("aabb" => (x: f32, y: f32, z: f32, w: f32, h: f32, t: f32) Aabb {
+                position : Vector3 {x, y, z},
+                size: Vector3 {x: w, y: h, z: t},
+            }),
+            ("basis" =>
+                (ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, cx: f32, cy: f32, cz: f32)
+                Basis {
+                    elements: [
+                        Vector3 {x: ax, y: ay, z: az},
+                        Vector3 {x: bx, y: by, z: bz},
+                        Vector3 {x: cx, y: cy, z: cz},
+                    ],
+                }
+            ),
+            ("transform" =>
+                (
+                    ax: f32, ay: f32, az: f32,
+                    bx: f32, by: f32, bz: f32,
+                    cx: f32, cy: f32, cz: f32,
+                    ox: f32, oy: f32, oz: f32
+                )
+                Transform {
+                    basis: Basis {
+                        elements: [
+                            Vector3 {x: ax, y: ay, z: az},
+                            Vector3 {x: bx, y: by, z: bz},
+                            Vector3 {x: cx, y: cy, z: cz},
+                        ],
+                    },
+                    origin: Vector3 {x: ox, y: oy, z: oz},
+                }
+            ),
+            ("color" => (r: f32, g: f32, b: f32, a: f32) Color {r, g, b, a}),
+        );
 
         linker
     };
