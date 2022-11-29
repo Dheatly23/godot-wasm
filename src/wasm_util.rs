@@ -16,8 +16,9 @@ pub const TYPE_F64: u32 = 4;
 pub const TYPE_VARIANT: u32 = 6;
 
 pub const HOST_MODULE: &str = "host";
+pub const OBJREGISTRY_MODULE: &str = "godot.objreg";
 
-pub const MODULE_INCLUDES: &[&str] = &[HOST_MODULE];
+pub const MODULE_INCLUDES: &[&str] = &[HOST_MODULE, OBJREGISTRY_MODULE];
 
 pub const MEMORY_EXPORT: &str = "memory";
 
@@ -88,7 +89,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 }
 
 // Mark this unsafe for future proofing
-pub unsafe fn to_raw(t: ValType, v: Variant) -> Result<ValRaw, Error> {
+pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Result<ValRaw, Error> {
     Ok(match t {
         ValType::I32 => ValRaw::i32(i32::from_variant(&v)?),
         ValType::I64 => ValRaw::i64(i64::from_variant(&v)?),
@@ -99,7 +100,7 @@ pub unsafe fn to_raw(t: ValType, v: Variant) -> Result<ValRaw, Error> {
 }
 
 // Mark this unsafe for future proofing
-pub unsafe fn from_raw(t: ValType, v: ValRaw) -> Result<Variant, Error> {
+pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Result<Variant, Error> {
     Ok(match t {
         ValType::I32 => v.get_i32().to_variant(),
         ValType::I64 => v.get_i64().to_variant(),
@@ -120,7 +121,7 @@ fn wrap_godot_method(
         let pi = ty.params();
         let mut p = Vec::with_capacity(pi.len());
         for (ix, t) in pi.enumerate() {
-            p.push(unsafe { from_raw(t, args[ix])? });
+            p.push(unsafe { from_raw(&mut ctx, t, args[ix])? });
         }
 
         let mut obj = match <Ref<WeakRef, Shared>>::from_variant(&obj) {
@@ -140,10 +141,10 @@ fn wrap_godot_method(
         } else if let Ok(r) = VariantArray::from_variant(&r) {
             for (ix, t) in ri.enumerate() {
                 let v = r.get(ix as _);
-                args[ix] = unsafe { to_raw(t, v)? };
+                args[ix] = unsafe { to_raw(&mut ctx, t, v)? };
             }
         } else if ri.len() == 1 {
-            args[0] = unsafe { to_raw(ri.next().unwrap(), r)? };
+            args[0] = unsafe { to_raw(&mut ctx, ri.next().unwrap(), r)? };
         } else {
             bail!("Unconvertible return value {}", r);
         }

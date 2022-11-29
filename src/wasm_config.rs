@@ -34,6 +34,7 @@ impl FromVariant for Config {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub enum ExternBindingType {
     None,
     Registry,

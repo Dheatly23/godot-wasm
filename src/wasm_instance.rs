@@ -11,10 +11,12 @@ use wasmtime::{
     AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
 };
 
-use crate::wasm_config::Config;
+use crate::wasm_config::{Config, ExternBindingType};
 use crate::wasm_engine::{EpochThreadHandle, ModuleData, WasmModule, ENGINE, EPOCH};
+use crate::wasm_objregistry::{ObjectRegistry, OBJREGISTRY_LINKER};
 use crate::wasm_util::{
     from_raw, make_host_module, to_raw, EPOCH_DEADLINE, HOST_MODULE, MEMORY_EXPORT,
+    OBJREGISTRY_MODULE,
 };
 
 #[derive(NativeClass)]
@@ -36,6 +38,7 @@ pub struct StoreData {
     mutex_raw: *const RawMutex,
     pub config: Config,
     pub error_signal: Option<String>,
+    pub object_registry: Option<ObjectRegistry>,
 }
 
 // SAFETY: Store data is safely contained within instance data?
@@ -48,6 +51,21 @@ impl InstanceData {
         module: Instance<WasmModule, Shared>,
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
+        let config = store.data().config;
+        if config.with_epoch {
+            store.epoch_deadline_trap();
+            EpochThreadHandle::spawn_thread(&EPOCH, || ENGINE.increment_epoch());
+        } else {
+            store.epoch_deadline_callback(|_| Ok(EPOCH_DEADLINE));
+        }
+        match config.extern_bind {
+            ExternBindingType::None => (),
+            ExternBindingType::Registry => {
+                store.data_mut().object_registry = Some(ObjectRegistry::default());
+            }
+            _ => panic!("Unimplemented binding"),
+        }
+
         type InstMap = HashMap<Ref<Reference, Shared>, InstanceWasm>;
 
         fn f(
@@ -56,24 +74,28 @@ impl InstanceData {
             insts: &mut InstMap,
             host: &Option<HashMap<String, Extern>>,
         ) -> Result<InstanceWasm, Error> {
-            if store.data().config.with_epoch {
-                store.epoch_deadline_trap();
-                EpochThreadHandle::spawn_thread(&EPOCH, || ENGINE.increment_epoch());
-            } else {
-                store.epoch_deadline_callback(|_| Ok(EPOCH_DEADLINE));
-            }
-
             let it = module.module.imports();
             let mut imports = Vec::with_capacity(it.len());
 
             for i in it {
-                if i.module() == HOST_MODULE {
-                    if let Some(host) = host.as_ref() {
-                        if let Some(v) = host.get(i.name()) {
-                            imports.push(v.clone());
+                match i.module() {
+                    HOST_MODULE => {
+                        if let Some(host) = host.as_ref() {
+                            if let Some(v) = host.get(i.name()) {
+                                imports.push(v.clone());
+                                continue;
+                            }
+                        }
+                    }
+                    OBJREGISTRY_MODULE
+                        if store.data().config.extern_bind == ExternBindingType::Registry =>
+                    {
+                        if let Some(v) = OBJREGISTRY_LINKER.get_by_import(&mut *store, &i) {
+                            imports.push(v);
                             continue;
                         }
                     }
+                    _ => (),
                 }
 
                 if let Some(v) = module.imports.get(i.module()) {
@@ -158,6 +180,18 @@ impl StoreData {
 
         f()
     }
+
+    pub fn get_registry(&self) -> Result<&ObjectRegistry, Error> {
+        self.object_registry
+            .as_ref()
+            .ok_or_else(|| Error::msg("Object registry not enabled!"))
+    }
+
+    pub fn get_registry_mut(&mut self) -> Result<&mut ObjectRegistry, Error> {
+        self.object_registry
+            .as_mut()
+            .ok_or_else(|| Error::msg("Object registry not enabled!"))
+    }
 }
 
 impl WasmInstance {
@@ -216,6 +250,7 @@ impl WasmInstance {
                             None => Config::default(),
                         },
                         error_signal: None,
+                        object_registry: None,
                     },
                 ),
                 module,
@@ -335,7 +370,7 @@ impl WasmInstance {
                 let mut arr = vec![ValRaw::i32(0); pi.len().max(ri.len())];
 
                 for (ix, t) in pi.enumerate() {
-                    arr[ix] = unsafe { to_raw(t, args.get(ix as _))? };
+                    arr[ix] = unsafe { to_raw(&mut store, t, args.get(ix as _))? };
                 }
 
                 store.set_epoch_deadline(EPOCH_DEADLINE);
@@ -346,7 +381,7 @@ impl WasmInstance {
 
                 let ret = VariantArray::new();
                 for (ix, t) in ri.enumerate() {
-                    ret.push(unsafe { from_raw(t, arr[ix])? });
+                    ret.push(unsafe { from_raw(&mut store, t, arr[ix])? });
                 }
 
                 Ok(ret.into_shared())
@@ -372,6 +407,41 @@ impl WasmInstance {
             m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.take()))
         })
         .flatten()
+    }
+
+    #[method]
+    fn register_object(&self, #[base] base: TRef<Reference>, obj: Variant) -> Option<usize> {
+        self.unwrap_data(base, |m| {
+            if obj.is_nil() {
+                bail!("Value is null!");
+            }
+            m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(obj)))
+        })
+    }
+
+    #[method]
+    fn registry_get(&self, #[base] base: TRef<Reference>, ix: usize) -> Variant {
+        self.unwrap_data(base, |m| {
+            m.acquire_store(|_, store| Ok(store.data().get_registry()?.get(ix)))
+        })
+        .flatten()
+        .unwrap_or(Variant::nil())
+    }
+
+    #[method]
+    fn registry_set(&self, #[base] base: TRef<Reference>, ix: usize, obj: Variant) -> Variant {
+        self.unwrap_data(base, |m| {
+            m.acquire_store(|_, mut store| {
+                let reg = store.data_mut().get_registry_mut()?;
+                if obj.is_nil() {
+                    Ok(reg.unregister(ix))
+                } else {
+                    Ok(reg.replace(ix, obj))
+                }
+            })
+        })
+        .flatten()
+        .unwrap_or(Variant::nil())
     }
 
     #[method]
