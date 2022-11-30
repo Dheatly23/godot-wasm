@@ -16,7 +16,7 @@ pub const TYPE_F64: u32 = 4;
 pub const TYPE_VARIANT: u32 = 6;
 
 pub const HOST_MODULE: &str = "host";
-pub const OBJREGISTRY_MODULE: &str = "godot.objreg";
+pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
 
 pub const MODULE_INCLUDES: &[&str] = &[HOST_MODULE, OBJREGISTRY_MODULE];
 
