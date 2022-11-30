@@ -174,7 +174,7 @@ macro_rules! readwrite_value {
             |mut ctx: Caller<StoreData>, p: u32| -> Result<u32, Error> {
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
-                    _ => return Ok(0),
+                    _ => return Ok(u32::MAX),
                 };
 
                 let mut v: mem::MaybeUninit<$t> = mem::MaybeUninit::uninit();
