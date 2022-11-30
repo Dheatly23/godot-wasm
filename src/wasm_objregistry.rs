@@ -63,7 +63,7 @@ macro_rules! is_typecheck {
     ($linker:ident, $(($name:literal, $var:ident)),* $(,)?) => {$(
         $linker.func_wrap(
             OBJREGISTRY_MODULE,
-            concat!("is_", $name),
+            concat!($name, ".is"),
             |ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                 match ctx.data().get_registry()?.get(i as _) {
                     Some(v) if v.get_type() == VariantType::$var => Ok(1),
@@ -86,7 +86,7 @@ macro_rules! setget_value {
         #[allow(unused_parens)]
         $linker.func_wrap(
             OBJREGISTRY_MODULE,
-            concat!("get_", $name),
+            concat!($name, ".get"),
             |ctx: Caller<StoreData>, i: u32| -> Result<($($tx),*), Error> {
                 let v = ctx.data().get_registry()?.get_with_err(i as _)?;
                 let $($v)* = <_>::from_variant(&v)?;
@@ -96,7 +96,7 @@ macro_rules! setget_value {
 
         $linker.func_wrap(
             OBJREGISTRY_MODULE,
-            concat!("set_", $name),
+            concat!($name, ".set"),
             |mut ctx: Caller<StoreData>, i: u32, $($x : $tx),*| -> Result<(), Error> {
                 let v = $($v)*;
                 ctx.data_mut().get_registry_mut()?.replace(i as _, v.to_variant());
@@ -106,7 +106,7 @@ macro_rules! setget_value {
 
         $linker.func_wrap(
             OBJREGISTRY_MODULE,
-            concat!("new_", $name),
+            concat!($name, ".new"),
             |mut ctx: Caller<StoreData>, $($x : $tx),*| -> Result<u32, Error> {
                 let v = $($v)*;
                 Ok(ctx.data_mut().get_registry_mut()?.register(v.to_variant()) as _)
@@ -122,7 +122,7 @@ lazy_static! {
         linker
             .func_wrap(
                 OBJREGISTRY_MODULE,
-                "is_nonnull",
+                "null.is_not",
                 |ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                     match ctx.data().get_registry()?.get(i as _) {
                         Some(_) => Ok(1),
@@ -135,7 +135,7 @@ lazy_static! {
         linker
             .func_wrap(
                 OBJREGISTRY_MODULE,
-                "is_null",
+                "null.is",
                 |ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                     match ctx.data().get_registry()?.get(i as _) {
                         Some(_) => Ok(0),
@@ -178,7 +178,7 @@ lazy_static! {
         linker
             .func_wrap(
                 OBJREGISTRY_MODULE,
-                "remove",
+                "delete",
                 |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                     match ctx.data_mut().get_registry_mut()?.unregister(i as _) {
                         Some(_) => Ok(1),
@@ -203,7 +203,7 @@ lazy_static! {
         linker
             .func_wrap(
                 OBJREGISTRY_MODULE,
-                "copy_to",
+                "copy",
                 |mut ctx: Caller<StoreData>, s: u32, d: u32| -> Result<u32, Error> {
                     let reg = ctx.data_mut().get_registry_mut()?;
                     let v = reg.get_with_err(s as _)?;
