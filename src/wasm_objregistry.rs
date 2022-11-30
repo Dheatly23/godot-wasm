@@ -1,10 +1,11 @@
 use std::mem;
+use std::slice;
 
 use anyhow::{bail, Error};
 use gdnative::prelude::*;
 use lazy_static::lazy_static;
 use slab::Slab;
-use wasmtime::{Caller, Linker};
+use wasmtime::{Caller, Extern, Linker};
 
 use crate::wasm_engine::ENGINE;
 use crate::wasm_instance::StoreData;
@@ -109,6 +110,85 @@ macro_rules! setget_value {
             concat!($name, ".new"),
             |mut ctx: Caller<StoreData>, $($x : $tx),*| -> Result<u32, Error> {
                 let v = $($v)*;
+                Ok(ctx.data_mut().get_registry_mut()?.register(v.to_variant()) as _)
+            }
+        ).unwrap();
+    )*};
+}
+
+macro_rules! readwrite_value {
+    (
+        $linker:ident,
+        $(($name:literal => $t:ty)),* $(,)?
+    ) => {$(
+        #[allow(unused_parens)]
+        $linker.func_wrap(
+            OBJREGISTRY_MODULE,
+            concat!($name, ".read"),
+            |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
+                let v = <$t>::from_variant(&ctx.data().get_registry()?.get_with_err(i as _)?)?;
+                let mem = match ctx.get_export("memory") {
+                    Some(Extern::Memory(v)) => v,
+                    _ => return Ok(0),
+                };
+
+                // SAFETY: We are reading a live C struct here,
+                // so representing as slice should be kosher.
+                let s = unsafe {
+                    slice::from_raw_parts(&v as *const _ as *const u8, mem::size_of::<$t>())
+                };
+                mem.write(&mut ctx, p as _, s)?;
+                Ok(1)
+            }
+        ).unwrap();
+
+        $linker.func_wrap(
+            OBJREGISTRY_MODULE,
+            concat!($name, ".write"),
+            |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
+                let mem = match ctx.get_export("memory") {
+                    Some(Extern::Memory(v)) => v,
+                    _ => return Ok(0),
+                };
+
+                let mut v: mem::MaybeUninit<$t> = mem::MaybeUninit::uninit();
+                {
+                    // SAFETY: Bounds of slice match value slot
+                    // and value lifetime exceed slice lifetime.
+                    let s = unsafe {
+                        slice::from_raw_parts_mut(v.as_mut_ptr() as *mut u8, mem::size_of::<$t>())
+                    };
+                    mem.read(&mut ctx, p as _, s)?;
+                }
+
+                // SAFETY: At this point, value is initialized.
+                let v = unsafe { v.assume_init() };
+                ctx.data_mut().get_registry_mut()?.replace(i as _, v.to_variant());
+                Ok(1)
+            }
+        ).unwrap();
+
+        $linker.func_wrap(
+            OBJREGISTRY_MODULE,
+            concat!($name, ".write_new"),
+            |mut ctx: Caller<StoreData>, p: u32| -> Result<u32, Error> {
+                let mem = match ctx.get_export("memory") {
+                    Some(Extern::Memory(v)) => v,
+                    _ => return Ok(0),
+                };
+
+                let mut v: mem::MaybeUninit<$t> = mem::MaybeUninit::uninit();
+                {
+                    // SAFETY: Bounds of slice match value slot
+                    // and value lifetime exceed slice lifetime.
+                    let s = unsafe {
+                        slice::from_raw_parts_mut(v.as_mut_ptr() as *mut u8, mem::size_of::<$t>())
+                    };
+                    mem.read(&mut ctx, p as _, s)?;
+                }
+
+                // SAFETY: At this point, value is initialized.
+                let v = unsafe { v.assume_init() };
                 Ok(ctx.data_mut().get_registry_mut()?.register(v.to_variant()) as _)
             }
         ).unwrap();
@@ -272,6 +352,23 @@ lazy_static! {
                 }
             ),
             ("color" => (r: f32, g: f32, b: f32, a: f32) Color {r, g, b, a}),
+        );
+
+        readwrite_value!(
+            linker,
+            ("bool" => bool),
+            ("int" => i64),
+            ("float" => f64),
+            ("vector2" => Vector2),
+            ("vector3" => Vector3),
+            ("quat" => Quat),
+            ("rect2" => Rect2),
+            ("transform2d" => Transform2D),
+            ("plane" => Plane),
+            ("aabb" => Aabb),
+            ("basis" => Basis),
+            ("transform" => Transform),
+            ("color" => Color),
         );
 
         linker
