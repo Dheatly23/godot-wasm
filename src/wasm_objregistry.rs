@@ -127,10 +127,10 @@ macro_rules! readwrite_value {
         $linker:ident,
         $(($name:literal =>
             $v:ident : $t:ty [$c:expr]
-            [$($off:literal, $sz:literal | $($i:ident $([$ix:literal])?).+ : $g:ty);* $(;)?]
+            [$($sz:literal | $($i:ident $([$ix:literal])?).+ : $g:ty);* $(;)?]
         )),* $(,)?
     ) => {$(
-        #[allow(unused_parens)]
+        #[allow(unused_assignments)]
         $linker.func_wrap(
             OBJREGISTRY_MODULE,
             concat!($name, ".read"),
@@ -141,18 +141,20 @@ macro_rules! readwrite_value {
                     _ => return Ok(0),
                 };
 
-                let p = p as usize;
+                let mut p = p as usize;
                 $(
                     mem.write(
                         &mut ctx,
-                        p + $off,
+                        p,
                         &<$g>::from($($i $([$ix])?).+).to_le_bytes(),
                     )?;
+                    p += $sz;
                 )*
                 Ok(1)
             }
         ).unwrap();
 
+        #[allow(unused_assignments)]
         $linker.func_wrap(
             OBJREGISTRY_MODULE,
             concat!($name, ".write"),
@@ -162,13 +164,14 @@ macro_rules! readwrite_value {
                     _ => return Ok(0),
                 };
 
-                let p = p as usize;
+                let mut p = p as usize;
                 #[allow(unused_assignments)]
                 let mut $v: $t = $c;
                 $({
                     let mut s = [0u8; $sz];
-                    mem.read(&mut ctx, p + $off, &mut s)?;
+                    mem.read(&mut ctx, p, &mut s)?;
                     $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
+                    p += $sz;
                 })*
 
                 ctx.data_mut().get_registry_mut()?.replace(i as _, $v.to_variant());
@@ -176,6 +179,7 @@ macro_rules! readwrite_value {
             }
         ).unwrap();
 
+        #[allow(unused_assignments)]
         $linker.func_wrap(
             OBJREGISTRY_MODULE,
             concat!($name, ".write_new"),
@@ -185,13 +189,14 @@ macro_rules! readwrite_value {
                     _ => return Ok(0),
                 };
 
-                let p = p as usize;
+                let mut p = p as usize;
                 #[allow(unused_assignments)]
                 let mut $v: $t = $c;
                 $({
                     let mut s = [0u8; $sz];
-                    mem.read(&mut ctx, p + $off, &mut s)?;
+                    mem.read(&mut ctx, p, &mut s)?;
                     $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
+                    p += $sz;
                 })*
 
                 Ok(ctx.data_mut().get_registry_mut()?.register($v.to_variant()) as _)
@@ -487,86 +492,86 @@ lazy_static! {
 
         readwrite_value!(
             linker,
-            ("bool" => v: bool [false] [0, 1 | v: BoolWrapper]),
-            ("int" => v: i64 [0i64] [0, 8 | v: i64]),
-            ("float" => v: f64 [0f64] [0, 8 | v: f64]),
-            ("vector2" => v: Vector2 [Vector2::ZERO] [0, 4 | v.x: f32; 4, 4 | v.y: f32]),
+            ("bool" => v: bool [false] [1 | v: BoolWrapper]),
+            ("int" => v: i64 [0i64] [8 | v: i64]),
+            ("float" => v: f64 [0f64] [8 | v: f64]),
+            ("vector2" => v: Vector2 [Vector2::ZERO] [4 | v.x: f32; 4 | v.y: f32]),
             ("vector3" => v: Vector3 [Vector3::ZERO] [
-                0, 4 | v.x: f32;
-                4, 4 | v.y: f32;
-                8, 4 | v.z: f32;
+                4 | v.x: f32;
+                4 | v.y: f32;
+                4 | v.z: f32;
             ]),
             ("quat" => v: Quat [Quat {x: 0.0, y: 0.0, z: 0.0, w: 0.0}] [
-                0, 4 | v.x: f32;
-                4, 4 | v.y: f32;
-                8, 4 | v.z: f32;
-                12, 4 | v.w: f32;
+                4 | v.x: f32;
+                4 | v.y: f32;
+                4 | v.z: f32;
+                4 | v.w: f32;
             ]),
             ("rect2" => v: Rect2 [Rect2 {position: Vector2::ZERO, size: Vector2::ZERO}] [
-                0, 4 | v.position.x: f32;
-                4, 4 | v.position.y: f32;
-                8, 4 | v.size.x: f32;
-                12, 4 | v.size.y: f32;
+                4 | v.position.x: f32;
+                4 | v.position.y: f32;
+                4 | v.size.x: f32;
+                4 | v.size.y: f32;
             ]),
             ("transform2d" => v: Transform2D [Transform2D {
                 a: Vector2::ZERO,
                 b: Vector2::ZERO,
                 origin: Vector2::ZERO,
             }] [
-                0, 4 | v.a.x: f32;
-                4, 4 | v.a.y: f32;
-                8, 4 | v.b.x: f32;
-                12, 4 | v.b.y: f32;
-                16, 4 | v.origin.x: f32;
-                20, 4 | v.origin.y: f32;
+                4 | v.a.x: f32;
+                4 | v.a.y: f32;
+                4 | v.b.x: f32;
+                4 | v.b.y: f32;
+                4 | v.origin.x: f32;
+                4 | v.origin.y: f32;
             ]),
             ("plane" => v: Plane [Plane {normal: Vector3::ZERO, d: 0.0}] [
-                0, 4 | v.normal.x: f32;
-                4, 4 | v.normal.y: f32;
-                8, 4 | v.normal.z: f32;
-                12, 4 | v.d: f32;
+                4 | v.normal.x: f32;
+                4 | v.normal.y: f32;
+                4 | v.normal.z: f32;
+                4 | v.d: f32;
             ]),
             ("aabb" => v: Aabb [Aabb {position: Vector3::ZERO, size: Vector3::ZERO}] [
-                0, 4 | v.position.x: f32;
-                4, 4 | v.position.y: f32;
-                8, 4 | v.position.z: f32;
-                12, 4 | v.size.x: f32;
-                16, 4 | v.size.y: f32;
-                20, 4 | v.size.z: f32;
+                4 | v.position.x: f32;
+                4 | v.position.y: f32;
+                4 | v.position.z: f32;
+                4 | v.size.x: f32;
+                4 | v.size.y: f32;
+                4 | v.size.z: f32;
             ]),
             ("basis" => v: Basis [Basis {elements: [Vector3::ZERO; 3]}] [
-                0, 4 | v.elements[0].x: f32;
-                4, 4 | v.elements[0].y: f32;
-                8, 4 | v.elements[0].z: f32;
-                12, 4 | v.elements[1].x: f32;
-                16, 4 | v.elements[1].y: f32;
-                20, 4 | v.elements[1].z: f32;
-                24, 4 | v.elements[2].x: f32;
-                28, 4 | v.elements[2].y: f32;
-                32, 4 | v.elements[2].z: f32;
+                4 | v.elements[0].x: f32;
+                4 | v.elements[0].y: f32;
+                4 | v.elements[0].z: f32;
+                4 | v.elements[1].x: f32;
+                4 | v.elements[1].y: f32;
+                4 | v.elements[1].z: f32;
+                4 | v.elements[2].x: f32;
+                4 | v.elements[2].y: f32;
+                4 | v.elements[2].z: f32;
             ]),
             ("transform" => v: Transform [Transform {
                 basis: Basis {elements: [Vector3::ZERO; 3]},
                 origin: Vector3::ZERO,
             }] [
-                0, 4 | v.basis.elements[0].x: f32;
-                4, 4 | v.basis.elements[0].y: f32;
-                8, 4 | v.basis.elements[0].z: f32;
-                12, 4 | v.basis.elements[1].x: f32;
-                16, 4 | v.basis.elements[1].y: f32;
-                20, 4 | v.basis.elements[1].z: f32;
-                24, 4 | v.basis.elements[2].x: f32;
-                28, 4 | v.basis.elements[2].y: f32;
-                32, 4 | v.basis.elements[2].z: f32;
-                36, 4 | v.origin.x: f32;
-                40, 4 | v.origin.y: f32;
-                44, 4 | v.origin.z: f32;
+                4 | v.basis.elements[0].x: f32;
+                4 | v.basis.elements[0].y: f32;
+                4 | v.basis.elements[0].z: f32;
+                4 | v.basis.elements[1].x: f32;
+                4 | v.basis.elements[1].y: f32;
+                4 | v.basis.elements[1].z: f32;
+                4 | v.basis.elements[2].x: f32;
+                4 | v.basis.elements[2].y: f32;
+                4 | v.basis.elements[2].z: f32;
+                4 | v.origin.x: f32;
+                4 | v.origin.y: f32;
+                4 | v.origin.z: f32;
             ]),
             ("color" => v: Color [Color {r: 0.0, g: 0.0, b: 0.0, a: 0.0}] [
-                0, 4 | v.r: f32;
-                4, 4 | v.g: f32;
-                8, 4 | v.b: f32;
-                12, 4 | v.a: f32;
+                4 | v.r: f32;
+                4 | v.g: f32;
+                4 | v.b: f32;
+                4 | v.a: f32;
             ]),
         );
 
