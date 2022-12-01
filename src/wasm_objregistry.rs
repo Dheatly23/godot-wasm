@@ -24,38 +24,45 @@ impl Default for ObjectRegistry {
 impl ObjectRegistry {
     #[inline]
     pub fn get(&self, ix: usize) -> Option<Variant> {
-        self.slab.get(ix).cloned()
+        match ix.checked_sub(1) {
+            Some(ix) => self.slab.get(ix).cloned(),
+            None => None,
+        }
     }
 
     #[inline]
     pub fn register(&mut self, v: Variant) -> usize {
         if v.is_nil() {
-            panic!("Variant cannot be nil!");
+            0
+        } else {
+            self.slab.insert(v) + 1
         }
-        self.slab.insert(v)
     }
 
     #[inline]
     pub fn unregister(&mut self, ix: usize) -> Option<Variant> {
-        self.slab.try_remove(ix)
+        match ix.checked_sub(1) {
+            Some(ix) => self.slab.try_remove(ix),
+            None => None,
+        }
     }
 
     #[inline]
     pub fn replace(&mut self, ix: usize, v: Variant) -> Option<Variant> {
         if v.is_nil() {
-            panic!("Variant cannot be nil!");
+            return self.unregister(ix);
         }
-        match self.slab.get_mut(ix).as_mut() {
-            Some(p) => Some(mem::replace(p, v)),
+        match ix.checked_sub(1) {
+            Some(ix) => match self.slab.get_mut(ix).as_mut() {
+                Some(p) => Some(mem::replace(p, v)),
+                None => None,
+            },
             None => None,
         }
     }
 
-    fn get_with_err(&self, ix: usize) -> Result<Variant, Error> {
-        match self.get(ix) {
-            Some(v) => Ok(v),
-            None => bail!("Index {} is null", ix),
-        }
+    fn get_or_nil(&self, ix: usize) -> Variant {
+        self.get(ix).unwrap_or_else(Variant::nil)
     }
 }
 
@@ -88,7 +95,7 @@ macro_rules! setget_value {
             OBJREGISTRY_MODULE,
             concat!($name, ".get"),
             |ctx: Caller<StoreData>, i: u32| -> Result<($($tx),*), Error> {
-                let v = ctx.data().get_registry()?.get_with_err(i as _)?;
+                let v = ctx.data().get_registry()?.get_or_nil(i as _);
                 let $($v)* = <_>::from_variant(&v)?;
                 Ok(($(setget_value!(#getter $x $(as $ex)?)),*))
             }
@@ -128,7 +135,7 @@ macro_rules! readwrite_value {
             OBJREGISTRY_MODULE,
             concat!($name, ".read"),
             |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
-                let $v = <$t>::from_variant(&ctx.data().get_registry()?.get_with_err(i as _)?)?;
+                let $v = <$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -175,7 +182,7 @@ macro_rules! readwrite_value {
             |mut ctx: Caller<StoreData>, p: u32| -> Result<u32, Error> {
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
-                    _ => return Ok(u32::MAX),
+                    _ => return Ok(0),
                 };
 
                 let p = p as usize;
@@ -272,7 +279,7 @@ lazy_static! {
                 "duplicate",
                 |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                     let reg = ctx.data_mut().get_registry_mut()?;
-                    let v = reg.get_with_err(i as _)?;
+                    let v = reg.get_or_nil(i as _);
                     Ok(reg.register(v) as _)
                 },
             )
@@ -284,7 +291,7 @@ lazy_static! {
                 "copy",
                 |mut ctx: Caller<StoreData>, s: u32, d: u32| -> Result<u32, Error> {
                     let reg = ctx.data_mut().get_registry_mut()?;
-                    let v = reg.get_with_err(s as _)?;
+                    let v = reg.get_or_nil(s as _);
                     match reg.replace(d as _, v) {
                         Some(_) => Ok(1),
                         None => Ok(0),
@@ -468,7 +475,7 @@ lazy_static! {
                 "string.len",
                 |ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                     let v = GodotString::from_variant(
-                        &ctx.data().get_registry()?.get_with_err(i as _)?,
+                        &ctx.data().get_registry()?.get_or_nil(i as _),
                     )?;
                     Ok(v.len() as _)
                 },
@@ -481,7 +488,7 @@ lazy_static! {
                 "string.read",
                 |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
                     let v = GodotString::from_variant(
-                        &ctx.data().get_registry()?.get_with_err(i as _)?,
+                        &ctx.data().get_registry()?.get_or_nil(i as _),
                     )?;
                     let mem = match ctx.get_export("memory") {
                         Some(Extern::Memory(v)) => v,
@@ -522,7 +529,7 @@ lazy_static! {
                 |mut ctx: Caller<StoreData>, p: u32, n: u32| -> Result<u32, Error> {
                     let mem = match ctx.get_export("memory") {
                         Some(Extern::Memory(v)) => v,
-                        _ => return Ok(u32::MAX),
+                        _ => return Ok(0),
                     };
 
                     let mut v = vec![0u8; n as usize];
@@ -552,7 +559,7 @@ lazy_static! {
                 "dictionary.len",
                 |ctx: Caller<StoreData>, i: u32| -> Result<i32, Error> {
                     let v = Dictionary::from_variant(
-                        &ctx.data().get_registry()?.get_with_err(i as _)?,
+                        &ctx.data().get_registry()?.get_or_nil(i as _),
                     )?;
                     Ok(v.len())
                 },
@@ -565,8 +572,8 @@ lazy_static! {
                 "dictionary.has",
                 |ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
                     let reg = ctx.data().get_registry()?;
-                    let v = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
-                    let k = reg.get_with_err(k as _)?;
+                    let v = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                    let k = reg.get_or_nil(k as _);
                     Ok(v.contains(k) as _)
                 },
             )
@@ -578,8 +585,8 @@ lazy_static! {
                 "dictionary.has_all",
                 |ctx: Caller<StoreData>, i: u32, ka: u32| -> Result<u32, Error> {
                     let reg = ctx.data().get_registry()?;
-                    let v = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
-                    let ka = VariantArray::from_variant(&reg.get_with_err(ka as _)?)?;
+                    let v = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                    let ka = VariantArray::from_variant(&reg.get_or_nil(ka as _))?;
                     Ok(v.contains_all(&ka) as _)
                 },
             )
@@ -591,11 +598,11 @@ lazy_static! {
                 "dictionary.get",
                 |mut ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
                     let reg = ctx.data_mut().get_registry_mut()?;
-                    let v = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
-                    let k = reg.get_with_err(k as _)?;
+                    let v = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                    let k = reg.get_or_nil(k as _);
                     match v.get(k) {
-                        Some(v) if !v.is_nil() => Ok(reg.register(v.to_variant()) as _),
-                        _ => Ok(u32::MAX),
+                        Some(v) => Ok(reg.register(v.to_variant()) as _),
+                        _ => Ok(0),
                     }
                 },
             )
@@ -607,9 +614,9 @@ lazy_static! {
                 "dictionary.set",
                 |ctx: Caller<StoreData>, i: u32, k: u32, v: u32| -> Result<u32, Error> {
                     let reg = ctx.data().get_registry()?;
-                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
-                    let k = reg.get_with_err(k as _)?;
-                    let v = reg.get_with_err(v as _)?;
+                    let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                    let k = reg.get_or_nil(k as _);
+                    let v = reg.get_or_nil(v as _);
 
                     // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                     let d = unsafe {d.assume_unique()};
@@ -626,8 +633,8 @@ lazy_static! {
                 "dictionary.delete",
                 |ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
                     let reg = ctx.data().get_registry()?;
-                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
-                    let k = reg.get_with_err(k as _)?;
+                    let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                    let k = reg.get_or_nil(k as _);
 
                     // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                     let d = unsafe {d.assume_unique()};
@@ -644,7 +651,7 @@ lazy_static! {
                 "dictionary.keys",
                 |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                     let reg = ctx.data_mut().get_registry_mut()?;
-                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
                     Ok(reg.register(d.keys().owned_to_variant()) as _)
                 },
             )
@@ -656,7 +663,7 @@ lazy_static! {
                 "dictionary.values",
                 |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                     let reg = ctx.data_mut().get_registry_mut()?;
-                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
                     Ok(reg.register(d.values().owned_to_variant()) as _)
                 },
             )
@@ -674,7 +681,7 @@ lazy_static! {
                         Some(Extern::Memory(v)) => v,
                         _ => return Ok(0),
                     };
-                    let d = Dictionary::from_variant(&ctx.data().get_registry()?.get_with_err(i as _)?)?;
+                    let d = Dictionary::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
 
                     if to == from {
                         return Ok(0);
@@ -693,16 +700,8 @@ lazy_static! {
                     let mut ret = 0u32;
                     let from = from as usize;
                     for (i, (k, v)) in d.iter().skip(from).take(n).enumerate() {
-                        let k = if k.is_nil() {
-                            u32::MAX
-                        } else {
-                            reg.register(k) as u32
-                        };
-                        let v = if v.is_nil() {
-                            u32::MAX
-                        } else {
-                            reg.register(v) as u32
-                        };
+                        let k = reg.register(k) as u32;
+                        let v = reg.register(v) as u32;
 
                         ps[i*8..i*8 + 4].copy_from_slice(&k.to_le_bytes());
                         ps[i*8 + 4..i*8 + 8].copy_from_slice(&v.to_le_bytes());
@@ -720,7 +719,7 @@ lazy_static! {
                 "dictionary.clear",
                 |ctx: Caller<StoreData>, i: u32| -> Result<(), Error> {
                     let reg = ctx.data().get_registry()?;
-                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
 
                     // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                     let d = unsafe {d.assume_unique()};
@@ -736,7 +735,7 @@ lazy_static! {
                 "dictionary.duplicate",
                 |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                     let reg = ctx.data_mut().get_registry_mut()?;
-                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
                     Ok(reg.register(d.duplicate().owned_to_variant()) as _)
                 },
             )
