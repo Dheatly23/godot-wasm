@@ -534,5 +534,138 @@ lazy_static! {
             .unwrap();
 
         linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.new",
+                |mut ctx: Caller<StoreData>| -> Result<u32, Error> {
+                    Ok(ctx
+                        .data_mut()
+                        .get_registry_mut()?
+                        .register(Dictionary::new().owned_to_variant()) as _)
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.len",
+                |ctx: Caller<StoreData>, i: u32| -> Result<i32, Error> {
+                    let v = Dictionary::from_variant(
+                        &ctx.data().get_registry()?.get_with_err(i as _)?,
+                    )?;
+                    Ok(v.len())
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.has",
+                |ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
+                    let reg = ctx.data().get_registry()?;
+                    let v = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let k = reg.get_with_err(k as _)?;
+                    Ok(v.contains(k) as _)
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.has_all",
+                |ctx: Caller<StoreData>, i: u32, ka: u32| -> Result<u32, Error> {
+                    let reg = ctx.data().get_registry()?;
+                    let v = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let ka = VariantArray::from_variant(&reg.get_with_err(ka as _)?)?;
+                    Ok(v.contains_all(&ka) as _)
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.get",
+                |mut ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
+                    let reg = ctx.data_mut().get_registry_mut()?;
+                    let v = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let k = reg.get_with_err(k as _)?;
+                    match v.get(k) {
+                        Some(v) if !v.is_nil() => Ok(reg.register(v.to_variant()) as _),
+                        _ => Ok(u32::MAX),
+                    }
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.set",
+                |ctx: Caller<StoreData>, i: u32, k: u32, v: u32| -> Result<u32, Error> {
+                    let reg = ctx.data().get_registry()?;
+                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let k = reg.get_with_err(k as _)?;
+                    let v = reg.get_with_err(v as _)?;
+
+                    // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
+                    let d = unsafe {d.assume_unique()};
+                    let r = d.contains(k.clone());
+                    d.insert(k, v);
+                    Ok(r as _)
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.delete",
+                |ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
+                    let reg = ctx.data().get_registry()?;
+                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    let k = reg.get_with_err(k as _)?;
+
+                    // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
+                    let d = unsafe {d.assume_unique()};
+                    let r = d.contains(k.clone());
+                    d.erase(k);
+                    Ok(r as _)
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.clear",
+                |ctx: Caller<StoreData>, i: u32| -> Result<(), Error> {
+                    let reg = ctx.data().get_registry()?;
+                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+
+                    // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
+                    let d = unsafe {d.assume_unique()};
+                    d.clear();
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.duplicate",
+                |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
+                    let reg = ctx.data_mut().get_registry_mut()?;
+                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    Ok(reg.register(d.duplicate().owned_to_variant()) as _)
+                },
+            )
+            .unwrap();
+
+        linker
     };
 }
