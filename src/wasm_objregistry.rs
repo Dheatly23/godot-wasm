@@ -641,6 +641,82 @@ lazy_static! {
         linker
             .func_wrap(
                 OBJREGISTRY_MODULE,
+                "dictionary.keys",
+                |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
+                    let reg = ctx.data_mut().get_registry_mut()?;
+                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    Ok(reg.register(d.keys().owned_to_variant()) as _)
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.values",
+                |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
+                    let reg = ctx.data_mut().get_registry_mut()?;
+                    let d = Dictionary::from_variant(&reg.get_with_err(i as _)?)?;
+                    Ok(reg.register(d.values().owned_to_variant()) as _)
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
+                "dictionary.iter_slice",
+                |mut ctx: Caller<StoreData>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
+                    if to > from {
+                        bail!("Invalid range ({}-{})", from, to);
+                    }
+                    let mem = match ctx.get_export("memory") {
+                        Some(Extern::Memory(v)) => v,
+                        _ => return Ok(0),
+                    };
+                    let d = Dictionary::from_variant(&ctx.data().get_registry()?.get_with_err(i as _)?)?;
+
+                    if to == from {
+                        return Ok(0);
+                    }
+
+                    let n = (to - from) as usize;
+                    let p = p as usize;
+
+                    let (ps, data) = mem.data_and_store_mut(&mut ctx);
+                    let reg = data.get_registry_mut()?;
+                    let ps = match ps.get_mut(p..p + n*8) {
+                        Some(v) => v,
+                        None => bail!("Invalid memory bounds ({}-{})", p, p + n*8),
+                    };
+
+                    let mut ret = 0u32;
+                    let from = from as usize;
+                    for (i, (k, v)) in d.iter().skip(from).take(n).enumerate() {
+                        let k = if k.is_nil() {
+                            u32::MAX
+                        } else {
+                            reg.register(k) as u32
+                        };
+                        let v = if v.is_nil() {
+                            u32::MAX
+                        } else {
+                            reg.register(v) as u32
+                        };
+
+                        ps[i*8..i*8 + 4].copy_from_slice(&k.to_le_bytes());
+                        ps[i*8 + 4..i*8 + 8].copy_from_slice(&v.to_le_bytes());
+                        ret += 1;
+                    }
+
+                    Ok(ret)
+                },
+            )
+            .unwrap();
+
+        linker
+            .func_wrap(
+                OBJREGISTRY_MODULE,
                 "dictionary.clear",
                 |ctx: Caller<StoreData>, i: u32| -> Result<(), Error> {
                     let reg = ctx.data().get_registry()?;
