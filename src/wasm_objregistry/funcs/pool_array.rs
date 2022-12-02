@@ -195,4 +195,136 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             4 | v.a: f32;
         ]),
     );
+
+    linker
+        .func_wrap(
+            OBJREGISTRY_MODULE,
+            "string_array.len",
+            |ctx: Caller<StoreData>, a: u32| -> Result<i32, Error> {
+                let reg = ctx.data().get_registry()?;
+                let a = StringArray::from_variant(&reg.get_or_nil(a as _))?;
+                Ok(a.len())
+            },
+        )
+        .unwrap();
+
+    linker
+        .func_wrap(
+            OBJREGISTRY_MODULE,
+            "string_array.get",
+            |mut ctx: Caller<StoreData>, a: u32, i: i32| -> Result<u32, Error> {
+                let reg = ctx.data_mut().get_registry_mut()?;
+                let a = StringArray::from_variant(&reg.get_or_nil(a as _))?;
+                Ok(reg.register(a.get(i).owned_to_variant()) as _)
+            },
+        )
+        .unwrap();
+
+    linker
+        .func_wrap(
+            OBJREGISTRY_MODULE,
+            "string_array.slice",
+            |mut ctx: Caller<StoreData>,
+             a: u32,
+             from: u32,
+             to: u32,
+             p: u32|
+             -> Result<u32, Error> {
+                let mem = match ctx.get_export("memory") {
+                    Some(Extern::Memory(v)) => v,
+                    _ => return Ok(0),
+                };
+
+                let a = StringArray::from_variant(&ctx.data().get_registry()?.get_or_nil(a as _))?;
+                let s = a.read();
+                let s = match s.get(from as usize..to as usize) {
+                    Some(v) => v,
+                    None => bail!("Invalid array index ({}-{})", from as usize, to as usize),
+                };
+
+                let n = (to - from) as usize;
+                let p = p as usize;
+
+                let (ps, data) = mem.data_and_store_mut(&mut ctx);
+                let reg = data.get_registry_mut()?;
+                let ps = match ps.get_mut(p..p + n * 4) {
+                    Some(v) => v,
+                    None => bail!("Invalid memory bounds ({}-{})", p, p + n * 4),
+                };
+
+                let mut ret = 0u32;
+                for (i, v) in s.iter().enumerate() {
+                    let v = reg.register(v.to_variant()) as u32;
+
+                    ps[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+                    ret += 1;
+                }
+
+                Ok(ret)
+            },
+        )
+        .unwrap();
+
+    linker
+        .func_wrap(
+            OBJREGISTRY_MODULE,
+            "string_array.write",
+            |mut ctx: Caller<StoreData>, a: u32, p: u32, n: u32| -> Result<u32, Error> {
+                let mem = match ctx.get_export("memory") {
+                    Some(Extern::Memory(v)) => v,
+                    _ => return Ok(0),
+                };
+
+                let n = n as usize;
+                let p = p as usize;
+
+                let (ps, data) = mem.data_and_store_mut(&mut ctx);
+                let reg = data.get_registry_mut()?;
+                let ps = match ps.get_mut(p..p + n * 4) {
+                    Some(v) => v,
+                    None => bail!("Invalid memory bounds ({}-{})", p, p + n * 4),
+                };
+                let mut v = Vec::with_capacity(n);
+                for s in ps.chunks(4) {
+                    v.push(GodotString::from_variant(
+                        &reg.get_or_nil(u32::from_le_bytes(s.try_into().unwrap()) as _),
+                    )?);
+                }
+
+                reg.replace(a as _, StringArray::from_vec(v).to_variant());
+                Ok(1)
+            },
+        )
+        .unwrap();
+
+    linker
+        .func_wrap(
+            OBJREGISTRY_MODULE,
+            "string_array.write_new",
+            |mut ctx: Caller<StoreData>, p: u32, n: u32| -> Result<u32, Error> {
+                let mem = match ctx.get_export("memory") {
+                    Some(Extern::Memory(v)) => v,
+                    _ => return Ok(0),
+                };
+
+                let n = n as usize;
+                let p = p as usize;
+
+                let (ps, data) = mem.data_and_store_mut(&mut ctx);
+                let reg = data.get_registry_mut()?;
+                let ps = match ps.get_mut(p..p + n * 4) {
+                    Some(v) => v,
+                    None => bail!("Invalid memory bounds ({}-{})", p, p + n * 4),
+                };
+                let mut v = Vec::with_capacity(n);
+                for s in ps.chunks(4) {
+                    v.push(GodotString::from_variant(
+                        &reg.get_or_nil(u32::from_le_bytes(s.try_into().unwrap()) as _),
+                    )?);
+                }
+
+                Ok(reg.register(StringArray::from_vec(v).to_variant()) as _)
+            },
+        )
+        .unwrap();
 }
