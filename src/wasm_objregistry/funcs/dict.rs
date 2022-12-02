@@ -168,8 +168,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 };
 
                 let mut ret = 0u32;
-                let from = from as usize;
-                for (i, (k, v)) in d.iter().skip(from).take(n).enumerate() {
+                for (i, (k, v)) in d.iter().skip(from as usize).take(n).enumerate() {
                     let k = reg.register(k) as u32;
                     let v = reg.register(v) as u32;
 

@@ -51,11 +51,18 @@ macro_rules! readwrite_array {
             OBJREGISTRY_MODULE,
             concat!($name, ".slice"),
             |mut ctx: Caller<StoreData>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
+                if to > from {
+                    bail!("Invalid range ({}-{})", from, to);
+                }
                 let $v = <$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
                 };
+
+                if to == from {
+                    return Ok(0);
+                }
 
                 let mut p = p as usize;
                 let s = $v.read();
@@ -260,6 +267,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              to: u32,
              p: u32|
              -> Result<u32, Error> {
+                if to > from {
+                    bail!("Invalid range ({}-{})", from, to);
+                }
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -271,6 +281,10 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     Some(v) => v,
                     None => bail!("Invalid array index ({}-{})", from as usize, to as usize),
                 };
+
+                if to == from {
+                    return Ok(0);
+                }
 
                 let n = (to - from) as usize;
                 let p = p as usize;
