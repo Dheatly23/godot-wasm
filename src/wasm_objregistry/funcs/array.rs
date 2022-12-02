@@ -1,6 +1,6 @@
-use anyhow::Error;
+use anyhow::{bail, Error};
 use gdnative::prelude::*;
-use wasmtime::{Caller, Linker};
+use wasmtime::{Caller, Extern, Linker};
 
 use crate::wasm_instance::StoreData;
 use crate::wasm_util::OBJREGISTRY_MODULE;
@@ -16,19 +16,6 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     .data_mut()
                     .get_registry_mut()?
                     .register(VariantArray::new().owned_to_variant()) as _)
-            },
-        )
-        .unwrap();
-
-    linker
-        .func_wrap(
-            OBJREGISTRY_MODULE,
-            "array.len",
-            |ctx: Caller<StoreData>, i: u32| -> Result<i32, Error> {
-                Ok(
-                    VariantArray::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?
-                        .len(),
-                )
             },
         )
         .unwrap();
@@ -68,6 +55,52 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 let x = reg.get_or_nil(x as _);
                 v.set(i, x);
                 Ok(())
+            },
+        )
+        .unwrap();
+
+    linker
+        .func_wrap(
+            OBJREGISTRY_MODULE,
+            "array.slice",
+            |mut ctx: Caller<StoreData>,
+             v: u32,
+             from: u32,
+             to: u32,
+             p: u32|
+             -> Result<u32, Error> {
+                if to > from {
+                    bail!("Invalid range ({}-{})", from, to);
+                }
+                let mem = match ctx.get_export("memory") {
+                    Some(Extern::Memory(v)) => v,
+                    _ => return Ok(0),
+                };
+                let v = VariantArray::from_variant(&ctx.data().get_registry()?.get_or_nil(v as _))?;
+
+                if to == from {
+                    return Ok(0);
+                }
+
+                let n = (to - from) as usize;
+                let p = p as usize;
+
+                let (ps, data) = mem.data_and_store_mut(&mut ctx);
+                let reg = data.get_registry_mut()?;
+                let ps = match ps.get_mut(p..p + n * 4) {
+                    Some(v) => v,
+                    None => bail!("Invalid memory bounds ({}-{})", p, p + n * 4),
+                };
+
+                let mut ret = 0u32;
+                for i in from as usize..to as usize {
+                    let v = reg.register(v.get(i as _)) as u32;
+
+                    ps[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+                    ret += 1;
+                }
+
+                Ok(ret)
             },
         )
         .unwrap();
