@@ -1,4 +1,6 @@
 mod array;
+#[cfg(feature = "object-registry-compat")]
+mod compat;
 mod dict;
 mod pool_array;
 mod primitive;
@@ -18,4 +20,12 @@ macro_rules! register{
     };
 }
 
-register![array, dict, pool_array, primitive, string, typeis];
+register![array, compat, dict, pool_array, primitive, string, typeis];
+
+#[cfg(not(feature = "object-registry-compat"))]
+mod compat {
+    use wasmtime::Linker;
+    use crate::wasm_instance::StoreData;
+    #[inline]
+    pub fn register_functions(_: &mut Linker<StoreData>) {}
+}

@@ -61,7 +61,7 @@ impl ObjectRegistry {
         }
     }
 
-    fn get_or_nil(&self, ix: usize) -> Variant {
+    pub fn get_or_nil(&self, ix: usize) -> Variant {
         self.get(ix).unwrap_or_else(Variant::nil)
     }
 }
