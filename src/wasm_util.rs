@@ -3,11 +3,15 @@ use std::collections::HashMap;
 use anyhow::{bail, Error};
 use gdnative::api::WeakRef;
 use gdnative::prelude::*;
+#[cfg(feature = "object-registry-extern")]
+use wasmtime::ExternRef;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
 
-use crate::wasm_instance::StoreData;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_config::Config;
+#[cfg(feature = "object-registry-extern")]
+use crate::wasm_externref::{externref_to_variant, variant_to_externref};
+use crate::wasm_instance::StoreData;
 
 #[cfg(feature = "epoch-timeout")]
 pub const EPOCH_DEADLINE: u64 = 5;
@@ -16,16 +20,21 @@ pub const TYPE_I32: u32 = 1;
 pub const TYPE_I64: u32 = 2;
 pub const TYPE_F32: u32 = 3;
 pub const TYPE_F64: u32 = 4;
+#[cfg(feature = "object-registry-extern")]
 pub const TYPE_VARIANT: u32 = 6;
 
 pub const HOST_MODULE: &str = "host";
 #[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
+#[cfg(feature = "object-registry-extern")]
+pub const EXTERNREF_MODULE: &str = "godot_object_v2";
 
 pub const MODULE_INCLUDES: &[&str] = &[
     HOST_MODULE,
     #[cfg(feature = "object-registry-compat")]
     OBJREGISTRY_MODULE,
+    #[cfg(feature = "object-registry-extern")]
+    EXTERNREF_MODULE,
 ];
 
 pub const MEMORY_EXPORT: &str = "memory";
@@ -49,6 +58,8 @@ pub fn from_signature(sig: &FuncType) -> Result<(ByteArray, ByteArray), Error> {
             ValType::I64 => TYPE_I64,
             ValType::F32 => TYPE_F32,
             ValType::F64 => TYPE_F64,
+            #[cfg(feature = "object-registry-extern")]
+            ValType::ExternRef => TYPE_VARIANT,
             _ => bail!("Unconvertible signture"),
         } as _;
     }
@@ -72,6 +83,8 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
                 TYPE_I64 => ValType::I64,
                 TYPE_F32 => ValType::F32,
                 TYPE_F64 => ValType::F64,
+                #[cfg(feature = "object-registry-extern")]
+                TYPE_VARIANT => ValType::ExternRef,
                 v => bail!("Unknown enumeration value {}", v),
             });
         }
@@ -103,6 +116,11 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Resul
         ValType::I64 => ValRaw::i64(i64::from_variant(&v)?),
         ValType::F32 => ValRaw::f32(f32::from_variant(&v)?.to_bits()),
         ValType::F64 => ValRaw::f64(f64::from_variant(&v)?.to_bits()),
+        #[cfg(feature = "object-registry-extern")]
+        ValType::ExternRef => ValRaw::externref(match variant_to_externref(v) {
+            Some(v) => v.to_raw(_store),
+            None => 0,
+        }),
         _ => bail!("Unsupported WASM type conversion {}", t),
     })
 }
@@ -114,6 +132,8 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
         ValType::I64 => v.get_i64().to_variant(),
         ValType::F32 => f32::from_bits(v.get_f32()).to_variant(),
         ValType::F64 => f64::from_bits(v.get_f64()).to_variant(),
+        #[cfg(feature = "object-registry-extern")]
+        ValType::ExternRef => externref_to_variant(ExternRef::from_raw(v.get_externref())),
         _ => bail!("Unsupported WASM type conversion {}", t),
     })
 }
