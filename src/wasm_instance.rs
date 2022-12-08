@@ -429,6 +429,20 @@ impl WasmInstance {
     }
 
     #[method]
+    fn reset_epoch(&self, #[base] _base: TRef<Reference>) {
+        #[cfg(feature = "epoch-timeout")]
+        self.unwrap_data(_base, |m| {
+            m.acquire_store(|_, mut store| {
+                store.set_epoch_deadline(EPOCH_DEADLINE);
+                Ok(())
+            })
+        });
+
+        #[cfg(not(feature = "epoch-timeout"))]
+        godot_error!("Feature epoch-timeout not enabled!");
+    }
+
+    #[method]
     fn register_object(&self, #[base] _base: TRef<Reference>, _obj: Variant) -> Option<usize> {
         #[cfg(feature = "object-registry-compat")]
         return self.unwrap_data(_base, |m| {

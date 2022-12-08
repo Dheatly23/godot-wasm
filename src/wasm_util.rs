@@ -6,6 +6,7 @@ use gdnative::prelude::*;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
 
 use crate::wasm_instance::StoreData;
+use crate::wasm_config::Config;
 
 #[cfg(feature = "epoch-timeout")]
 pub const EPOCH_DEADLINE: u64 = 5;
@@ -152,7 +153,12 @@ fn wrap_godot_method(
         }
 
         #[cfg(feature = "epoch-timeout")]
-        if ctx.data().config.with_epoch {
+        if let Config {
+            with_epoch: true,
+            epoch_autoreset: true,
+            ..
+        } = ctx.data().config
+        {
             ctx.as_context_mut().set_epoch_deadline(EPOCH_DEADLINE);
         }
 

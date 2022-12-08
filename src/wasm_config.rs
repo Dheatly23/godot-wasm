@@ -4,6 +4,9 @@ use gdnative::prelude::*;
 pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
+    #[cfg(feature = "epoch-timeout")]
+    pub epoch_autoreset: bool,
+
     pub extern_bind: ExternBindingType,
 }
 
@@ -30,6 +33,9 @@ impl FromVariant for Config {
         Ok(Self {
             #[cfg(feature = "epoch-timeout")]
             with_epoch: get_field(&dict, "engine.use_epoch")?,
+            #[cfg(feature = "epoch-timeout")]
+            epoch_autoreset: get_field(&dict, "engine.epoch_autoreset")?,
+
             extern_bind: get_field(&dict, "godot.extern_binding")?,
         })
     }
