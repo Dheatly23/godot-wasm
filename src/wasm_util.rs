@@ -6,6 +6,7 @@ use gdnative::prelude::*;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
 
 use crate::wasm_instance::StoreData;
+#[cfg(feature = "epoch-timeout")]
 use crate::wasm_config::Config;
 
 #[cfg(feature = "epoch-timeout")]
@@ -21,7 +22,11 @@ pub const HOST_MODULE: &str = "host";
 #[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
 
-pub const MODULE_INCLUDES: &[&str] = &[HOST_MODULE, OBJREGISTRY_MODULE];
+pub const MODULE_INCLUDES: &[&str] = &[
+    HOST_MODULE,
+    #[cfg(feature = "object-registry-compat")]
+    OBJREGISTRY_MODULE,
+];
 
 pub const MEMORY_EXPORT: &str = "memory";
 
