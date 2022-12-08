@@ -2,6 +2,8 @@
 name = "godot-wasm"
 version = "0.1.0"
 edition = "2021"
+authors = ["Dheatly23 <71598333+Dheatly23@users.noreply.github.com>"]
+license = "Apache-2.0"
 
 [lib]
 crate-type = ["cdylib"]
