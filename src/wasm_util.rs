@@ -7,6 +7,7 @@ use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValT
 
 use crate::wasm_instance::StoreData;
 
+#[cfg(feature = "epoch-timeout")]
 pub const EPOCH_DEADLINE: u64 = 5;
 
 pub const TYPE_I32: u32 = 1;
@@ -16,6 +17,7 @@ pub const TYPE_F64: u32 = 4;
 pub const TYPE_VARIANT: u32 = 6;
 
 pub const HOST_MODULE: &str = "host";
+#[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
 
 pub const MODULE_INCLUDES: &[&str] = &[HOST_MODULE, OBJREGISTRY_MODULE];
@@ -149,6 +151,7 @@ fn wrap_godot_method(
             bail!("Unconvertible return value {}", r);
         }
 
+        #[cfg(feature = "epoch-timeout")]
         if ctx.data().config.with_epoch {
             ctx.as_context_mut().set_epoch_deadline(EPOCH_DEADLINE);
         }

@@ -2,6 +2,7 @@ use gdnative::prelude::*;
 
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq, ToVariant)]
 pub struct Config {
+    #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
     pub extern_bind: ExternBindingType,
 }
@@ -27,6 +28,7 @@ impl FromVariant for Config {
         let dict = Dictionary::from_variant(variant)?;
 
         Ok(Self {
+            #[cfg(feature = "epoch-timeout")]
             with_epoch: get_field(&dict, "engine.use_epoch")?,
             extern_bind: get_field(&dict, "godot.extern_binding")?,
         })
@@ -37,9 +39,10 @@ impl FromVariant for Config {
 #[non_exhaustive]
 pub enum ExternBindingType {
     None,
+    #[cfg(feature = "object-registry-compat")]
     Registry,
-    // XXX: Defer this until later
-    //Native,
+    #[cfg(feature = "object-registry-extern")]
+    Native,
 }
 
 impl Default for ExternBindingType {
@@ -50,15 +53,17 @@ impl Default for ExternBindingType {
 
 impl FromVariant for ExternBindingType {
     fn from_variant(variant: &Variant) -> Result<Self, FromVariantError> {
-        static ALL_VARIANTS: &[&str] = &["none", "no_binding", "compat", "registry"];
         let s = String::from_variant(variant)?;
         Ok(match &*s {
             "" | "none" | "no_binding" => Self::None,
+            #[cfg(feature = "object-registry-compat")]
             "compat" | "registry" => Self::Registry,
+            #[cfg(feature = "object-registry-extern")]
+            "extern" | "native" => Self::Native,
             _ => {
                 return Err(FromVariantError::UnknownEnumVariant {
                     variant: s,
-                    expected: ALL_VARIANTS,
+                    expected: &[],
                 })
             }
         })
@@ -69,7 +74,10 @@ impl ToVariant for ExternBindingType {
     fn to_variant(&self) -> Variant {
         match self {
             Self::None => "none",
+            #[cfg(feature = "object-registry-compat")]
             Self::Registry => "registry",
+            #[cfg(feature = "object-registry-extern")]
+            Self::Native => "native",
         }
         .to_variant()
     }

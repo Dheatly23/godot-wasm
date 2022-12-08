@@ -12,12 +12,16 @@ use wasmtime::{
 };
 
 use crate::wasm_config::{Config, ExternBindingType};
-use crate::wasm_engine::{EpochThreadHandle, ModuleData, WasmModule, ENGINE, EPOCH};
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_engine::{EpochThreadHandle, EPOCH};
+use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
+#[cfg(feature = "object-registry-compat")]
 use crate::wasm_objregistry::{ObjectRegistry, OBJREGISTRY_LINKER};
-use crate::wasm_util::{
-    from_raw, make_host_module, to_raw, EPOCH_DEADLINE, HOST_MODULE, MEMORY_EXPORT,
-    OBJREGISTRY_MODULE,
-};
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_util::EPOCH_DEADLINE;
+#[cfg(feature = "object-registry-compat")]
+use crate::wasm_util::OBJREGISTRY_MODULE;
+use crate::wasm_util::{from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT};
 
 #[derive(NativeClass)]
 #[inherit(Reference)]
@@ -38,6 +42,7 @@ pub struct StoreData {
     mutex_raw: *const RawMutex,
     pub config: Config,
     pub error_signal: Option<String>,
+    #[cfg(feature = "object-registry-compat")]
     pub object_registry: Option<ObjectRegistry>,
 }
 
@@ -52,14 +57,18 @@ impl InstanceData {
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
         let config = store.data().config;
+
+        #[cfg(feature = "epoch-timeout")]
         if config.with_epoch {
             store.epoch_deadline_trap();
             EpochThreadHandle::spawn_thread(&EPOCH, || ENGINE.increment_epoch());
         } else {
             store.epoch_deadline_callback(|_| Ok(EPOCH_DEADLINE));
         }
+
         match config.extern_bind {
             ExternBindingType::None => (),
+            #[cfg(feature = "object-registry-compat")]
             ExternBindingType::Registry => {
                 store.data_mut().object_registry = Some(ObjectRegistry::default());
             }
@@ -78,8 +87,8 @@ impl InstanceData {
             let mut imports = Vec::with_capacity(it.len());
 
             for i in it {
-                match i.module() {
-                    HOST_MODULE => {
+                match (i.module(), store.data().config) {
+                    (HOST_MODULE, _) => {
                         if let Some(host) = host.as_ref() {
                             if let Some(v) = host.get(i.name()) {
                                 imports.push(v.clone());
@@ -87,9 +96,14 @@ impl InstanceData {
                             }
                         }
                     }
-                    OBJREGISTRY_MODULE
-                        if store.data().config.extern_bind == ExternBindingType::Registry =>
-                    {
+                    #[cfg(feature = "object-registry-compat")]
+                    (
+                        OBJREGISTRY_MODULE,
+                        Config {
+                            extern_bind: ExternBindingType::Registry,
+                            ..
+                        },
+                    ) => {
                         if let Some(v) = OBJREGISTRY_LINKER.get_by_import(&mut *store, &i) {
                             imports.push(v);
                             continue;
@@ -121,6 +135,7 @@ impl InstanceData {
                 bail!("Unknown import {:?}.{:?}", i.module(), i.name());
             }
 
+            #[cfg(feature = "epoch-timeout")]
             store.set_epoch_deadline(EPOCH_DEADLINE);
             Ok(InstanceWasm::new(store, &module.module, &imports)?)
         }
@@ -181,12 +196,14 @@ impl StoreData {
         f()
     }
 
+    #[cfg(feature = "object-registry-compat")]
     pub fn get_registry(&self) -> Result<&ObjectRegistry, Error> {
         self.object_registry
             .as_ref()
             .ok_or_else(|| Error::msg("Object registry not enabled!"))
     }
 
+    #[cfg(feature = "object-registry-compat")]
     pub fn get_registry_mut(&mut self) -> Result<&mut ObjectRegistry, Error> {
         self.object_registry
             .as_mut()
@@ -250,6 +267,7 @@ impl WasmInstance {
                             None => Config::default(),
                         },
                         error_signal: None,
+                        #[cfg(feature = "object-registry-compat")]
                         object_registry: None,
                     },
                 ),
@@ -373,6 +391,7 @@ impl WasmInstance {
                     arr[ix] = unsafe { to_raw(&mut store, t, args.get(ix as _))? };
                 }
 
+                #[cfg(feature = "epoch-timeout")]
                 store.set_epoch_deadline(EPOCH_DEADLINE);
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
@@ -410,49 +429,82 @@ impl WasmInstance {
     }
 
     #[method]
-    fn register_object(&self, #[base] base: TRef<Reference>, obj: Variant) -> Option<usize> {
-        self.unwrap_data(base, |m| {
-            if obj.is_nil() {
+    fn register_object(&self, #[base] _base: TRef<Reference>, _obj: Variant) -> Option<usize> {
+        #[cfg(feature = "object-registry-compat")]
+        return self.unwrap_data(_base, |m| {
+            if _obj.is_nil() {
                 bail!("Value is null!");
             }
-            m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(obj)))
-        })
+            m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj)))
+        });
+
+        #[cfg(not(feature = "object-registry-compat"))]
+        {
+            godot_error!("Feature object-registry-compat not enabled!");
+            None
+        }
     }
 
     #[method]
-    fn registry_get(&self, #[base] base: TRef<Reference>, ix: usize) -> Option<Variant> {
-        self.unwrap_data(base, |m| {
-            m.acquire_store(|_, store| Ok(store.data().get_registry()?.get(ix)))
-        })
-        .flatten()
+    fn registry_get(&self, #[base] _base: TRef<Reference>, _ix: usize) -> Option<Variant> {
+        #[cfg(feature = "object-registry-compat")]
+        return self
+            .unwrap_data(_base, |m| {
+                m.acquire_store(|_, store| Ok(store.data().get_registry()?.get(_ix)))
+            })
+            .flatten();
+
+        #[cfg(not(feature = "object-registry-compat"))]
+        {
+            godot_error!("Feature object-registry-compat not enabled!");
+            None
+        }
     }
 
     #[method]
     fn registry_set(
         &self,
-        #[base] base: TRef<Reference>,
-        ix: usize,
-        obj: Variant,
+        #[base] _base: TRef<Reference>,
+        _ix: usize,
+        _obj: Variant,
     ) -> Option<Variant> {
-        self.unwrap_data(base, |m| {
-            m.acquire_store(|_, mut store| {
-                let reg = store.data_mut().get_registry_mut()?;
-                if obj.is_nil() {
-                    Ok(reg.unregister(ix))
-                } else {
-                    Ok(reg.replace(ix, obj))
-                }
+        #[cfg(feature = "object-registry-compat")]
+        return self
+            .unwrap_data(_base, |m| {
+                m.acquire_store(|_, mut store| {
+                    let reg = store.data_mut().get_registry_mut()?;
+                    if _obj.is_nil() {
+                        Ok(reg.unregister(_ix))
+                    } else {
+                        Ok(reg.replace(_ix, _obj))
+                    }
+                })
             })
-        })
-        .flatten()
+            .flatten();
+
+        #[cfg(not(feature = "object-registry-compat"))]
+        {
+            godot_error!("Feature object-registry-compat not enabled!");
+            None
+        }
     }
 
     #[method]
-    fn unregister_object(&self, #[base] base: TRef<Reference>, ix: usize) -> Option<Variant> {
-        self.unwrap_data(base, |m| {
-            m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.unregister(ix)))
-        })
-        .flatten()
+    fn unregister_object(&self, #[base] _base: TRef<Reference>, _ix: usize) -> Option<Variant> {
+        #[cfg(feature = "object-registry-compat")]
+        return self
+            .unwrap_data(_base, |m| {
+                m.acquire_store(|_, mut store| {
+                    Ok(store.data_mut().get_registry_mut()?.unregister(_ix))
+                })
+            })
+            .flatten();
+
+        #[cfg(not(feature = "object-registry-compat"))]
+        {
+            godot_error!("Feature object-registry-compat not enabled!");
+            None
+        }
     }
 
     #[method]

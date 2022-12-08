@@ -24,3 +24,10 @@ features = [
   "wat",
   "parallel-compilation",
 ]
+
+[features]
+default = ["epoch-timeout", "object-registry"]
+epoch-timeout = []
+object-registry-compat = []
+object-registry-extern = []
+object-registry = ["object-registry-compat", "object-registry-extern"]

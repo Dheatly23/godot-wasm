@@ -1,19 +1,21 @@
 use std::collections::HashMap;
 use std::mem::transmute;
-use std::sync::Arc;
-use std::thread;
-use std::time;
+#[cfg(feature = "epoch-timeout")]
+use std::{sync::Arc, thread, time};
 
 use anyhow::{bail, Error};
 use gdnative::export::user_data::Map;
 use gdnative::prelude::*;
 use lazy_static::lazy_static;
-use parking_lot::{Condvar, Mutex, Once, OnceState};
+#[cfg(feature = "epoch-timeout")]
+use parking_lot::{Condvar, Mutex};
+use parking_lot::{Once, OnceState};
 use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
 
+#[cfg(feature = "epoch-timeout")]
 #[derive(Default)]
 pub struct EpochThreadHandle {
     mutex: Mutex<(bool, Option<thread::JoinHandle<()>>)>,
@@ -21,6 +23,7 @@ pub struct EpochThreadHandle {
     once: Once,
 }
 
+#[cfg(feature = "epoch-timeout")]
 impl EpochThreadHandle {
     pub fn spawn_thread<F>(this: &Arc<Self>, f: F)
     where
@@ -50,6 +53,7 @@ impl EpochThreadHandle {
     }
 }
 
+#[cfg(feature = "epoch-timeout")]
 impl Drop for EpochThreadHandle {
     fn drop(&mut self) {
         let handle;
@@ -81,6 +85,10 @@ lazy_static! {
             .wasm_memory64(true)
     )
     .unwrap();
+}
+
+#[cfg(feature = "epoch-timeout")]
+lazy_static! {
     pub static ref EPOCH: Arc<EpochThreadHandle> = Arc::new(EpochThreadHandle::default());
 }
 

@@ -1,6 +1,7 @@
 mod wasm_config;
 mod wasm_engine;
 mod wasm_instance;
+#[cfg(feature = "object-registry-compat")]
 mod wasm_objregistry;
 mod wasm_util;
 
