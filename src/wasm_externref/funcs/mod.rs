@@ -24,8 +24,8 @@ register![array, compat, dict, pool_array, primitive, string, typeis];
 
 #[cfg(not(feature = "object-registry-compat"))]
 mod compat {
-    use wasmtime::Linker;
     use crate::wasm_instance::StoreData;
+    use wasmtime::Linker;
     #[inline]
     pub fn register_functions(_: &mut Linker<StoreData>) {}
 }

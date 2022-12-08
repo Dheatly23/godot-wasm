@@ -15,10 +15,14 @@ use crate::wasm_config::{Config, ExternBindingType};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_engine::{EpochThreadHandle, EPOCH};
 use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
+#[cfg(feature = "object-registry-extern")]
+use crate::wasm_externref::EXTERNREF_LINKER;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_objregistry::{ObjectRegistry, OBJREGISTRY_LINKER};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_DEADLINE;
+#[cfg(feature = "object-registry-extern")]
+use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT};
@@ -105,6 +109,19 @@ impl InstanceData {
                         },
                     ) => {
                         if let Some(v) = OBJREGISTRY_LINKER.get_by_import(&mut *store, &i) {
+                            imports.push(v);
+                            continue;
+                        }
+                    }
+                    #[cfg(feature = "object-registry-extern")]
+                    (
+                        EXTERNREF_MODULE,
+                        Config {
+                            extern_bind: ExternBindingType::Native,
+                            ..
+                        },
+                    ) => {
+                        if let Some(v) = EXTERNREF_LINKER.get_by_import(&mut *store, &i) {
                             imports.push(v);
                             continue;
                         }
