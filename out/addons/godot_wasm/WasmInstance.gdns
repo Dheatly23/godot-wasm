@@ -5,3 +5,4 @@
 [resource]
 class_name = "WasmInstance"
 library = ExtResource( 1 )
+script_class_name = "WasmInstance"

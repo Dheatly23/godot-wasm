@@ -1,0 +1,29 @@
+extend = "../Makefile.toml"
+
+[env]
+EXAMPLE_DIR = "example"
+EXAMPLE_PROJECTS = "hello-wasm"
+
+[tasks.deploy_example]
+dependencies = ["deploy"]
+script_runner = "@duckscript"
+script = '''
+out_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} out/addons
+out_dir = canonicalize ${out_dir}
+
+exp_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${EXAMPLE_DIR}
+exp_dir = canonicalize ${exp_dir}
+
+exp_list = split ${EXAMPLE_PROJECTS} ,
+
+echo Source addon directory: ${out_dir}
+out_dir = join_path ${out_dir} **/*
+
+for i in ${exp_list}
+  dst_dir = join_path ${exp_dir} ${i} addons
+  echo Destination addon directory: ${dst_dir}
+  glob_cp ${out_dir} ${dst_dir}
+end
+
+release ${exp_dir}
+'''

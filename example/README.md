@@ -1,0 +1,21 @@
+# Examples
+
+This directory contains example Godot projects.
+Before you can run any of it, initialize it first.
+
+## Initialization
+
+Due to issues, the addons are NOT included in repository. You must build it
+yourself, or use `cargo make deploy_example` to do it automatically.
+
+## Content
+
+There are many example:
+* `hello-wasm`
+  Hello world from WebAssembly.
+  Here you can learn how to load module, instantiate,
+  and bind with Godot methods.
+
+## Licensing
+
+Unless otherwise noted, all scripts are licensed under Apache-2.0.
