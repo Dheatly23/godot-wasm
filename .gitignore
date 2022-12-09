@@ -2,3 +2,4 @@
 Cargo.lock
 /Test WASM
 deny.toml
+/out/addons/godot_wasm/bin

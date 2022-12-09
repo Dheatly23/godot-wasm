@@ -1,5 +1,5 @@
 [env]
-GODOT_DIR = "Test WASM/godot_wasm"
+GODOT_DIR = "out/addons/godot_wasm/bin"
 
 [tasks.build_all_release]
 command = "cargo"
