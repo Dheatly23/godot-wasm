@@ -3,11 +3,11 @@ GODOT_DIR = "Test WASM/godot_wasm"
 
 [tasks.build_all_release]
 command = "cargo"
-args = ["build", "--release"]
+args = ["build", "--release", "--target", "${CARGO_MAKE_CRATE_TARGET_TRIPLE}"]
 
 [tasks.build_all_debug]
 command = "cargo"
-args = ["build"]
+args = ["build", "--target", "${CARGO_MAKE_CRATE_TARGET_TRIPLE}"]
 
 [tasks.build_all]
 run_task = [
@@ -34,8 +34,8 @@ script_runner = "@duckscript"
 script = '''
 is_release = eq ${CARGO_MAKE_PROFILE} "production"
 
-target_dirs = array %{CARGO_MAKE_RUST_TARGET_TRIPLE}
-file_globs = array *.so *.dll
+target_dirs = array %{CARGO_MAKE_CRATE_TARGET_TRIPLE}
+file_globs = array *.so *.dll *.dylib
 
 dst_root_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${GODOT_DIR}
 dst_root_dir = canonicalize ${dst_root_dir}
