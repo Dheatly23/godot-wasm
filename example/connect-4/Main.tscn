@@ -1,0 +1,40 @@
+[gd_scene load_steps=5 format=2]
+
+[ext_resource path="res://img/chip_tileset.tres" type="TileSet" id=1]
+[ext_resource path="res://script/main.gd" type="Script" id=2]
+[ext_resource path="res://img/selector.png" type="Texture" id=3]
+[ext_resource path="res://Logbox.tscn" type="PackedScene" id=4]
+
+[node name="Root" type="Node2D"]
+script = ExtResource( 2 )
+
+[node name="Camera2D" type="Camera2D" parent="."]
+current = true
+
+[node name="Tiles" type="TileMap" parent="."]
+tile_set = ExtResource( 1 )
+cell_size = Vector2( 32, 32 )
+cell_clip_uv = true
+format = 1
+
+[node name="Selector" type="Sprite" parent="Tiles"]
+visible = false
+texture = ExtResource( 3 )
+centered = false
+
+[node name="BGLayer" type="CanvasLayer" parent="."]
+layer = -1
+
+[node name="BG" type="ColorRect" parent="BGLayer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+color = Color( 0, 0, 0, 1 )
+
+[node name="HUD" type="CanvasLayer" parent="."]
+layer = 2
+
+[node name="Root" type="Control" parent="HUD"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="Logbox" parent="HUD/Root" instance=ExtResource( 4 )]
