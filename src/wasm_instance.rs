@@ -13,7 +13,7 @@ use wasmtime::{
 
 use crate::wasm_config::{Config, ExternBindingType};
 #[cfg(feature = "epoch-timeout")]
-use crate::wasm_engine::{EpochThreadHandle, EPOCH};
+use crate::wasm_engine::EPOCH;
 use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::EXTERNREF_LINKER;
@@ -65,7 +65,7 @@ impl InstanceData {
         #[cfg(feature = "epoch-timeout")]
         if config.with_epoch {
             store.epoch_deadline_trap();
-            EpochThreadHandle::spawn_thread(&EPOCH, || ENGINE.increment_epoch());
+            EPOCH.spawn_thread(|| ENGINE.increment_epoch());
         } else {
             store.epoch_deadline_callback(|_| Ok(EPOCH_DEADLINE));
         }

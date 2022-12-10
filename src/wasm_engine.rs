@@ -18,37 +18,41 @@ use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
 #[cfg(feature = "epoch-timeout")]
 #[derive(Default)]
 pub struct EpochThreadHandle {
-    mutex: Mutex<(bool, Option<thread::JoinHandle<()>>)>,
-    cond: Condvar,
+    inner: Arc<EpochThreadHandleInner>,
     once: Once,
 }
 
 #[cfg(feature = "epoch-timeout")]
+#[derive(Default)]
+pub struct EpochThreadHandleInner {
+    mutex: Mutex<(bool, Option<thread::JoinHandle<()>>)>,
+    cond: Condvar,
+}
+
+#[cfg(feature = "epoch-timeout")]
 impl EpochThreadHandle {
-    pub fn spawn_thread<F>(this: &Arc<Self>, f: F)
+    pub fn spawn_thread<F>(&self, f: F)
     where
         F: Fn() -> () + 'static + Send,
     {
-        this.once.call_once(move || {
-            let mut guard = this.mutex.lock();
+        self.once.call_once(move || {
+            let mut guard = self.inner.mutex.lock();
             let (t, h) = &mut *guard;
             *t = false;
 
-            {
-                let this = this.clone();
-                *h = Some(thread::spawn(move || {
-                    const INTERVAL: time::Duration = time::Duration::from_secs(1);
-                    let mut timeout = time::Instant::now();
-                    let mut guard = this.mutex.lock();
-                    while !guard.0 {
-                        while timeout.elapsed() >= INTERVAL {
-                            f();
-                            timeout += INTERVAL;
-                        }
-                        this.cond.wait_until(&mut guard, timeout + INTERVAL);
+            let inner = self.inner.clone();
+            *h = Some(thread::spawn(move || {
+                const INTERVAL: time::Duration = time::Duration::from_secs(1);
+                let mut timeout = time::Instant::now();
+                let mut guard = inner.mutex.lock();
+                while !guard.0 {
+                    while timeout.elapsed() >= INTERVAL {
+                        f();
+                        timeout += INTERVAL;
                     }
-                }));
-            }
+                    inner.cond.wait_until(&mut guard, timeout + INTERVAL);
+                }
+            }));
         });
     }
 }
@@ -59,13 +63,13 @@ impl Drop for EpochThreadHandle {
         let handle;
 
         {
-            let mut guard = self.mutex.lock();
+            let mut guard = self.inner.mutex.lock();
             let (t, h) = &mut *guard;
             *t = true;
             handle = h.take();
         }
 
-        self.cond.notify_one();
+        self.inner.cond.notify_one();
         if let Some(handle) = handle {
             handle.join().unwrap();
         }
@@ -89,7 +93,7 @@ lazy_static! {
 
 #[cfg(feature = "epoch-timeout")]
 lazy_static! {
-    pub static ref EPOCH: Arc<EpochThreadHandle> = Arc::new(EpochThreadHandle::default());
+    pub static ref EPOCH: EpochThreadHandle = EpochThreadHandle::default();
 }
 
 #[derive(NativeClass)]
