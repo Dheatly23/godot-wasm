@@ -2,7 +2,7 @@ extend = "../Makefile.toml"
 
 [env]
 EXAMPLE_DIR = "example"
-EXAMPLE_PROJECTS = "hello-wasm"
+EXAMPLE_PROJECTS = "hello-wasm,epoch-interruption"
 
 [tasks.deploy_example]
 dependencies = ["deploy"]

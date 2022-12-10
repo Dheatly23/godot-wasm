@@ -1,0 +1,46 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=4
+
+_global_script_classes=[ {
+"base": "",
+"class": "WasmInstance",
+"language": "NativeScript",
+"path": "res://addons/godot_wasm/WasmInstance.gdns"
+}, {
+"base": "Reference",
+"class": "WasmModule",
+"language": "NativeScript",
+"path": "res://addons/godot_wasm/WasmModule.gdns"
+} ]
+_global_script_class_icons={
+"WasmInstance": "",
+"WasmModule": ""
+}
+
+[application]
+
+config/name="epoch-interruption"
+run/main_scene="res://Main.tscn"
+
+[autoload]
+
+WasmHelper="*res://addons/godot_wasm/WasmHelper.gd"
+
+[editor_plugins]
+
+enabled=PoolStringArray( "res://addons/godot_wasm/plugin.cfg" )
+
+[gui]
+
+common/drop_mouse_on_gui_input_disabled=true
+
+[physics]
+
+common/enable_pause_aware_picking=true

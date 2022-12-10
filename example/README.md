@@ -15,6 +15,9 @@ There are many example:
   Hello world from WebAssembly.
   Here you can learn how to load module, instantiate,
   and bind with Godot methods.
+* `epoch-interruption`
+  Showcase using epoch interruption to limit WebAssembly execution and
+  preventing infinite loop.
 
 ## Licensing
 
