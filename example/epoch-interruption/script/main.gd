@@ -60,11 +60,12 @@ func _ready():
 	)
 
 	# Hook error signal
-	assert(instance.connect(
+	if instance.connect(
 		"error_happened",
 		self,
 		"_on_instance_error"
-	) == OK)
+	) != OK:
+		printerr("Cannot connect signal!")
 
 # Print new factorial every second
 func _process(delta: float):
