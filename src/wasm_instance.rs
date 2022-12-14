@@ -251,8 +251,9 @@ impl WasmInstance {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{:?}", e);
-                base.emit_signal("error_happened", &[e.to_string().to_variant()]);
+                let e = format!("{:?}", e);
+                godot_error!("{}", e);
+                base.emit_signal("error_happened", &[e.owned_to_variant()]);
                 None
             }
         }
