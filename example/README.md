@@ -12,12 +12,20 @@ yourself, or use `cargo make deploy_example` to do it automatically.
 
 There are many example:
 * `hello-wasm`
+
   Hello world from WebAssembly.
   Here you can learn how to load module, instantiate,
   and bind with Godot methods.
+
 * `epoch-interruption`
+
   Showcase using epoch interruption to limit WebAssembly execution and
   preventing infinite loop.
+
+* `connect-4`
+
+  Simple connect 4 game with robot as WASM module. Provided with a stub robot,
+  which you can replace with your own robot.
 
 ## Licensing
 
