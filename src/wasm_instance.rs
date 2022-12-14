@@ -153,7 +153,7 @@ impl InstanceData {
             }
 
             #[cfg(feature = "epoch-timeout")]
-            store.set_epoch_deadline(EPOCH_DEADLINE);
+            store.set_epoch_deadline(store.data().config.epoch_timeout);
             Ok(InstanceWasm::new(store, &module.module, &imports)?)
         }
 
@@ -409,7 +409,8 @@ impl WasmInstance {
                 }
 
                 #[cfg(feature = "epoch-timeout")]
-                store.set_epoch_deadline(EPOCH_DEADLINE);
+                store.set_epoch_deadline(store.data().config.epoch_timeout);
+                store.gc();
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
                     f.call_unchecked(&mut store, arr.as_mut_ptr())?;
@@ -450,7 +451,7 @@ impl WasmInstance {
         #[cfg(feature = "epoch-timeout")]
         self.unwrap_data(_base, |m| {
             m.acquire_store(|_, mut store| {
-                store.set_epoch_deadline(EPOCH_DEADLINE);
+                store.set_epoch_deadline(store.data().config.epoch_timeout);
                 Ok(())
             })
         });

@@ -181,10 +181,11 @@ fn wrap_godot_method(
         if let Config {
             with_epoch: true,
             epoch_autoreset: true,
+            epoch_timeout,
             ..
         } = ctx.data().config
         {
-            ctx.as_context_mut().set_epoch_deadline(EPOCH_DEADLINE);
+            ctx.as_context_mut().set_epoch_deadline(epoch_timeout);
         }
 
         Ok(())

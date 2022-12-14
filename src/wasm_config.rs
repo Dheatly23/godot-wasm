@@ -1,11 +1,16 @@
 use gdnative::prelude::*;
 
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_util::EPOCH_DEADLINE;
+
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq, ToVariant)]
 pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
     #[cfg(feature = "epoch-timeout")]
     pub epoch_autoreset: bool,
+    #[cfg(feature = "epoch-timeout")]
+    pub epoch_timeout: u64,
 
     pub extern_bind: ExternBindingType,
 }
@@ -13,13 +18,16 @@ pub struct Config {
 fn get_field<T: FromVariant + Default>(
     d: &Dictionary,
     name: &'static str,
-) -> Result<T, FromVariantError> {
+) -> Result<Option<T>, FromVariantError> {
     match d.get(name) {
-        Some(v) => T::from_variant(&v).map_err(|e| FromVariantError::InvalidField {
-            field_name: name,
-            error: Box::new(e),
-        }),
-        None => Ok(T::default()),
+        Some(v) => match T::from_variant(&v) {
+            Ok(v) => Ok(Some(v)),
+            Err(e) => Err(FromVariantError::InvalidField {
+                field_name: name,
+                error: Box::new(e),
+            }),
+        },
+        None => Ok(None),
     }
 }
 
@@ -32,11 +40,13 @@ impl FromVariant for Config {
 
         Ok(Self {
             #[cfg(feature = "epoch-timeout")]
-            with_epoch: get_field(&dict, "engine.use_epoch")?,
+            with_epoch: get_field(&dict, "engine.use_epoch")?.unwrap_or_default(),
             #[cfg(feature = "epoch-timeout")]
-            epoch_autoreset: get_field(&dict, "engine.epoch_autoreset")?,
+            epoch_autoreset: get_field(&dict, "engine.epoch_autoreset")?.unwrap_or_default(),
+            #[cfg(feature = "epoch-timeout")]
+            epoch_timeout: get_field(&dict, "engine.epoch_timeout")?.unwrap_or(EPOCH_DEADLINE),
 
-            extern_bind: get_field(&dict, "godot.extern_binding")?,
+            extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })
     }
 }
