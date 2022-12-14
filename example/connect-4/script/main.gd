@@ -63,6 +63,19 @@ func do_move(x: int):
 	y += 1
 
 	if y >= HEIGHT:
+		match turn:
+			TileState.YELLOW:
+				logbox.add_line(
+					"Player tried to make a move in row {0}".format([
+						x + 1,
+					])
+				)
+			TileState.RED:
+				logbox.add_line(
+					"Robot tried to make a move in row {0}".format([
+						x + 1,
+					])
+				)
 		return
 
 	set_state(x, y, turn)
