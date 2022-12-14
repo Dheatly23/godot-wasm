@@ -81,7 +81,7 @@ There are many uses of running WebAssembly code in Godot. If you are looking
 for inspiration or just confused about the purpose of this package,
 here are some prompts:
 
-1. **Language-independent* programming game**
+### Language-independent* programming game
 
   Many programming language now supports compiling to WebAssembly. And with
   many programming type game out there, it would be awesome to transfer your
@@ -90,24 +90,24 @@ here are some prompts:
 
   _*Right now, very few programming language can emit standalone WASM._
 
-2. **Competitive robot/AI game**
+### Competitive robot/AI game
 
   Isn't that obvious enough? Tied to previous one, a really great use is some
   sort of competitive multiplayer AI vs AI game. With sandboxing of
   WebAssembly, no code can do any harm to participant/judge.
 
-3. **Custom userscript**
+### Custom userscript
 
   Instead of making your own scripting language to integrate into your game,
   why not consider sandboxing it within WebAssembly?
 
-4. **Modding framework**
+### Modding framework
 
   WebAssembly can replace DLL/SO as a way to mod your game. Using it as easy
   as exposing your API as imports. Plus, sandboxing makes *any* mod
   automatically be safe from doing malicious things.
 
-5. **Server-sent Mod**
+### Server-sent Mod
 
   With mods there will *always* problem with multiplayer. Imagine having to
   install random code just to join your favorite server. And don't forget
