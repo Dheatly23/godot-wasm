@@ -27,6 +27,11 @@ There are many example:
   Simple connect 4 game with robot as WASM module. Provided with a stub robot,
   which you can replace with your own robot.
 
+* `instance-thread-pool`
+
+  Using thread pool to offload intensive WASM execution from main thread.
+  Also provides some protection against unresponsive code.
+
 ## Licensing
 
 Unless otherwise noted, all scripts are licensed under Apache-2.0.
