@@ -1,0 +1,57 @@
+[gd_scene load_steps=4 format=2]
+
+[ext_resource path="res://scene/Pendulum.tscn" type="PackedScene" id=1]
+[ext_resource path="res://script/DoublePendulum.gd" type="Script" id=3]
+
+[sub_resource type="CanvasItemMaterial" id=1]
+blend_mode = 1
+
+[node name="Root" type="Node2D"]
+script = ExtResource( 3 )
+
+[node name="Camera2D" type="Camera2D" parent="."]
+current = true
+
+[node name="Pendulums" type="Node2D" parent="."]
+material = SubResource( 1 )
+
+[node name="Pendulum1" parent="Pendulums" instance=ExtResource( 1 )]
+modulate = Color( 1, 0, 0, 0.25098 )
+angle1 = 90.0
+angle2 = 90.0
+
+[node name="Pendulum2" parent="Pendulums" instance=ExtResource( 1 )]
+modulate = Color( 1, 1, 0, 0.25098 )
+angle1 = 90.0
+angle2 = 90.01
+
+[node name="Pendulum3" parent="Pendulums" instance=ExtResource( 1 )]
+modulate = Color( 0, 1, 0, 0.25098 )
+angle1 = 90.0
+angle2 = 90.02
+
+[node name="Pendulum4" parent="Pendulums" instance=ExtResource( 1 )]
+modulate = Color( 0, 1, 1, 0.25098 )
+angle1 = 90.0
+angle2 = 90.03
+
+[node name="Pendulum5" parent="Pendulums" instance=ExtResource( 1 )]
+modulate = Color( 0, 0, 1, 0.25098 )
+angle1 = 90.0
+angle2 = 90.04
+
+[node name="Pendulum6" parent="Pendulums" instance=ExtResource( 1 )]
+modulate = Color( 1, 0, 1, 0.25098 )
+angle1 = 90.0
+angle2 = 90.05
+
+[node name="Timer" type="Timer" parent="."]
+autostart = true
+
+[connection signal="message_emitted" from="Pendulums/Pendulum1" to="." method="__log"]
+[connection signal="message_emitted" from="Pendulums/Pendulum2" to="." method="__log"]
+[connection signal="message_emitted" from="Pendulums/Pendulum3" to="." method="__log"]
+[connection signal="message_emitted" from="Pendulums/Pendulum4" to="." method="__log"]
+[connection signal="message_emitted" from="Pendulums/Pendulum5" to="." method="__log"]
+[connection signal="message_emitted" from="Pendulums/Pendulum6" to="." method="__log"]
+[connection signal="timeout" from="Timer" to="." method="_on_Timer_timeout"]

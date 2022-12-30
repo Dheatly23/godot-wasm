@@ -1,5 +1,0 @@
-.import
-*.translation
-export_presets.cfg
-.mono
-addons/godot_wasm

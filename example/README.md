@@ -6,32 +6,34 @@ Before you can run any of it, initialize it first.
 ## Initialization
 
 Due to issues, the addons are NOT included in repository. You must build it
-yourself, or use `cargo make deploy_example` to do it automatically.
+yourself, or use `cargo make deploy_example` to do it automatically. It also
+builds the webassembly modules.
 
 ## Content
 
-There are many example:
-* `hello-wasm`
+Once you open the project, there is a sidebar on the right. Move mouse to
+there to open it. There are many examples to choose from:
 
-  Hello world from WebAssembly.
-  Here you can learn how to load module, instantiate,
-  and bind with Godot methods.
+* Hello World
+  Simple hello world module (`hello.wasm`).
 
-* `epoch-interruption`
+* Host Bindings
+  Example of using host functions to make a callback from WebAssembly.
+  The host expose a write function to send a text to logger. You can
+  modify the rust module (`host-bindings`) and recompile
+  (`cargo make deploy_wasm`) to change it's output.
 
-  Showcase using epoch interruption to limit WebAssembly execution and
-  preventing infinite loop.
+* Double Pendulum
+  Showcasing the ability of WebAssembly to do complex calculation,
+  this example simulates the double pendulum model.
 
-* `connect-4`
-
-  Simple connect 4 game with robot as WASM module. Provided with a stub robot,
-  which you can replace with your own robot.
-
-* `instance-thread-pool`
-
-  Using thread pool to offload intensive WASM execution from main thread.
-  Also provides some protection against unresponsive code.
+* Connect 4
+  This example shows how to integrate WebAssembly into a robot.
+  The provided robot is a dummy one, so you can change it in
+  it's corresponding rust module (`connect-4`). The robot is given 60 seconds
+  to think, to prevent infinite loop. The robot is also ran under separate
+  thread to prevent locking the main thread.
 
 ## Licensing
 
-Unless otherwise noted, all scripts are licensed under Apache-2.0.
+Unless otherwise noted, all script/code are licensed under Apache-2.0.

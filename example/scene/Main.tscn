@@ -1,0 +1,94 @@
+[gd_scene load_steps=9 format=2]
+
+[ext_resource path="res://script/SidebarMenu.gd" type="Script" id=1]
+[ext_resource path="res://theme/default.theme" type="Theme" id=2]
+[ext_resource path="res://script/Main.gd" type="Script" id=3]
+[ext_resource path="res://scene/HelloWorld.tscn" type="PackedScene" id=4]
+[ext_resource path="res://scene/Log.tscn" type="PackedScene" id=5]
+[ext_resource path="res://scene/HostBindings.tscn" type="PackedScene" id=6]
+[ext_resource path="res://scene/DoublePendulum.tscn" type="PackedScene" id=7]
+[ext_resource path="res://scene/Connect4.tscn" type="PackedScene" id=8]
+
+[node name="Main" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 1
+theme = ExtResource( 2 )
+script = ExtResource( 3 )
+scenes = [ ExtResource( 4 ), ExtResource( 6 ), ExtResource( 7 ), ExtResource( 8 ) ]
+names = [ "Hello World", "Host Bindings", "Double Pendulum", "Connect 4" ]
+
+[node name="Tween" type="Tween" parent="."]
+
+[node name="BGLayer" type="CanvasLayer" parent="."]
+layer = -1
+
+[node name="BG" type="ColorRect" parent="BGLayer"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color( 0, 0, 0, 1 )
+
+[node name="ViewportContainer" type="ViewportContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+stretch = true
+
+[node name="Viewport" type="Viewport" parent="ViewportContainer"]
+size = Vector2( 1024, 600 )
+transparent_bg = true
+handle_input_locally = false
+render_target_update_mode = 3
+
+[node name="Detect" type="Control" parent="."]
+anchor_left = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+margin_left = -30.0
+mouse_filter = 1
+
+[node name="SidebarMenu" type="Container" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 0
+mouse_filter = 2
+script = ExtResource( 1 )
+side = 2
+offset = 1.0
+
+[node name="Panel" type="PanelContainer" parent="SidebarMenu"]
+margin_left = 1024.0
+margin_right = 1086.0
+margin_bottom = 600.0
+
+[node name="Scroller" type="ScrollContainer" parent="SidebarMenu/Panel"]
+margin_left = 2.0
+margin_top = 2.0
+margin_right = 60.0
+margin_bottom = 598.0
+mouse_filter = 1
+scroll_horizontal_enabled = false
+
+[node name="VBox" type="VBoxContainer" parent="SidebarMenu/Panel/Scroller"]
+margin_left = 2.0
+margin_top = 2.0
+margin_right = 56.0
+margin_bottom = 10.0
+
+[node name="Label" type="Label" parent="SidebarMenu/Panel/Scroller/VBox"]
+margin_right = 54.0
+margin_bottom = 8.0
+text = "Examples:"
+
+[node name="LogContainer" parent="." instance=ExtResource( 5 )]
+anchor_top = 1.0
+anchor_right = 0.0
+margin_left = 20.0
+margin_bottom = -20.0
+grow_vertical = 0
+label_count = 50
+
+[connection signal="mouse_entered" from="." to="." method="_hide_menu"]
+[connection signal="mouse_entered" from="Detect" to="." method="_show_menu"]
+[connection signal="mouse_exited" from="Detect" to="." method="_hide_menu"]
