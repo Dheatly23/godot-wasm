@@ -13,6 +13,8 @@ use parking_lot::{Once, OnceState};
 use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::wasm_instance::WasmInstance;
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_util::EPOCH_INTERVAL;
 use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
 
 #[cfg(feature = "epoch-timeout")]
@@ -42,15 +44,14 @@ impl EpochThreadHandle {
 
             let inner = self.inner.clone();
             *h = Some(thread::spawn(move || {
-                const INTERVAL: time::Duration = time::Duration::from_secs(1);
                 let mut timeout = time::Instant::now();
                 let mut guard = inner.mutex.lock();
                 while !guard.0 {
-                    while timeout.elapsed() >= INTERVAL {
+                    while timeout.elapsed() >= EPOCH_INTERVAL {
                         f();
-                        timeout += INTERVAL;
+                        timeout += EPOCH_INTERVAL;
                     }
-                    inner.cond.wait_until(&mut guard, timeout + INTERVAL);
+                    inner.cond.wait_until(&mut guard, timeout + EPOCH_INTERVAL);
                 }
             }));
         });

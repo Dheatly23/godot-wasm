@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(feature = "epoch-timeout")]
+use std::time;
 
 use anyhow::{bail, Error};
 use gdnative::api::WeakRef;
@@ -14,7 +16,11 @@ use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 
 #[cfg(feature = "epoch-timeout")]
-pub const EPOCH_DEADLINE: u64 = 5;
+pub const EPOCH_MULTIPLIER: u64 = 100;
+#[cfg(feature = "epoch-timeout")]
+pub const EPOCH_DEADLINE: u64 = 5u64.saturating_mul(EPOCH_MULTIPLIER);
+#[cfg(feature = "epoch-timeout")]
+pub const EPOCH_INTERVAL: time::Duration = time::Duration::from_millis(10);
 
 pub const TYPE_I32: u32 = 1;
 pub const TYPE_I64: u32 = 2;

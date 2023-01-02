@@ -1,7 +1,7 @@
 use gdnative::prelude::*;
 
 #[cfg(feature = "epoch-timeout")]
-use crate::wasm_util::EPOCH_DEADLINE;
+use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 
 #[derive(Clone, Copy, Default, Debug, Eq, PartialEq, ToVariant)]
 pub struct Config {
@@ -31,6 +31,27 @@ fn get_field<T: FromVariant + Default>(
     }
 }
 
+#[cfg(feature = "epoch-timeout")]
+fn compute_epoch(v: Option<Variant>) -> Result<u64, FromVariantError> {
+    const DEFAULT: u64 = EPOCH_DEADLINE.saturating_mul(EPOCH_MULTIPLIER);
+    let t = v.as_ref().map_or(VariantType::Nil, |v| v.get_type());
+    match v.map(|v| v.dispatch()) {
+        None | Some(VariantDispatch::Nil) => Ok(DEFAULT),
+        Some(VariantDispatch::I64(v)) => Ok(v
+            .try_into()
+            .unwrap_or(0u64)
+            .saturating_mul(EPOCH_MULTIPLIER)),
+        Some(VariantDispatch::F64(v)) => Ok((v * (EPOCH_MULTIPLIER as f64)).trunc() as _),
+        Some(_) => Err(FromVariantError::InvalidField {
+            field_name: "engine.epoch_timeout",
+            error: Box::new(FromVariantError::InvalidVariantType {
+                variant_type: t,
+                expected: VariantType::F64,
+            }),
+        }),
+    }
+}
+
 impl FromVariant for Config {
     fn from_variant(variant: &Variant) -> Result<Self, FromVariantError> {
         if variant.is_nil() {
@@ -44,7 +65,7 @@ impl FromVariant for Config {
             #[cfg(feature = "epoch-timeout")]
             epoch_autoreset: get_field(&dict, "engine.epoch_autoreset")?.unwrap_or_default(),
             #[cfg(feature = "epoch-timeout")]
-            epoch_timeout: get_field(&dict, "engine.epoch_timeout")?.unwrap_or(EPOCH_DEADLINE),
+            epoch_timeout: compute_epoch(dict.get("engine.epoch_timeout"))?,
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })
