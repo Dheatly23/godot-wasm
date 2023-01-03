@@ -83,7 +83,7 @@ func _ready():
 		{},
 		{
 			"engine.use_epoch": true,
-			"engine.epoch_timeout": 2,
+			"engine.epoch_timeout": 1,
 		},
 		self, "__log"
 	)

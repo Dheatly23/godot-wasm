@@ -157,6 +157,12 @@ impl ops::Mul<f64> for PendulumDeriv {
     }
 }
 
+fn wrap_theta(v: f64) -> f64 {
+    use std::f64::consts::PI;
+    let d = (v.div_euclid(PI) * 0.5).trunc();
+    v - d * (PI * 2.0)
+}
+
 impl<'a> ops::Add<PendulumDeriv> for &'a PendulumState {
     type Output = PendulumState;
 
@@ -164,9 +170,9 @@ impl<'a> ops::Add<PendulumDeriv> for &'a PendulumState {
         PendulumState {
             config: self.config,
 
-            theta1: self.theta1 + d.dt1,
+            theta1: wrap_theta(self.theta1 + d.dt1),
             w1: self.w1 + d.dw1,
-            theta2: self.theta2 + d.dt2,
+            theta2: wrap_theta(self.theta2 + d.dt2),
             w2: self.w2 + d.dw2,
         }
     }
@@ -176,9 +182,9 @@ impl ops::Add<PendulumDeriv> for PendulumState {
     type Output = Self;
 
     fn add(mut self, d: PendulumDeriv) -> Self {
-        self.theta1 += d.dt1;
+        self.theta1 = wrap_theta(self.theta1 + d.dt1);
         self.w1 += d.dw1;
-        self.theta2 += d.dt2;
+        self.theta2 = wrap_theta(self.theta2 + d.dt2);
         self.w2 += d.dw2;
         self
     }
