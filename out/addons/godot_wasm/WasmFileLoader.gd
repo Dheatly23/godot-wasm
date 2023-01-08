@@ -31,23 +31,17 @@ func get_preset_name(preset: int) -> String:
 			return "Unknown"
 
 func get_import_options(preset: int) -> Array:
-	match preset:
-		Presets.DEFAULT:
-			return [{
-				name = "name",
-				default_value = "",
-				property_hint = PROPERTY_HINT_NONE,
-				usage = PROPERTY_USAGE_DEFAULT,
-				hint_string = "String",
-			}, {
-				name = "imports",
-				default_value = {},
-				property_hint = PROPERTY_HINT_NONE,
-				usage = PROPERTY_USAGE_DEFAULT,
-				hint_string = "Dictionary",
-			}]
-		_:
-			return []
+	return [{
+		name = "name",
+		default_value = "",
+		hint = PROPERTY_HINT_NONE,
+		hint_string = "String",
+	}, {
+		name = "imports",
+		default_value = [],
+		property_hint = PROPERTY_HINT_RESOURCE_TYPE,
+		hint_string = "17/19:PackedDataContainer",
+	}]
 
 func get_option_visibility(option, options) -> bool:
 	return true
@@ -62,9 +56,8 @@ func import(
 	var r = WasmFile.new()
 
 	r.name = options["name"]
-	r.imports = options["imports"]
 
-	var err: int = r.__initialize(source_file)
+	var err: int = r.__initialize(source_file, options["imports"])
 	if err != OK:
 		return err
 	return ResourceSaver.save("%s.%s" % [save_path, get_save_extension()], r)

@@ -25,7 +25,15 @@ func get_module() -> WasmModule:
 
 	return __module
 
-func __initialize(path: String) -> int:
+func __initialize(path: String, imports_: Array) -> int:
+	for v in imports_:
+		var f: WasmFile = v
+		if f == null:
+			return ERR_CANT_OPEN
+		if f.name in imports:
+			return ERR_DUPLICATE_SYMBOL
+		imports[f.name] = f
+
 	var file := File.new()
 	var err := file.open(path, File.READ)
 	if err != OK:
