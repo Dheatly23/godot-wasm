@@ -12,7 +12,7 @@ const WIDTH = 7
 const HEIGHT = 5
 const TILE_SIZE = 32
 
-export(PackedDataContainer) var wasm_file = null
+export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
 
 onready var tiles: TileMap = $Tiles
 onready var selector: Node2D = $Tiles/Selector
@@ -33,12 +33,11 @@ func init_game() -> void:
 			state.append(TileState.EMPTY)
 			tiles.set_cell(x, y, TileState.EMPTY)
 
-	var w: WasmFile = wasm_file
-	if w == null:
-		return
+	var f: WasmFile = load(wasm_file)
 
-	var module = w.get_module()
+	var module = f.get_module()
 	if module == null:
+		__log("Cannot compile module " + wasm_file)
 		return
 
 	robot_instance = InstanceHandle.new()

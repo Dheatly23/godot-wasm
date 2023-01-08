@@ -11,6 +11,5 @@ dest_files=[ "res://.import/connect_4.wasm-559a003e930d80695cabb722b4113cbc.res"
 
 [params]
 
-name=""
-imports={
-}
+name="connect_4"
+imports=[  ]

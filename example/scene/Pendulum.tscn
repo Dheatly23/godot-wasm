@@ -1,13 +1,12 @@
-[gd_scene load_steps=4 format=2]
+[gd_scene load_steps=3 format=2]
 
 [ext_resource path="res://img/Pendulum.png" type="Texture" id=1]
 [ext_resource path="res://script/Pendulum.gd" type="Script" id=2]
-[ext_resource path="res://wasm/double_pendulum.wasm" type="PackedDataContainer" id=3]
 
 [node name="Pendulum" type="Node2D"]
 use_parent_material = true
 script = ExtResource( 2 )
-wasm_file = ExtResource( 3 )
+wasm_file = "res://wasm/double_pendulum.wasm"
 
 [node name="Shaft" type="Sprite" parent="."]
 use_parent_material = true

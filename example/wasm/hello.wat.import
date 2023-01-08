@@ -11,6 +11,5 @@ dest_files=[ "res://.import/hello.wat-b81c0b3fd2c4a6edb32ade5e4cd96bec.res" ]
 
 [params]
 
-name="hello"
-imports={
-}
+name="hello_world"
+imports=[  ]

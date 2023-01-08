@@ -70,6 +70,5 @@ func __load_scene(name: String, scene: PackedScene) -> void:
 	child_scene.connect("message_emitted", logger, "add_text")
 	view.add_child(child_scene)
 
-
 func _on_Viewport_gui_input(event):
 	print(event)

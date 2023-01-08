@@ -2,18 +2,17 @@ extends Node
 
 signal message_emitted(msg)
 
-export(PackedDataContainer) var wasm_file = null
+export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
 
 var instance: Object = null
 
 # Instance threadpool version
 func _ready():
-	var w: WasmFile = wasm_file
-	if w == null:
-		return
+	var f: WasmFile = load(wasm_file)
 
-	var module = w.get_module()
+	var module := f.get_module()
 	if module == null:
+		__log("Cannot compile module " + wasm_file)
 		return
 
 	instance = InstanceHandle.new()
@@ -51,11 +50,9 @@ func __log(msg: String) -> void:
 
 # Non threadpool version
 #func _ready():
-#	var w: WasmFile = wasm_file
-#	if w == null:
-#		return
+#	var f: WasmFile = load(wasm_file)
 #
-#	instance = w.instantiate({
+#	instance = f.instantiate({
 #		"write": {
 #			params = [
 #				WasmHelper.TYPE_I32,

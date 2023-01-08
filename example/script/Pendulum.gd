@@ -4,7 +4,7 @@ signal message_emitted(msg)
 
 const SCALE := 64.0
 
-export(PackedDataContainer) var wasm_file = null
+export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
 
 export(float, 0.001, 10) var mass1 := 1.0
 export(float, 0.001, 10) var length1 := 1.0
@@ -69,12 +69,11 @@ func _update_pendulum() -> void:
 
 # Instance threadpool version
 func _ready():
-	var w: WasmFile = wasm_file
-	if w == null:
-		return
+	var f: WasmFile = load(wasm_file)
 
-	var module = w.get_module()
+	var module = f.get_module()
 	if module == null:
+		__log("Cannot compile module " + wasm_file)
 		return
 
 	instance = InstanceHandle.new()
@@ -136,11 +135,9 @@ func __update(ret: Array) -> void:
 
 # Non threadpool version
 #func _ready():
-#	var w: WasmFile = wasm_file
-#	if w == null:
-#		return
+#	var f: WasmFile = load(wasm_file)
 #
-#	instance = w.instantiate()
+#	instance = f.instantiate()
 #
 #	call_deferred("__setup")
 #

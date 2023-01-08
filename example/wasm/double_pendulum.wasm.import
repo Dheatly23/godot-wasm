@@ -12,5 +12,4 @@ dest_files=[ "res://.import/double_pendulum.wasm-3fb3ef68c523435c601bdf7941742bc
 [params]
 
 name="double_pendulum"
-imports={
-}
+imports=[  ]
