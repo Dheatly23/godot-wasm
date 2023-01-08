@@ -5,16 +5,16 @@ class_name WasmFile
 export(String) var name := ""
 export(Dictionary) var imports := {}
 
-var __module: Object = null
+var __module: WasmModule = null
 
-func instantiate(host: Dictionary = {}, config: Dictionary = {}) -> Object:
+func instantiate(host: Dictionary = {}, config: Dictionary = {}) -> WasmInstance:
 	var m := get_module()
 
 	if m == null:
 		return null
 	return m.instantiate(host, config)
 
-func get_module() -> Object:
+func get_module() -> WasmModule:
 	if __module == null:
 		var im := {}
 		for k in imports:
@@ -33,4 +33,5 @@ func __initialize(path: String) -> int:
 
 	__data__ = file.get_buffer(file.get_len())
 
+	file.close()
 	return OK

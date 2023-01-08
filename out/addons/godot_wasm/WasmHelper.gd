@@ -11,8 +11,8 @@ static func load_wasm(
 	name: String,
 	data,
 	imports: Dictionary = {}
-):
-	return preload("WasmModule.gdns").new().initialize(
+) -> WasmModule:
+	return WasmModule.new().initialize(
 		name,
 		data,
 		imports
@@ -22,7 +22,7 @@ static func load_wasm_file(
 	name: String,
 	path: String,
 	imports: Dictionary = {}
-):
+) -> WasmModule:
 	var file: File = File.new()
 	file.open(path, File.READ)
 	var buf = file.get_buffer(file.get_len())
