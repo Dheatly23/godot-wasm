@@ -1,3 +1,6 @@
+use std::io::Write;
+use std::str::from_utf8;
+
 use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::{Caller, Extern, Linker};
@@ -13,7 +16,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "string.len",
             |ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                 let v = GodotString::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
-                Ok(v.len() as _)
+
+                // NOTE: Please fix this as soon as godot_rust opens up it's byte slice API.
+                Ok(v.to_string().as_bytes().len() as _)
             },
         )
         .unwrap();
@@ -29,7 +34,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     _ => return Ok(0),
                 };
 
-                mem.write(&mut ctx, p as _, v.to_string().as_bytes())?;
+                write!(&mut mem.data_mut(&mut ctx)[p as _..], "{}", v)?;
                 Ok(1)
             },
         )
@@ -45,12 +50,8 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     _ => return Ok(0),
                 };
 
-                let mut v = vec![0u8; n as usize];
-                mem.read(&mut ctx, p as _, &mut v)?;
-                let v = String::from_utf8(v)?;
-                ctx.data_mut()
-                    .get_registry_mut()?
-                    .replace(i as _, v.to_variant());
+                let v = from_utf8(&mem.data(&mut ctx)[p as _..(p + n) as _])?.to_variant();
+                ctx.data_mut().get_registry_mut()?.replace(i as _, v);
                 Ok(1)
             },
         )
@@ -66,10 +67,8 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     _ => return Ok(0),
                 };
 
-                let mut v = vec![0u8; n as usize];
-                mem.read(&mut ctx, p as _, &mut v)?;
-                let v = String::from_utf8(v)?;
-                Ok(ctx.data_mut().get_registry_mut()?.register(v.to_variant()) as _)
+                let v = from_utf8(&mem.data(&mut ctx)[p as _..(p + n) as _])?.to_variant();
+                Ok(ctx.data_mut().get_registry_mut()?.register(v) as _)
             },
         )
         .unwrap();

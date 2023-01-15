@@ -1,3 +1,6 @@
+use std::io::Write;
+use std::str::from_utf8;
+
 use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Linker};
@@ -14,7 +17,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "string.len",
             |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
                 let v = GodotString::from_variant(&externref_to_variant(v))?;
-                Ok(v.len() as _)
+
+                // NOTE: Please fix this as soon as godot_rust opens up it's byte slice API.
+                Ok(v.to_string().as_bytes().len() as _)
             },
         )
         .unwrap();
@@ -30,7 +35,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     _ => return Ok(0),
                 };
 
-                mem.write(&mut ctx, p as _, v.to_string().as_bytes())?;
+                write!(&mut mem.data_mut(&mut ctx)[p as _..], "{}", v)?;
                 Ok(1)
             },
         )
@@ -46,9 +51,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     _ => return Ok(None),
                 };
 
-                let mut v = vec![0u8; n as usize];
-                mem.read(&mut ctx, p as _, &mut v)?;
-                let v = String::from_utf8(v)?;
+                let v = from_utf8(&mem.data(&mut ctx)[p as _..(p + n) as _])?;
                 Ok(variant_to_externref(v.to_variant()))
             },
         )
