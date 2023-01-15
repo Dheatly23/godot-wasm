@@ -1,6 +1,6 @@
 use anyhow::{bail, Error};
 use gdnative::prelude::*;
-use wasmtime::{Caller, Extern, ExternRef, Linker};
+use wasmtime::{Caller, Extern, ExternRef, Func, Linker, TypedFunc};
 
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
@@ -203,5 +203,59 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
         )
         .unwrap();
 
-    // TODO: String array functions
+    linker
+        .func_wrap(
+            EXTERNREF_MODULE,
+            "string_array.get_many",
+            |mut ctx: Caller<_>,
+             a: Option<ExternRef>,
+             i: i32,
+             f: Option<Func>|
+             -> Result<u32, Error> {
+                let f: TypedFunc<Option<ExternRef>, u32> = match f {
+                    Some(f) => f.typed(&ctx)?,
+                    None => return Ok(0),
+                };
+                let a = StringArray::from_variant(&externref_to_variant(a))?;
+
+                let mut n = 0;
+                let mut s = &a.read()[i as _..];
+                while let Some((v, rest)) = s.split_first() {
+                    n += 1;
+                    if f.call(&mut ctx, variant_to_externref(v.to_variant()))? == 0 {
+                        break;
+                    }
+                    s = rest;
+                }
+
+                Ok(n)
+            },
+        )
+        .unwrap();
+
+    linker
+        .func_wrap(
+            EXTERNREF_MODULE,
+            "string_array.build",
+            |mut ctx: Caller<_>, f: Option<Func>| -> Result<Option<ExternRef>, Error> {
+                let f: TypedFunc<u32, (Option<ExternRef>, u32)> = match f {
+                    Some(f) => f.typed(&ctx)?,
+                    None => return Ok(None),
+                };
+
+                let mut v = Vec::new();
+                loop {
+                    let (e, n) = f.call(&mut ctx, v.len() as _)?;
+                    v.push(GodotString::from_variant(&externref_to_variant(e))?);
+                    if n == 0 {
+                        break;
+                    }
+                }
+
+                Ok(variant_to_externref(
+                    StringArray::from_vec(v).owned_to_variant(),
+                ))
+            },
+        )
+        .unwrap();
 }
