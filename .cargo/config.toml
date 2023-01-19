@@ -1,3 +1,0 @@
-[profile.release]
-lto = "thin"
-codegen-units = 1

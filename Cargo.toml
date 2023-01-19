@@ -4,9 +4,14 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Dheatly23 <71598333+Dheatly23@users.noreply.github.com>"]
 license = "Apache-2.0"
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
 
 [dependencies]
 scopeguard = "^1.1.0"
@@ -31,3 +36,11 @@ epoch-timeout = []
 object-registry-compat = []
 object-registry-extern = []
 object-registry = ["object-registry-compat", "object-registry-extern"]
+
+[workspace]
+members = [
+  "example/wasm/*",
+]
+exclude = [
+  "example/wasm/.cargo",
+]

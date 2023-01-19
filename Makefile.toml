@@ -17,12 +17,12 @@ run_task = [
 
 [tasks.check_all]
 command = "cargo"
-args = ["check"]
+args = ["check", "--all"]
 
 [tasks.format]
 dependencies = ["check_all"]
 command = "cargo"
-args = ["fmt"]
+args = ["fmt", "--all"]
 
 [tasks.format_only_release]
 extend = "format"

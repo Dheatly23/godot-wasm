@@ -11,27 +11,19 @@ is_release = eq ${CARGO_MAKE_PROFILE} "production"
 
 wasm_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${EXAMPLE_DIR} wasm
 wasm_dir = canonicalize ${wasm_dir}
+wasm_config = join_path ${wasm_dir} .cargo/config.toml
 
 l = split ${WASM_PROJECTS} ,
-d = pwd
 
 for i in ${l}
-  p = join_path ${wasm_dir} ${i}
-  cd ${p}
-
   echo Building: ${i}
 
-  exec --fail-on-error cargo fmt
-  exec --fail-on-error cargo check
-
   if ${is_release}
-    exec --fail-on-error cargo build --release
+    exec --fail-on-error cargo build --release --config ${wasm_config} -p ${i}
   else
-    exec --fail-on-error cargo build
+    exec --fail-on-error cargo build --config ${wasm_config} -p ${i}
   end
 end
-
-cd ${d}
 
 release ${l}
 '''
@@ -66,7 +58,7 @@ end
 l = split ${WASM_PROJECTS} ,
 
 for i in ${l}
-  src_file = join_path ${wasm_dir} ${i} target/wasm32-unknown-unknown
+  src_file = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} target/wasm32-unknown-unknown
 
   if ${is_release}
     src_file = join_path ${src_file} release
