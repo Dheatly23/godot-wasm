@@ -12,7 +12,10 @@ macro_rules! is_typecheck {
             EXTERNREF_MODULE,
             concat!($name, ".is"),
             |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
-                Ok((externref_to_variant(v).get_type() == VariantType::$var) as _)
+                match externref_to_variant(v).get_type() {
+                    VariantType::$var => Ok(1),
+                    _ => Ok(0),
+                }
             }
         ).unwrap();
     )*};
@@ -49,4 +52,14 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
         ("vector3_array" => Vector3Array),
         ("color_array" => ColorArray),
     );
+
+    linker
+        .func_wrap(
+            EXTERNREF_MODULE,
+            "variant_type",
+            |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
+                Ok(externref_to_variant(v).get_type() as _)
+            },
+        )
+        .unwrap();
 }

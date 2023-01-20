@@ -65,4 +65,17 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
         ("vector3_array" => Vector3Array),
         ("color_array" => ColorArray),
     );
+
+    linker
+        .func_wrap(
+            EXTERNREF_MODULE,
+            "variant_type",
+            |ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
+                match ctx.data().get_registry()?.get(i as _) {
+                    Some(v) => Ok(v.get_type() as _),
+                    _ => Ok(0),
+                }
+            },
+        )
+        .unwrap();
 }
