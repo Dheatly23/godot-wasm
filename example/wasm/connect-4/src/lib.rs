@@ -1,14 +1,8 @@
 mod board;
 mod robot;
 
-extern crate wee_alloc;
-
 use board::*;
 use robot::{DummyRobot, Robot};
-
-// Use `wee_alloc` as the global allocator.
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 static mut BOARD: Board = Board::new_empty();
 static mut ROBOT: Option<Box<dyn Robot>> = None;

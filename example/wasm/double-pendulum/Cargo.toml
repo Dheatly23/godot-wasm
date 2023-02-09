@@ -8,6 +8,3 @@ publish = false
 
 [lib]
 crate-type = ["cdylib"]
-
-[dependencies]
-wee_alloc = "0.4.5"

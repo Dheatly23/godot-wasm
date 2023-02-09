@@ -1,12 +1,6 @@
 mod deriv_trait;
 
-extern crate wee_alloc;
-
 use std::ops;
-
-// Use `wee_alloc` as the global allocator.
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 const G: f64 = 9.8;
 

@@ -1,10 +1,4 @@
-extern crate wee_alloc;
-
 use std::fmt::Write;
-
-// Use `wee_alloc` as the global allocator.
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[link(wasm_import_module = "host")]
 extern "C" {
