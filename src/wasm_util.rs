@@ -15,7 +15,9 @@ use crate::wasm_config::Config;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 
-#[cfg(feature = "epoch-timeout")]
+#[cfg(all(feature = "epoch-timeout", not(feature = "more-precise-timer")))]
+pub const EPOCH_MULTIPLIER: u64 = 1000;
+#[cfg(all(feature = "epoch-timeout", feature = "more-precise-timer"))]
 pub const EPOCH_MULTIPLIER: u64 = 50;
 #[cfg(feature = "epoch-timeout")]
 pub const EPOCH_DEADLINE: u64 = 5u64.saturating_mul(EPOCH_MULTIPLIER);

@@ -36,6 +36,7 @@ epoch-timeout = []
 object-registry-compat = []
 object-registry-extern = []
 object-registry = ["object-registry-compat", "object-registry-extern"]
+more-precise-timer = []
 
 [workspace]
 members = [
