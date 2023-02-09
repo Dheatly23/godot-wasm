@@ -7,6 +7,7 @@ mod wasm_instance;
 mod wasm_objregistry;
 mod wasm_util;
 
+use gdnative::init::*;
 use gdnative::prelude::*;
 
 use crate::wasm_engine::WasmModule;
@@ -17,5 +18,13 @@ fn init(handle: InitHandle) {
     handle.add_class::<WasmModule>();
     handle.add_class::<WasmInstance>();
 }
+
+fn terminate(_: &TerminateInfo) {
+    #[cfg(feature = "epoch-timeout")]
+    wasm_engine::EPOCH.stop_thread();
+}
+
 // Macro that creates the entry-points of the dynamic library.
-godot_init!(init);
+godot_gdnative_init!();
+godot_nativescript_init!(init);
+godot_gdnative_terminate!(terminate);

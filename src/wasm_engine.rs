@@ -56,11 +56,8 @@ impl EpochThreadHandle {
             }));
         });
     }
-}
 
-#[cfg(feature = "epoch-timeout")]
-impl Drop for EpochThreadHandle {
-    fn drop(&mut self) {
+    pub fn stop_thread(&self) {
         let handle;
 
         {
@@ -70,10 +67,17 @@ impl Drop for EpochThreadHandle {
             handle = h.take();
         }
 
-        self.inner.cond.notify_one();
+        self.inner.cond.notify_all();
         if let Some(handle) = handle {
             handle.join().unwrap();
         }
+    }
+}
+
+#[cfg(feature = "epoch-timeout")]
+impl Drop for EpochThreadHandle {
+    fn drop(&mut self) {
+        self.stop_thread();
     }
 }
 
