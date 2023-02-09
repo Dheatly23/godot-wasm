@@ -560,12 +560,17 @@ impl WasmInstance {
     }
 
     #[method]
-    fn memory_read(&self, #[base] base: TRef<Reference>, i: usize, n: usize) -> Option<ByteArray> {
-        self.read_memory(base, i, n, |s| Ok(ByteArray::from_slice(s)))
+    fn memory_read(
+        &self,
+        #[base] base: TRef<Reference>,
+        i: usize,
+        n: usize,
+    ) -> Option<PoolArray<u8>> {
+        self.read_memory(base, i, n, |s| Ok(<PoolArray<u8>>::from_slice(s)))
     }
 
     #[method]
-    fn memory_write(&self, #[base] base: TRef<Reference>, i: usize, a: ByteArray) -> bool {
+    fn memory_write(&self, #[base] base: TRef<Reference>, i: usize, a: PoolArray<u8>) -> bool {
         let a = &*a.read();
         self.write_memory(base, i, a.len(), |s| {
             s.copy_from_slice(a);

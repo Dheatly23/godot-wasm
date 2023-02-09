@@ -121,7 +121,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "byte_array.len",
             |_: Caller<_>, a: Option<ExternRef>| -> Result<i32, Error> {
-                let a = ByteArray::from_variant(&externref_to_variant(a))?;
+                let a = <PoolArray<u8>>::from_variant(&externref_to_variant(a))?;
                 Ok(a.len())
             },
         )
@@ -132,7 +132,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "byte_array.read",
             |mut ctx: Caller<StoreData>, a: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-                let a = ByteArray::from_variant(&externref_to_variant(a))?;
+                let a = <PoolArray<u8>>::from_variant(&externref_to_variant(a))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -155,7 +155,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 };
 
                 let a = match mem.data(&ctx).get(p as usize..(p + n) as usize) {
-                    Some(v) => ByteArray::from_slice(v),
+                    Some(v) => <PoolArray<u8>>::from_slice(v),
                     None => bail!("Invalid memory bounds ({}-{})", p, p + n),
                 };
                 Ok(variant_to_externref(a.owned_to_variant()))
@@ -165,15 +165,15 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
 
     readwrite_array!(
         linker,
-        ("int_array" => v: Int32Array [0i32] [4 | v: i32]),
-        ("float_array" => v: Float32Array [0f32] [4 | v: f32]),
-        ("vector2_array" => v: Vector2Array [Vector2::ZERO] [4 | v.x: f32; 4 | v.y: f32]),
-        ("vector3_array" => v: Vector3Array [Vector3::ZERO] [
+        ("int_array" => v: PoolArray<i32> [0i32] [4 | v: i32]),
+        ("float_array" => v: PoolArray<f32> [0f32] [4 | v: f32]),
+        ("vector2_array" => v: PoolArray<Vector2> [Vector2::ZERO] [4 | v.x: f32; 4 | v.y: f32]),
+        ("vector3_array" => v: PoolArray<Vector3> [Vector3::ZERO] [
             4 | v.x: f32;
             4 | v.y: f32;
             4 | v.z: f32;
         ]),
-        ("color_array" => v: ColorArray [Color {r: 0.0, g: 0.0, b: 0.0, a: 0.0}] [
+        ("color_array" => v: PoolArray<Color> [Color {r: 0.0, g: 0.0, b: 0.0, a: 0.0}] [
             4 | v.r: f32;
             4 | v.g: f32;
             4 | v.b: f32;
@@ -186,7 +186,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "string_array.len",
             |_: Caller<_>, a: Option<ExternRef>| -> Result<i32, Error> {
-                let a = StringArray::from_variant(&externref_to_variant(a))?;
+                let a = <PoolArray<GodotString>>::from_variant(&externref_to_variant(a))?;
                 Ok(a.len())
             },
         )
@@ -197,7 +197,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "string_array.get",
             |_: Caller<_>, a: Option<ExternRef>, i: i32| -> Result<Option<ExternRef>, Error> {
-                let a = StringArray::from_variant(&externref_to_variant(a))?;
+                let a = <PoolArray<GodotString>>::from_variant(&externref_to_variant(a))?;
                 Ok(variant_to_externref(a.get(i).owned_to_variant()))
             },
         )
@@ -216,7 +216,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     Some(f) => f.typed(&ctx)?,
                     None => return Ok(0),
                 };
-                let a = StringArray::from_variant(&externref_to_variant(a))?;
+                let a = <PoolArray<GodotString>>::from_variant(&externref_to_variant(a))?;
 
                 let mut n = 0;
                 let mut s = &a.read()[i as _..];
@@ -253,7 +253,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 }
 
                 Ok(variant_to_externref(
-                    StringArray::from_vec(v).owned_to_variant(),
+                    <PoolArray<GodotString>>::from_vec(v).owned_to_variant(),
                 ))
             },
         )

@@ -151,7 +151,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "byte_array.len",
             |ctx: Caller<StoreData>, i: u32| -> Result<i32, Error> {
                 let reg = ctx.data().get_registry()?;
-                let a = ByteArray::from_variant(&reg.get_or_nil(i as _))?;
+                let a = <PoolArray<u8>>::from_variant(&reg.get_or_nil(i as _))?;
                 Ok(a.len())
             },
         )
@@ -162,7 +162,8 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             OBJREGISTRY_MODULE,
             "byte_array.read",
             |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
-                let a = ByteArray::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
+                let a =
+                    <PoolArray<u8>>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -185,7 +186,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 };
 
                 let a = match mem.data(&ctx).get(p as usize..(p + n) as usize) {
-                    Some(v) => ByteArray::from_slice(v),
+                    Some(v) => <PoolArray<u8>>::from_slice(v),
                     None => bail!("Invalid memory bounds ({}-{})", p, p + n),
                 };
                 ctx.data_mut()
@@ -207,7 +208,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 };
 
                 let a = match mem.data(&ctx).get(p as usize..(p + n) as usize) {
-                    Some(v) => ByteArray::from_slice(v),
+                    Some(v) => <PoolArray<u8>>::from_slice(v),
                     None => bail!("Invalid memory bounds ({}-{})", p, p + n),
                 };
                 Ok(ctx.data_mut().get_registry_mut()?.register(a.to_variant()) as _)
@@ -217,15 +218,15 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
 
     readwrite_array!(
         linker,
-        ("int_array" => v: Int32Array [0i32] [4 | v: i32]),
-        ("float_array" => v: Float32Array [0f32] [4 | v: f32]),
-        ("vector2_array" => v: Vector2Array [Vector2::ZERO] [4 | v.x: f32; 4 | v.y: f32]),
-        ("vector3_array" => v: Vector3Array [Vector3::ZERO] [
+        ("int_array" => v: PoolArray<i32> [0i32] [4 | v: i32]),
+        ("float_array" => v: PoolArray<f32> [0f32] [4 | v: f32]),
+        ("vector2_array" => v: PoolArray<Vector2> [Vector2::ZERO] [4 | v.x: f32; 4 | v.y: f32]),
+        ("vector3_array" => v: PoolArray<Vector3> [Vector3::ZERO] [
             4 | v.x: f32;
             4 | v.y: f32;
             4 | v.z: f32;
         ]),
-        ("color_array" => v: ColorArray [Color {r: 0.0, g: 0.0, b: 0.0, a: 0.0}] [
+        ("color_array" => v: PoolArray<Color> [Color {r: 0.0, g: 0.0, b: 0.0, a: 0.0}] [
             4 | v.r: f32;
             4 | v.g: f32;
             4 | v.b: f32;
@@ -239,7 +240,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "string_array.len",
             |ctx: Caller<StoreData>, a: u32| -> Result<i32, Error> {
                 let reg = ctx.data().get_registry()?;
-                let a = StringArray::from_variant(&reg.get_or_nil(a as _))?;
+                let a = <PoolArray<GodotString>>::from_variant(&reg.get_or_nil(a as _))?;
                 Ok(a.len())
             },
         )
@@ -251,7 +252,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "string_array.get",
             |mut ctx: Caller<StoreData>, a: u32, i: i32| -> Result<u32, Error> {
                 let reg = ctx.data_mut().get_registry_mut()?;
-                let a = StringArray::from_variant(&reg.get_or_nil(a as _))?;
+                let a = <PoolArray<GodotString>>::from_variant(&reg.get_or_nil(a as _))?;
                 Ok(reg.register(a.get(i).owned_to_variant()) as _)
             },
         )
@@ -275,7 +276,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     _ => return Ok(0),
                 };
 
-                let a = StringArray::from_variant(&ctx.data().get_registry()?.get_or_nil(a as _))?;
+                let a = <PoolArray<GodotString>>::from_variant(
+                    &ctx.data().get_registry()?.get_or_nil(a as _),
+                )?;
                 let s = a.read();
                 let s = match s.get(from as usize..to as usize) {
                     Some(v) => v,
@@ -335,7 +338,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     )?);
                 }
 
-                reg.replace(a as _, StringArray::from_vec(v).to_variant());
+                reg.replace(a as _, <PoolArray<GodotString>>::from_vec(v).to_variant());
                 Ok(1)
             },
         )
@@ -367,7 +370,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     )?);
                 }
 
-                Ok(reg.register(StringArray::from_vec(v).to_variant()) as _)
+                Ok(reg.register(<PoolArray<GodotString>>::from_vec(v).to_variant()) as _)
             },
         )
         .unwrap();

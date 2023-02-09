@@ -8,7 +8,6 @@ mod wasm_objregistry;
 mod wasm_util;
 
 use gdnative::init::*;
-use gdnative::prelude::*;
 
 use crate::wasm_engine::WasmModule;
 use crate::wasm_instance::WasmInstance;

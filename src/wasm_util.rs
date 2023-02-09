@@ -47,12 +47,12 @@ pub const MODULE_INCLUDES: &[&str] = &[
 
 pub const MEMORY_EXPORT: &str = "memory";
 
-pub fn from_signature(sig: &FuncType) -> Result<(ByteArray, ByteArray), Error> {
+pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), Error> {
     let p = sig.params();
     let r = sig.results();
 
-    let mut pr = ByteArray::new();
-    let mut rr = ByteArray::new();
+    let mut pr = <PoolArray<u8>>::new();
+    let mut rr = <PoolArray<u8>>::new();
 
     pr.resize(p.len() as _);
     rr.resize(r.len() as _);
