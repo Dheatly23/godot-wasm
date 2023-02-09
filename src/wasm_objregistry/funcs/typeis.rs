@@ -68,7 +68,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
 
     linker
         .func_wrap(
-            EXTERNREF_MODULE,
+            OBJREGISTRY_MODULE,
             "variant_type",
             |ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                 match ctx.data().get_registry()?.get(i as _) {
