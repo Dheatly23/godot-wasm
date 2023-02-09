@@ -47,6 +47,20 @@ pub const MODULE_INCLUDES: &[&str] = &[
 
 pub const MEMORY_EXPORT: &str = "memory";
 
+#[macro_export]
+macro_rules! bail_with_site {
+    ($($t:tt)*) => {
+        return Err(anyhow::anyhow!($($t)*).context(gdnative::log::godot_site!()))
+    };
+}
+
+#[macro_export]
+macro_rules! site_context {
+    ($e:expr) => {
+        $e.map_err(|e| anyhow::Error::from(e).context(gdnative::log::godot_site!()))
+    };
+}
+
 pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), Error> {
     let p = sig.params();
     let r = sig.results();
@@ -68,7 +82,7 @@ pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), 
             ValType::F64 => TYPE_F64,
             #[cfg(feature = "object-registry-extern")]
             ValType::ExternRef => TYPE_VARIANT,
-            _ => bail!("Unconvertible signture"),
+            _ => bail_with_site!("Unconvertible signture"),
         } as _;
     }
 
@@ -93,7 +107,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
                 TYPE_F64 => ValType::F64,
                 #[cfg(feature = "object-registry-extern")]
                 TYPE_VARIANT => ValType::ExternRef,
-                v => bail!("Unknown enumeration value {}", v),
+                v => bail_with_site!("Unknown enumeration value {}", v),
             });
         }
 
@@ -101,14 +115,18 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
     }
 
     p = match VariantDispatch::from(&params) {
-        VariantDispatch::VariantArray(v) => f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?))),
+        VariantDispatch::VariantArray(v) => f(v
+            .into_iter()
+            .map(|v| Ok(site_context!(u32::from_variant(&v))?))),
         VariantDispatch::ByteArray(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
         VariantDispatch::Int32Array(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
         _ => bail!("Unconvertible value {}", params),
     }?;
 
     r = match VariantDispatch::from(&results) {
-        VariantDispatch::VariantArray(v) => f(v.into_iter().map(|v| Ok(u32::from_variant(&v)?))),
+        VariantDispatch::VariantArray(v) => f(v
+            .into_iter()
+            .map(|v| Ok(site_context!(u32::from_variant(&v))?))),
         VariantDispatch::ByteArray(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
         VariantDispatch::Int32Array(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
         _ => bail!("Unconvertible value {}", results),
@@ -120,16 +138,16 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 // Mark this unsafe for future proofing
 pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Result<ValRaw, Error> {
     Ok(match t {
-        ValType::I32 => ValRaw::i32(i32::from_variant(&v)?),
-        ValType::I64 => ValRaw::i64(i64::from_variant(&v)?),
-        ValType::F32 => ValRaw::f32(f32::from_variant(&v)?.to_bits()),
-        ValType::F64 => ValRaw::f64(f64::from_variant(&v)?.to_bits()),
+        ValType::I32 => ValRaw::i32(site_context!(i32::from_variant(&v))?),
+        ValType::I64 => ValRaw::i64(site_context!(i64::from_variant(&v))?),
+        ValType::F32 => ValRaw::f32(site_context!(f32::from_variant(&v))?.to_bits()),
+        ValType::F64 => ValRaw::f64(site_context!(f64::from_variant(&v))?.to_bits()),
         #[cfg(feature = "object-registry-extern")]
         ValType::ExternRef => ValRaw::externref(match variant_to_externref(v) {
             Some(v) => v.to_raw(_store),
             None => 0,
         }),
-        _ => bail!("Unsupported WASM type conversion {}", t),
+        _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })
 }
 
@@ -142,7 +160,7 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
         ValType::F64 => f64::from_bits(v.get_f64()).to_variant(),
         #[cfg(feature = "object-registry-extern")]
         ValType::ExternRef => externref_to_variant(ExternRef::from_raw(v.get_externref())),
-        _ => bail!("Unsupported WASM type conversion {}", t),
+        _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })
 }
 
@@ -166,7 +184,7 @@ fn wrap_godot_method(
         };
         let r = ctx
             .data_mut()
-            .release_store(|| unsafe { obj.call(method.clone(), &p) })?;
+            .release_store(|| unsafe { site_context!(obj.call(method.clone(), &p)) })?;
 
         if let Some(msg) = ctx.data_mut().error_signal.take() {
             return Err(Error::msg(msg));
@@ -218,7 +236,7 @@ pub fn make_host_module(
             method: GodotString,
         }
 
-        let data = Data::from_variant(&v)?;
+        let data = site_context!(Data::from_variant(&v))?;
         let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
             Ok(obj) => unsafe { obj.assume_safe().get_ref() },
             Err(_) => data.object.clone(),

@@ -4,6 +4,7 @@ use std::ptr;
 
 use anyhow::{bail, Error};
 use gdnative::export::user_data::Map;
+use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
 use scopeguard::guard;
@@ -26,6 +27,7 @@ use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT};
+use crate::{bail_with_site, site_context};
 
 #[derive(NativeClass)]
 #[inherit(Reference)]
@@ -215,16 +217,18 @@ impl StoreData {
 
     #[cfg(feature = "object-registry-compat")]
     pub fn get_registry(&self) -> Result<&ObjectRegistry, Error> {
-        self.object_registry
+        site_context!(self
+            .object_registry
             .as_ref()
-            .ok_or_else(|| Error::msg("Object registry not enabled!"))
+            .ok_or_else(|| Error::msg("Object registry not enabled!")))
     }
 
     #[cfg(feature = "object-registry-compat")]
     pub fn get_registry_mut(&mut self) -> Result<&mut ObjectRegistry, Error> {
-        self.object_registry
+        site_context!(self
+            .object_registry
             .as_mut()
-            .ok_or_else(|| Error::msg("Object registry not enabled!"))
+            .ok_or_else(|| Error::msg("Object registry not enabled!")))
     }
 }
 
@@ -240,7 +244,7 @@ impl WasmInstance {
         if let OnceState::Done = self.once.state() {
             Ok(self.data.as_ref().unwrap())
         } else {
-            bail!("Uninitialized module")
+            bail_with_site!("Uninitialized module")
         }
     }
 
@@ -251,9 +255,13 @@ impl WasmInstance {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
-                let e = format!("{:?}", e);
-                godot_error!("{}", e);
-                base.emit_signal("error_happened", &[e.owned_to_variant()]);
+                error(
+                    e.downcast_ref::<Site>()
+                        .copied()
+                        .unwrap_or_else(|| godot_site!()),
+                    &e,
+                );
+                base.emit_signal("error_happened", &[format!("{}", e).owned_to_variant()]);
                 None
             }
         }
@@ -318,7 +326,7 @@ impl WasmInstance {
             m.acquire_store(
                 |m, mut store| match m.instance.get_memory(&mut store, MEMORY_EXPORT) {
                     Some(mem) => f(store, mem),
-                    None => bail!("No memory exported"),
+                    None => bail_with_site!("No memory exported"),
                 },
             )
         })
@@ -332,7 +340,7 @@ impl WasmInstance {
             let data = mem.data(&store);
             match data.get(i..i + n) {
                 Some(s) => f(s),
-                None => bail!("Index out of bound {}-{}", i, i + n),
+                None => bail_with_site!("Index out of bound {}-{}", i, i + n),
             }
         })
     }
@@ -395,9 +403,9 @@ impl WasmInstance {
                 let f = match m.instance.get_export(&mut store, &name) {
                     Some(f) => match f {
                         Extern::Func(f) => f,
-                        _ => bail!("Export {} is not a function", &name),
+                        _ => bail_with_site!("Export {} is not a function", &name),
                     },
-                    None => bail!("Export {} does not exists", &name),
+                    None => bail_with_site!("Export {} does not exists", &name),
                 };
 
                 let ty = f.ty(&store);
@@ -414,7 +422,14 @@ impl WasmInstance {
                 store.gc();
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
-                    f.call_unchecked(&mut store, arr.as_mut_ptr())?;
+                    f.call_unchecked(&mut store, arr.as_mut_ptr())
+                        .map_err(|e| {
+                            if e.downcast_ref::<Site>().is_none() {
+                                e.context(godot_site!())
+                            } else {
+                                e
+                            }
+                        })?;
                 }
 
                 let ret = VariantArray::new();
@@ -466,7 +481,7 @@ impl WasmInstance {
         #[cfg(feature = "object-registry-compat")]
         return self.unwrap_data(_base, |m| {
             if _obj.is_nil() {
-                bail!("Value is null!");
+                bail_with_site!("Value is null!");
             }
             m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj)))
         });
