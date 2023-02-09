@@ -32,7 +32,7 @@ To build the addon:
 4. Copy addon in `out/addons/godot_wasm` to your project
 
 ## Using the Library
-After adding it to your Godot project, there is 2 classes added by the library:
+After adding it to your Godot project, there are 2 classes added by the library:
 * `WasmModule` : Contains the compiled WebAssembly module.
 * `WasmInstance` : Contains the instantiated module.
 
@@ -70,10 +70,19 @@ func _ready():
 
   # Call to WASM
   print(instance.call_wasm("add", [1, 2]))
+
+  # There are many more methods of WasmInstance, including:
+  # - Trapping (signal_error/signal_error_cancel)
+  # - Epoch (reset_epoch)
+  # - Memory (too many to list here)
+  # See it's source code (src/wasm_instance.rs) for list.
 ```
 
-In the addon, there is a helper autoload `WasmHelper` to help you load WASM
-from file. See example for details.
+With the addon, there are many more helper scripts too:
+* `WasmHelper` : Autoload that contains many helper functions to load
+  WebAssembly code.
+* `WasmFile`/`WasmFileLoader` : Importer that automatically imports
+  WASM/WAT file. It also lazily compile and cache module.
 
 ## Potential Uses
 
