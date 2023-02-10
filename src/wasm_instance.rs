@@ -552,7 +552,10 @@ impl WasmInstance {
     fn has_memory(&self, #[base] base: TRef<Reference>) -> bool {
         self.unwrap_data(base, |m| {
             m.acquire_store(|m, mut store| {
-                Ok(matches!(m.instance.get_export(&mut store, MEMORY_EXPORT), Some(Extern::Memory(_))))
+                Ok(matches!(
+                    m.instance.get_export(&mut store, MEMORY_EXPORT),
+                    Some(Extern::Memory(_))
+                ))
             })
         })
         .unwrap_or_default()
