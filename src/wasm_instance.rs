@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::mem::{swap, transmute};
+use std::mem::transmute;
 use std::ptr;
 
 use anyhow::{bail, Error};
@@ -156,7 +156,7 @@ impl InstanceData {
 
             #[cfg(feature = "epoch-timeout")]
             store.set_epoch_deadline(store.data().config.epoch_timeout);
-            Ok(InstanceWasm::new(store, &module.module, &imports)?)
+            InstanceWasm::new(store, &module.module, &imports)
         }
 
         let host = host.map(|h| make_host_module(&mut store, h)).transpose()?;
@@ -171,8 +171,8 @@ impl InstanceData {
             .unwrap()?;
 
         Ok(Self {
-            instance: instance,
-            module: module,
+            instance,
+            module,
             store: Mutex::new(store),
         })
     }
@@ -188,7 +188,7 @@ impl InstanceData {
         unsafe {
             let p = &mut guard_.data_mut().mutex_raw as *mut _;
             let mut v = self.store.raw() as *const _;
-            swap(&mut *p, &mut v);
+            ptr::swap(p, &mut v);
             _scope = guard(p, move |p| {
                 *p = v;
             });
@@ -279,7 +279,7 @@ impl WasmInstance {
         self.once.call_once(move || {
             match InstanceData::instantiate(
                 Store::new(
-                    &*ENGINE,
+                    &ENGINE,
                     StoreData {
                         mutex_raw: ptr::null(),
                         config: match config {
@@ -552,10 +552,7 @@ impl WasmInstance {
     fn has_memory(&self, #[base] base: TRef<Reference>) -> bool {
         self.unwrap_data(base, |m| {
             m.acquire_store(|m, mut store| {
-                Ok(match m.instance.get_export(&mut store, MEMORY_EXPORT) {
-                    Some(Extern::Memory(_)) => true,
-                    _ => false,
-                })
+                Ok(matches!(m.instance.get_export(&mut store, MEMORY_EXPORT), Some(Extern::Memory(_))))
             })
         })
         .unwrap_or_default()
@@ -563,7 +560,7 @@ impl WasmInstance {
 
     #[method]
     fn memory_size(&self, #[base] base: TRef<Reference>) -> usize {
-        self.get_memory(base, |store, mem| Ok(mem.data_size(&store)))
+        self.get_memory(base, |store, mem| Ok(mem.data_size(store)))
             .unwrap_or_default()
     }
 

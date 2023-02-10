@@ -101,9 +101,6 @@ pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), 
 }
 
 pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error> {
-    let p;
-    let r;
-
     fn f(it: impl Iterator<Item = Result<u32, Error>>) -> Result<Vec<ValType>, Error> {
         let mut ret = match it.size_hint() {
             (_, Some(n)) => Vec::with_capacity(n),
@@ -125,7 +122,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
         Ok(ret)
     }
 
-    p = match VariantDispatch::from(&params) {
+    let p = match VariantDispatch::from(&params) {
         VariantDispatch::VariantArray(v) => f(v
             .into_iter()
             .map(|v| Ok(site_context!(u32::from_variant(&v))?))),
@@ -134,7 +131,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
         _ => bail!("Unconvertible value {}", params),
     }?;
 
-    r = match VariantDispatch::from(&results) {
+    let r = match VariantDispatch::from(&results) {
         VariantDispatch::VariantArray(v) => f(v
             .into_iter()
             .map(|v| Ok(site_context!(u32::from_variant(&v))?))),

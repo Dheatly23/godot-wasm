@@ -152,10 +152,10 @@ impl From<bool> for BoolWrapper {
     }
 }
 
-impl Into<bool> for BoolWrapper {
+impl From<BoolWrapper> for bool {
     #[inline]
-    fn into(self) -> bool {
-        self.0 != 0
+    fn from(v: BoolWrapper) -> Self {
+        v.0 != 0
     }
 }
 

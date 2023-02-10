@@ -35,7 +35,7 @@ pub struct EpochThreadHandleInner {
 impl EpochThreadHandle {
     pub fn spawn_thread<F>(&self, f: F)
     where
-        F: Fn() -> () + 'static + Send,
+        F: Fn() + 'static + Send,
     {
         self.once.call_once(move || {
             let mut guard = self.inner.mutex.lock();
@@ -148,12 +148,12 @@ impl WasmModule {
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
             let module = match VariantDispatch::from(&data) {
-                VariantDispatch::ByteArray(v) => Module::new(&*ENGINE, &*v.read()),
-                VariantDispatch::GodotString(v) => Module::new(&*ENGINE, &v.to_string()),
+                VariantDispatch::ByteArray(v) => Module::new(&ENGINE, &*v.read()),
+                VariantDispatch::GodotString(v) => Module::new(&ENGINE, &v.to_string()),
                 VariantDispatch::Object(v) => {
                     let v = <Ref<gdnative::api::File>>::from_variant(&v)?;
                     let v = unsafe { v.assume_safe() };
-                    Module::new(&*ENGINE, &*v.get_buffer(v.get_len()).read())
+                    Module::new(&ENGINE, &*v.get_buffer(v.get_len()).read())
                 }
                 _ => bail!("Unknown module value {}", data),
             }?;
@@ -317,10 +317,10 @@ impl WasmModule {
     #[method]
     fn has_function(&self, name: String) -> bool {
         self.unwrap_data(|m| {
-            Ok(match m.module.get_export(&name) {
-                Some(ExternType::Func(_)) => true,
-                _ => false,
-            })
+            Ok(matches!(
+                m.module.get_export(&name),
+                Some(ExternType::Func(_))
+            ))
         })
         .unwrap_or_default()
     }

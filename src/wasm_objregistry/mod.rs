@@ -52,13 +52,8 @@ impl ObjectRegistry {
         if v.is_nil() {
             return self.unregister(ix);
         }
-        match ix.checked_sub(1) {
-            Some(ix) => match self.slab.get_mut(ix).as_mut() {
-                Some(p) => Some(mem::replace(p, v)),
-                None => None,
-            },
-            None => None,
-        }
+        ix.checked_sub(1)
+            .and_then(|ix| self.slab.get_mut(ix).as_mut().map(|p| mem::replace(*p, v)))
     }
 
     pub fn get_or_nil(&self, ix: usize) -> Variant {
