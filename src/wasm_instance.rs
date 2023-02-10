@@ -422,14 +422,7 @@ impl WasmInstance {
                 store.gc();
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
-                    f.call_unchecked(&mut store, arr.as_mut_ptr())
-                        .map_err(|e| {
-                            if e.downcast_ref::<Site>().is_none() {
-                                e.context(godot_site!())
-                            } else {
-                                e
-                            }
-                        })?;
+                    site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr()))?;
                 }
 
                 let ret = VariantArray::new();

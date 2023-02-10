@@ -1,9 +1,10 @@
-use anyhow::{bail, Error};
+use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::{Caller, Extern, Linker};
 
 use crate::wasm_instance::StoreData;
 use crate::wasm_util::OBJREGISTRY_MODULE;
+use crate::{bail_with_site, site_context};
 
 #[inline]
 pub fn register_functions(linker: &mut Linker<StoreData>) {
@@ -25,7 +26,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             OBJREGISTRY_MODULE,
             "dictionary.len",
             |ctx: Caller<StoreData>, i: u32| -> Result<i32, Error> {
-                let v = Dictionary::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
+                let v = site_context!(Dictionary::from_variant(
+                    &ctx.data().get_registry()?.get_or_nil(i as _)
+                ))?;
                 Ok(v.len())
             },
         )
@@ -37,7 +40,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.has",
             |ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
                 let reg = ctx.data().get_registry()?;
-                let v = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                let v = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
                 let k = reg.get_or_nil(k as _);
                 Ok(v.contains(k) as _)
             },
@@ -50,8 +53,8 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.has_all",
             |ctx: Caller<StoreData>, i: u32, ka: u32| -> Result<u32, Error> {
                 let reg = ctx.data().get_registry()?;
-                let v = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
-                let ka = VariantArray::from_variant(&reg.get_or_nil(ka as _))?;
+                let v = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
+                let ka = site_context!(VariantArray::from_variant(&reg.get_or_nil(ka as _)))?;
                 Ok(v.contains_all(&ka) as _)
             },
         )
@@ -63,7 +66,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.get",
             |mut ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
                 let reg = ctx.data_mut().get_registry_mut()?;
-                let v = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                let v = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
                 let k = reg.get_or_nil(k as _);
                 match v.get(k) {
                     Some(v) => Ok(reg.register(v.to_variant()) as _),
@@ -79,7 +82,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.set",
             |ctx: Caller<StoreData>, i: u32, k: u32, v: u32| -> Result<u32, Error> {
                 let reg = ctx.data().get_registry()?;
-                let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
                 let k = reg.get_or_nil(k as _);
                 let v = reg.get_or_nil(v as _);
 
@@ -98,7 +101,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.delete",
             |ctx: Caller<StoreData>, i: u32, k: u32| -> Result<u32, Error> {
                 let reg = ctx.data().get_registry()?;
-                let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
                 let k = reg.get_or_nil(k as _);
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
@@ -116,7 +119,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.keys",
             |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                 let reg = ctx.data_mut().get_registry_mut()?;
-                let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
                 Ok(reg.register(d.keys().owned_to_variant()) as _)
             },
         )
@@ -128,7 +131,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.values",
             |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                 let reg = ctx.data_mut().get_registry_mut()?;
-                let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
                 Ok(reg.register(d.values().owned_to_variant()) as _)
             },
         )
@@ -145,13 +148,15 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              p: u32|
              -> Result<u32, Error> {
                 if to > from {
-                    bail!("Invalid range ({}-{})", from, to);
+                    bail_with_site!("Invalid range ({}..{})", from, to);
                 }
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
                 };
-                let d = Dictionary::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
+                let d = site_context!(Dictionary::from_variant(
+                    &ctx.data().get_registry()?.get_or_nil(i as _)
+                ))?;
 
                 if to == from {
                     return Ok(0);
@@ -164,16 +169,16 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 let reg = data.get_registry_mut()?;
                 let ps = match ps.get_mut(p..p + n * 8) {
                     Some(v) => v,
-                    None => bail!("Invalid memory bounds ({}-{})", p, p + n * 8),
+                    None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n * 8),
                 };
 
                 let mut ret = 0u32;
-                for (i, (k, v)) in d.iter().skip(from as usize).take(n).enumerate() {
+                for ((k, v), p) in d.iter().skip(from as usize).take(n).zip(ps.chunks_mut(8)) {
                     let k = reg.register(k) as u32;
                     let v = reg.register(v) as u32;
 
-                    ps[i * 8..i * 8 + 4].copy_from_slice(&k.to_le_bytes());
-                    ps[i * 8 + 4..i * 8 + 8].copy_from_slice(&v.to_le_bytes());
+                    p[..4].copy_from_slice(&k.to_le_bytes());
+                    p[4..].copy_from_slice(&v.to_le_bytes());
                     ret += 1;
                 }
 
@@ -188,7 +193,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.clear",
             |ctx: Caller<StoreData>, i: u32| -> Result<(), Error> {
                 let reg = ctx.data().get_registry()?;
-                let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                 let d = unsafe { d.assume_unique() };
@@ -204,7 +209,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "dictionary.duplicate",
             |mut ctx: Caller<StoreData>, i: u32| -> Result<u32, Error> {
                 let reg = ctx.data_mut().get_registry_mut()?;
-                let d = Dictionary::from_variant(&reg.get_or_nil(i as _))?;
+                let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
                 Ok(reg.register(d.duplicate().owned_to_variant()) as _)
             },
         )

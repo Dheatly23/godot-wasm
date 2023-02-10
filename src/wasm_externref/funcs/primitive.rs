@@ -2,6 +2,7 @@ use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Linker};
 
+use crate::site_context;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::wasm_util::EXTERNREF_MODULE;
@@ -20,7 +21,7 @@ macro_rules! setget_value {
             EXTERNREF_MODULE,
             concat!($name, ".get"),
             |_: Caller<_>, v: Option<ExternRef>| -> Result<($($tx),*), Error> {
-                let $($v)* = <_>::from_variant(&externref_to_variant(v))?;
+                let $($v)* = site_context!(<_>::from_variant(&externref_to_variant(v)))?;
                 Ok(($(setget_value!(#getter $x $(as $ex)?)),*))
             }
         ).unwrap();
@@ -49,7 +50,7 @@ macro_rules! readwrite_value {
             EXTERNREF_MODULE,
             concat!($name, ".read"),
             |mut ctx: Caller<_>, v: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-                let $v = <$t>::from_variant(&externref_to_variant(v))?;
+                let $v = site_context!(<$t>::from_variant(&externref_to_variant(v)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -57,11 +58,11 @@ macro_rules! readwrite_value {
 
                 let mut p = p as usize;
                 $(
-                    mem.write(
+                    site_context!(mem.write(
                         &mut ctx,
                         p,
                         &<$g>::from($($i $([$ix])?).+).to_le_bytes(),
-                    )?;
+                    ))?;
                     p += $sz;
                 )*
                 Ok(1)
@@ -83,7 +84,7 @@ macro_rules! readwrite_value {
                 let mut $v: $t = $c;
                 $({
                     let mut s = [0u8; $sz];
-                    mem.read(&ctx, p, &mut s)?;
+                    site_context!(mem.read(&ctx, p, &mut s))?;
                     $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
                     p += $sz;
                 })*

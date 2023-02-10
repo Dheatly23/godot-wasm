@@ -2,6 +2,7 @@ use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::{Caller, Extern, Linker};
 
+use crate::site_context;
 use crate::wasm_instance::StoreData;
 use crate::wasm_util::OBJREGISTRY_MODULE;
 
@@ -20,7 +21,7 @@ macro_rules! setget_value {
             concat!($name, ".get"),
             |ctx: Caller<StoreData>, i: u32| -> Result<($($tx),*), Error> {
                 let v = ctx.data().get_registry()?.get_or_nil(i as _);
-                let $($v)* = <_>::from_variant(&v)?;
+                let $($v)* = site_context!(<_>::from_variant(&v))?;
                 Ok(($(setget_value!(#getter $x $(as $ex)?)),*))
             }
         ).unwrap();
@@ -59,7 +60,7 @@ macro_rules! readwrite_value {
             OBJREGISTRY_MODULE,
             concat!($name, ".read"),
             |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
-                let $v = <$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
+                let $v = site_context!(<$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -67,11 +68,11 @@ macro_rules! readwrite_value {
 
                 let mut p = p as usize;
                 $(
-                    mem.write(
+                    site_context!(mem.write(
                         &mut ctx,
                         p,
                         &<$g>::from($($i $([$ix])?).+).to_le_bytes(),
-                    )?;
+                    ))?;
                     p += $sz;
                 )*
                 Ok(1)
@@ -93,7 +94,7 @@ macro_rules! readwrite_value {
                 let mut $v: $t = $c;
                 $({
                     let mut s = [0u8; $sz];
-                    mem.read(&mut ctx, p, &mut s)?;
+                    site_context!(mem.read(&mut ctx, p, &mut s))?;
                     $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
                     p += $sz;
                 })*
@@ -118,7 +119,7 @@ macro_rules! readwrite_value {
                 let mut $v: $t = $c;
                 $({
                     let mut s = [0u8; $sz];
-                    mem.read(&mut ctx, p, &mut s)?;
+                    site_context!(mem.read(&mut ctx, p, &mut s))?;
                     $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
                     p += $sz;
                 })*

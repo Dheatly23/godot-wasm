@@ -1,10 +1,11 @@
-use anyhow::{bail, Error};
+use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::{Caller, ExternRef, Func, Linker, TypedFunc};
 
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::wasm_util::EXTERNREF_MODULE;
+use crate::{bail_with_site, site_context};
 
 #[inline]
 pub fn register_functions(linker: &mut Linker<StoreData>) {
@@ -13,7 +14,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "object.has_method",
             |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>| -> Result<u32, Error> {
-                let name = GodotString::from_variant(&externref_to_variant(name))?;
+                let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
                 let obj = externref_to_variant(obj);
                 Ok(obj.has_method(name).into())
             },
@@ -29,14 +30,14 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              name: Option<ExternRef>,
              f: Option<Func>|
              -> Result<Option<ExternRef>, Error> {
-                let name = GodotString::from_variant(&externref_to_variant(name))?;
+                let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
                 let mut obj = externref_to_variant(obj);
 
                 let mut v = Vec::new();
                 if let Some(f) = f {
-                    let f: TypedFunc<u32, (Option<ExternRef>, u32)> = f.typed(&ctx)?;
+                    let f: TypedFunc<u32, (Option<ExternRef>, u32)> = site_context!(f.typed(&ctx))?;
                     loop {
-                        let (e, n) = f.call(&mut ctx, v.len() as _)?;
+                        let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
                         v.push(externref_to_variant(e));
                         if n == 0 {
                             break;
@@ -45,7 +46,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 }
 
                 // SAFETY: We want to call to Godot
-                Ok(variant_to_externref(unsafe { obj.call(name, &v) }?))
+                Ok(variant_to_externref(unsafe {
+                    site_context!(obj.call(name, &v))
+                }?))
             },
         )
         .unwrap();
@@ -59,14 +62,14 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              name: Option<ExternRef>,
              f: Option<Func>|
              -> Result<Option<ExternRef>, Error> {
-                let name = GodotString::from_variant(&externref_to_variant(name))?;
+                let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
                 let obj = externref_to_variant(obj);
 
                 let mut v = Vec::new();
                 if let Some(f) = f {
-                    let f: TypedFunc<u32, (Option<ExternRef>, u32)> = f.typed(&ctx)?;
+                    let f: TypedFunc<u32, (Option<ExternRef>, u32)> = site_context!(f.typed(&ctx))?;
                     loop {
-                        let (e, n) = f.call(&mut ctx, v.len() as _)?;
+                        let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
                         v.push(externref_to_variant(e));
                         if n == 0 {
                             break;
@@ -78,7 +81,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     // SAFETY: This is a reference object, so should be safe.
                     unsafe { o.assume_safe().call_deferred(name, &v) }
                 } else {
-                    let o = <Ref<Object>>::from_variant(&obj)?;
+                    let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
                     // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
                     unsafe {
                         match o.assume_safe_if_sane() {
@@ -101,14 +104,14 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              obj: Option<ExternRef>,
              name: Option<ExternRef>|
              -> Result<Option<ExternRef>, Error> {
-                let name = GodotString::from_variant(&externref_to_variant(name))?;
+                let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
                 let obj = externref_to_variant(obj);
 
                 let r = if let Ok(o) = <Ref<Reference>>::from_variant(&obj) {
                     // SAFETY: This is a reference object, so should be safe.
                     unsafe { o.assume_safe().get(name) }
                 } else {
-                    let o = <Ref<Object>>::from_variant(&obj)?;
+                    let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
                     // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
                     unsafe {
                         match o.assume_safe_if_sane() {
@@ -132,7 +135,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              name: Option<ExternRef>,
              value: Option<ExternRef>|
              -> Result<u32, Error> {
-                let name = GodotString::from_variant(&externref_to_variant(name))?;
+                let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
                 let obj = externref_to_variant(obj);
                 let value = externref_to_variant(value);
 
@@ -140,7 +143,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                     // SAFETY: This is a reference object, so should be safe.
                     unsafe { o.assume_safe().set(name, value) }
                 } else {
-                    let o = <Ref<Object>>::from_variant(&obj)?;
+                    let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
                     // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
                     unsafe {
                         match o.assume_safe_if_sane() {
@@ -167,9 +170,12 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              binds: Option<ExternRef>,
              flags: i64|
              -> Result<(), Error> {
-                let signal = GodotString::from_variant(&externref_to_variant(signal))?;
-                let method = GodotString::from_variant(&externref_to_variant(method))?;
-                let binds = VariantArray::from_variant(&externref_to_variant(binds))?;
+                let signal =
+                    site_context!(GodotString::from_variant(&externref_to_variant(signal)))?;
+                let method =
+                    site_context!(GodotString::from_variant(&externref_to_variant(method)))?;
+                let binds =
+                    site_context!(VariantArray::from_variant(&externref_to_variant(binds)))?;
                 let obj = externref_to_variant(obj);
                 let target = externref_to_variant(target);
 
@@ -181,7 +187,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                                 .connect(signal, target, method, binds, flags)?
                         }
                     } else {
-                        let target = <Ref<Object>>::from_variant(&target)?;
+                        let target = site_context!(<Ref<Object>>::from_variant(&target))?;
                         // SAFETY: This is a reference object, so should be safe.
                         unsafe {
                             o.assume_safe()
@@ -189,7 +195,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                         }
                     }
                 } else {
-                    let o = <Ref<Object>>::from_variant(&obj)?;
+                    let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
                     // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
                     unsafe {
                         match o.assume_safe_if_sane() {
@@ -197,11 +203,12 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                                 if let Ok(target) = <Ref<Reference>>::from_variant(&target) {
                                     o.connect(signal, target, method, binds, flags)?
                                 } else {
-                                    let target = <Ref<Object>>::from_variant(&target)?;
+                                    let target =
+                                        site_context!(<Ref<Object>>::from_variant(&target))?;
                                     o.connect(signal, target, method, binds, flags)?
                                 }
                             }
-                            None => bail!("Object is invalid!"),
+                            None => bail_with_site!("Object is invalid!"),
                         }
                     }
                 }
@@ -221,8 +228,10 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              target: Option<ExternRef>,
              method: Option<ExternRef>|
              -> Result<(), Error> {
-                let signal = GodotString::from_variant(&externref_to_variant(signal))?;
-                let method = GodotString::from_variant(&externref_to_variant(method))?;
+                let signal =
+                    site_context!(GodotString::from_variant(&externref_to_variant(signal)))?;
+                let method =
+                    site_context!(GodotString::from_variant(&externref_to_variant(method)))?;
                 let obj = externref_to_variant(obj);
                 let target = externref_to_variant(target);
 
@@ -231,12 +240,12 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                         // SAFETY: This is a reference object, so should be safe.
                         unsafe { o.assume_safe().disconnect(signal, target, method) }
                     } else {
-                        let target = <Ref<Object>>::from_variant(&target)?;
+                        let target = site_context!(<Ref<Object>>::from_variant(&target))?;
                         // SAFETY: This is a reference object, so should be safe.
                         unsafe { o.assume_safe().disconnect(signal, target, method) }
                     }
                 } else {
-                    let o = <Ref<Object>>::from_variant(&obj)?;
+                    let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
                     // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
                     unsafe {
                         match o.assume_safe_if_sane() {
@@ -244,11 +253,12 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                                 if let Ok(target) = <Ref<Reference>>::from_variant(&target) {
                                     o.disconnect(signal, target, method)
                                 } else {
-                                    let target = <Ref<Object>>::from_variant(&target)?;
+                                    let target =
+                                        site_context!(<Ref<Object>>::from_variant(&target))?;
                                     o.disconnect(signal, target, method)
                                 }
                             }
-                            None => bail!("Object is invalid!"),
+                            None => bail_with_site!("Object is invalid!"),
                         }
                     }
                 }

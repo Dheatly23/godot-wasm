@@ -1,10 +1,11 @@
-use anyhow::{bail, Error};
+use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Func, Linker, TypedFunc};
 
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::wasm_util::EXTERNREF_MODULE;
+use crate::{bail_with_site, site_context};
 
 macro_rules! readwrite_array {
     (
@@ -18,7 +19,7 @@ macro_rules! readwrite_array {
             EXTERNREF_MODULE,
             concat!($name, ".len"),
             |_: Caller<_>, a: Option<ExternRef>| -> Result<i32, Error> {
-                let a = <$t>::from_variant(&externref_to_variant(a))?;
+                let a = site_context!(<$t>::from_variant(&externref_to_variant(a)))?;
                 Ok(a.len())
             }
         ).unwrap();
@@ -27,7 +28,7 @@ macro_rules! readwrite_array {
             EXTERNREF_MODULE,
             concat!($name, ".read"),
             |mut ctx: Caller<StoreData>, a: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-                let a = <$t>::from_variant(&externref_to_variant(a))?;
+                let a = site_context!(<$t>::from_variant(&externref_to_variant(a)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -36,11 +37,11 @@ macro_rules! readwrite_array {
                 let mut p = p as usize;
                 for $v in a.read().iter().copied() {
                     $(
-                        mem.write(
+                        site_context!(mem.write(
                             &mut ctx,
                             p,
                             &<$g>::from($($i $([$ix])?).+).to_le_bytes(),
-                        )?;
+                        ))?;
                         p += $sz;
                     )*
                 }
@@ -53,12 +54,12 @@ macro_rules! readwrite_array {
             concat!($name, ".slice"),
             |mut ctx: Caller<StoreData>, a: Option<ExternRef>, from: u32, to: u32, p: u32| -> Result<u32, Error> {
                 if to > from {
-                    bail!("Invalid range ({}-{})", from, to);
+                    bail_with_site!("Invalid range ({}..{})", from, to);
                 } else if to == from {
                     return Ok(0);
                 }
 
-                let a = <$t>::from_variant(&externref_to_variant(a))?;
+                let a = site_context!(<$t>::from_variant(&externref_to_variant(a)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -68,15 +69,15 @@ macro_rules! readwrite_array {
                 let s = a.read();
                 let s = match s.get(from as usize..to as usize) {
                     Some(v) => v,
-                    None => bail!("Invalid array index ({}-{})", from as usize, to as usize),
+                    None => bail_with_site!("Invalid array index ({}..{})", from as usize, to as usize),
                 };
                 for $v in s.iter().copied() {
                     $(
-                        mem.write(
+                        site_context!(mem.write(
                             &mut ctx,
                             p,
                             &<$g>::from($($i $([$ix])?).+).to_le_bytes(),
-                        )?;
+                        ))?;
                         p += $sz;
                     )*
                 }
@@ -101,7 +102,7 @@ macro_rules! readwrite_array {
                     let mut $v = $c;
                     $({
                         let mut s = [0u8; $sz];
-                        mem.read(&ctx, p, &mut s)?;
+                        site_context!(mem.read(&ctx, p, &mut s))?;
                         $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
                         p += $sz;
                     })*
@@ -121,7 +122,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "byte_array.len",
             |_: Caller<_>, a: Option<ExternRef>| -> Result<i32, Error> {
-                let a = <PoolArray<u8>>::from_variant(&externref_to_variant(a))?;
+                let a = site_context!(<PoolArray<u8>>::from_variant(&externref_to_variant(a)))?;
                 Ok(a.len())
             },
         )
@@ -132,13 +133,13 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "byte_array.read",
             |mut ctx: Caller<StoreData>, a: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-                let a = <PoolArray<u8>>::from_variant(&externref_to_variant(a))?;
+                let a = site_context!(<PoolArray<u8>>::from_variant(&externref_to_variant(a)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
                 };
 
-                mem.write(&mut ctx, p as _, &a.read())?;
+                site_context!(mem.write(&mut ctx, p as _, &a.read()))?;
                 Ok(1)
             },
         )
@@ -156,7 +157,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
 
                 let a = match mem.data(&ctx).get(p as usize..(p + n) as usize) {
                     Some(v) => <PoolArray<u8>>::from_slice(v),
-                    None => bail!("Invalid memory bounds ({}-{})", p, p + n),
+                    None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n),
                 };
                 Ok(variant_to_externref(a.owned_to_variant()))
             },
@@ -186,7 +187,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "string_array.len",
             |_: Caller<_>, a: Option<ExternRef>| -> Result<i32, Error> {
-                let a = <PoolArray<GodotString>>::from_variant(&externref_to_variant(a))?;
+                let a = site_context!(<PoolArray<GodotString>>::from_variant(
+                    &externref_to_variant(a)
+                ))?;
                 Ok(a.len())
             },
         )
@@ -197,7 +200,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "string_array.get",
             |_: Caller<_>, a: Option<ExternRef>, i: i32| -> Result<Option<ExternRef>, Error> {
-                let a = <PoolArray<GodotString>>::from_variant(&externref_to_variant(a))?;
+                let a = site_context!(<PoolArray<GodotString>>::from_variant(
+                    &externref_to_variant(a)
+                ))?;
                 Ok(variant_to_externref(a.get(i).owned_to_variant()))
             },
         )
@@ -213,16 +218,18 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              f: Option<Func>|
              -> Result<u32, Error> {
                 let f: TypedFunc<Option<ExternRef>, u32> = match f {
-                    Some(f) => f.typed(&ctx)?,
+                    Some(f) => site_context!(f.typed(&ctx))?,
                     None => return Ok(0),
                 };
-                let a = <PoolArray<GodotString>>::from_variant(&externref_to_variant(a))?;
+                let a = site_context!(<PoolArray<GodotString>>::from_variant(
+                    &externref_to_variant(a)
+                ))?;
 
                 let mut n = 0;
                 let mut s = &a.read()[i as _..];
                 while let Some((v, rest)) = s.split_first() {
                     n += 1;
-                    if f.call(&mut ctx, variant_to_externref(v.to_variant()))? == 0 {
+                    if site_context!(f.call(&mut ctx, variant_to_externref(v.to_variant())))? == 0 {
                         break;
                     }
                     s = rest;
@@ -239,14 +246,16 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "string_array.build",
             |mut ctx: Caller<_>, f: Option<Func>| -> Result<Option<ExternRef>, Error> {
                 let f: TypedFunc<u32, (Option<ExternRef>, u32)> = match f {
-                    Some(f) => f.typed(&ctx)?,
+                    Some(f) => site_context!(f.typed(&ctx))?,
                     None => return Ok(None),
                 };
 
                 let mut v = Vec::new();
                 loop {
-                    let (e, n) = f.call(&mut ctx, v.len() as _)?;
-                    v.push(GodotString::from_variant(&externref_to_variant(e))?);
+                    let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
+                    v.push(site_context!(GodotString::from_variant(
+                        &externref_to_variant(e)
+                    ))?);
                     if n == 0 {
                         break;
                     }

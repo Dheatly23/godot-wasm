@@ -2,6 +2,7 @@ use anyhow::Error;
 use gdnative::prelude::*;
 use wasmtime::{Caller, ExternRef, Linker};
 
+use crate::site_context;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::wasm_util::EXTERNREF_MODULE;
@@ -23,7 +24,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.len",
             |_: Caller<_>, v: Option<ExternRef>| -> Result<i32, Error> {
-                Ok(VariantArray::from_variant(&externref_to_variant(v))?.len())
+                Ok(site_context!(VariantArray::from_variant(&externref_to_variant(v)))?.len())
             },
         )
         .unwrap();
@@ -33,7 +34,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.get",
             |_: Caller<_>, v: Option<ExternRef>, i: i32| -> Result<Option<ExternRef>, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 Ok(variant_to_externref(v.get(i)))
             },
         )
@@ -48,7 +49,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              i: i32,
              x: Option<ExternRef>|
              -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
                 v.set(i, x);
                 Ok(())
@@ -61,7 +62,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.count",
             |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<i32, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
                 Ok(v.count(x))
             },
@@ -73,7 +74,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.contains",
             |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<u32, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
                 Ok(v.contains(x) as _)
             },
@@ -89,7 +90,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              x: Option<ExternRef>,
              from: i32|
              -> Result<i32, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
                 Ok(v.find(x, from))
             },
@@ -105,7 +106,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              x: Option<ExternRef>,
              from: i32|
              -> Result<i32, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
                 Ok(v.rfind(x, from))
             },
@@ -117,7 +118,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.find_last",
             |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<i32, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
                 Ok(v.find_last(x))
             },
@@ -129,7 +130,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.invert",
             |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 v.invert();
                 Ok(())
             },
@@ -141,7 +142,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.sort",
             |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 v.sort();
                 Ok(())
             },
@@ -153,7 +154,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.duplicate",
             |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 Ok(variant_to_externref(v.duplicate().owned_to_variant()))
             },
         )
@@ -164,7 +165,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.clear",
             |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                 let v = unsafe { v.assume_unique() };
@@ -179,7 +180,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.remove",
             |_: Caller<_>, v: Option<ExternRef>, i: i32| -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                 let v = unsafe { v.assume_unique() };
@@ -194,7 +195,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.erase",
             |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
@@ -210,7 +211,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.resize",
             |_: Caller<_>, v: Option<ExternRef>, i: i32| -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                 let v = unsafe { v.assume_unique() };
@@ -225,7 +226,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.push",
             |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
@@ -241,7 +242,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.pop",
             |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                 let v = unsafe { v.assume_unique() };
@@ -255,7 +256,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.push_front",
             |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
@@ -271,7 +272,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             EXTERNREF_MODULE,
             "array.pop_front",
             |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
                 let v = unsafe { v.assume_unique() };
@@ -289,7 +290,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              i: i32,
              x: Option<ExternRef>|
              -> Result<(), Error> {
-                let v = VariantArray::from_variant(&externref_to_variant(v))?;
+                let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
                 let x = externref_to_variant(x);
 
                 // SAFETY: It's up to wasm/godot if dictionary is uniquely held.

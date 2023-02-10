@@ -4,6 +4,7 @@ use std::time;
 
 use anyhow::{bail, Error};
 use gdnative::api::WeakRef;
+use gdnative::log::Site;
 use gdnative::prelude::*;
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
@@ -57,8 +58,18 @@ macro_rules! bail_with_site {
 #[macro_export]
 macro_rules! site_context {
     ($e:expr) => {
-        $e.map_err(|e| anyhow::Error::from(e).context(gdnative::log::godot_site!()))
+        $e.map_err(|e| {
+            $crate::wasm_util::add_site(anyhow::Error::from(e), gdnative::log::godot_site!())
+        })
     };
+}
+
+pub fn add_site(e: Error, site: Site<'static>) -> Error {
+    if e.is::<Site>() {
+        e
+    } else {
+        e.context(site)
+    }
 }
 
 pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), Error> {
@@ -200,7 +211,7 @@ fn wrap_godot_method(
         } else if ri.len() == 1 {
             args[0] = unsafe { to_raw(&mut ctx, ri.next().unwrap(), r)? };
         } else {
-            bail!("Unconvertible return value {}", r);
+            bail_with_site!("Unconvertible return value {}", r);
         }
 
         #[cfg(feature = "epoch-timeout")]
@@ -226,7 +237,7 @@ pub fn make_host_module(
 ) -> Result<HashMap<String, Extern>, Error> {
     let mut ret = HashMap::new();
     for (k, v) in dict.iter() {
-        let k = GodotString::from_variant(&k)?.to_string();
+        let k = site_context!(GodotString::from_variant(&k))?.to_string();
 
         #[derive(FromVariant)]
         struct Data {

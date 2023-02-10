@@ -4,6 +4,7 @@ use wasmtime::{Caller, Extern, Linker};
 
 use crate::wasm_instance::StoreData;
 use crate::wasm_util::OBJREGISTRY_MODULE;
+use crate::{bail_with_site, site_context};
 
 macro_rules! readwrite_array {
     (
@@ -17,7 +18,7 @@ macro_rules! readwrite_array {
             OBJREGISTRY_MODULE,
             concat!($name, ".len"),
             |ctx: Caller<StoreData>, i: u32| -> Result<i32, Error> {
-                let v = <$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
+                let v = site_context!(<$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _)))?;
                 Ok(v.len())
             }
         ).unwrap();
@@ -26,7 +27,7 @@ macro_rules! readwrite_array {
             OBJREGISTRY_MODULE,
             concat!($name, ".read"),
             |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
-                let $v = <$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
+                let $v = site_context!(<$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -35,11 +36,11 @@ macro_rules! readwrite_array {
                 let mut p = p as usize;
                 for $v in $v.read().iter().copied() {
                     $(
-                        mem.write(
+                        site_context!(mem.write(
                             &mut ctx,
                             p,
                             &<$g>::from($($i $([$ix])?).+).to_le_bytes(),
-                        )?;
+                        ))?;
                         p += $sz;
                     )*
                 }
@@ -52,9 +53,9 @@ macro_rules! readwrite_array {
             concat!($name, ".slice"),
             |mut ctx: Caller<StoreData>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
                 if to > from {
-                    bail!("Invalid range ({}-{})", from, to);
+                    bail_with_site!("Invalid range ({}..{})", from, to);
                 }
-                let $v = <$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
+                let $v = site_context!(<$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -68,15 +69,15 @@ macro_rules! readwrite_array {
                 let s = $v.read();
                 let s = match s.get(from as usize..to as usize) {
                     Some(v) => v,
-                    None => bail!("Invalid array index ({}-{})", from as usize, to as usize),
+                    None => bail_with_site!("Invalid array index ({}..{})", from as usize, to as usize),
                 };
                 for $v in s.iter().copied() {
                     $(
-                        mem.write(
+                        site_context!(mem.write(
                             &mut ctx,
                             p,
                             &<$g>::from($($i $([$ix])?).+).to_le_bytes(),
-                        )?;
+                        ))?;
                         p += $sz;
                     )*
                 }
@@ -101,7 +102,7 @@ macro_rules! readwrite_array {
                     let mut $v = $c;
                     $({
                         let mut s = [0u8; $sz];
-                        mem.read(&mut ctx, p, &mut s)?;
+                        site_context!(mem.read(&mut ctx, p, &mut s))?;
                         $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
                         p += $sz;
                     })*
@@ -130,7 +131,7 @@ macro_rules! readwrite_array {
                     let mut $v = $c;
                     $({
                         let mut s = [0u8; $sz];
-                        mem.read(&mut ctx, p, &mut s)?;
+                        site_context!(mem.read(&mut ctx, p, &mut s))?;
                         $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
                         p += $sz;
                     })*
@@ -150,8 +151,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             OBJREGISTRY_MODULE,
             "byte_array.len",
             |ctx: Caller<StoreData>, i: u32| -> Result<i32, Error> {
-                let reg = ctx.data().get_registry()?;
-                let a = <PoolArray<u8>>::from_variant(&reg.get_or_nil(i as _))?;
+                let a = site_context!(<PoolArray<u8>>::from_variant(
+                    &ctx.data().get_registry()?.get_or_nil(i as _)
+                ))?;
                 Ok(a.len())
             },
         )
@@ -162,14 +164,15 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             OBJREGISTRY_MODULE,
             "byte_array.read",
             |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
-                let a =
-                    <PoolArray<u8>>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _))?;
+                let a = site_context!(<PoolArray<u8>>::from_variant(
+                    &ctx.data().get_registry()?.get_or_nil(i as _)
+                ))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
                 };
 
-                mem.write(&mut ctx, p as _, &a.read())?;
+                site_context!(mem.write(&mut ctx, p as _, &a.read()))?;
                 Ok(1)
             },
         )
@@ -187,7 +190,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
 
                 let a = match mem.data(&ctx).get(p as usize..(p + n) as usize) {
                     Some(v) => <PoolArray<u8>>::from_slice(v),
-                    None => bail!("Invalid memory bounds ({}-{})", p, p + n),
+                    None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n),
                 };
                 ctx.data_mut()
                     .get_registry_mut()?
@@ -209,7 +212,7 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
 
                 let a = match mem.data(&ctx).get(p as usize..(p + n) as usize) {
                     Some(v) => <PoolArray<u8>>::from_slice(v),
-                    None => bail!("Invalid memory bounds ({}-{})", p, p + n),
+                    None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n),
                 };
                 Ok(ctx.data_mut().get_registry_mut()?.register(a.to_variant()) as _)
             },
@@ -239,8 +242,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             OBJREGISTRY_MODULE,
             "string_array.len",
             |ctx: Caller<StoreData>, a: u32| -> Result<i32, Error> {
-                let reg = ctx.data().get_registry()?;
-                let a = <PoolArray<GodotString>>::from_variant(&reg.get_or_nil(a as _))?;
+                let a = site_context!(<PoolArray<GodotString>>::from_variant(
+                    &ctx.data().get_registry()?.get_or_nil(a as _)
+                ))?;
                 Ok(a.len())
             },
         )
@@ -252,7 +256,9 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
             "string_array.get",
             |mut ctx: Caller<StoreData>, a: u32, i: i32| -> Result<u32, Error> {
                 let reg = ctx.data_mut().get_registry_mut()?;
-                let a = <PoolArray<GodotString>>::from_variant(&reg.get_or_nil(a as _))?;
+                let a = site_context!(<PoolArray<GodotString>>::from_variant(
+                    &reg.get_or_nil(a as _)
+                ))?;
                 Ok(reg.register(a.get(i).owned_to_variant()) as _)
             },
         )
@@ -269,20 +275,20 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
              p: u32|
              -> Result<u32, Error> {
                 if to > from {
-                    bail!("Invalid range ({}-{})", from, to);
+                    bail_with_site!("Invalid range ({}..{})", from, to);
                 }
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
                 };
 
-                let a = <PoolArray<GodotString>>::from_variant(
+                let a = site_context!(<PoolArray<GodotString>>::from_variant(
                     &ctx.data().get_registry()?.get_or_nil(a as _),
-                )?;
+                ))?;
                 let s = a.read();
                 let s = match s.get(from as usize..to as usize) {
                     Some(v) => v,
-                    None => bail!("Invalid array index ({}-{})", from as usize, to as usize),
+                    None => bail_with_site!("Invalid array index ({}..{})", from, to),
                 };
 
                 if to == from {
@@ -296,14 +302,14 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 let reg = data.get_registry_mut()?;
                 let ps = match ps.get_mut(p..p + n * 4) {
                     Some(v) => v,
-                    None => bail!("Invalid memory bounds ({}-{})", p, p + n * 4),
+                    None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n * 4),
                 };
 
                 let mut ret = 0u32;
-                for (i, v) in s.iter().enumerate() {
+                for (v, p) in s.iter().zip(ps.chunks_mut(4)) {
                     let v = reg.register(v.to_variant()) as u32;
 
-                    ps[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+                    p.copy_from_slice(&v.to_le_bytes());
                     ret += 1;
                 }
 
@@ -329,13 +335,13 @@ pub fn register_functions(linker: &mut Linker<StoreData>) {
                 let reg = data.get_registry_mut()?;
                 let ps = match ps.get_mut(p..p + n * 4) {
                     Some(v) => v,
-                    None => bail!("Invalid memory bounds ({}-{})", p, p + n * 4),
+                    None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n * 4),
                 };
                 let mut v = Vec::with_capacity(n);
                 for s in ps.chunks(4) {
-                    v.push(GodotString::from_variant(
+                    v.push(site_context!(GodotString::from_variant(
                         &reg.get_or_nil(u32::from_le_bytes(s.try_into().unwrap()) as _),
-                    )?);
+                    ))?);
                 }
 
                 reg.replace(a as _, <PoolArray<GodotString>>::from_vec(v).to_variant());
