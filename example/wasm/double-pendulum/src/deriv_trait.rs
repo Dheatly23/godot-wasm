@@ -36,5 +36,5 @@ where
     let k4 = d * dt;
     ret = y + k1 * C1 + k2 * C2 + k3 * C3 + k4 * C4;
 
-    return ret;
+    ret
 }

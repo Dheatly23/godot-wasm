@@ -11,7 +11,7 @@ static mut ROBOT: Option<Box<dyn Robot>> = None;
 pub extern "C" fn init(w: u64, h: u64) {
     unsafe {
         BOARD = Board::new(w as _, h as _);
-        ROBOT = Some(Box::new(DummyRobot::default()));
+        ROBOT = Some(<Box<DummyRobot>>::default());
     }
 }
 
@@ -27,5 +27,5 @@ pub extern "C" fn make_move(player: u64) -> u64 {
     y = board.get_move(x).expect("Invalid move");
     board[(x, y)] = CellState::Robot;
 
-    return x as _;
+    x as _
 }
