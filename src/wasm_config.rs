@@ -50,6 +50,7 @@ fn compute_epoch(v: Option<Variant>) -> Result<u64, FromVariantError> {
             }),
         }),
     }
+    .map(|i| i.max(1))
 }
 
 impl FromVariant for Config {
