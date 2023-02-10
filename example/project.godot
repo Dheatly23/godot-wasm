@@ -24,12 +24,12 @@ _global_script_classes=[ {
 "language": "GDScript",
 "path": "res://addons/godot_wasm/WasmFile.gd"
 }, {
-"base": "",
+"base": "Reference",
 "class": "WasmInstance",
 "language": "NativeScript",
 "path": "res://addons/godot_wasm/WasmInstance.gdns"
 }, {
-"base": "",
+"base": "Reference",
 "class": "WasmModule",
 "language": "NativeScript",
 "path": "res://addons/godot_wasm/WasmModule.gdns"
