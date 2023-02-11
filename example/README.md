@@ -6,7 +6,7 @@ Before you can run any of it, initialize it first.
 ## Initialization
 
 Due to issues, the addons are NOT included in repository. You must build it
-yourself, or use `cargo make deploy_example` to do it automatically. It also
+yourself, or use `cargo make deploy-example` to do it automatically. It also
 builds the webassembly modules.
 
 ## Content

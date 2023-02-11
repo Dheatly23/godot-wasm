@@ -1,40 +1,47 @@
-[env]
-GODOT_DIR = "out/addons/godot_wasm/bin"
+env_scripts = [
+'''
+#!@duckscript
+wasm_snip = which wasm-snip
+set_env WASM_SNIP ${wasm_snip}
 
-[tasks.build_all_release]
-command = "cargo"
-args = ["build", "--release", "--target", "${CARGO_MAKE_CRATE_TARGET_TRIPLE}"]
-
-[tasks.build_all_debug]
-command = "cargo"
-args = ["build", "--target", "${CARGO_MAKE_CRATE_TARGET_TRIPLE}"]
-
-[tasks.build_all]
-run_task = [
-  { name = "build_all_debug", condition = { profiles = ["development"] } },
-  { name = "build_all_release", condition = { profiles = ["production"] } },
+wasm_opt = which wasm-opt
+set_env WASM_OPT ${wasm_opt}
+'''
 ]
 
-[tasks.check_all]
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+GODOT_DIR = "out/addons/godot_wasm/bin"
+EXAMPLE_DIR = "example"
+WASM_DIR = "example/wasm"
+WASM_CONFIG = "example/wasm/.cargo/config.toml"
+WASM_PROJECTS = [
+  "double-pendulum",
+  "host-bindings",
+  "connect-4",
+]
+
+[env.development]
+BUILD_PROFILE = "debug"
+
+[env.production]
+BUILD_PROFILE = "release"
+
+[tasks.build]
 command = "cargo"
-args = ["check", "--all"]
+args = [
+  "build",
+  "--profile",
+  "${BUILD_PROFILE}",
+  "--target",
+  "${CARGO_MAKE_CRATE_TARGET_TRIPLE}",
+  "@@split(BUILD_EXTRA_ARGS,;)",
+]
 
-[tasks.format]
-dependencies = ["check_all"]
-command = "cargo"
-args = ["fmt", "--all"]
-
-[tasks.format_only_release]
-extend = "format"
-condition = { profiles = ["production"] }
-
-[tasks.deploy]
-dependencies = ["format_only_release", "build_all"]
+[tasks.deploy-workspace]
+dependencies = ["build"]
 script_runner = "@duckscript"
 script = '''
-is_release = eq ${CARGO_MAKE_PROFILE} "production"
-
-target_dirs = array %{CARGO_MAKE_CRATE_TARGET_TRIPLE}
 file_globs = array *.so *.dll *.dylib
 
 dst_root_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${GODOT_DIR}
@@ -44,35 +51,96 @@ if not is_path_exists ${dst_root_dir}
   exit 1
 end
 
-for p in ${target_dirs}
-  if ${is_release}
-    src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${p} /release
-  else
-    src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${p} /debug
-  end
+src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${CARGO_MAKE_CRATE_TARGET_TRIPLE} ${BUILD_PROFILE}
+dst_dir = join_path ${dst_root_dir} ${CARGO_MAKE_CRATE_TARGET_TRIPLE}
 
-  dst_dir = join_path ${dst_root_dir} ${p}
-  echo Destination:
-  echo ${dst_dir}
-  if not not is_path_exists ${dst_dir}
-    mkdir ${dst_dir}
-  end
-
-  for f in ${file_globs}
-    src = join_path ${src_dir} ${f}
-    src = glob_array ${src}
-
-    for s in ${src}
-      fname = basename ${s}
-      dst = join_path ${dst_dir} ${fname}
-      ls -l ${s}
-      cp ${s} ${dst}
-    end
-
-    release ${src}
-  end
+echo Destination:
+echo ${dst_dir}
+if not not is_path_exists ${dst_dir}
+  mkdir ${dst_dir}
 end
 
-release ${target_dirs}
+for f in ${file_globs}
+  src = join_path ${src_dir} ${f}
+  src = glob_array ${src}
+  for s in ${src}
+    fname = basename ${s}
+    dst = join_path ${dst_dir} ${fname}
+    ls -l ${s}
+    cp ${s} ${dst}
+  end
+  release ${src}
+end
+
 release ${file_globs}
 '''
+
+[tasks.build-wasm]
+env = { "BUILD_EXTRA_ARGS" = ["--config", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/${WASM_CONFIG}"], "CARGO_MAKE_CRATE_TARGET_TRIPLE" = "wasm32-unknown-unknown" }
+run_task = "build"
+
+[tasks.deploy-wasm]
+dependencies = ["build-wasm"]
+script_runner = "@duckscript"
+script = '''
+wasm_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${WASM_DIR}
+wasm_dir = canonicalize ${wasm_dir}
+
+src_file = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} target/wasm32-unknown-unknown ${BUILD_PROFILE}
+
+f = replace ${CARGO_MAKE_CRATE_NAME} - _
+f = concat ${f} ".wasm"
+
+src_file = join_path ${src_file} ${f}
+dst_file = join_path ${wasm_dir} ${f}
+
+echo Copy ${src_file} to ${dst_file}
+cp ${src_file} ${dst_file}
+
+if set ${WASM_SNIP}
+  echo "Running wasm-snip"
+  exec --fail-on-error ${WASM_SNIP} --snip-rust-panicking-code ${dst_file} -o ${dst_file}
+end
+
+if set ${WASM_OPT}
+  echo "Running wasm-opt"
+  exec --fail-on-error ${WASM_OPT} -Oz ${dst_file} -o ${dst_file}
+end
+'''
+
+[tasks.copy-addons]
+script_runner = "@duckscript"
+script = '''
+out_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} out/addons
+out_dir = canonicalize ${out_dir}
+
+exp_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${EXAMPLE_DIR}
+exp_dir = canonicalize ${exp_dir}
+
+echo Source addon directory: ${out_dir}
+out_dir = join_path ${out_dir} **/*
+
+dst_dir = join_path ${exp_dir} addons
+echo Destination addon directory: ${dst_dir}
+glob_cp ${out_dir} ${dst_dir}
+'''
+
+[[tasks.deploy.run_task]]
+name = "deploy-workspace"
+condition = { env_true = ["CARGO_MAKE_CRATE_IS_WORKSPACE"] }
+
+[[tasks.deploy-example.run_task]]
+name = "deploy-wasm"
+condition = { env_false = ["CARGO_MAKE_CRATE_IS_WORKSPACE"], script = '''
+#!@duckscript
+if contains ${WASM_PROJECTS} ${CARGO_MAKE_CRATE_NAME}
+  exit 0
+else
+  exit 1
+end
+''' }
+fork = true
+
+[[tasks.deploy-example.run_task]]
+name = ["deploy", "copy-addons"]
+condition = { env_true = ["CARGO_MAKE_CRATE_IS_WORKSPACE"] }
