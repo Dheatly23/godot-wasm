@@ -12,7 +12,8 @@ func instantiate(host: Dictionary = {}, config: Dictionary = {}) -> WasmInstance
 
 	if m == null:
 		return null
-	return m.instantiate(host, config)
+	var i := WasmInstance.new()
+	return i.initialize(m, host, config)
 
 func get_module() -> WasmModule:
 	if __module == null:
