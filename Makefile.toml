@@ -22,10 +22,12 @@ WASM_PROJECTS = [
 ]
 
 [env.development]
-BUILD_PROFILE = "debug"
+BUILD_PROFILE = "dev"
+TARGET_PROFILE = "debug"
 
 [env.production]
 BUILD_PROFILE = "release"
+TARGET_PROFILE = "release"
 
 [tasks.build]
 command = "cargo"
@@ -51,7 +53,7 @@ if not is_path_exists ${dst_root_dir}
   exit 1
 end
 
-src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${CARGO_MAKE_CRATE_TARGET_TRIPLE} ${BUILD_PROFILE}
+src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${CARGO_MAKE_CRATE_TARGET_TRIPLE} ${TARGET_PROFILE}
 dst_dir = join_path ${dst_root_dir} ${CARGO_MAKE_CRATE_TARGET_TRIPLE}
 
 echo Destination:
@@ -86,7 +88,7 @@ script = '''
 wasm_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${WASM_DIR}
 wasm_dir = canonicalize ${wasm_dir}
 
-src_file = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} target/wasm32-unknown-unknown ${BUILD_PROFILE}
+src_file = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} wasm32-unknown-unknown ${TARGET_PROFILE}
 
 f = replace ${CARGO_MAKE_CRATE_NAME} - _
 f = concat ${f} ".wasm"
