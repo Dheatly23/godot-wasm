@@ -78,8 +78,11 @@ release ${file_globs}
 '''
 
 [tasks.build-wasm]
-env = { "BUILD_EXTRA_ARGS" = ["--config", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/${WASM_CONFIG}"], "CARGO_MAKE_CRATE_TARGET_TRIPLE" = "wasm32-unknown-unknown" }
 run_task = "build"
+
+[tasks.build-wasm.env]
+BUILD_EXTRA_ARGS = ["--config", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/${WASM_CONFIG}"]
+CARGO_MAKE_CRATE_TARGET_TRIPLE = "wasm32-unknown-unknown"
 
 [tasks.deploy-wasm]
 dependencies = ["build-wasm"]
