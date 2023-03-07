@@ -1,6 +1,6 @@
 extends VBoxContainer
 
-export(int, 100) var label_count := 0
+@export var label_count := 0 # (int, 100)
 
 var labels := []
 
@@ -8,7 +8,7 @@ func _ready():
 	for _i in range(label_count):
 		var l := Label.new()
 		l.text = ""
-		l.align = Label.ALIGN_LEFT
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		add_child(l)
 		labels.append(l)
 

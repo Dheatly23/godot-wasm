@@ -1,36 +1,39 @@
-tool
+@tool
 extends EditorImportPlugin
 
 enum Presets {
 	DEFAULT
 }
 
-func get_importer_name() -> String:
+func _get_importer_name() -> String:
 	return "godot_wasm.wasm"
 
-func get_visible_name() -> String:
+func _get_visible_name() -> String:
 	return "WASM Importer"
 
-func get_recognized_extensions() -> Array:
-	return ["wasm", "wat"]
+func _get_recognized_extensions() -> PackedStringArray:
+	return PackedStringArray(["wasm", "wat"])
 
-func get_save_extension() -> String:
+func _get_save_extension() -> String:
 	return "res"
 
-func get_resource_type() -> String:
+func _get_resource_type() -> String:
 	return "PackedDataContainer"
 
-func get_preset_count() -> int:
+func _get_import_order() -> int:
+	return 0
+
+func _get_preset_count() -> int:
 	return Presets.size()
 
-func get_preset_name(preset: int) -> String:
+func _get_preset_name(preset: int) -> String:
 	match preset:
 		Presets.DEFAULT:
 			return "Default"
 		_:
 			return "Unknown"
 
-func get_import_options(preset: int) -> Array:
+func _get_import_options(path: String, preset: int) -> Array[Dictionary]:
 	return [{
 		name = "name",
 		default_value = "",
@@ -43,15 +46,15 @@ func get_import_options(preset: int) -> Array:
 		hint_string = "17/19:PackedDataContainer",
 	}]
 
-func get_option_visibility(option, options) -> bool:
+func _get_option_visibility(path: String, option_name: StringName, options: Dictionary) -> bool:
 	return true
 
-func import(
+func _import(
 	source_file: String,
 	save_path: String,
 	options: Dictionary,
-	platform_variants: Array,
-	gen_files: Array
+	platform_variants: Array[String],
+	gen_files: Array[String],
 ):
 	var r = WasmFile.new()
 
@@ -60,4 +63,4 @@ func import(
 	var err: int = r.__initialize(source_file, options["imports"])
 	if err != OK:
 		return err
-	return ResourceSaver.save("%s.%s" % [save_path, get_save_extension()], r)
+	return ResourceSaver.save(r, "%s.%s" % [save_path, _get_save_extension()], ResourceSaver.FLAG_CHANGE_PATH | ResourceSaver.FLAG_COMPRESS)

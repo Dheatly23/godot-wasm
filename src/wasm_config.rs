@@ -1,9 +1,9 @@
-use gdnative::prelude::*;
+use godot::prelude::*;
 
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 
-#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, ToVariant)]
+#[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
 pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
@@ -23,47 +23,35 @@ pub struct Config {
 fn get_field<T: FromVariant + Default>(
     d: &Dictionary,
     name: &'static str,
-) -> Result<Option<T>, FromVariantError> {
+) -> Result<Option<T>, VariantConversionError> {
     match d.get(name) {
-        Some(v) => match T::from_variant(&v) {
-            Ok(v) => Ok(Some(v)),
-            Err(e) => Err(FromVariantError::InvalidField {
-                field_name: name,
-                error: Box::new(e),
-            }),
-        },
+        Some(v) => Some(T::try_from_variant(&v)).transpose(),
         None => Ok(None),
     }
 }
 
 #[cfg(feature = "epoch-timeout")]
-fn compute_epoch(v: Option<Variant>) -> Result<u64, FromVariantError> {
+fn compute_epoch(v: Option<Variant>) -> Result<u64, VariantConversionError> {
     const DEFAULT: u64 = EPOCH_DEADLINE.saturating_mul(EPOCH_MULTIPLIER);
-    let t = v.as_ref().map_or(VariantType::Nil, |v| v.get_type());
-    match v.map(|v| v.dispatch()) {
-        None | Some(VariantDispatch::Nil) => Ok(DEFAULT),
-        Some(VariantDispatch::I64(v)) => Ok(v
-            .try_into()
+    let v = match v {
+        Some(v) if !v.is_nil() => v,
+        _ => return Ok(DEFAULT),
+    };
+    if let Ok(v) = i64::try_from_variant(&v) {
+        Ok(v.try_into()
             .unwrap_or(0u64)
-            .saturating_mul(EPOCH_MULTIPLIER)),
-        Some(VariantDispatch::F64(v)) => Ok((v * (EPOCH_MULTIPLIER as f64)).trunc() as _),
-        Some(_) => Err(FromVariantError::InvalidField {
-            field_name: "engine.epoch_timeout",
-            error: Box::new(FromVariantError::InvalidVariantType {
-                variant_type: t,
-                expected: VariantType::F64,
-            }),
-        }),
+            .saturating_mul(EPOCH_MULTIPLIER))
+    } else {
+        Ok((f64::try_from_variant(&v)? * (EPOCH_MULTIPLIER as f64)).trunc() as _)
     }
-    .map(|i| i.max(1))
 }
 
 impl FromVariant for Config {
-    fn from_variant(variant: &Variant) -> Result<Self, FromVariantError> {
-        if variant.is_nil() {
+    fn try_from_variant(v: &Variant) -> Result<Self, VariantConversionError> {
+        if v.is_nil() {
             return Ok(Self::default());
         }
-        let dict = Dictionary::from_variant(variant)?;
+        let dict = Dictionary::try_from_variant(&v)?;
 
         Ok(Self {
             #[cfg(feature = "epoch-timeout")]
@@ -100,20 +88,15 @@ impl Default for ExternBindingType {
 }
 
 impl FromVariant for ExternBindingType {
-    fn from_variant(variant: &Variant) -> Result<Self, FromVariantError> {
-        let s = String::from_variant(variant)?;
+    fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
+        let s = String::try_from_variant(variant)?;
         Ok(match &*s {
             "" | "none" | "no_binding" => Self::None,
             #[cfg(feature = "object-registry-compat")]
             "compat" | "registry" => Self::Registry,
             #[cfg(feature = "object-registry-extern")]
             "extern" | "native" => Self::Native,
-            _ => {
-                return Err(FromVariantError::UnknownEnumVariant {
-                    variant: s,
-                    expected: &[],
-                })
-            }
+            _ => return Err(VariantConversionError),
         })
     }
 }

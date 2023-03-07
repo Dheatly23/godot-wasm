@@ -1,4 +1,4 @@
-tool
+@tool
 class_name WasmHelper
 
 const TYPE_I32 = 1
@@ -6,11 +6,6 @@ const TYPE_I64 = 2
 const TYPE_F32 = 3
 const TYPE_F64 = 4
 const TYPE_VARIANT = 6
-
-const WASM_HEADER = PoolByteArray([
-	0x00, 0x61, 0x73, 0x6d,
-	0x01, 0x00, 0x00, 0x00,
-])
 
 static func load_wasm(
 	name: String,
@@ -28,13 +23,12 @@ static func load_wasm_file(
 	path: String,
 	imports: Dictionary = {}
 ) -> WasmModule:
-	var file: File = File.new()
-	file.open(path, File.READ)
-	var buf = file.get_buffer(file.get_len())
+	var file := FileAccess.open(path, FileAccess.READ)
+	var buf = file.get_buffer(file.get_length())
 	file.close()
 	return load_wasm(name, buf, imports)
 
-static func __leb128_u64(buf: PoolByteArray, start: int) -> Dictionary:
+static func __leb128_u64(buf: PackedByteArray, start: int) -> Dictionary:
 	var ret := 0
 	var v := 0
 	for i in range(0, 64, 7):
@@ -59,10 +53,15 @@ static func __leb128_u64(buf: PoolByteArray, start: int) -> Dictionary:
 		error = false,
 	}
 
-static func get_custom_sections(data: PoolByteArray) -> Dictionary:
+static func get_custom_sections(data: PackedByteArray) -> Dictionary:
 	var ret := {}
 
-	if data.subarray(0, 7) != WASM_HEADER:
+	var wasm_header := PackedByteArray([
+		0x00, 0x61, 0x73, 0x6d,
+		0x01, 0x00, 0x00, 0x00,
+	])
+
+	if data.slice(0, 7) != wasm_header:
 		printerr("Header error!")
 		return {}
 
@@ -87,9 +86,9 @@ static func get_custom_sections(data: PoolByteArray) -> Dictionary:
 				var name_len: int = temp["value"]
 				i = temp["cursor"]
 
-				var name := data.subarray(i, i + name_len - 1).get_string_from_utf8()
+				var name := data.slice(i, i + name_len - 1).get_string_from_utf8()
 				i += name_len
-				var section_data := data.subarray(i, end - 1)
+				var section_data := data.slice(i, end - 1)
 				i = end
 
 				if name in ret:

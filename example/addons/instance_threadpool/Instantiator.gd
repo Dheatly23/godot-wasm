@@ -1,6 +1,6 @@
 # Handler for module instantiation
 
-tool
+@tool
 extends "Callable.gd"
 
 var handle
@@ -35,12 +35,12 @@ func _call():
 		self,
 		"_error_handle",
 		[],
-		CONNECT_ONESHOT
+		CONNECT_ONE_SHOT
 	)
-	handle._lock.lock()
+	false # handle._lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 	handle.inst = inst.initialize(module, host, config)
 	handle._finalize_inst()
-	handle._lock.unlock()
+	false # handle._lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 func _error_handle(msg: String):
 	if err_obj != null:

@@ -7,16 +7,10 @@ mod wasm_instance;
 mod wasm_objregistry;
 mod wasm_util;
 
-use gdnative::prelude::*;
+use godot::prelude::*;
 
-use crate::wasm_engine::WasmModule;
-use crate::wasm_instance::WasmInstance;
+// This is just a type tag without any functionality
+struct GodotWasm;
 
-// Function that registers all exposed classes to Godot
-fn init(handle: InitHandle) {
-    handle.add_class::<WasmModule>();
-    handle.add_class::<WasmInstance>();
-}
-
-// Macro that creates the entry-points of the dynamic library.
-godot_init!(init);
+#[gdextension]
+unsafe impl ExtensionLibrary for GodotWasm {}

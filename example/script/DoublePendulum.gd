@@ -1,5 +1,7 @@
 extends Node2D
 
+const Pendulum = preload("res://script/Pendulum.gd")
+
 signal message_emitted(msg)
 
 func _ready():
@@ -14,7 +16,7 @@ func _on_Timer_timeout():
 	emit_signal("message_emitted", "")
 
 	for p in $Pendulums.get_children():
-		if p is preload("res://script/Pendulum.gd"):
+		if p is Pendulum:
 			emit_signal("message_emitted", "%s: [%6.1f %6.1f %6.1f %6.1f]" % [
 				p.name,
 				p.angle1,

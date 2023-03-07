@@ -3,10 +3,7 @@ use std::mem::{size_of, transmute};
 use std::ptr;
 
 use anyhow::{bail, Error};
-use gdnative::core_types::PoolElement;
-use gdnative::export::user_data::Map;
-use gdnative::log::{error, godot_site, Site};
-use gdnative::prelude::*;
+use godot::prelude::*;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
 use scopeguard::guard;
 use wasmtime::{
@@ -28,14 +25,17 @@ use crate::wasm_util::EPOCH_DEADLINE;
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
-use crate::wasm_util::{from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT};
+use crate::wasm_util::{
+    from_raw, make_host_module, option_to_variant, to_raw, variant_to_option, HOST_MODULE,
+    MEMORY_EXPORT,
+};
 use crate::{bail_with_site, site_context};
 
-#[derive(NativeClass)]
-#[inherit(Reference)]
-#[register_with(Self::register_properties)]
-#[user_data(gdnative::export::user_data::ArcData<WasmInstance>)]
+#[derive(GodotClass)]
+#[class(base=RefCounted)]
 pub struct WasmInstance {
+    #[base]
+    base: Base<RefCounted>,
     once: Once,
     data: Option<InstanceData>,
 }
@@ -43,7 +43,7 @@ pub struct WasmInstance {
 pub struct InstanceData {
     store: Mutex<Store<StoreData>>,
     instance: InstanceWasm,
-    module: Instance<WasmModule, Shared>,
+    module: Gd<WasmModule>,
 }
 
 pub struct StoreData {
@@ -102,7 +102,7 @@ impl ResourceLimiter for MemoryLimit {
 impl InstanceData {
     pub fn instantiate(
         mut store: Store<StoreData>,
-        module: Instance<WasmModule, Shared>,
+        module: Gd<WasmModule>,
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
         let config = store.data().config;
@@ -126,6 +126,7 @@ impl InstanceData {
             store.limiter(|data| &mut data.memory_limits);
         }
 
+        #[allow(unreachable_patterns)]
         match config.extern_bind {
             ExternBindingType::None => (),
             #[cfg(feature = "object-registry-compat")]
@@ -135,7 +136,7 @@ impl InstanceData {
             _ => panic!("Unimplemented binding"),
         }
 
-        type InstMap = HashMap<Ref<Reference, Shared>, InstanceWasm>;
+        type InstMap = HashMap<InstanceId, InstanceWasm>;
 
         fn f(
             store: &mut Store<StoreData>,
@@ -187,14 +188,11 @@ impl InstanceData {
 
                 if let Some(v) = module.imports.get(i.module()) {
                     let v = loop {
-                        match insts.get(v.base()) {
+                        match insts.get(&v.instance_id()) {
                             Some(v) => break v,
                             None => {
-                                let t = v
-                                    .script()
-                                    .map(|m| f(&mut *store, m.get_data()?, &mut *insts, host))
-                                    .unwrap()?;
-                                insts.insert(v.base().clone(), t);
+                                let t = f(&mut *store, v.bind().get_data()?, &mut *insts, host)?;
+                                insts.insert(v.instance_id(), t);
                             }
                         }
                     };
@@ -216,13 +214,7 @@ impl InstanceData {
         let host = host.map(|h| make_host_module(&mut store, h)).transpose()?;
 
         let sp = &mut store;
-        let instance = module
-            .script()
-            .map(move |m| {
-                let mut insts = HashMap::new();
-                f(sp, m.get_data()?, &mut insts, &host)
-            })
-            .unwrap()?;
+        let instance = f(sp, module.bind().get_data()?, &mut HashMap::new(), &host)?;
 
         Ok(Self {
             instance,
@@ -287,13 +279,6 @@ impl StoreData {
 }
 
 impl WasmInstance {
-    fn new(_owner: &Reference) -> Self {
-        Self {
-            once: Once::new(),
-            data: None,
-        }
-    }
-
     pub fn get_data(&self) -> Result<&InstanceData, Error> {
         if let OnceState::Done = self.once.state() {
             Ok(self.data.as_ref().unwrap())
@@ -302,21 +287,28 @@ impl WasmInstance {
         }
     }
 
-    pub fn unwrap_data<F, R>(&self, base: TRef<Reference>, f: F) -> Option<R>
+    pub fn unwrap_data<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&InstanceData) -> Result<R, Error>,
     {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
-                let s = format!("{:?}", e);
+                /*
                 error(
                     e.downcast_ref::<Site>()
                         .copied()
                         .unwrap_or_else(|| godot_site!()),
                     &s,
                 );
-                base.emit_signal("error_happened", &[s.owned_to_variant()]);
+                */
+                godot_error!("{}", e);
+                /*
+                self.base.emit_signal(
+                    StringName::from("error_happened"),
+                    &[format!("{}", e).to_variant()],
+                );
+                */
                 None
             }
         }
@@ -324,7 +316,7 @@ impl WasmInstance {
 
     pub fn initialize_(
         &self,
-        module: Instance<WasmModule, Shared>,
+        module: Gd<WasmModule>,
         host: Option<Dictionary>,
         config: Option<Variant>,
     ) -> bool {
@@ -338,10 +330,10 @@ impl WasmInstance {
                     StoreData {
                         mutex_raw: ptr::null(),
                         config: match config {
-                            Some(v) => match Config::from_variant(&v) {
+                            Some(v) => match Config::try_from_variant(&v) {
                                 Ok(v) => v,
                                 Err(e) => {
-                                    godot_error!("{}", e);
+                                    godot_error!("{:?}", e);
                                     Config::default()
                                 }
                             },
@@ -380,11 +372,11 @@ impl WasmInstance {
         r
     }
 
-    fn get_memory<F, R>(&self, base: TRef<Reference>, f: F) -> Option<R>
+    fn get_memory<F, R>(&self, f: F) -> Option<R>
     where
         for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> Result<R, Error>,
     {
-        self.unwrap_data(base, |m| {
+        self.unwrap_data(|m| {
             m.acquire_store(
                 |m, mut store| match m.instance.get_memory(&mut store, MEMORY_EXPORT) {
                     Some(mem) => f(store, mem),
@@ -394,11 +386,11 @@ impl WasmInstance {
         })
     }
 
-    fn read_memory<F, R>(&self, base: TRef<Reference>, i: usize, n: usize, f: F) -> Option<R>
+    fn read_memory<F, R>(&self, i: usize, n: usize, f: F) -> Option<R>
     where
         F: FnOnce(&[u8]) -> Result<R, Error>,
     {
-        self.get_memory(base, |store, mem| {
+        self.get_memory(|store, mem| {
             let data = mem.data(&store);
             match data.get(i..i + n) {
                 Some(s) => f(s),
@@ -407,61 +399,63 @@ impl WasmInstance {
         })
     }
 
-    fn write_memory<F, R>(&self, base: TRef<Reference>, i: usize, n: usize, f: F) -> Option<R>
+    fn write_memory<F, R>(&self, i: usize, n: usize, f: F) -> Option<R>
     where
         for<'a> F: FnOnce(&'a mut [u8]) -> Result<R, Error>,
     {
-        self.get_memory(base, |mut store, mem| {
+        self.get_memory(|mut store, mem| {
             let data = mem.data_mut(&mut store);
             match data.get_mut(i..i + n) {
                 Some(s) => f(s),
-                None => bail!("Index out of bound {}-{}", i, i + n),
+                None => bail_with_site!("Index out of bound {}-{}", i, i + n),
             }
         })
     }
 }
 
-#[methods]
-impl WasmInstance {
-    /// Register properties
-    fn register_properties(builder: &ClassBuilder<Self>) {
-        builder
-            .property::<Option<Instance<WasmModule, Shared>>>("module")
-            .with_getter(|v, b| v.unwrap_data(b, |m| Ok(m.module.clone())))
-            .done();
-
-        builder
-            .signal("error_happened")
-            .with_param("message", VariantType::GodotString)
-            .done();
+#[godot_api]
+impl RefCountedVirtual for WasmInstance {
+    fn init(base: Base<RefCounted>) -> Self {
+        Self {
+            base,
+            once: Once::new(),
+            data: None,
+        }
     }
+}
+
+#[godot_api]
+impl WasmInstance {
+    #[signal]
+    fn error_happened();
 
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
-    #[method]
+    #[func]
     fn initialize(
         &self,
-        #[base] owner: TRef<Reference>,
-        module: Instance<WasmModule, Shared>,
-        #[opt] host: Option<Dictionary>,
-        #[opt] config: Option<Variant>,
-    ) -> Option<Ref<Reference>> {
-        if self.initialize_(module, host, config) {
-            Some(owner.claim())
+        module: Gd<WasmModule>,
+        host: Variant,
+        config: Variant,
+    ) -> Gd<WasmInstance> {
+        let Ok(host) = variant_to_option::<Dictionary>(host) else {
+            panic!("Host is not a dictionary!")
+        };
+        let config = if config.is_nil() { None } else { Some(config) };
+
+        let ret = if self.initialize_(module, host, config) {
+            <Gd<WasmInstance>>::try_from_instance_id(self.base.instance_id())
         } else {
             None
-        }
+        };
+        ret.unwrap()
     }
 
-    #[method]
-    fn call_wasm(
-        &self,
-        #[base] base: TRef<Reference>,
-        name: String,
-        args: VariantArray,
-    ) -> Option<VariantArray> {
-        self.unwrap_data(base, move |m| {
+    #[func]
+    fn call_wasm(&self, name: StringName, args: Array<Variant>) -> Array<Variant> {
+        self.unwrap_data(move |m| {
             m.acquire_store(move |m, mut store| {
+                let name = name.to_string();
                 let f = match m.instance.get_export(&mut store, &name) {
                     Some(f) => match f {
                         Extern::Func(f) => f,
@@ -487,40 +481,47 @@ impl WasmInstance {
                     site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr()))?;
                 }
 
-                let ret = VariantArray::new();
+                let mut ret = Array::new();
                 for (ix, t) in ri.enumerate() {
                     ret.push(unsafe { from_raw(&mut store, t, arr[ix])? });
                 }
 
-                Ok(ret.into_shared())
+                Ok(ret)
             })
         })
+        .unwrap_or_default()
     }
 
     /// Emit trap when returning from host. Only used for host binding.
     /// Returns previous error message, if any.
-    #[method]
-    fn signal_error(&self, #[base] base: TRef<Reference>, msg: String) -> Option<String> {
-        self.unwrap_data(base, |m| {
-            m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.replace(msg)))
-        })
-        .flatten()
+    #[func]
+    fn signal_error(&self, msg: StringName) -> Variant {
+        option_to_variant(
+            self.unwrap_data(|m| {
+                m.acquire_store(|_, mut store| {
+                    Ok(store.data_mut().error_signal.replace(msg.to_string()))
+                })
+            })
+            .flatten(),
+        )
     }
 
     /// Cancel effect of signal_error.
     /// Returns previous error message, if any.
-    #[method]
-    fn signal_error_cancel(&self, #[base] base: TRef<Reference>) -> Option<String> {
-        self.unwrap_data(base, |m| {
-            m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.take()))
-        })
-        .flatten()
+    #[func]
+    fn signal_error_cancel(&self) -> Variant {
+        option_to_variant(
+            self.unwrap_data(|m| {
+                m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.take()))
+            })
+            .flatten(),
+        )
     }
 
-    #[method]
-    fn reset_epoch(&self, #[base] _base: TRef<Reference>) {
+    #[func]
+    fn reset_epoch(&self) {
         #[cfg(feature = "epoch-timeout")]
-        self.unwrap_data(_base, |m| {
+        self.unwrap_data(|m| {
             m.acquire_store(|_, mut store| {
                 store.set_epoch_deadline(store.data().config.epoch_timeout);
                 Ok(())
@@ -531,50 +532,49 @@ impl WasmInstance {
         godot_error!("Feature epoch-timeout not enabled!");
     }
 
-    #[method]
-    fn register_object(&self, #[base] _base: TRef<Reference>, _obj: Variant) -> Option<usize> {
+    #[func]
+    fn register_object(&self, _obj: Variant) -> Variant {
         #[cfg(feature = "object-registry-compat")]
-        return self.unwrap_data(_base, |m| {
+        return option_to_variant(self.unwrap_data(|m| {
             if _obj.is_nil() {
                 bail_with_site!("Value is null!");
             }
             m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj)))
-        });
+        }));
 
         #[cfg(not(feature = "object-registry-compat"))]
         {
             godot_error!("Feature object-registry-compat not enabled!");
-            None
+            Variant::nil()
         }
     }
 
-    #[method]
-    fn registry_get(&self, #[base] _base: TRef<Reference>, _ix: usize) -> Option<Variant> {
+    #[func]
+    fn registry_get(&self, _ix: i64) -> Variant {
         #[cfg(feature = "object-registry-compat")]
-        return self
-            .unwrap_data(_base, |m| {
-                m.acquire_store(|_, store| Ok(store.data().get_registry()?.get(_ix)))
+        return option_to_variant(
+            self.unwrap_data(|m| {
+                m.acquire_store(|_, store| {
+                    Ok(store.data().get_registry()?.get(usize::try_from(_ix)?))
+                })
             })
-            .flatten();
+            .flatten(),
+        );
 
         #[cfg(not(feature = "object-registry-compat"))]
         {
             godot_error!("Feature object-registry-compat not enabled!");
-            None
+            Variant::nil()
         }
     }
 
-    #[method]
-    fn registry_set(
-        &self,
-        #[base] _base: TRef<Reference>,
-        _ix: usize,
-        _obj: Variant,
-    ) -> Option<Variant> {
+    #[func]
+    fn registry_set(&self, _ix: i64, _obj: Variant) -> Variant {
         #[cfg(feature = "object-registry-compat")]
-        return self
-            .unwrap_data(_base, |m| {
+        return option_to_variant(
+            self.unwrap_data(|m| {
                 m.acquire_store(|_, mut store| {
+                    let _ix = usize::try_from(_ix)?;
                     let reg = store.data_mut().get_registry_mut()?;
                     if _obj.is_nil() {
                         Ok(reg.unregister(_ix))
@@ -583,36 +583,41 @@ impl WasmInstance {
                     }
                 })
             })
-            .flatten();
+            .flatten(),
+        );
 
         #[cfg(not(feature = "object-registry-compat"))]
         {
             godot_error!("Feature object-registry-compat not enabled!");
-            None
+            Variant::nil()
         }
     }
 
-    #[method]
-    fn unregister_object(&self, #[base] _base: TRef<Reference>, _ix: usize) -> Option<Variant> {
+    #[func]
+    fn unregister_object(&self, _ix: i64) -> Variant {
         #[cfg(feature = "object-registry-compat")]
-        return self
-            .unwrap_data(_base, |m| {
+        return option_to_variant(
+            self.unwrap_data(|m| {
                 m.acquire_store(|_, mut store| {
-                    Ok(store.data_mut().get_registry_mut()?.unregister(_ix))
+                    Ok(store
+                        .data_mut()
+                        .get_registry_mut()?
+                        .unregister(usize::try_from(_ix)?))
                 })
             })
-            .flatten();
+            .flatten(),
+        );
 
         #[cfg(not(feature = "object-registry-compat"))]
         {
             godot_error!("Feature object-registry-compat not enabled!");
-            None
+            Variant::nil()
         }
     }
 
-    #[method]
-    fn has_memory(&self, #[base] base: TRef<Reference>) -> bool {
-        self.unwrap_data(base, |m| {
+    #[func]
+    fn has_memory(&self) -> bool {
+        self.unwrap_data(|m| {
             m.acquire_store(|m, mut store| {
                 Ok(matches!(
                     m.instance.get_export(&mut store, MEMORY_EXPORT),
@@ -623,128 +628,124 @@ impl WasmInstance {
         .unwrap_or_default()
     }
 
-    #[method]
-    fn memory_size(&self, #[base] base: TRef<Reference>) -> usize {
-        self.get_memory(base, |store, mem| Ok(mem.data_size(store)))
+    #[func]
+    fn memory_size(&self) -> i64 {
+        self.get_memory(|store, mem| Ok(mem.data_size(store) as i64))
             .unwrap_or_default()
     }
 
-    #[method]
-    fn memory_read(
-        &self,
-        #[base] base: TRef<Reference>,
-        i: usize,
-        n: usize,
-    ) -> Option<PoolArray<u8>> {
-        self.read_memory(base, i, n, |s| Ok(<PoolArray<u8>>::from_slice(s)))
+    #[func]
+    fn memory_read(&self, i: i64, n: i64) -> PackedByteArray {
+        self.read_memory(i as _, n as _, |s| Ok(PackedByteArray::from(s)))
+            .unwrap_or_default()
     }
 
-    #[method]
-    fn memory_write(&self, #[base] base: TRef<Reference>, i: usize, a: PoolArray<u8>) -> bool {
-        let a = &*a.read();
-        self.write_memory(base, i, a.len(), |s| {
-            s.copy_from_slice(a);
+    #[func]
+    fn memory_write(&self, i: i64, a: PackedByteArray) -> bool {
+        let a = a.to_vec();
+        self.write_memory(i as _, a.len(), |s| {
+            s.copy_from_slice(&a);
             Ok(())
         })
         .is_some()
     }
 
-    #[method]
-    fn get_8(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u8> {
-        self.read_memory(base, i, 1, |s| Ok(s[0]))
+    #[func]
+    fn get_8(&self, i: i64) -> i64 {
+        self.read_memory(i as _, 1, |s| Ok(s[0]))
+            .unwrap_or_default()
+            .into()
     }
 
-    #[method]
-    fn put_8(&self, #[base] base: TRef<Reference>, i: usize, v: u8) -> bool {
-        self.write_memory(base, i, 1, |s| {
-            s[0] = v;
+    #[func]
+    fn put_8(&self, i: i64, v: i64) -> bool {
+        self.write_memory(i as _, 1, |s| {
+            s[0] = (v & 255) as _;
             Ok(())
         })
         .is_some()
     }
 
-    #[method]
-    fn get_16(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u16> {
-        self.read_memory(base, i, 2, |s| {
-            Ok(u16::from_le_bytes(s.try_into().unwrap()))
-        })
+    #[func]
+    fn get_16(&self, i: i64) -> i64 {
+        self.read_memory(i as _, 2, |s| Ok(u16::from_le_bytes(s.try_into().unwrap())))
+            .unwrap_or_default()
+            .into()
     }
 
-    #[method]
-    fn put_16(&self, #[base] base: TRef<Reference>, i: usize, v: u16) -> bool {
-        self.write_memory(base, i, 2, |s| {
+    #[func]
+    fn put_16(&self, i: i64, v: i64) -> bool {
+        self.write_memory(i as _, 2, |s| {
+            s.copy_from_slice(&((v & 0xffff) as u16).to_le_bytes());
+            Ok(())
+        })
+        .is_some()
+    }
+
+    #[func]
+    fn get_32(&self, i: i64) -> i64 {
+        self.read_memory(i as _, 4, |s| Ok(u32::from_le_bytes(s.try_into().unwrap())))
+            .unwrap_or_default()
+            .into()
+    }
+
+    #[func]
+    fn put_32(&self, i: i64, v: i64) -> bool {
+        self.write_memory(i as _, 4, |s| {
+            s.copy_from_slice(&((v & 0xffffffff) as u32).to_le_bytes());
+            Ok(())
+        })
+        .is_some()
+    }
+
+    #[func]
+    fn get_64(&self, i: i64) -> i64 {
+        self.read_memory(i as _, 8, |s| Ok(i64::from_le_bytes(s.try_into().unwrap())))
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn put_64(&self, i: i64, v: i64) -> bool {
+        self.write_memory(i as _, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         })
         .is_some()
     }
 
-    #[method]
-    fn get_32(&self, #[base] base: TRef<Reference>, i: usize) -> Option<u32> {
-        self.read_memory(base, i, 4, |s| {
-            Ok(u32::from_le_bytes(s.try_into().unwrap()))
-        })
+    #[func]
+    fn get_float(&self, i: i64) -> f64 {
+        self.read_memory(i as _, 4, |s| Ok(f32::from_le_bytes(s.try_into().unwrap())))
+            .unwrap_or_default()
+            .into()
     }
 
-    #[method]
-    fn put_32(&self, #[base] base: TRef<Reference>, i: usize, v: u32) -> bool {
-        self.write_memory(base, i, 4, |s| {
+    #[func]
+    fn put_float(&self, i: i64, v: f64) -> bool {
+        self.write_memory(i as _, 4, |s| {
+            s.copy_from_slice(&(v as f32).to_le_bytes());
+            Ok(())
+        })
+        .is_some()
+    }
+
+    #[func]
+    fn get_double(&self, i: i64) -> f64 {
+        self.read_memory(i as _, 8, |s| Ok(f64::from_le_bytes(s.try_into().unwrap())))
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn put_double(&self, i: i64, v: f64) -> bool {
+        self.write_memory(i as _, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
             Ok(())
         })
         .is_some()
     }
 
-    #[method]
-    fn get_64(&self, #[base] base: TRef<Reference>, i: usize) -> Option<i64> {
-        self.read_memory(base, i, 8, |s| {
-            Ok(i64::from_le_bytes(s.try_into().unwrap()))
-        })
-    }
-
-    #[method]
-    fn put_64(&self, #[base] base: TRef<Reference>, i: usize, v: i64) -> bool {
-        self.write_memory(base, i, 8, |s| {
-            s.copy_from_slice(&v.to_le_bytes());
-            Ok(())
-        })
-        .is_some()
-    }
-
-    #[method]
-    fn get_float(&self, #[base] base: TRef<Reference>, i: usize) -> Option<f32> {
-        self.read_memory(base, i, 4, |s| {
-            Ok(f32::from_le_bytes(s.try_into().unwrap()))
-        })
-    }
-
-    #[method]
-    fn put_float(&self, #[base] base: TRef<Reference>, i: usize, v: f32) -> bool {
-        self.write_memory(base, i, 4, |s| {
-            s.copy_from_slice(&v.to_le_bytes());
-            Ok(())
-        })
-        .is_some()
-    }
-
-    #[method]
-    fn get_double(&self, #[base] base: TRef<Reference>, i: usize) -> Option<f64> {
-        self.read_memory(base, i, 8, |s| {
-            Ok(f64::from_le_bytes(s.try_into().unwrap()))
-        })
-    }
-
-    #[method]
-    fn put_double(&self, #[base] base: TRef<Reference>, i: usize, v: f64) -> bool {
-        self.write_memory(base, i, 8, |s| {
-            s.copy_from_slice(&v.to_le_bytes());
-            Ok(())
-        })
-        .is_some()
-    }
-
-    #[method]
-    fn put_array(&self, #[base] base: TRef<Reference>, i: usize, v: Variant) -> bool {
+    #[func]
+    fn put_array(&self, i: i64, v: Variant) -> bool {
         fn f<T: Copy>(d: &mut [u8], i: usize, s: &[T]) -> Result<(), Error> {
             let l = s.len() * size_of::<T>();
             let e = i + l;
@@ -773,30 +774,35 @@ impl WasmInstance {
             Ok(())
         }
 
-        self.get_memory(base, |mut store, mem| {
+        self.get_memory(|mut store, mem| {
+            let i = i as usize;
             let data = mem.data_mut(&mut store);
-            match v.dispatch() {
-                VariantDispatch::ByteArray(v) => f(data, i, &*v.read()),
-                VariantDispatch::Int32Array(v) => f(data, i, &*v.read()),
-                VariantDispatch::Float32Array(v) => f(data, i, &*v.read()),
-                VariantDispatch::Vector2Array(v) => f(data, i, &*v.read()),
-                VariantDispatch::Vector3Array(v) => f(data, i, &*v.read()),
-                VariantDispatch::ColorArray(v) => f(data, i, &*v.read()),
-                _ => bail_with_site!("Unknown value"),
+            if let Ok(v) = PackedByteArray::try_from_variant(&v) {
+                f(data, i, &v.to_vec())
+            } else if let Ok(v) = PackedInt32Array::try_from_variant(&v) {
+                f(data, i, &v.to_vec())
+            } else if let Ok(v) = PackedFloat32Array::try_from_variant(&v) {
+                f(data, i, &v.to_vec())
+            } else if let Ok(v) = PackedVector2Array::try_from_variant(&v) {
+                f(data, i, &v.to_vec())
+            } else if let Ok(v) = PackedVector3Array::try_from_variant(&v) {
+                f(data, i, &v.to_vec())
+            } else if let Ok(v) = PackedColorArray::try_from_variant(&v) {
+                f(data, i, &v.to_vec())
+            } else {
+                bail_with_site!("Unknown value")
             }
         })
         .is_some()
     }
 
-    #[method]
-    fn get_array(
-        &self,
-        #[base] base: TRef<Reference>,
-        i: usize,
-        n: usize,
-        t: i64,
-    ) -> Option<Variant> {
-        fn f<T: Copy + PoolElement>(s: &[u8], i: usize, n: usize) -> Result<PoolArray<T>, Error> {
+    #[func]
+    fn get_array(&self, i: i64, n: i64, t: i64) -> Variant {
+        fn f<T, A>(s: &[u8], i: usize, n: usize) -> Result<A, Error>
+        where
+            T: Copy,
+            for<'a> A: From<&'a [T]>,
+        {
             let l = n * size_of::<T>();
             let e = i + l;
 
@@ -824,24 +830,25 @@ impl WasmInstance {
                     d.set_len(n);
                 }
 
-                Ok(PoolArray::from_vec(d))
+                Ok(A::from(&d))
             } else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
             }
         }
 
-        self.get_memory(base, |store, mem| {
+        option_to_variant(self.get_memory(|store, mem| {
+            let (i, n) = (i as usize, n as usize);
             let data = mem.data(&store);
             match t {
-                20 => f::<u8>(data, i, n).map(Variant::new), // PoolByteArray
-                21 => f::<i32>(data, i, n).map(Variant::new), // PoolInt32Array
-                22 => f::<f32>(data, i, n).map(Variant::new), // PoolFloat32Array
-                24 => f::<Vector2>(data, i, n).map(Variant::new), // PoolVector2Array
-                25 => f::<Vector3>(data, i, n).map(Variant::new), // PoolVector3Array
-                26 => f::<Color>(data, i, n).map(Variant::new), // PoolColorArray
+                20 => f::<u8, PackedByteArray>(data, i, n).map(Variant::from), // PoolByteArray
+                21 => f::<i32, PackedInt32Array>(data, i, n).map(Variant::from), // PoolInt32Array
+                22 => f::<f32, PackedFloat32Array>(data, i, n).map(Variant::from), // PoolFloat32Array
+                24 => f::<Vector2, PackedVector2Array>(data, i, n).map(Variant::from), // PoolVector2Array
+                25 => f::<Vector3, PackedVector3Array>(data, i, n).map(Variant::from), // PoolVector3Array
+                26 => f::<Color, PackedColorArray>(data, i, n).map(Variant::from), // PoolColorArray
                 ..=26 => bail_with_site!("Unsupported type ID {}", t),
                 _ => bail_with_site!("Unknown type {}", t),
             }
-        })
+        }))
     }
 }

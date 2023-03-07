@@ -1,9 +1,9 @@
-tool
+@tool
 extends PackedDataContainer
 class_name WasmFile
 
-export(String) var name := ""
-export(Dictionary) var imports := {}
+@export var name := ""
+@export var imports := {}
 
 var __module: WasmModule = null
 
@@ -35,12 +35,9 @@ func __initialize(path: String, imports_: Array) -> int:
 			return ERR_DUPLICATE_SYMBOL
 		imports[f.name] = f
 
-	var file := File.new()
-	var err := file.open(path, File.READ)
-	if err != OK:
-		return err
+	var file := FileAccess.open(path, FileAccess.READ)
 
-	__data__ = file.get_buffer(file.get_len())
+	__data__ = file.get_buffer(file.get_length())
 
 	file.close()
 	return OK

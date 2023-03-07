@@ -1,11 +1,11 @@
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg(feature = "epoch-timeout")]
 use std::time;
 
-use anyhow::{bail, Error};
-use gdnative::api::WeakRef;
-use gdnative::log::Site;
-use gdnative::prelude::*;
+use anyhow::{anyhow, bail, Error};
+use godot::prelude::*;
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
@@ -51,19 +51,26 @@ pub const MEMORY_EXPORT: &str = "memory";
 #[macro_export]
 macro_rules! bail_with_site {
     ($($t:tt)*) => {
+        /*
         return Err(anyhow::anyhow!($($t)*).context(gdnative::log::godot_site!()))
+        */
+        return Err(anyhow::anyhow!($($t)*))
     };
 }
 
 #[macro_export]
 macro_rules! site_context {
     ($e:expr) => {
+        /*
         $e.map_err(|e| {
             $crate::wasm_util::add_site(anyhow::Error::from(e), gdnative::log::godot_site!())
         })
+        */
+        $e
     };
 }
 
+/*
 pub fn add_site(e: Error, site: Site<'static>) -> Error {
     if e.is::<Site>() {
         e
@@ -71,21 +78,31 @@ pub fn add_site(e: Error, site: Site<'static>) -> Error {
         e.context(site)
     }
 }
+*/
 
-pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), Error> {
+pub fn option_to_variant<T: ToVariant>(t: Option<T>) -> Variant {
+    t.map_or_else(Variant::nil, |t| t.to_variant())
+}
+
+pub fn variant_to_option<T: FromVariant>(v: Variant) -> Result<Option<T>, VariantConversionError> {
+    if v.is_nil() {
+        Ok(None)
+    } else {
+        Some(T::try_from_variant(&v)).transpose()
+    }
+}
+
+pub fn from_signature(sig: &FuncType) -> Result<(PackedByteArray, PackedByteArray), Error> {
     let p = sig.params();
     let r = sig.results();
 
-    let mut pr = <PoolArray<u8>>::new();
-    let mut rr = <PoolArray<u8>>::new();
+    let mut pr = <Vec<u8>>::new();
+    let mut rr = <Vec<u8>>::new();
 
-    pr.resize(p.len() as _);
-    rr.resize(r.len() as _);
+    pr.resize(p.len() as _, 0);
+    rr.resize(r.len() as _, 0);
 
-    for (s, d) in p
-        .zip(pr.write().iter_mut())
-        .chain(r.zip(rr.write().iter_mut()))
-    {
+    for (s, d) in p.zip(pr.iter_mut()).chain(r.zip(rr.iter_mut())) {
         *d = match s {
             ValType::I32 => TYPE_I32,
             ValType::I64 => TYPE_I64,
@@ -97,7 +114,10 @@ pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), 
         } as _;
     }
 
-    Ok((pr, rr))
+    Ok((
+        PackedByteArray::from(&pr[..]),
+        PackedByteArray::from(&rr[..]),
+    ))
 }
 
 pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error> {
@@ -122,23 +142,33 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
         Ok(ret)
     }
 
-    let p = match VariantDispatch::from(&params) {
-        VariantDispatch::VariantArray(v) => f(v
-            .into_iter()
-            .map(|v| Ok(site_context!(u32::from_variant(&v))?))),
-        VariantDispatch::ByteArray(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
-        VariantDispatch::Int32Array(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
-        _ => bail!("Unconvertible value {}", params),
-    }?;
+    let p = if let Ok(v) = <Array<Variant>>::try_from_variant(&params) {
+        f(v.iter_shared().map(|v| {
+            Ok(site_context!(
+                u32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
+            )?)
+        }))?
+    } else if let Ok(v) = PackedByteArray::try_from_variant(&params) {
+        f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
+    } else if let Ok(v) = PackedInt32Array::try_from_variant(&params) {
+        f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
+    } else {
+        bail!("Unconvertible value {}", params)
+    };
 
-    let r = match VariantDispatch::from(&results) {
-        VariantDispatch::VariantArray(v) => f(v
-            .into_iter()
-            .map(|v| Ok(site_context!(u32::from_variant(&v))?))),
-        VariantDispatch::ByteArray(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
-        VariantDispatch::Int32Array(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
-        _ => bail!("Unconvertible value {}", results),
-    }?;
+    let r = if let Ok(v) = <Array<Variant>>::try_from_variant(&results) {
+        f(v.iter_shared().map(|v| {
+            Ok(site_context!(
+                u32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
+            )?)
+        }))?
+    } else if let Ok(v) = PackedByteArray::try_from_variant(&results) {
+        f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
+    } else if let Ok(v) = PackedInt32Array::try_from_variant(&results) {
+        f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
+    } else {
+        bail!("Unconvertible value {}", results)
+    };
 
     Ok(FuncType::new(p, r))
 }
@@ -146,10 +176,18 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 // Mark this unsafe for future proofing
 pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Result<ValRaw, Error> {
     Ok(match t {
-        ValType::I32 => ValRaw::i32(site_context!(i32::from_variant(&v))?),
-        ValType::I64 => ValRaw::i64(site_context!(i64::from_variant(&v))?),
-        ValType::F32 => ValRaw::f32(site_context!(f32::from_variant(&v))?.to_bits()),
-        ValType::F64 => ValRaw::f64(site_context!(f64::from_variant(&v))?.to_bits()),
+        ValType::I32 => ValRaw::i32(site_context!(
+            i32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
+        )?),
+        ValType::I64 => ValRaw::i64(site_context!(
+            i64::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
+        )?),
+        ValType::F32 => ValRaw::f32(
+            site_context!(f32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e)))?.to_bits(),
+        ),
+        ValType::F64 => ValRaw::f64(
+            site_context!(f64::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e)))?.to_bits(),
+        ),
         #[cfg(feature = "object-registry-extern")]
         ValType::ExternRef => ValRaw::externref(match variant_to_externref(v) {
             Some(v) => v.to_raw(_store),
@@ -172,12 +210,35 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
     })
 }
 
+/// WARNING: Incredibly unsafe.
+/// It's just used as workaround to pass Godot objects across closure.
+/// (At least until it supports multi-threading)
+struct SendSyncWrapper<T>(T);
+
+unsafe impl<T> Send for SendSyncWrapper<T> {}
+unsafe impl<T> Sync for SendSyncWrapper<T> {}
+
+impl<T> Deref for SendSyncWrapper<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for SendSyncWrapper<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 fn wrap_godot_method(
     store: impl AsContextMut<Data = StoreData>,
     ty: FuncType,
     obj: Variant,
     method: GodotString,
 ) -> Func {
+    let obj = SendSyncWrapper(obj);
+    let method = SendSyncWrapper(method);
     let ty_cloned = ty.clone();
     let f = move |mut ctx: Caller<StoreData>, args: &mut [ValRaw]| -> Result<(), Error> {
         let pi = ty.params();
@@ -186,13 +247,21 @@ fn wrap_godot_method(
             p.push(unsafe { from_raw(&mut ctx, t, args[ix])? });
         }
 
-        let mut obj = match <Ref<WeakRef, Shared>>::from_variant(&obj) {
-            Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-            Err(_) => obj.clone(),
+        // XXX: Weakref is currently broken (i think it's upstream?)
+        //let obj = match <Gd<WeakRef>>::try_from_variant(&obj) {
+        //    Ok(obj) => obj.get_ref(),
+        //    Err(_) => obj.clone(),
+        //};
+        let mut obj = match <Gd<Object>>::try_from_variant(&obj) {
+            Ok(v) => v,
+            Err(_) => bail!("Cannot convert object"),
         };
-        let r = ctx
-            .data_mut()
-            .release_store(|| unsafe { site_context!(obj.call(method.clone(), &p)) })?;
+        let r = ctx.data_mut().release_store(|| {
+            site_context!(catch_unwind(AssertUnwindSafe(
+                || obj.call(StringName::from(&*method), &p)
+            ))
+            .map_err(|_| anyhow!("Error trying to call")))
+        })?;
 
         if let Some(msg) = ctx.data_mut().error_signal.take() {
             return Err(Error::msg(msg));
@@ -200,7 +269,7 @@ fn wrap_godot_method(
 
         let mut ri = ty.results();
         if ri.len() == 0 {
-        } else if let Ok(r) = VariantArray::from_variant(&r) {
+        } else if let Ok(r) = <Array<Variant>>::try_from_variant(&r) {
             for (ix, t) in ri.enumerate() {
                 let v = r.get(ix as _);
                 args[ix] = unsafe { to_raw(&mut ctx, t, v)? };
@@ -233,10 +302,10 @@ pub fn make_host_module(
     dict: Dictionary,
 ) -> Result<HashMap<String, Extern>, Error> {
     let mut ret = HashMap::new();
-    for (k, v) in dict.iter() {
-        let k = site_context!(GodotString::from_variant(&k))?.to_string();
+    for (k, v) in dict.iter_shared() {
+        let k = site_context!(GodotString::try_from_variant(&k).map_err(|e| anyhow!("{:?}", e)))?
+            .to_string();
 
-        #[derive(FromVariant)]
         struct Data {
             params: Variant,
             results: Variant,
@@ -244,14 +313,20 @@ pub fn make_host_module(
             method: GodotString,
         }
 
-        let data = site_context!(Data::from_variant(&v))?;
-        let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
-            Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-            Err(_) => data.object.clone(),
+        let data = {
+            let v = Dictionary::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))?;
+            let Some(params) = v.get(StringName::from("params")) else { bail_with_site!("Key \"params\" does not exist") };
+            let Some(results) = v.get(StringName::from("results")) else { bail_with_site!("Key \"params\" does not exist") };
+            let Some(object) = v.get(StringName::from("object")) else { bail_with_site!("Key \"params\" does not exist") };
+            let Some(method) = v.get(StringName::from("method")) else { bail_with_site!("Key \"params\" does not exist") };
+
+            Data {
+                params,
+                results,
+                object,
+                method: <_>::try_from_variant(&method).map_err(|e| anyhow!("{:?}", e))?,
+            }
         };
-        if !obj.has_method(data.method.clone()) {
-            bail!("Object {} has no method {}", obj, data.method);
-        }
 
         ret.insert(
             k,

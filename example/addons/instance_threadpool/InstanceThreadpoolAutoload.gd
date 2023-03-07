@@ -1,6 +1,6 @@
 # Autoload to manage thread pool
 
-tool
+@tool
 extends Node
 
 signal _processing()
@@ -47,9 +47,9 @@ func queue_call_main(
 	method: String,
 	args: Array
 ):
-	_ret_lock.lock()
+	false # _ret_lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 	_ret_queue.push_back(RetCallHandle.new(obj, method, args))
-	_ret_lock.unlock()
+	false # _ret_lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 # Queues call to thread pool.
 func queue_call_threadpool(
@@ -60,17 +60,17 @@ func queue_call_threadpool(
 	_push_queue(RetCallHandle.new(obj, method, args))
 
 func _push_queue(v):
-	_lock.lock()
+	false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 	_queue.push_back(v)
-	_lock.unlock()
+	false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 	_sema.post()
 
 func _handle_ret():
 	var q: Array
-	_ret_lock.lock()
+	false # _ret_lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 	q = _ret_queue
 	_ret_queue = []
-	_ret_lock.unlock()
+	false # _ret_lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 	# We have to do 2 things:
 	# 1. Call every callable in queue
@@ -79,6 +79,6 @@ func _handle_ret():
 	# So even if one errors, it does not affect other calls.
 	# And we need to keep the queue array intact.
 	for v in q:
-		connect("_processing", v, "_call", [], CONNECT_ONESHOT)
+		connect("_processing",Callable(v,"_call").bind(),CONNECT_ONE_SHOT)
 
 	emit_signal("_processing")

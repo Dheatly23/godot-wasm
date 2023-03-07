@@ -1,4 +1,4 @@
-tool
+@tool
 extends "Callable.gd"
 
 var obj: Object

@@ -1,6 +1,6 @@
 # Instance handler, has internal queue to maintain dispatch lock
 
-tool
+@tool
 extends "Callable.gd"
 class_name InstanceHandle
 
@@ -35,12 +35,12 @@ func instantiate(
 	)
 
 	var ret: bool = false
-	_lock.lock()
+	false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 	if _instantiate and not _is_exec:
 		_is_exec = true
 		InstanceThreadpoolAutoload._push_queue(x)
 		ret = true
-	_lock.unlock()
+	false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 	return ret
 
@@ -66,20 +66,20 @@ func call_queue(
 		err_binds
 	)
 
-	_lock.lock()
+	false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 	_queue.push_back(exec)
 	if not _is_exec:
 		_is_exec = true
 		InstanceThreadpoolAutoload._push_queue(self)
-	_lock.unlock()
+	false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 func _call():
 	var stamp: int = Time.get_ticks_msec()
-	_lock.lock()
+	false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 	while len(_queue) > 0:
 		var exec: CallHandle = _queue.pop_front()
-		_lock.unlock()
+		false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 		if inst != null:
 			exec._call(inst)
@@ -88,10 +88,10 @@ func _call():
 			InstanceThreadpoolAutoload._push_queue(self)
 			return
 
-		_lock.lock()
+		false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 	_is_exec = false
-	_lock.unlock()
+	false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
 
 func _finalize_inst():
 	_instantiate = false

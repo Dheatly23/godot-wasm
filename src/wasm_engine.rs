@@ -3,9 +3,9 @@ use std::mem::transmute;
 #[cfg(feature = "epoch-timeout")]
 use std::{sync::Arc, thread, time};
 
-use anyhow::{bail, Error};
-use gdnative::export::user_data::Map;
-use gdnative::prelude::*;
+use anyhow::{anyhow, bail, Error};
+use godot::engine::FileAccess;
+use godot::prelude::*;
 use lazy_static::lazy_static;
 #[cfg(feature = "epoch-timeout")]
 use parking_lot::{Condvar, Mutex};
@@ -15,7 +15,7 @@ use wasmtime::{Config, Engine, ExternType, Module};
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
-use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
+use crate::wasm_util::{from_signature, variant_to_option, HOST_MODULE, MODULE_INCLUDES};
 
 #[cfg(feature = "epoch-timeout")]
 #[derive(Default)]
@@ -101,11 +101,11 @@ lazy_static! {
     pub static ref EPOCH: EpochThreadHandle = EpochThreadHandle::default();
 }
 
-#[derive(NativeClass)]
-#[inherit(Reference)]
-#[register_with(Self::register_properties)]
-#[user_data(gdnative::export::user_data::ArcData<WasmModule>)]
+#[derive(GodotClass)]
+#[class(base=RefCounted)]
 pub struct WasmModule {
+    #[base]
+    base: Base<RefCounted>,
     once: Once,
     data: Option<ModuleData>,
 }
@@ -113,17 +113,10 @@ pub struct WasmModule {
 pub struct ModuleData {
     name: GodotString,
     pub module: Module,
-    pub imports: HashMap<String, Instance<WasmModule, Shared>>,
+    pub imports: HashMap<String, Gd<WasmModule>>,
 }
 
 impl WasmModule {
-    fn new(_owner: &Reference) -> Self {
-        Self {
-            once: Once::new(),
-            data: None,
-        }
-    }
-
     pub fn get_data(&self) -> Result<&ModuleData, Error> {
         if let OnceState::Done = self.once.state() {
             Ok(self.data.as_ref().unwrap())
@@ -147,21 +140,20 @@ impl WasmModule {
 
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
-            let module = match VariantDispatch::from(&data) {
-                VariantDispatch::ByteArray(v) => Module::new(&ENGINE, &*v.read()),
-                VariantDispatch::GodotString(v) => Module::new(&ENGINE, &v.to_string()),
-                VariantDispatch::Object(v) => {
-                    let v = <Ref<gdnative::api::File>>::from_variant(&v)?;
-                    let v = unsafe { v.assume_safe() };
-                    Module::new(&ENGINE, &*v.get_buffer(v.get_len()).read())
-                }
-                _ => bail!("Unknown module value {}", data),
-            }?;
+            let module = if let Ok(v) = PackedByteArray::try_from_variant(&data) {
+                Module::new(&ENGINE, &v.to_vec())?
+            } else if let Ok(v) = String::try_from_variant(&data) {
+                Module::new(&ENGINE, &v)?
+            } else if let Ok(v) = <Gd<FileAccess>>::try_from_variant(&data) {
+                Module::new(&ENGINE, &v.get_buffer(v.get_length()).to_vec())?
+            } else {
+                bail!("Unknown module value {}", data)
+            };
 
             let mut deps_map = HashMap::with_capacity(imports.len() as _);
-            for (k, v) in imports.iter() {
-                let k = String::from_variant(&k)?;
-                let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
+            for (k, v) in imports.iter_shared() {
+                let k = String::try_from_variant(&k).map_err(|e| anyhow!("{:?}", e))?;
+                let v = <Gd<WasmModule>>::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))?;
                 deps_map.insert(k, v);
             }
 
@@ -172,37 +164,18 @@ impl WasmModule {
 
                 match deps_map.get(i.module()) {
                     None => bail!("Unknown module {}", i.module()),
-                    Some(m) => m
-                        .script()
-                        .map(
-                            |m| match (i.ty(), m.get_data()?.module.get_export(i.name())) {
-                                (_, None) => {
-                                    bail!("No import in module {} named {}", i.module(), i.name())
-                                }
-                                (ExternType::Func(f1), Some(ExternType::Func(f2))) if f1 == f2 => {
-                                    Ok(())
-                                }
-                                (ExternType::Global(g1), Some(ExternType::Global(g2)))
-                                    if g1 == g2 =>
-                                {
-                                    Ok(())
-                                }
-                                (ExternType::Table(t1), Some(ExternType::Table(t2)))
-                                    if t1 == t2 =>
-                                {
-                                    Ok(())
-                                }
-                                (ExternType::Memory(m1), Some(ExternType::Memory(m2)))
-                                    if m1 == m2 =>
-                                {
-                                    Ok(())
-                                }
-                                (e1, Some(e2)) => {
-                                    bail!("Import type mismatch ({:?} != {:?})", e1, e2)
-                                }
-                            },
-                        )
-                        .unwrap()?,
+                    Some(m) => match (i.ty(), m.bind().get_data()?.module.get_export(i.name())) {
+                        (_, None) => {
+                            bail!("No import in module {} named {}", i.module(), i.name())
+                        }
+                        (ExternType::Func(f1), Some(ExternType::Func(f2))) if f1 == f2 => (),
+                        (ExternType::Global(g1), Some(ExternType::Global(g2))) if g1 == g2 => (),
+                        (ExternType::Table(t1), Some(ExternType::Table(t2))) if t1 == t2 => (),
+                        (ExternType::Memory(m1), Some(ExternType::Memory(m2))) if m1 == m2 => (),
+                        (e1, Some(e2)) => {
+                            bail!("Import type mismatch ({:?} != {:?})", e1, e2)
+                        }
+                    },
                 }
             }
 
@@ -233,49 +206,52 @@ impl WasmModule {
     }
 }
 
-#[methods]
-impl WasmModule {
-    /// Register properties
-    fn register_properties(builder: &ClassBuilder<Self>) {
-        builder
-            .property::<Option<GodotString>>("name")
-            .with_getter(|v, _| v.unwrap_data(|m| Ok(m.name.clone())))
-            .done();
-    }
-
-    /// Initialize and loads module.
-    /// MUST be called for the first time and only once.
-    #[method]
-    fn initialize(
-        &self,
-        #[base] owner: TRef<Reference>,
-        name: GodotString,
-        data: Variant,
-        imports: Dictionary,
-    ) -> Option<Ref<Reference>> {
-        if self._initialize(name, data, imports) {
-            Some(owner.claim())
-        } else {
-            None
+#[godot_api]
+impl RefCountedVirtual for WasmModule {
+    fn init(base: Base<RefCounted>) -> Self {
+        Self {
+            base,
+            once: Once::new(),
+            data: None,
         }
     }
+}
 
-    #[method]
-    fn get_imported_modules(&self) -> Option<VariantArray> {
-        self.unwrap_data(|m| Ok(VariantArray::from_iter(m.imports.values().cloned()).into_shared()))
+#[godot_api]
+impl WasmModule {
+    /// Initialize and loads module.
+    /// MUST be called for the first time and only once.
+    #[func]
+    fn initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> Gd<WasmModule> {
+        let ret = if self._initialize(name, data, imports) {
+            <Gd<WasmModule>>::try_from_instance_id(self.base.instance_id())
+        } else {
+            None
+        };
+        ret.unwrap()
+    }
+
+    #[func]
+    fn get_imported_modules(&self) -> Array<Variant> {
+        self.unwrap_data(|m| {
+            Ok(<Array<Variant>>::from_iter(
+                m.imports.values().map(|v| v.share().to_variant()),
+            ))
+        })
+        .unwrap_or_default()
     }
 
     /// Gets exported functions
-    #[method]
-    fn get_exports(&self) -> Option<Dictionary> {
+    #[func]
+    fn get_exports(&self) -> Dictionary {
         self.unwrap_data(|m| {
-            let ret = Dictionary::new();
-            let params_str = GodotString::from_str("params");
-            let results_str = GodotString::from_str("results");
+            let mut ret = Dictionary::new();
+            let params_str = GodotString::from("params");
+            let results_str = GodotString::from("results");
             for i in m.module.exports() {
                 if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
-                    ret.insert(
+                    ret.set(
                         i.name(),
                         Dictionary::from_iter(
                             [(params_str.to_variant(), p), (results_str.to_variant(), r)]
@@ -284,24 +260,25 @@ impl WasmModule {
                     );
                 }
             }
-            Ok(ret.into_shared())
+            Ok(ret)
         })
+        .unwrap_or_default()
     }
 
     /// Gets host imports signature
-    #[method]
-    fn get_host_imports(&self) -> Option<Dictionary> {
+    #[func]
+    fn get_host_imports(&self) -> Dictionary {
         self.unwrap_data(|m| {
-            let ret = Dictionary::new();
-            let params_str = GodotString::from_str("params");
-            let results_str = GodotString::from_str("results");
+            let mut ret = Dictionary::new();
+            let params_str = GodotString::from("params");
+            let results_str = GodotString::from("results");
             for i in m.module.imports() {
                 if i.module() != HOST_MODULE {
                     continue;
                 }
                 if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
-                    ret.insert(
+                    ret.set(
                         i.name(),
                         Dictionary::from_iter(
                             [(params_str.to_variant(), p), (results_str.to_variant(), r)]
@@ -310,55 +287,53 @@ impl WasmModule {
                     );
                 }
             }
-            Ok(ret.into_shared())
+            Ok(ret)
         })
+        .unwrap_or_default()
     }
 
-    #[method]
-    fn has_function(&self, name: String) -> bool {
+    #[func]
+    fn has_function(&self, name: StringName) -> bool {
         self.unwrap_data(|m| {
             Ok(matches!(
-                m.module.get_export(&name),
+                m.module.get_export(&name.to_string()),
                 Some(ExternType::Func(_))
             ))
         })
         .unwrap_or_default()
     }
 
-    #[method]
-    fn get_signature(&self, name: String) -> Option<Dictionary> {
+    #[func]
+    fn get_signature(&self, name: StringName) -> Dictionary {
         self.unwrap_data(|m| {
-            if let Some(ExternType::Func(f)) = m.module.get_export(&name) {
+            if let Some(ExternType::Func(f)) = m.module.get_export(&name.to_string()) {
                 let (p, r) = from_signature(&f)?;
-                Ok(
-                    Dictionary::from_iter([("params", p), ("results", r)].into_iter())
-                        .into_shared(),
-                )
+                Ok(Dictionary::from_iter(
+                    [("params", p), ("results", r)].into_iter(),
+                ))
             } else {
                 bail!("No function named {}", name);
             }
         })
+        .unwrap_or_default()
     }
 
     // Instantiate module
-    #[method]
-    fn instantiate(
-        &self,
-        #[base] owner: TRef<Reference>,
-        #[opt] host: Option<Dictionary>,
-        #[opt] config: Option<Variant>,
-    ) -> Option<Instance<WasmInstance, Shared>> {
-        let inst = WasmInstance::new_instance();
-        if let Ok(true) = inst.map(|v, _| {
-            if let Some(i) = Instance::from_base(owner.claim()) {
-                v.initialize_(i, host, config)
-            } else {
-                false
-            }
-        }) {
-            Some(inst.into_shared())
+    #[func]
+    fn instantiate(&self, host: Variant, config: Variant) -> Gd<WasmInstance> {
+        let Ok(host) = variant_to_option::<Dictionary>(host) else {
+            panic!("Host is not a dictionary!")
+        };
+        let config = if config.is_nil() { None } else { Some(config) };
+
+        let inst = <Gd<WasmInstance>>::new_default();
+        if inst
+            .bind()
+            .initialize_(Gd::from_instance_id(self.base.instance_id()), host, config)
+        {
+            inst
         } else {
-            None
+            panic!("Error instantiating")
         }
     }
 }

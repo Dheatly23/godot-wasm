@@ -1,51 +1,53 @@
 extends Control
 
-export(float) var anim_seconds: float = 1
+@export var anim_seconds: float = 1
 
-export(Array, PackedScene) var scenes := []
-export(Array, String) var names := []
+@export var scenes := [] # (Array, PackedScene)
+@export var names := [] # (Array, String)
 
-onready var tween := $Tween
-onready var sidebar := $SidebarMenu
-onready var panel := $SidebarMenu/Panel
-onready var detector := $Detect
-onready var view := $ViewportContainer/Viewport
-onready var logger := $LogContainer
+@onready var tween := create_tween()
+@onready var sidebar := $SidebarMenu
+@onready var panel := $SidebarMenu/Panel
+@onready var detector := $Detect
+@onready var view := $SubViewportContainer/SubViewport
+@onready var logger := $LogContainer
 
 var child_scene: Node = null
 
 func _show_menu():
-	tween.interpolate_property(
+	print("Show")
+	tween.kill()
+	tween = create_tween()
+	tween.tween_property(
 		sidebar,
 		"offset",
-		null,
-		0,
-		anim_seconds,
-		Tween.TRANS_CUBIC,
-		Tween.EASE_OUT
-	)
-	tween.start()
+		0.0,
+		anim_seconds
+	).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.play()
 
 func _hide_menu():
+	print(Rect2(detector.position, detector.size))
+	print(get_local_mouse_position())
 	if Rect2(
-		detector.rect_position,
-		detector.rect_size
+		detector.position,
+		detector.size
 	).has_point(get_local_mouse_position()):
 		return
 
-	tween.interpolate_property(
+	print("Hide")
+	tween.kill()
+	tween = create_tween()
+	tween.tween_property(
 		sidebar,
 		"offset",
-		null,
-		1,
-		anim_seconds,
-		Tween.TRANS_CUBIC,
-		Tween.EASE_OUT
-	)
-	tween.start()
+		1.0,
+		anim_seconds
+	).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.play()
 
 func _ready():
-	detector.margin_left -= panel.rect_size.x
+	detector.offset_left -= panel.size.x
 
 	var box := $SidebarMenu/Panel/Scroller/VBox
 
@@ -53,8 +55,8 @@ func _ready():
 		var button := Button.new()
 
 		button.text = names[i]
-		button.align = Button.ALIGN_LEFT
-		button.connect("pressed", self, "__load_scene", [names[i], scenes[i]])
+		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		button.connect("pressed", Callable(self,"__load_scene").bind(names[i], scenes[i]))
 
 		box.add_child(button)
 
@@ -66,8 +68,8 @@ func __load_scene(name: String, scene: PackedScene) -> void:
 	logger.clear_log()
 	logger.add_text("Loading example: %s" % [name])
 
-	child_scene = scene.instance(PackedScene.GEN_EDIT_STATE_DISABLED)
-	child_scene.connect("message_emitted", logger, "add_text")
+	child_scene = scene.instantiate(PackedScene.GEN_EDIT_STATE_DISABLED)
+	child_scene.connect("message_emitted",Callable(logger,"add_text"))
 	view.add_child(child_scene)
 
 func _on_Viewport_gui_input(event):

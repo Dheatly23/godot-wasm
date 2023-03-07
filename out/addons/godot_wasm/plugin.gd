@@ -1,4 +1,4 @@
-tool
+@tool
 extends EditorPlugin
 
 var wasm_file_import_plugin: EditorImportPlugin = null

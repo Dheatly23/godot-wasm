@@ -1,7 +1,7 @@
 # Abstract class for a callable object
 
-tool
-extends Reference
+@tool
+extends RefCounted
 
 func _call():
 	pass

@@ -6,60 +6,21 @@
 ;   [section] ; section goes between []
 ;   param=value ; assign values to parameters
 
-config_version=4
-
-_global_script_classes=[ {
-"base": "",
-"class": "InstanceHandle",
-"language": "GDScript",
-"path": "res://addons/instance_threadpool/InstanceHandle.gd"
-}, {
-"base": "Container",
-"class": "SidebarMenu",
-"language": "GDScript",
-"path": "res://script/SidebarMenu.gd"
-}, {
-"base": "PackedDataContainer",
-"class": "WasmFile",
-"language": "GDScript",
-"path": "res://addons/godot_wasm/WasmFile.gd"
-}, {
-"base": "Reference",
-"class": "WasmHelper",
-"language": "GDScript",
-"path": "res://addons/godot_wasm/WasmHelper.gd"
-}, {
-"base": "Reference",
-"class": "WasmInstance",
-"language": "NativeScript",
-"path": "res://addons/godot_wasm/WasmInstance.gdns"
-}, {
-"base": "Reference",
-"class": "WasmModule",
-"language": "NativeScript",
-"path": "res://addons/godot_wasm/WasmModule.gdns"
-} ]
-_global_script_class_icons={
-"InstanceHandle": "",
-"SidebarMenu": "",
-"WasmFile": "",
-"WasmHelper": "",
-"WasmInstance": "",
-"WasmModule": ""
-}
+config_version=5
 
 [application]
 
 config/name="godot-wasm-example"
 run/main_scene="res://scene/Main.tscn"
-
-[autoload]
-
-InstanceThreadpoolAutoload="*res://addons/instance_threadpool/InstanceThreadpoolAutoload.gd"
+config/features=PackedStringArray("4.0")
 
 [editor_plugins]
 
-enabled=PoolStringArray( "res://addons/godot_wasm/plugin.cfg", "res://addons/instance_threadpool/plugin.cfg" )
+enabled=PackedStringArray("res://addons/godot_wasm/plugin.cfg")
+
+[filesystem]
+
+import/blender/enabled=false
 
 [gui]
 

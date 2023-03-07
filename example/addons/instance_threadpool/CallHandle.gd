@@ -1,7 +1,7 @@
 # Handler for calling WASM instance
 
-tool
-extends Reference
+@tool
+extends RefCounted
 
 var name: String
 var args: Array
@@ -37,7 +37,7 @@ func _call(inst: Object):
 		self,
 		"_error_handle",
 		[],
-		CONNECT_ONESHOT
+		CONNECT_ONE_SHOT
 	)
 
 	var ret = inst.call_wasm(name, args)
