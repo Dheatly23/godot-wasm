@@ -22,7 +22,7 @@ lazy_static = "^1.4"
 slab = "^0.4"
 
 [dependencies.wasmtime]
-version = "^4.0"
+version = "^6.0"
 default-features = false
 features = [
   "cranelift",
