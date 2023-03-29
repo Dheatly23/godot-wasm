@@ -256,13 +256,14 @@ impl WasmInstance {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
+                let s = format!("{:?}", e);
                 error(
                     e.downcast_ref::<Site>()
                         .copied()
                         .unwrap_or_else(|| godot_site!()),
-                    &e,
+                    &s,
                 );
-                base.emit_signal("error_happened", &[format!("{}", e).owned_to_variant()]);
+                base.emit_signal("error_happened", &[s.owned_to_variant()]);
                 None
             }
         }
