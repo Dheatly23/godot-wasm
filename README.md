@@ -25,7 +25,11 @@ But i'm just **really lazy** and perhaps old-school.
 
 * Easily run any WASM module.
 * Supports WAT compilation.
+* Imports any (custom) Godot methods into WASM.
+* Easy access to linear memory, per-element basis or bulk array operation.
+* Catch and throw runtime error/traps with signal.
 * Epoch-based limiter to stop bad-behaving module.
+* Memory limiter to prevent exhaustion.
 * Experimental API for direct Godot object manipulation.
 
 ## Building
