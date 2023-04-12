@@ -12,6 +12,11 @@ pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub epoch_timeout: u64,
 
+    #[cfg(feature = "memory-limiter")]
+    pub max_memory: Option<u64>,
+    #[cfg(feature = "memory-limiter")]
+    pub max_entries: Option<u64>,
+
     pub extern_bind: ExternBindingType,
 }
 
@@ -67,6 +72,11 @@ impl FromVariant for Config {
             epoch_autoreset: get_field(&dict, "engine.epoch_autoreset")?.unwrap_or_default(),
             #[cfg(feature = "epoch-timeout")]
             epoch_timeout: compute_epoch(dict.get("engine.epoch_timeout"))?,
+
+            #[cfg(feature = "memory-limiter")]
+            max_memory: get_field(&dict, "engine.max_memory")?,
+            #[cfg(feature = "memory-limiter")]
+            max_entries: get_field(&dict, "engine.max_entries")?,
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })

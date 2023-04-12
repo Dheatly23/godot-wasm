@@ -10,7 +10,8 @@ use gdnative::prelude::*;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
 use scopeguard::guard;
 use wasmtime::{
-    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
+    AsContextMut, Extern, Instance as InstanceWasm, Memory, ResourceLimiter, Store,
+    StoreContextMut, ValRaw,
 };
 
 use crate::wasm_config::{Config, ExternBindingType};
@@ -49,6 +50,10 @@ pub struct StoreData {
     mutex_raw: *const RawMutex,
     pub config: Config,
     pub error_signal: Option<String>,
+
+    #[cfg(feature = "memory-limiter")]
+    pub memory_limits: MemoryLimit,
+
     #[cfg(feature = "object-registry-compat")]
     pub object_registry: Option<ObjectRegistry>,
 }
@@ -56,6 +61,43 @@ pub struct StoreData {
 // SAFETY: Store data is safely contained within instance data?
 unsafe impl Send for StoreData {}
 unsafe impl Sync for StoreData {}
+
+#[cfg(feature = "memory-limiter")]
+pub struct MemoryLimit {
+    max_memory: u64,
+    max_table_entries: u64,
+}
+
+#[cfg(feature = "memory-limiter")]
+impl ResourceLimiter for MemoryLimit {
+    fn memory_growing(&mut self, current: usize, desired: usize, _: Option<usize>) -> bool {
+        if self.max_memory == u64::MAX {
+            return true;
+        }
+
+        let delta = (desired - current) as u64;
+        if let Some(v) = self.max_memory.checked_sub(delta) {
+            self.max_memory = v;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn table_growing(&mut self, current: u32, desired: u32, _: Option<u32>) -> bool {
+        if self.max_table_entries == u64::MAX {
+            return true;
+        }
+
+        let delta = (desired - current) as u64;
+        if let Some(v) = self.max_table_entries.checked_sub(delta) {
+            self.max_table_entries = v;
+            true
+        } else {
+            false
+        }
+    }
+}
 
 impl InstanceData {
     pub fn instantiate(
@@ -71,6 +113,17 @@ impl InstanceData {
             EPOCH.spawn_thread(|| ENGINE.increment_epoch());
         } else {
             store.epoch_deadline_callback(|_| Ok(EPOCH_DEADLINE));
+        }
+
+        #[cfg(feature = "memory-limiter")]
+        {
+            if let Some(v) = config.max_memory {
+                store.data_mut().memory_limits.max_memory = v;
+            }
+            if let Some(v) = config.max_entries {
+                store.data_mut().memory_limits.max_table_entries = v;
+            }
+            store.limiter(|data| &mut data.memory_limits);
         }
 
         match config.extern_bind {
@@ -295,6 +348,13 @@ impl WasmInstance {
                             None => Config::default(),
                         },
                         error_signal: None,
+
+                        #[cfg(feature = "memory-limiter")]
+                        memory_limits: MemoryLimit {
+                            max_memory: u64::MAX,
+                            max_table_entries: u64::MAX,
+                        },
+
                         #[cfg(feature = "object-registry-compat")]
                         object_registry: None,
                     },
