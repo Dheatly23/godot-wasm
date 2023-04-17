@@ -15,7 +15,7 @@ godot = { git = "https://github.com/godot-rust/gdext", branch = "master" }
 parking_lot = "^0.12"
 anyhow = "^1.0"
 lazy_static = "^1.4"
-slab = "^0.4"
+slab = { version = "^0.4", optional = true }
 
 [dependencies.wasmtime]
 version = "^6.0"
@@ -29,7 +29,7 @@ features = [
 [features]
 default = ["epoch-timeout"]
 epoch-timeout = []
-object-registry-compat = []
+object-registry-compat = ["dep:slab"]
 object-registry-extern = []
 object-registry = ["object-registry-compat", "object-registry-extern"]
 more-precise-timer = []
