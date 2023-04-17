@@ -9,10 +9,16 @@ use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
 use scopeguard::guard;
+#[cfg(feature = "wasi")]
+use wasmtime::Linker;
 use wasmtime::{
     AsContextMut, Extern, Instance as InstanceWasm, Memory, ResourceLimiter, Store,
     StoreContextMut, ValRaw,
 };
+#[cfg(feature = "wasi")]
+use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
+#[cfg(feature = "wasi")]
+use wasmtime_wasi::WasiCtx;
 
 use crate::wasm_config::{Config, ExternBindingType};
 #[cfg(feature = "epoch-timeout")]
@@ -56,6 +62,9 @@ pub struct StoreData {
 
     #[cfg(feature = "object-registry-compat")]
     pub object_registry: Option<ObjectRegistry>,
+
+    #[cfg(feature = "wasi")]
+    pub wasi_ctx: Option<WasiCtx>,
 }
 
 // SAFETY: Store data is safely contained within instance data?
@@ -105,10 +114,8 @@ impl InstanceData {
         module: Instance<WasmModule, Shared>,
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
-        let config = store.data().config;
-
         #[cfg(feature = "epoch-timeout")]
-        if config.with_epoch {
+        if store.data().config.with_epoch {
             store.epoch_deadline_trap();
             EPOCH.spawn_thread(|| ENGINE.increment_epoch());
         } else {
@@ -117,16 +124,32 @@ impl InstanceData {
 
         #[cfg(feature = "memory-limiter")]
         {
-            if let Some(v) = config.max_memory {
+            if let Some(v) = store.data().config.max_memory {
                 store.data_mut().memory_limits.max_memory = v;
             }
-            if let Some(v) = config.max_entries {
+            if let Some(v) = store.data().config.max_entries {
                 store.data_mut().memory_limits.max_table_entries = v;
             }
             store.limiter(|data| &mut data.memory_limits);
         }
 
-        match config.extern_bind {
+        #[cfg(feature = "wasi")]
+        let wasi_linker = if store.data().config.with_wasi {
+            let mut builder = WasiCtxBuilder::new();
+            if store.data().config.wasi_use_stdio {
+                builder = builder.inherit_stdout().inherit_stderr();
+            }
+            builder = builder.args(&store.data().config.wasi_args)?;
+
+            store.data_mut().wasi_ctx = Some(builder.build());
+            let mut r = <Linker<StoreData>>::new(&ENGINE);
+            add_to_linker(&mut r, |data| data.wasi_ctx.as_mut().unwrap())?;
+            Some(r)
+        } else {
+            None
+        };
+
+        match store.data().config.extern_bind {
             ExternBindingType::None => (),
             #[cfg(feature = "object-registry-compat")]
             ExternBindingType::Registry => {
@@ -142,12 +165,13 @@ impl InstanceData {
             module: &ModuleData,
             insts: &mut InstMap,
             host: &Option<HashMap<String, Extern>>,
+            #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<StoreData>>,
         ) -> Result<InstanceWasm, Error> {
             let it = module.module.imports();
             let mut imports = Vec::with_capacity(it.len());
 
             for i in it {
-                match (i.module(), store.data().config) {
+                match (i.module(), &store.data().config) {
                     (HOST_MODULE, _) => {
                         if let Some(host) = host.as_ref() {
                             if let Some(v) = host.get(i.name()) {
@@ -185,6 +209,14 @@ impl InstanceData {
                     _ => (),
                 }
 
+                #[cfg(feature = "wasi")]
+                if let Some(l) = wasi_linker.as_ref() {
+                    if let Some(v) = l.get_by_import(&mut *store, &i) {
+                        imports.push(v);
+                        continue;
+                    }
+                }
+
                 if let Some(v) = module.imports.get(i.module()) {
                     let v = loop {
                         match insts.get(v.base()) {
@@ -192,7 +224,16 @@ impl InstanceData {
                             None => {
                                 let t = v
                                     .script()
-                                    .map(|m| f(&mut *store, m.get_data()?, &mut *insts, host))
+                                    .map(|m| {
+                                        f(
+                                            &mut *store,
+                                            m.get_data()?,
+                                            &mut *insts,
+                                            host,
+                                            #[cfg(feature = "wasi")]
+                                            wasi_linker.as_deref(),
+                                        )
+                                    })
                                     .unwrap()?;
                                 insts.insert(v.base().clone(), t);
                             }
@@ -220,7 +261,14 @@ impl InstanceData {
             .script()
             .map(move |m| {
                 let mut insts = HashMap::new();
-                f(sp, m.get_data()?, &mut insts, &host)
+                f(
+                    sp,
+                    m.get_data()?,
+                    &mut insts,
+                    &host,
+                    #[cfg(feature = "wasi")]
+                    wasi_linker.as_ref(),
+                )
             })
             .unwrap()?;
 
@@ -357,6 +405,9 @@ impl WasmInstance {
 
                         #[cfg(feature = "object-registry-compat")]
                         object_registry: None,
+
+                        #[cfg(feature = "wasi")]
+                        wasi_ctx: None,
                     },
                 ),
                 module,

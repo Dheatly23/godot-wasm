@@ -3,7 +3,7 @@ use gdnative::prelude::*;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 
-#[derive(Clone, Copy, Default, Debug, Eq, PartialEq, ToVariant)]
+#[derive(Clone, Default, Debug, Eq, PartialEq, ToVariant)]
 pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
@@ -16,6 +16,13 @@ pub struct Config {
     pub max_memory: Option<u64>,
     #[cfg(feature = "memory-limiter")]
     pub max_entries: Option<u64>,
+
+    #[cfg(feature = "wasi")]
+    pub with_wasi: bool,
+    #[cfg(feature = "wasi")]
+    pub wasi_use_stdio: bool,
+    #[cfg(feature = "wasi")]
+    pub wasi_args: Vec<String>,
 
     pub extern_bind: ExternBindingType,
 }
@@ -77,6 +84,13 @@ impl FromVariant for Config {
             max_memory: get_field(&dict, "engine.max_memory")?,
             #[cfg(feature = "memory-limiter")]
             max_entries: get_field(&dict, "engine.max_entries")?,
+
+            #[cfg(feature = "wasi")]
+            with_wasi: get_field(&dict, "engine.use_wasi")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_use_stdio: get_field(&dict, "wasi.use_stdio")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_args: get_field(&dict, "wasi.args")?.unwrap_or_default(),
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })
