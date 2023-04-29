@@ -44,6 +44,10 @@ pub const MODULE_INCLUDES: &[&str] = &[
     OBJREGISTRY_MODULE,
     #[cfg(feature = "object-registry-extern")]
     EXTERNREF_MODULE,
+    #[cfg(feature = "wasi")]
+    "wasi_snapshot_preview0",
+    #[cfg(feature = "wasi")]
+    "wasi_snapshot_preview1",
 ];
 
 pub const MEMORY_EXPORT: &str = "memory";

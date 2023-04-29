@@ -11,6 +11,8 @@ mod wasm_util;
 
 use gdnative::prelude::*;
 
+#[cfg(feature = "wasi")]
+use crate::wasi_ctx::WasiContext;
 use crate::wasm_engine::WasmModule;
 use crate::wasm_instance::WasmInstance;
 
@@ -18,6 +20,8 @@ use crate::wasm_instance::WasmInstance;
 fn init(handle: InitHandle) {
     handle.add_class::<WasmModule>();
     handle.add_class::<WasmInstance>();
+    #[cfg(feature = "wasi")]
+    handle.add_class::<WasiContext>();
 }
 
 // Macro that creates the entry-points of the dynamic library.

@@ -34,6 +34,13 @@ there to open it. There are many examples to choose from:
   to think, to prevent infinite loop. The robot is also ran under separate
   thread to prevent locking the main thread.
 
+* WASI RustPython
+  (OPTIONAL) This example uses WASI to execute Python code.
+  Requires [RustPython](https://github.com/RustPython/RustPython)
+  standalone WebAssembly binary,
+  which is not shipped because of it's size (~20 MB).
+  Put the binary file at `wasm/rustpython.wasm` and run this example.
+
 ## Licensing
 
 Unless otherwise noted, all script/code are licensed under Apache-2.0.
