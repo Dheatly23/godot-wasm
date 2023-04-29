@@ -1,3 +1,5 @@
+#[cfg(feature = "wasi")]
+mod wasi_ctx;
 mod wasm_config;
 mod wasm_engine;
 #[cfg(feature = "object-registry-extern")]

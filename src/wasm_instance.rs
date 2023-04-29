@@ -20,6 +20,8 @@ use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::WasiCtx;
 
+#[cfg(feature = "wasi")]
+use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::{Config, ExternBindingType};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_engine::EPOCH;
@@ -136,12 +138,13 @@ impl InstanceData {
         #[cfg(feature = "wasi")]
         let wasi_linker = if store.data().config.with_wasi {
             let mut builder = WasiCtxBuilder::new();
-            if store.data().config.wasi_use_stdio {
-                builder = builder.inherit_stdout().inherit_stderr();
-            }
             builder = builder.args(&store.data().config.wasi_args)?;
 
-            store.data_mut().wasi_ctx = Some(builder.build());
+            store.data_mut().wasi_ctx = if let Some(ctx) = &store.data().config.wasi_context {
+                Some(WasiContext::build_ctx(ctx.clone(), builder)?)
+            } else {
+                Some(builder.inherit_stdout().inherit_stderr().build())
+            };
             let mut r = <Linker<StoreData>>::new(&ENGINE);
             add_to_linker(&mut r, |data| data.wasi_ctx.as_mut().unwrap())?;
             Some(r)

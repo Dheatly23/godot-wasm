@@ -614,11 +614,13 @@ name = "godot-wasm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "gdnative",
  "lazy_static",
  "parking_lot",
  "scopeguard",
  "slab",
+ "wasi-common",
  "wasmtime",
  "wasmtime-wasi",
 ]

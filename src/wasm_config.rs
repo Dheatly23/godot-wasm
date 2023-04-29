@@ -1,9 +1,11 @@
 use gdnative::prelude::*;
 
+#[cfg(feature = "wasi")]
+use crate::wasi_ctx::WasiContext;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 
-#[derive(Clone, Default, Debug, Eq, PartialEq, ToVariant)]
+#[derive(Clone, Default, Debug, ToVariant)]
 pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
@@ -20,14 +22,14 @@ pub struct Config {
     #[cfg(feature = "wasi")]
     pub with_wasi: bool,
     #[cfg(feature = "wasi")]
-    pub wasi_use_stdio: bool,
+    pub wasi_context: Option<Instance<WasiContext>>,
     #[cfg(feature = "wasi")]
     pub wasi_args: Vec<String>,
 
     pub extern_bind: ExternBindingType,
 }
 
-fn get_field<T: FromVariant + Default>(
+fn get_field<T: FromVariant>(
     d: &Dictionary,
     name: &'static str,
 ) -> Result<Option<T>, FromVariantError> {
@@ -88,7 +90,7 @@ impl FromVariant for Config {
             #[cfg(feature = "wasi")]
             with_wasi: get_field(&dict, "engine.use_wasi")?.unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_use_stdio: get_field(&dict, "wasi.use_stdio")?.unwrap_or_default(),
+            wasi_context: get_field(&dict, "wasi.wasi_context")?,
             #[cfg(feature = "wasi")]
             wasi_args: get_field(&dict, "wasi.args")?.unwrap_or_default(),
 
