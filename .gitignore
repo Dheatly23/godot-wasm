@@ -1,5 +1,4 @@
 /target
 /Test WASM
-deny.toml
 /out/addons/godot_wasm/bin/*
-!/out/addons/godot_wasm/bin/.gitkeep
+!.gitkeep
