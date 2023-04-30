@@ -50,7 +50,7 @@ impl WasiContext {
                         .stderr(Box::new(ContextStderr::new(b.claim())));
                 }
 
-                for (host, guest) in o.physical_mount.iter() {
+                for (guest, host) in o.physical_mount.iter() {
                     ctx = site_context!(ctx.preopened_dir(
                         site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority()))?,
                         guest,
@@ -125,14 +125,14 @@ impl WasiContext {
     #[method]
     fn mount_physical_dir(&mut self, host_path: String, #[opt] guest_path: String) {
         self.physical_mount
-            .insert(host_path.into(), guest_path.into());
+            .insert(guest_path.into(), host_path.into());
     }
 
     #[method]
     fn write_memory_file(&mut self, path: String, data: PoolArray<u8>) {
         Self::wrap_result(move || {
             let path = PathBuf::from(path);
-            if !path.is_absolute() {
+            if !path.has_root() {
                 bail_with_site!("{} is not absolute!", path.display());
             }
 
