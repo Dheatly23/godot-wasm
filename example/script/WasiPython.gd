@@ -1,36 +1,34 @@
-extends Node
+extends Control
 
 signal message_emitted(msg)
 
+const PROGRAM := """
+print('Hello from RustPython!')
+
+print('First 10 fibonacci numbers:')
+
+a, b = 1, 1
+for i in range(10):
+	print(a)
+	a, b = b, a + b
+"""
+
 export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
+
+onready var file: WasmFile = load(wasm_file)
+onready var wasi_ctx: WasiContext = WasiContext.new()
 
 # Instance threadpool version
 func _ready():
-	var f: WasmFile = load(wasm_file)
-
-	var module := f.get_module()
+	var module := file.get_module()
 	if module == null:
 		__log("Cannot compile module " + wasm_file)
 		return
 
-	var wasi_ctx = WasiContext.new()
 	wasi_ctx.connect("stdout_emit", self, "__bin_log")
 	wasi_ctx.connect("stderr_emit", self, "__bin_log")
 	wasi_ctx.bypass_stdio = false
-	wasi_ctx.mount_physical_dir(".", ".")
-
-	var instance := InstanceHandle.new()
-	instance.instantiate(
-		module,
-		{},
-		{
-			"engine.use_epoch": true,
-			"engine.use_wasi": true,
-			"wasi.wasi_context": wasi_ctx,
-			"wasi.args": ["rustpython.wasm", "--help"],
-		}
-	)
-	instance.call_queue("__main_void", [])
+	wasi_ctx.write_memory_file("/test.py", PROGRAM.to_utf8())
 
 func __log(msg: String) -> void:
 	emit_signal("message_emitted", msg)
@@ -51,7 +49,7 @@ func __bin_log(msg: PoolByteArray) -> void:
 #	wasi_ctx.connect("stdout_emit", self, "__bin_log")
 #	wasi_ctx.connect("stderr_emit", self, "__bin_log")
 #	wasi_ctx.bypass_stdio = false
-#	wasi_ctx.mount_physical_dir(".", ".")
+#	wasi_ctx.write_memory_file("/test.py", PROGRAM.to_utf8())
 #
 #	var instance = WasmInstance.new().initialize(
 #		module,
@@ -60,7 +58,26 @@ func __bin_log(msg: PoolByteArray) -> void:
 #			"engine.use_epoch": true,
 #			"engine.use_wasi": true,
 #			"wasi.wasi_context": wasi_ctx,
-#			"wasi.args": ["rustpython.wasm", "--help"],
+#			"wasi.args": ["rustpython.wasm", "test.py"],
 #		}
 #	)
 #	instance.call_wasm("__main_void", [])
+
+func __run():
+	var module := file.get_module()
+	if module == null:
+		__log("Cannot compile module " + wasm_file)
+		return
+
+	var instance := InstanceHandle.new()
+	instance.instantiate(
+		module,
+		{},
+		{
+			"engine.use_epoch": true,
+			"engine.use_wasi": true,
+			"wasi.wasi_context": wasi_ctx,
+			"wasi.args": ["rustpython.wasm", "test.py"],
+		}
+	)
+	instance.call_queue("_start", [])
