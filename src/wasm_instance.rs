@@ -234,7 +234,7 @@ impl InstanceData {
                                             &mut *insts,
                                             host,
                                             #[cfg(feature = "wasi")]
-                                            wasi_linker.as_deref(),
+                                            *&wasi_linker,
                                         )
                                     })
                                     .unwrap()?;
