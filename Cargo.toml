@@ -35,7 +35,7 @@ features = [
 
 
 [features]
-default = ["epoch-timeout", "memory-limiter", "object-registry"]
+default = ["epoch-timeout", "memory-limiter", "object-registry", "wasi"]
 memory-limiter = []
 epoch-timeout = []
 object-registry-compat = ["dep:slab"]
