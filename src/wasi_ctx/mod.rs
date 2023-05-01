@@ -1,9 +1,12 @@
 mod memfs;
 mod stdio;
 
+use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::HashMap;
-use std::path::{Component, PathBuf};
+use std::mem;
+use std::path::{Component, Path, PathBuf};
+use std::slice;
 use std::sync::{Arc, Weak};
 
 use anyhow::Error;
@@ -129,15 +132,10 @@ impl WasiContext {
     }
 
     #[method]
-    fn write_memory_file(&mut self, path: String, data: PoolArray<u8>) {
-        Self::wrap_result(move || {
-            let path = PathBuf::from(path);
-            if !path.has_root() {
-                bail_with_site!("{} is not absolute!", path.display());
-            }
-
-            let mut node: Arc<dyn Node> = self.memfs_root.clone();
-            for c in path.parent().unwrap_or(&path).components() {
+    fn write_memory_file(&mut self, path: String, data: Variant) {
+        fn f(root: Arc<Dir>, path: &Path, data: Cow<'_, [u8]>) -> Result<(), Error> {
+            let mut node: Arc<dyn Node> = root;
+            for c in path.parent().unwrap_or(path).components() {
                 let n = match c {
                     Component::CurDir => continue,
                     Component::ParentDir => node.parent(),
@@ -168,16 +166,37 @@ impl WasiContext {
                     let Some(file) = v.get().as_any().downcast_ref::<File>() else { bail_with_site!("Is a directory") };
                     let mut content = file.content.write();
                     content.clear();
-                    content.extend_from_slice(&*data.read());
+                    content.extend_from_slice(&data);
                 }
                 Entry::Vacant(v) => {
                     let mut file = File::new(Arc::downgrade(&node));
-                    *file.content.get_mut() = data.to_vec();
+                    *file.content.get_mut() = data.into_owned();
                     v.insert(Arc::new(file));
                 }
             }
 
             Ok(())
+        }
+
+        unsafe fn as_bytes<T: Copy>(s: &[T]) -> &[u8] {
+            slice::from_raw_parts(s.as_ptr() as *const u8, s.len() * mem::size_of::<T>())
+        }
+
+        Self::wrap_result(move || {
+            let path = PathBuf::from(path);
+            if !path.has_root() {
+                bail_with_site!("{} is not absolute!", path.display());
+            }
+
+            let f = |data| f(self.memfs_root.clone(), &path, data);
+
+            match data.dispatch() {
+                VariantDispatch::ByteArray(v) => f((*v.read()).into()),
+                VariantDispatch::GodotString(v) => f(v.to_string().as_bytes().into()),
+                VariantDispatch::Int32Array(v) => unsafe { f(as_bytes(&*v.read()).into()) },
+                VariantDispatch::Float32Array(v) => unsafe { f(as_bytes(&*v.read()).into()) },
+                _ => bail_with_site!("Unknown value {}", data),
+            }
         });
     }
 }
