@@ -31,6 +31,7 @@ But i'm just **really lazy** and perhaps old-school.
 * Epoch-based limiter to stop bad-behaving module.
 * Memory limiter to prevent exhaustion.
 * Experimental API for direct Godot object manipulation.
+* WASI common API with in-memory filesystem (feature-gated).
 
 ## Building
 To build the addon:
