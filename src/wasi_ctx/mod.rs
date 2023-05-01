@@ -126,9 +126,11 @@ impl WasiContext {
     }
 
     #[method]
-    fn mount_physical_dir(&mut self, host_path: String, #[opt] guest_path: String) {
-        self.physical_mount
-            .insert(guest_path.into(), host_path.into());
+    fn mount_physical_dir(&mut self, host_path: String, #[opt] guest_path: Option<String>) {
+        self.physical_mount.insert(
+            guest_path.unwrap_or_else(|| host_path.clone()).into(),
+            host_path.into(),
+        );
     }
 
     #[method]
