@@ -214,4 +214,45 @@ impl WasiContext {
             }
         });
     }
+
+    #[method]
+    fn read_memory_file(
+        &self,
+        path: String,
+        length: usize,
+        #[opt] offset: usize,
+    ) -> Option<PoolArray<u8>> {
+        Self::wrap_result(move || {
+            let path = PathBuf::from(path);
+
+            let mut node: Arc<dyn Node> = self.memfs_root.clone();
+            for c in path.parent().unwrap_or(&path).components() {
+                let n = match c {
+                    Component::CurDir => continue,
+                    Component::ParentDir => node.parent(),
+                    Component::RootDir => continue,
+                    Component::Normal(name) => node.child(name.to_str().unwrap()),
+                    Component::Prefix(_) => bail_with_site!("Windows-like paths is not supported"),
+                };
+                if let Some(n) = n {
+                    node = n;
+                } else {
+                    bail_with_site!("Path not found!");
+                }
+            }
+
+            let Some(name) = path.file_name().and_then(|v| v.to_str()) else { return Ok(PoolArray::new()) };
+            let Some(n) = node.as_any().downcast_ref::<Dir>() else { bail_with_site!("Cannot create directory") };
+            let content = n.content.read();
+            let Some(file) = content.get(name).and_then(|v| v.as_any().downcast_ref::<File>()) else { bail_with_site!("File not found") };
+
+            let content = file.content.read();
+            let end = match offset.checked_add(length) {
+                Some(v) => v.min(content.len()),
+                None => content.len(),
+            };
+            let s = &content[offset.min(content.len())..end];
+            Ok(PoolArray::from_slice(s))
+        })
+    }
 }
