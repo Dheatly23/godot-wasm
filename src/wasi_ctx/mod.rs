@@ -1,9 +1,9 @@
 mod memfs;
 mod stdio;
 
-use std::borrow::Cow;
 use std::collections::btree_map::Entry;
 use std::collections::HashMap;
+use std::io::{Cursor, Write};
 use std::mem;
 use std::path::{Component, Path, PathBuf};
 use std::slice;
@@ -134,8 +134,8 @@ impl WasiContext {
     }
 
     #[method]
-    fn write_memory_file(&mut self, path: String, data: Variant) {
-        fn f(root: Arc<Dir>, path: &Path, data: Cow<'_, [u8]>) -> Result<(), Error> {
+    fn write_memory_file(&mut self, path: String, data: Variant, #[opt] offset: Option<usize>) {
+        fn f(root: Arc<Dir>, path: &Path, data: &[u8], offset: Option<usize>) -> Result<(), Error> {
             let mut node: Arc<dyn Node> = root;
             for c in path.parent().unwrap_or(path).components() {
                 let n = match c {
@@ -167,12 +167,28 @@ impl WasiContext {
                 Entry::Occupied(v) => {
                     let Some(file) = v.get().as_any().downcast_ref::<File>() else { bail_with_site!("Is a directory") };
                     let mut content = file.content.write();
-                    content.clear();
-                    content.extend_from_slice(&data);
+                    if let Some(offset) = offset {
+                        let mut cursor = Cursor::new(&mut *content);
+                        cursor.set_position(offset as _);
+                        cursor.write_all(data)?;
+                    } else {
+                        content.clear();
+                        content.extend_from_slice(data);
+                    }
                 }
                 Entry::Vacant(v) => {
                     let mut file = File::new(Arc::downgrade(&node));
-                    *file.content.get_mut() = data.into_owned();
+                    *file.content.get_mut() = if let Some(offset) = offset {
+                        let mut v = match offset.checked_add(data.len()) {
+                            Some(v) => Vec::with_capacity(v),
+                            None => bail_with_site!("Data too long!"),
+                        };
+                        v.resize(offset, 0);
+                        v.extend_from_slice(data);
+                        v
+                    } else {
+                        data.to_owned()
+                    };
                     v.insert(Arc::new(file));
                 }
             }
@@ -186,17 +202,14 @@ impl WasiContext {
 
         Self::wrap_result(move || {
             let path = PathBuf::from(path);
-            if !path.has_root() {
-                bail_with_site!("{} is not absolute!", path.display());
-            }
 
-            let f = |data| f(self.memfs_root.clone(), &path, data);
+            let f = |data| f(self.memfs_root.clone(), &path, data, offset);
 
             match data.dispatch() {
-                VariantDispatch::ByteArray(v) => f((*v.read()).into()),
-                VariantDispatch::GodotString(v) => f(v.to_string().as_bytes().into()),
-                VariantDispatch::Int32Array(v) => unsafe { f(as_bytes(&*v.read()).into()) },
-                VariantDispatch::Float32Array(v) => unsafe { f(as_bytes(&*v.read()).into()) },
+                VariantDispatch::ByteArray(v) => f(&*v.read()),
+                VariantDispatch::GodotString(v) => f(v.to_string().as_bytes()),
+                VariantDispatch::Int32Array(v) => unsafe { f(as_bytes(&*v.read())) },
+                VariantDispatch::Float32Array(v) => unsafe { f(as_bytes(&*v.read())) },
                 _ => bail_with_site!("Unknown value {}", data),
             }
         });
