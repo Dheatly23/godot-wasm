@@ -90,5 +90,5 @@ func __cb_write_file(_v):
 	__log("data/output.json : %s" % r.result)
 
 func __run_custom():
-	wasi_ctx.write_memory_file("test.py", code_textbox.text)
-	__run("test.py")
+	wasi_ctx.write_memory_file("test.js", code_textbox.text)
+	__run("test.js")
