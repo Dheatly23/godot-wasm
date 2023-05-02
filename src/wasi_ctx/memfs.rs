@@ -683,6 +683,19 @@ impl WasiFile for CapAccessor<OpenFile> {
         Err(Error::not_supported())
     }
 
+    async fn get_filestat(&self) -> Result<Filestat, Error> {
+        Ok(Filestat {
+            device_id: 0,
+            inode: 0,
+            filetype: self.file.filetype(),
+            nlink: 0,
+            size: self.file.content.read().len(),
+            atim: None,
+            mtim: None,
+            ctim: None,
+        })
+    }
+
     async fn set_filestat_size(&self, size: u64) -> Result<(), Error> {
         if !self.capability.write {
             return Err(Error::perm());
