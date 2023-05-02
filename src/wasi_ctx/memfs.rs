@@ -689,7 +689,7 @@ impl WasiFile for CapAccessor<OpenFile> {
             inode: 0,
             filetype: self.file.filetype(),
             nlink: 0,
-            size: self.file.content.read().len(),
+            size: self.file.content.read().len() as _,
             atim: None,
             mtim: None,
             ctim: None,
