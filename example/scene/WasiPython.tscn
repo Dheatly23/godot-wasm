@@ -18,16 +18,16 @@ mouse_filter = 2
 
 [node name="Panel" type="PanelContainer" parent="Container"]
 margin_left = 216.0
-margin_top = 110.0
+margin_top = 126.0
 margin_right = 807.0
-margin_bottom = 489.0
+margin_bottom = 473.0
 rect_clip_content = true
 
 [node name="Margin" type="MarginContainer" parent="Container/Panel"]
 margin_left = 2.0
 margin_top = 2.0
 margin_right = 589.0
-margin_bottom = 377.0
+margin_bottom = 345.0
 custom_constants/margin_right = 3
 custom_constants/margin_top = 3
 custom_constants/margin_left = 3
@@ -37,33 +37,33 @@ custom_constants/margin_bottom = 3
 margin_left = 3.0
 margin_top = 3.0
 margin_right = 584.0
-margin_bottom = 372.0
+margin_bottom = 340.0
 custom_constants/separation = 3
 
 [node name="VBox" type="VBoxContainer" parent="Container/Panel/Margin/Tab"]
 margin_right = 490.0
-margin_bottom = 369.0
+margin_bottom = 337.0
 custom_constants/separation = 5
 
 [node name="Code" type="TextEdit" parent="Container/Panel/Margin/Tab/VBox"]
 margin_right = 490.0
-margin_bottom = 352.0
-rect_min_size = Vector2( 490, 352 )
+margin_bottom = 320.0
+rect_min_size = Vector2( 490, 320 )
 text = "# Insert Python Code Here"
 highlight_current_line = true
 show_line_numbers = true
 draw_tabs = true
 
 [node name="CustomCode" type="Button" parent="Container/Panel/Margin/Tab/VBox"]
-margin_top = 357.0
+margin_top = 325.0
 margin_right = 490.0
-margin_bottom = 369.0
+margin_bottom = 337.0
 text = "Execute"
 
 [node name="List" type="VBoxContainer" parent="Container/Panel/Margin/Tab"]
 margin_left = 493.0
 margin_right = 581.0
-margin_bottom = 369.0
+margin_bottom = 337.0
 custom_constants/separation = 3
 
 [node name="Label" type="Label" parent="Container/Panel/Margin/Tab/List"]

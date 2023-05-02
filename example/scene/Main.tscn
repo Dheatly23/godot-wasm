@@ -30,6 +30,16 @@ anchor_bottom = 1.0
 mouse_filter = 2
 color = Color( 0, 0, 0, 1 )
 
+[node name="LogContainer" parent="." instance=ExtResource( 5 )]
+anchor_top = 1.0
+anchor_right = 0.0
+margin_left = 20.0
+margin_top = -20.0
+margin_right = 20.0
+margin_bottom = -20.0
+grow_vertical = 0
+label_count = 50
+
 [node name="ViewportContainer" type="ViewportContainer" parent="."]
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -81,14 +91,6 @@ margin_bottom = 10.0
 margin_right = 54.0
 margin_bottom = 8.0
 text = "Examples:"
-
-[node name="LogContainer" parent="." instance=ExtResource( 5 )]
-anchor_top = 1.0
-anchor_right = 0.0
-margin_left = 20.0
-margin_bottom = -20.0
-grow_vertical = 0
-label_count = 50
 
 [connection signal="mouse_entered" from="." to="." method="_hide_menu"]
 [connection signal="mouse_entered" from="Detect" to="." method="_show_menu"]
