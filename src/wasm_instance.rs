@@ -6,9 +6,10 @@ use anyhow::{bail, Error};
 use godot::prelude::*;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
 use scopeguard::guard;
+#[cfg(feature = "memory-limiter")]
+use wasmtime::ResourceLimiter;
 use wasmtime::{
-    AsContextMut, Extern, Instance as InstanceWasm, Memory, ResourceLimiter, Store,
-    StoreContextMut, ValRaw,
+    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
 };
 
 use crate::wasm_config::{Config, ExternBindingType};
@@ -38,6 +39,10 @@ pub struct WasmInstance {
     base: Base<RefCounted>,
     once: Once,
     data: Option<InstanceData>,
+
+    #[export(get = get_module)]
+    #[allow(dead_code)]
+    module: (),
 }
 
 pub struct InstanceData {
@@ -420,6 +425,7 @@ impl RefCountedVirtual for WasmInstance {
             base,
             once: Once::new(),
             data: None,
+            module: (),
         }
     }
 }
@@ -449,6 +455,14 @@ impl WasmInstance {
             None
         };
         ret.unwrap()
+    }
+
+    #[func]
+    fn get_module(&self) -> Variant {
+        match self.unwrap_data(|m| Ok(m.module.share())) {
+            Some(v) => v.to_variant(),
+            None => Variant::nil(),
+        }
     }
 
     #[func]

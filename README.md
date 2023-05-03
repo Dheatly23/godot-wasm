@@ -28,14 +28,16 @@ But i'm just **really lazy** and perhaps old-school.
 * [X] Easily run any WASM module.
 * [X] Supports WAT compilation.
 * [X] Imports any (custom) Godot methods into WASM.
+
   **NOTE:** Not supports `Callable` convention, only legacy (Godot 3) way.
+
 * [X] Easy access to linear memory, per-element basis or bulk array operation.
-  **NOTE:** Cannot be accessed inside custom import function,
-  which is a *very* common pattern.
 * [ ] Catch and throw runtime error/traps with signal.
+
   **NOTE:** Signal support is coming.
+
 * [X] Epoch-based limiter to stop bad-behaving module.
-* [ ] Memory limiter to prevent exhaustion.
+* [X] Memory limiter to prevent exhaustion.
 * [ ] Experimental API for direct Godot object manipulation.
 
 ## Building

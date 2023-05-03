@@ -27,7 +27,8 @@ features = [
 ]
 
 [features]
-default = ["epoch-timeout"]
+default = ["epoch-timeout", "memory-limiter"]
+memory-limiter = []
 epoch-timeout = []
 object-registry-compat = ["dep:slab"]
 object-registry-extern = []

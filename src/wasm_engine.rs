@@ -108,6 +108,10 @@ pub struct WasmModule {
     base: Base<RefCounted>,
     once: Once,
     data: Option<ModuleData>,
+
+    #[export(get = get_name)]
+    #[allow(dead_code)]
+    name: (),
 }
 
 pub struct ModuleData {
@@ -213,6 +217,7 @@ impl RefCountedVirtual for WasmModule {
             base,
             once: Once::new(),
             data: None,
+            name: (),
         }
     }
 }
@@ -229,6 +234,12 @@ impl WasmModule {
             None
         };
         ret.unwrap()
+    }
+
+    #[func]
+    fn get_name(&self) -> StringName {
+        self.unwrap_data(|m| Ok(StringName::from(&m.name)))
+            .unwrap_or_default()
     }
 
     #[func]

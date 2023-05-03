@@ -62,9 +62,9 @@ impl FromVariant for Config {
             epoch_timeout: compute_epoch(dict.get("engine.epoch_timeout"))?,
 
             #[cfg(feature = "memory-limiter")]
-            max_memory: get_field(&dict, "engine.max_memory")?,
+            max_memory: get_field::<i64>(&dict, "engine.max_memory")?.map(|v| v as _),
             #[cfg(feature = "memory-limiter")]
-            max_entries: get_field(&dict, "engine.max_entries")?,
+            max_entries: get_field::<i64>(&dict, "engine.max_entries")?.map(|v| v as _),
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })
