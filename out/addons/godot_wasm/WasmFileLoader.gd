@@ -43,7 +43,7 @@ func _get_import_options(path: String, preset: int) -> Array[Dictionary]:
 		name = "imports",
 		default_value = [],
 		property_hint = PROPERTY_HINT_RESOURCE_TYPE,
-		hint_string = "17/19:PackedDataContainer",
+		hint_string = "%s/%s:PackedDataContainer" % [TYPE_OBJECT, TYPE_OBJECT],
 	}]
 
 func _get_option_visibility(path: String, option_name: StringName, options: Dictionary) -> bool:
