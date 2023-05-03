@@ -1,91 +1,91 @@
-[gd_scene load_steps=3 format=2]
+[gd_scene load_steps=3 format=3 uid="uid://wj0exo4d4w02"]
 
-[ext_resource path="res://img/Pendulum.png" type="Texture2D" id=1]
-[ext_resource path="res://script/Pendulum.gd" type="Script" id=2]
+[ext_resource type="Texture2D" uid="uid://b8l0fcnxc2rc8" path="res://img/Pendulum.png" id="1"]
+[ext_resource type="Script" path="res://script/Pendulum.gd" id="2"]
 
 [node name="Pendulum" type="Node2D"]
 use_parent_material = true
-script = ExtResource( 2 )
+script = ExtResource("2")
 wasm_file = "res://wasm/double_pendulum.wasm"
 
 [node name="Shaft" type="Sprite2D" parent="."]
 use_parent_material = true
-texture = ExtResource( 1 )
+texture = ExtResource("1")
 centered = false
-offset = Vector2( -4, 0 )
+offset = Vector2(-4, 0)
 region_enabled = true
-region_rect = Rect2( 4, 0, 8, 64 )
+region_rect = Rect2(4, 0, 8, 64)
 
 [node name="BG" type="Sprite2D" parent="Shaft"]
-self_modulate = Color( 0.2, 0.2, 0.2, 1 )
-use_parent_material = true
-position = Vector2( 1, 1 )
+self_modulate = Color(0.2, 0.2, 0.2, 1)
 z_index = -1
-texture = ExtResource( 1 )
+use_parent_material = true
+position = Vector2(1, 1)
+texture = ExtResource("1")
 centered = false
-offset = Vector2( -4, 0 )
+offset = Vector2(-4, 0)
 region_enabled = true
-region_rect = Rect2( 4, 0, 8, 64 )
+region_rect = Rect2(4, 0, 8, 64)
 
 [node name="Bulb" type="Sprite2D" parent="."]
 use_parent_material = true
-position = Vector2( 0, 64 )
-texture = ExtResource( 1 )
+position = Vector2(0, 64)
+texture = ExtResource("1")
 centered = false
-offset = Vector2( -8, -8 )
+offset = Vector2(-8, -8)
 region_enabled = true
-region_rect = Rect2( 0, 48, 16, 16 )
+region_rect = Rect2(0, 48, 16, 16)
 
 [node name="BG" type="Sprite2D" parent="Bulb"]
-self_modulate = Color( 0.2, 0.2, 0.2, 1 )
-use_parent_material = true
-position = Vector2( 1, 1 )
+self_modulate = Color(0.2, 0.2, 0.2, 1)
 z_index = -1
-texture = ExtResource( 1 )
+use_parent_material = true
+position = Vector2(1, 1)
+texture = ExtResource("1")
 centered = false
-offset = Vector2( -8, -8 )
+offset = Vector2(-8, -8)
 region_enabled = true
-region_rect = Rect2( 0, 48, 16, 16 )
+region_rect = Rect2(0, 48, 16, 16)
 
 [node name="Pendulum2" type="Node2D" parent="."]
 use_parent_material = true
-position = Vector2( 0, 64 )
+position = Vector2(0, 64)
 
 [node name="Shaft" type="Sprite2D" parent="Pendulum2"]
 use_parent_material = true
-texture = ExtResource( 1 )
+texture = ExtResource("1")
 centered = false
-offset = Vector2( -4, 0 )
+offset = Vector2(-4, 0)
 region_enabled = true
-region_rect = Rect2( 4, 0, 8, 64 )
+region_rect = Rect2(4, 0, 8, 64)
 
 [node name="BG" type="Sprite2D" parent="Pendulum2/Shaft"]
-self_modulate = Color( 0.2, 0.2, 0.2, 1 )
-use_parent_material = true
-position = Vector2( 1, 1 )
+self_modulate = Color(0.2, 0.2, 0.2, 1)
 z_index = -1
-texture = ExtResource( 1 )
+use_parent_material = true
+position = Vector2(1, 1)
+texture = ExtResource("1")
 centered = false
-offset = Vector2( -4, 0 )
+offset = Vector2(-4, 0)
 region_enabled = true
-region_rect = Rect2( 4, 0, 8, 64 )
+region_rect = Rect2(4, 0, 8, 64)
 
 [node name="Bulb" type="Sprite2D" parent="Pendulum2"]
 use_parent_material = true
-position = Vector2( 0, 64 )
-texture = ExtResource( 1 )
+position = Vector2(0, 64)
+texture = ExtResource("1")
 centered = false
-offset = Vector2( -8, -8 )
+offset = Vector2(-8, -8)
 region_enabled = true
-region_rect = Rect2( 0, 48, 16, 16 )
+region_rect = Rect2(0, 48, 16, 16)
 
 [node name="BG" type="Sprite2D" parent="Pendulum2/Bulb"]
-self_modulate = Color( 0.2, 0.2, 0.2, 1 )
-use_parent_material = true
-position = Vector2( 1, 1 )
+self_modulate = Color(0.2, 0.2, 0.2, 1)
 z_index = -1
-texture = ExtResource( 1 )
+use_parent_material = true
+position = Vector2(1, 1)
+texture = ExtResource("1")
 centered = false
-offset = Vector2( -8, -8 )
+offset = Vector2(-8, -8)
 region_enabled = true
-region_rect = Rect2( 0, 48, 16, 16 )
+region_rect = Rect2(0, 48, 16, 16)

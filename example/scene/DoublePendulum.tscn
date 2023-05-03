@@ -1,47 +1,46 @@
-[gd_scene load_steps=4 format=2]
+[gd_scene load_steps=4 format=3 uid="uid://htrdfx1x1wfl"]
 
-[ext_resource path="res://scene/Pendulum.tscn" type="PackedScene" id=1]
-[ext_resource path="res://script/DoublePendulum.gd" type="Script" id=3]
+[ext_resource type="PackedScene" path="res://scene/Pendulum.tscn" id="1"]
+[ext_resource type="Script" path="res://script/DoublePendulum.gd" id="3"]
 
-[sub_resource type="CanvasItemMaterial" id=1]
+[sub_resource type="CanvasItemMaterial" id="1"]
 blend_mode = 1
 
 [node name="Root" type="Node2D"]
-script = ExtResource( 3 )
+script = ExtResource("3")
 
 [node name="Camera2D" type="Camera2D" parent="."]
-current = true
 
 [node name="Pendulums" type="Node2D" parent="."]
-material = SubResource( 1 )
+material = SubResource("1")
 
-[node name="Pendulum1" parent="Pendulums" instance=ExtResource( 1 )]
-modulate = Color( 1, 0, 0, 0.25098 )
+[node name="Pendulum1" parent="Pendulums" instance=ExtResource("1")]
+modulate = Color(1, 0, 0, 0.25098)
 angle1 = 90.0
 angle2 = 90.0
 
-[node name="Pendulum2" parent="Pendulums" instance=ExtResource( 1 )]
-modulate = Color( 1, 1, 0, 0.25098 )
+[node name="Pendulum2" parent="Pendulums" instance=ExtResource("1")]
+modulate = Color(1, 1, 0, 0.25098)
 angle1 = 90.0
 angle2 = 90.01
 
-[node name="Pendulum3" parent="Pendulums" instance=ExtResource( 1 )]
-modulate = Color( 0, 1, 0, 0.25098 )
+[node name="Pendulum3" parent="Pendulums" instance=ExtResource("1")]
+modulate = Color(0, 1, 0, 0.25098)
 angle1 = 90.0
 angle2 = 90.02
 
-[node name="Pendulum4" parent="Pendulums" instance=ExtResource( 1 )]
-modulate = Color( 0, 1, 1, 0.25098 )
+[node name="Pendulum4" parent="Pendulums" instance=ExtResource("1")]
+modulate = Color(0, 1, 1, 0.25098)
 angle1 = 90.0
 angle2 = 90.03
 
-[node name="Pendulum5" parent="Pendulums" instance=ExtResource( 1 )]
-modulate = Color( 0, 0, 1, 0.25098 )
+[node name="Pendulum5" parent="Pendulums" instance=ExtResource("1")]
+modulate = Color(0, 0, 1, 0.25098)
 angle1 = 90.0
 angle2 = 90.04
 
-[node name="Pendulum6" parent="Pendulums" instance=ExtResource( 1 )]
-modulate = Color( 1, 0, 1, 0.25098 )
+[node name="Pendulum6" parent="Pendulums" instance=ExtResource("1")]
+modulate = Color(1, 0, 1, 0.25098)
 angle1 = 90.0
 angle2 = 90.05
 

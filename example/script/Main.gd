@@ -13,9 +13,9 @@ extends Control
 @onready var logger := $LogContainer
 
 var child_scene: Node = null
+var is_shown := false
 
 func _show_menu():
-	print("Show")
 	tween.kill()
 	tween = create_tween()
 	tween.tween_property(
@@ -27,15 +27,6 @@ func _show_menu():
 	tween.play()
 
 func _hide_menu():
-	print(Rect2(detector.position, detector.size))
-	print(get_local_mouse_position())
-	if Rect2(
-		detector.position,
-		detector.size
-	).has_point(get_local_mouse_position()):
-		return
-
-	print("Hide")
 	tween.kill()
 	tween = create_tween()
 	tween.tween_property(
@@ -47,8 +38,6 @@ func _hide_menu():
 	tween.play()
 
 func _ready():
-	detector.offset_left -= panel.size.x
-
 	var box := $SidebarMenu/Panel/Scroller/VBox
 
 	for i in range(len(names)):
@@ -59,6 +48,15 @@ func _ready():
 		button.connect("pressed", Callable(self,"__load_scene").bind(names[i], scenes[i]))
 
 		box.add_child(button)
+
+func _process(_delta):
+	var shown: bool = detector.get_rect().merge(panel.get_rect()).has_point(get_local_mouse_position())
+	if shown:
+		if not is_shown:
+			_show_menu()
+	elif is_shown:
+		_hide_menu()
+	is_shown = shown
 
 func __load_scene(name: String, scene: PackedScene) -> void:
 	if child_scene != null:
@@ -71,6 +69,3 @@ func __load_scene(name: String, scene: PackedScene) -> void:
 	child_scene = scene.instantiate(PackedScene.GEN_EDIT_STATE_DISABLED)
 	child_scene.connect("message_emitted",Callable(logger,"add_text"))
 	view.add_child(child_scene)
-
-func _on_Viewport_gui_input(event):
-	print(event)
