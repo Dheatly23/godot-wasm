@@ -16,6 +16,9 @@ parking_lot = "^0.12"
 anyhow = "^1.0"
 lazy_static = "^1.4"
 slab = { version = "^0.4", optional = true }
+wasmtime-wasi = { version = "^7.0", optional = true }
+wasi-common = { version = "^7.0", optional = true }
+async-trait = { version = "^0.1.67", optional = true }
 
 [dependencies.wasmtime]
 version = "^7.0"
@@ -26,6 +29,7 @@ features = [
   "parallel-compilation",
 ]
 
+
 [features]
 default = ["epoch-timeout", "memory-limiter"]
 memory-limiter = []
@@ -34,6 +38,11 @@ object-registry-compat = ["dep:slab"]
 object-registry-extern = []
 object-registry = ["object-registry-compat", "object-registry-extern"]
 more-precise-timer = []
+wasi = [
+  "dep:wasmtime-wasi",
+  "dep:wasi-common",
+  "dep:async-trait",
+]
 
 [workspace]
 members = [

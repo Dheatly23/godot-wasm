@@ -39,6 +39,7 @@ But i'm just **really lazy** and perhaps old-school.
 * [X] Epoch-based limiter to stop bad-behaving module.
 * [X] Memory limiter to prevent exhaustion.
 * [ ] Experimental API for direct Godot object manipulation.
+* [ ] WASI common API with in-memory filesystem.
 
 ## Building
 To build the addon:
@@ -48,9 +49,10 @@ To build the addon:
 4. Copy addon in `out/addons/godot_wasm` to your project
 
 ## Using the Library
-After adding it to your Godot project, there are 2 classes added by the library:
+After adding it to your Godot project, there are 3 classes added by the library:
 * `WasmModule` : Contains the compiled WebAssembly module.
 * `WasmInstance` : Contains the instantiated module.
+* `WasiContext` : Context for WASI, including stdout and filesystem.
 
 Due to limitation of godot-rust,
 you must call `initialize` after creating new object.

@@ -1,9 +1,11 @@
 use godot::prelude::*;
 
+#[cfg(feature = "wasi")]
+use crate::wasi_ctx::WasiContext;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 
-#[derive(Clone, Copy, Default, Debug, Eq, PartialEq)]
+#[derive(Clone, Default, Debug)]
 pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
@@ -17,10 +19,17 @@ pub struct Config {
     #[cfg(feature = "memory-limiter")]
     pub max_entries: Option<u64>,
 
+    #[cfg(feature = "wasi")]
+    pub with_wasi: bool,
+    #[cfg(feature = "wasi")]
+    pub wasi_context: Option<Instance<WasiContext>>,
+    #[cfg(feature = "wasi")]
+    pub wasi_args: Vec<String>,
+
     pub extern_bind: ExternBindingType,
 }
 
-fn get_field<T: FromVariant + Default>(
+fn get_field<T: FromVariant>(
     d: &Dictionary,
     name: &'static str,
 ) -> Result<Option<T>, VariantConversionError> {
@@ -65,6 +74,13 @@ impl FromVariant for Config {
             max_memory: get_field::<i64>(&dict, "engine.max_memory")?.map(|v| v as _),
             #[cfg(feature = "memory-limiter")]
             max_entries: get_field::<i64>(&dict, "engine.max_entries")?.map(|v| v as _),
+
+            #[cfg(feature = "wasi")]
+            with_wasi: get_field(&dict, "engine.use_wasi")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_context: get_field(&dict, "wasi.wasi_context")?,
+            #[cfg(feature = "wasi")]
+            wasi_args: get_field(&dict, "wasi.args")?.unwrap_or_default(),
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })

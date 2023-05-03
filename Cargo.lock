@@ -23,10 +23,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "ambient-authority"
+version = "0.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9d4ee0d472d1cd2e28c97dfa124b3d8d992e10eb0a035f33f5d12e3a177ba3b"
+
+[[package]]
 name = "anyhow"
 version = "1.0.71"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c7d0618f0e0b7e8ff11427422b64564d5fb0be1940354bfe2e0529b18a9d9b8"
+
+[[package]]
+name = "async-trait"
+version = "0.1.68"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9ccdd8f2a161be9bd5c023df56f1b2a0bd1d83872ae53b71a84a12c9bf6e842"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.15",
+]
 
 [[package]]
 name = "autocfg"
@@ -60,6 +77,69 @@ name = "byteorder"
 version = "1.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
+
+[[package]]
+name = "cap-fs-ext"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1742f5106155d46a41eac5f730ee189bf92fde6ae109fbf2cdb67176726ca5d"
+dependencies = [
+ "cap-primitives",
+ "cap-std",
+ "io-lifetimes",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "cap-primitives"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42068f579028e856717d61423645c85d2d216dde8eff62c9b30140e725c79177"
+dependencies = [
+ "ambient-authority",
+ "fs-set-times 0.19.1",
+ "io-extras",
+ "io-lifetimes",
+ "ipnet",
+ "maybe-owned",
+ "rustix 0.37.18",
+ "windows-sys 0.48.0",
+ "winx",
+]
+
+[[package]]
+name = "cap-rand"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3be2ededc13f42a5921c08e565b854cb5ff9b88753e2c6ec12c58a24e7e8d4e"
+dependencies = [
+ "ambient-authority",
+ "rand",
+]
+
+[[package]]
+name = "cap-std"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "559ad6fab5fedcc9bd5877160e1433fcd481f8af615068d6ca49472b1201cc6c"
+dependencies = [
+ "cap-primitives",
+ "io-extras",
+ "io-lifetimes",
+ "rustix 0.37.18",
+]
+
+[[package]]
+name = "cap-time-ext"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a74e04cd32787bfa3a911af745b0fd5d99d4c3fc16c64449e1622c06fa27c8e"
+dependencies = [
+ "cap-primitives",
+ "once_cell",
+ "rustix 0.37.18",
+ "winx",
+]
 
 [[package]]
 name = "cc"
@@ -237,6 +317,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca3aa72a6f96ea37bbc5aa912f6788242832f75369bdfdadcb0e38423f100059"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
+name = "dirs-sys"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b1d1d91c932ef41c0f2663aa8b0ca0342d444d842c06914aa0a7e352d0bada6"
+dependencies = [
+ "libc",
+ "redox_users",
+ "winapi",
+]
+
+[[package]]
 name = "double-pendulum"
 version = "0.1.0"
 
@@ -274,12 +374,45 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4443176a9f2c162692bd3d352d745ef9413eec5782a80d8fd6f8a1ac692a07f7"
 
 [[package]]
+name = "fd-lock"
+version = "3.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39ae6b3d9530211fb3b12a95374b8b0823be812f53d09e18c5675c0146b09642"
+dependencies = [
+ "cfg-if",
+ "rustix 0.37.18",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "form_urlencoded"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9c384f161156f5260c24a097c56119f9be8c798586aecc13afbcbe7b7e26bf8"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fs-set-times"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "857cf27edcb26c2a36d84b2954019573d335bb289876113aceacacdca47a4fd4"
+dependencies = [
+ "io-lifetimes",
+ "rustix 0.36.13",
+ "windows-sys 0.45.0",
+]
+
+[[package]]
+name = "fs-set-times"
+version = "0.19.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7833d0f115a013d51c55950a3b09d30e4b057be9961b709acb9b5b17a1108861"
+dependencies = [
+ "io-lifetimes",
+ "rustix 0.37.18",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -383,12 +516,15 @@ name = "godot-wasm"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "godot",
  "lazy_static",
  "parking_lot",
  "scopeguard",
  "slab",
+ "wasi-common",
  "wasmtime",
+ "wasmtime-wasi",
 ]
 
 [[package]]
@@ -458,6 +594,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "io-extras"
+version = "0.17.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fde93d48f0d9277f977a333eca8313695ddd5301dc96f7e02aeddcb0dd99096f"
+dependencies = [
+ "io-lifetimes",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "io-lifetimes"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -469,6 +615,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipnet"
+version = "2.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12b6ee2129af8d4fb011108c73d99a1b83a85977f23b82460c0ae2e25bb4b57f"
+
+[[package]]
+name = "is-terminal"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "adcf93614601c8129ddf72e2d5633df827ba6551541c6d8c59520a371475be1f"
+dependencies = [
+ "hermit-abi 0.3.1",
+ "io-lifetimes",
+ "rustix 0.37.18",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
 name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -476,6 +640,12 @@ checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
 dependencies = [
  "either",
 ]
+
+[[package]]
+name = "itoa"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
 
 [[package]]
 name = "lazy_static"
@@ -534,6 +704,12 @@ checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "maybe-owned"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4facc753ae494aeb6e3c22f839b158aebd4f9270f55cd3c79906c45476c47ab4"
 
 [[package]]
 name = "memchr"
@@ -638,6 +814,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "478c572c3d73181ff3c2539045f6eb99e5491218eae919370993b890cdbdd98e"
 
 [[package]]
+name = "pin-project-lite"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
+
+[[package]]
 name = "ppv-lite86"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -732,6 +914,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "redox_users"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b033d837a7cf162d7993aded9304e30a83213c648b6e389db233191f891e5c2b"
+dependencies = [
+ "getrandom",
+ "redox_syscall",
+ "thiserror",
+]
+
+[[package]]
 name = "regalloc2"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -772,8 +965,10 @@ dependencies = [
  "bitflags",
  "errno",
  "io-lifetimes",
+ "itoa",
  "libc",
  "linux-raw-sys 0.3.6",
+ "once_cell",
  "windows-sys 0.48.0",
 ]
 
@@ -800,7 +995,16 @@ checksum = "291a097c63d8497e00160b166a967a4a79c64f3facdd01cbd7502231688d77df"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.15",
+]
+
+[[package]]
+name = "shellexpand"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ccc8076840c4da029af4f87e4e8daeb0fca6b87bbb02e10cb60b791450e11e4"
+dependencies = [
+ "dirs",
 ]
 
 [[package]]
@@ -814,9 +1018,9 @@ dependencies = [
 
 [[package]]
 name = "slice-group-by"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "03b634d87b960ab1a38c4fe143b508576f075e7c978bfad18217645ebfdfa2ec"
+checksum = "826167069c09b99d56f31e9ae5c99049e932a98c9dc2dac47645b08dbbf76ba7"
 
 [[package]]
 name = "smallvec"
@@ -832,6 +1036,17 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "syn"
+version = "1.0.109"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72b64191b275b66ffe2469e8af2c1cfe3bafa67b529ead792a6d0160888b4237"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
+]
+
+[[package]]
+name = "syn"
 version = "2.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a34fcf3e8b60f57e6a14301a2e916d323af98b0ea63c599441eec8558660c822"
@@ -839,6 +1054,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "system-interface"
+version = "0.25.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "928ebd55ab758962e230f51ca63735c5b283f26292297c81404289cda5d78631"
+dependencies = [
+ "bitflags",
+ "cap-fs-ext",
+ "cap-std",
+ "fd-lock",
+ "io-lifetimes",
+ "rustix 0.37.18",
+ "windows-sys 0.48.0",
+ "winx",
 ]
 
 [[package]]
@@ -864,7 +1095,7 @@ checksum = "f9456a42c5b0d803c8cd86e73dd7cc9edd429499f37a3550d286d5e86720569f"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 2.0.15",
 ]
 
 [[package]]
@@ -881,6 +1112,39 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "tracing"
+version = "0.1.37"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8ce8c33a8d48bd45d624a6e523445fd21ec13d3653cd51f681abf67418f54eb8"
+dependencies = [
+ "cfg-if",
+ "log",
+ "pin-project-lite",
+ "tracing-attributes",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-attributes"
+version = "0.1.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f57e3ca2a01450b1a921183a9c9cbfda207fd822cef4ccb00a65402cbba7a74"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.15",
+]
+
+[[package]]
+name = "tracing-core"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24eb03ba0eab1fd845050058ce5e616558e8f8d8fca633e6b163fe25c797213a"
+dependencies = [
+ "once_cell",
+]
 
 [[package]]
 name = "unicode-bidi"
@@ -941,6 +1205,50 @@ name = "wasi"
 version = "0.11.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
+
+[[package]]
+name = "wasi-cap-std-sync"
+version = "7.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20ef833092c0215e44f601591593cb3bf0853d5cd1e3104d698808dc525f2852"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "cap-fs-ext",
+ "cap-rand",
+ "cap-std",
+ "cap-time-ext",
+ "fs-set-times 0.18.1",
+ "io-extras",
+ "io-lifetimes",
+ "is-terminal",
+ "once_cell",
+ "rustix 0.36.13",
+ "system-interface",
+ "tracing",
+ "wasi-common",
+ "windows-sys 0.45.0",
+]
+
+[[package]]
+name = "wasi-common"
+version = "7.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "474a216b3461220699d5e192ceac8fbc5b489af020760803b5a9d1e030dc8b0f"
+dependencies = [
+ "anyhow",
+ "bitflags",
+ "cap-rand",
+ "cap-std",
+ "io-extras",
+ "log",
+ "rustix 0.36.13",
+ "thiserror",
+ "tracing",
+ "wasmtime",
+ "wiggle",
+ "windows-sys 0.45.0",
+]
 
 [[package]]
 name = "wasm-encoder"
@@ -1118,6 +1426,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmtime-wasi"
+version = "7.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e94602bafb39e36746156127a97f4e33991fa02179f9f8e5b3372365ec61da8"
+dependencies = [
+ "anyhow",
+ "libc",
+ "wasi-cap-std-sync",
+ "wasi-common",
+ "wasmtime",
+ "wiggle",
+]
+
+[[package]]
+name = "wast"
+version = "35.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ef140f1b49946586078353a453a1d28ba90adfc54dde75710bc1931de204d68"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
 name = "wast"
 version = "57.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1135,8 +1466,72 @@ version = "1.0.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab9ab0d87337c3be2bb6fc5cd331c4ba9fd6bcb4ee85048a0dd59ed9ecf92e53"
 dependencies = [
- "wast",
+ "wast 57.0.0",
 ]
+
+[[package]]
+name = "wiggle"
+version = "7.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6627da83e9cdf851594a1dcf047573e700ecaa7ce79b70e02f3df5e5d24d0096"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitflags",
+ "thiserror",
+ "tracing",
+ "wasmtime",
+ "wiggle-macro",
+]
+
+[[package]]
+name = "wiggle-generate"
+version = "7.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0857652586aafc82fca56bbbf90fde5d5e086ffba58b0f1c0f113e54c500b55b"
+dependencies = [
+ "anyhow",
+ "heck",
+ "proc-macro2",
+ "quote",
+ "shellexpand",
+ "syn 1.0.109",
+ "witx",
+]
+
+[[package]]
+name = "wiggle-macro"
+version = "7.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97189f1092c8877865aa64467ca99afd0182eb23ad1b4ce22319f18422543d55"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+ "wiggle-generate",
+]
+
+[[package]]
+name = "winapi"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
+dependencies = [
+ "winapi-i686-pc-windows-gnu",
+ "winapi-x86_64-pc-windows-gnu",
+]
+
+[[package]]
+name = "winapi-i686-pc-windows-gnu"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac3b87c63620426dd9b991e5ce0329eff545bccbbb34f3be09ff6fb6ab51b7b6"
+
+[[package]]
+name = "winapi-x86_64-pc-windows-gnu"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows-sys"
@@ -1269,3 +1664,26 @@ name = "windows_x86_64_msvc"
 version = "0.48.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a515f5799fe4961cb532f983ce2b23082366b898e52ffbce459c86f67c8378a"
+
+[[package]]
+name = "winx"
+version = "0.35.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c52a121f0fbf9320d5f2a9a5d82f6cb7557eda5e8b47fc3e7f359ec866ae960"
+dependencies = [
+ "bitflags",
+ "io-lifetimes",
+ "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "witx"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e366f27a5cabcddb2706a78296a40b8fcc451e1a6aba2fc1d94b4a01bdaaef4b"
+dependencies = [
+ "anyhow",
+ "log",
+ "thiserror",
+ "wast 35.0.2",
+]
