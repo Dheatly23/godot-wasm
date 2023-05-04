@@ -159,6 +159,13 @@ exceptions = [
     #{ path = "LICENSE", hash = 0xbd0eed23 }
 #]
 
+[[licenses.clarify]]
+name = "godot4-prebuilt"
+version = "*"
+# Just assume it's the same as gdext license
+expression = "MPL-2.0"
+license-files = []
+
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries.
@@ -262,7 +269,7 @@ allow-git = []
 
 [sources.allow-org]
 # 1 or more github.com organizations to allow git sources for
-#github = [""]
+github = ["godot-rust"]
 # 1 or more gitlab.com organizations to allow git sources for
 #gitlab = [""]
 # 1 or more bitbucket.org organizations to allow git sources for
