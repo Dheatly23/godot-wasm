@@ -2,8 +2,8 @@ extends Control
 
 @export var anim_seconds: float = 1
 
-@export var scenes := [] # (Array, PackedScene)
-@export var names := [] # (Array, String)
+@export var scenes: Array[PackedScene] = []
+@export var names: Array[String] = []
 
 @onready var tween := create_tween()
 @onready var sidebar := $SidebarMenu

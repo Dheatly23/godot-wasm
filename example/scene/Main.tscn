@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3 uid="uid://qlix1kvnk7jl"]
+[gd_scene load_steps=12 format=3 uid="uid://qlix1kvnk7jl"]
 
 [ext_resource type="Script" path="res://script/SidebarMenu.gd" id="1"]
 [ext_resource type="Theme" uid="uid://ca5y5fjlfv1ot" path="res://theme/default.theme" id="2"]
@@ -7,7 +7,9 @@
 [ext_resource type="PackedScene" uid="uid://d2re1jqfyqf12" path="res://scene/Log.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scene/HostBindings.tscn" id="6"]
 [ext_resource type="PackedScene" uid="uid://htrdfx1x1wfl" path="res://scene/DoublePendulum.tscn" id="7"]
+[ext_resource type="PackedScene" uid="uid://dymy63bibij2i" path="res://scene/WasiPython.tscn" id="7_mc77c"]
 [ext_resource type="PackedScene" uid="uid://cv463osoyyr5k" path="res://scene/Connect4.tscn" id="8"]
+[ext_resource type="PackedScene" uid="uid://cc2iv5r4dc8fd" path="res://scene/WasiQJS.tscn" id="8_0k12u"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_opil7"]
 
@@ -21,8 +23,8 @@ grow_vertical = 2
 mouse_filter = 1
 theme = ExtResource("2")
 script = ExtResource("3")
-scenes = [ExtResource("4"), ExtResource("6"), ExtResource("7"), ExtResource("8")]
-names = ["Hello World", "Host Bindings", "Double Pendulum", "Connect 4"]
+scenes = Array[PackedScene]([ExtResource("4"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("7_mc77c"), ExtResource("8_0k12u")])
+names = Array[String](["Hello World", "Host Bindings", "Double Pendulum", "Connect 4", "WASI RustPython", "WASI QuickJS"])
 
 [node name="BGLayer" type="CanvasLayer" parent="."]
 layer = -1
@@ -33,6 +35,18 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 2
 color = Color(0, 0, 0, 1)
+
+[node name="LogContainer" parent="." instance=ExtResource("5")]
+layout_mode = 0
+anchors_preset = 0
+anchor_top = 1.0
+anchor_right = 0.0
+offset_left = 20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = -20.0
+grow_vertical = 0
+label_count = 50
 
 [node name="SubViewportContainer" type="SubViewportContainer" parent="."]
 layout_mode = 0
@@ -70,21 +84,13 @@ layout_mode = 2
 
 [node name="Scroller" type="ScrollContainer" parent="SidebarMenu/Panel"]
 layout_mode = 2
+horizontal_scroll_mode = 0
 
 [node name="VBox" type="VBoxContainer" parent="SidebarMenu/Panel/Scroller"]
 layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="Label" type="Label" parent="SidebarMenu/Panel/Scroller/VBox"]
 layout_mode = 2
 text = "Examples:"
 label_settings = SubResource("LabelSettings_opil7")
-
-[node name="LogContainer" parent="." instance=ExtResource("5")]
-layout_mode = 0
-anchors_preset = 0
-anchor_top = 1.0
-anchor_right = 0.0
-offset_left = 20.0
-offset_bottom = -20.0
-grow_vertical = 0
-label_count = 50
