@@ -10,73 +10,60 @@ use std::slice;
 use std::sync::{Arc, Weak};
 
 use anyhow::Error;
-use gdnative::log::{error, godot_site, Site};
-use gdnative::prelude::*;
+use godot::prelude::*;
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{Capability, Dir, File, Node};
 use crate::wasi_ctx::stdio::{ContextStderr, ContextStdout};
 use crate::{bail_with_site, site_context};
 
-#[derive(NativeClass, Debug)]
-#[inherit(Reference)]
-#[register_with(Self::register_properties)]
-#[user_data(gdnative::export::user_data::RwLockData<WasiContext>)]
+#[derive(GodotClass)]
+#[class(base=RefCounted)]
 pub struct WasiContext {
-    os_stdio: bool,
-    readonly: bool,
+    #[base]
+    base: Base<RefCounted>,
+    #[export]
+    bypass_stdio: bool,
+    #[export]
+    memfs_readonly: bool,
 
     memfs_root: Arc<Dir>,
     physical_mount: HashMap<PathBuf, PathBuf>,
 }
 
 impl WasiContext {
-    fn new(_owner: &Reference) -> Self {
-        Self {
-            os_stdio: false,
-            readonly: false,
-
-            memfs_root: Arc::new(Dir::new(<Weak<Dir>>::new())),
-            physical_mount: HashMap::new(),
+    pub fn build_ctx(this: Gd<Self>, mut ctx: WasiCtxBuilder) -> Result<WasiCtx, Error> {
+        let o = this.bind();
+        if o.bypass_stdio {
+            ctx = ctx.inherit_stdout().inherit_stderr();
+        } else {
+            ctx = ctx
+                .stdout(Box::new(ContextStdout::new(this.share())))
+                .stderr(Box::new(ContextStderr::new(this.share())));
         }
-    }
 
-    pub fn build_ctx(this: Instance<Self>, ctx: WasiCtxBuilder) -> Result<WasiCtx, Error> {
-        unsafe {
-            this.assume_safe().map(move |o, b| -> Result<_, Error> {
-                let mut ctx = ctx;
-                if o.os_stdio {
-                    ctx = ctx.inherit_stdout().inherit_stderr();
-                } else {
-                    ctx = ctx
-                        .stdout(Box::new(ContextStdout::new(b.claim())))
-                        .stderr(Box::new(ContextStderr::new(b.claim())));
-                }
-
-                for (guest, host) in o.physical_mount.iter() {
-                    ctx = site_context!(ctx.preopened_dir(
-                        site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority()))?,
-                        guest,
-                    ))?;
-                }
-
-                let ctx = ctx.build();
-
-                site_context!(ctx.push_preopened_dir(
-                    site_context!(o.memfs_root.clone().as_dir(
-                        Some(o.memfs_root.clone()),
-                        Capability {
-                            read: true,
-                            write: !o.readonly,
-                        },
-                        true,
-                    ))?,
-                    "/",
-                ))?;
-
-                Ok(ctx)
-            })?
+        for (guest, host) in o.physical_mount.iter() {
+            ctx = site_context!(ctx.preopened_dir(
+                site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority()))?,
+                guest,
+            ))?;
         }
+
+        let ctx = ctx.build();
+
+        site_context!(ctx.push_preopened_dir(
+            site_context!(o.memfs_root.clone().as_dir(
+                Some(o.memfs_root.clone()),
+                Capability {
+                    read: true,
+                    write: !o.memfs_readonly,
+                },
+                true,
+            ))?,
+            "/",
+        ))?;
+
+        Ok(ctx)
     }
 
     fn wrap_result<F, T>(f: F) -> Option<T>
@@ -86,55 +73,43 @@ impl WasiContext {
         match f() {
             Ok(v) => Some(v),
             Err(e) => {
-                let s = format!("{:?}", e);
-                error(
-                    e.downcast_ref::<Site>()
-                        .copied()
-                        .unwrap_or_else(|| godot_site!()),
-                    &s,
-                );
+                godot_error!("{}", e);
                 None
             }
         }
     }
 }
 
-#[methods]
+#[godot_api]
+impl RefCountedVirtual for WasiContext {
+    fn init(base: Base<RefCounted>) -> Self {
+        Self {
+            base,
+            bypass_stdio: false,
+            memfs_readonly: false,
+
+            memfs_root: Arc::new(Dir::new(<Weak<Dir>>::new())),
+            physical_mount: HashMap::new(),
+        }
+    }
+}
+
+#[godot_api]
 impl WasiContext {
-    fn register_properties(builder: &ClassBuilder<Self>) {
-        builder
-            .property("memfs_readonly")
-            .with_getter(|this, _| this.readonly)
-            .with_setter(|this, _, v| this.readonly = v)
-            .done();
-
-        builder
-            .property("bypass_stdio")
-            .with_getter(|this, _| this.os_stdio)
-            .with_setter(|this, _, v| this.os_stdio = v)
-            .done();
-
-        builder
-            .signal("stdout_emit")
-            .with_param("message", VariantType::ByteArray)
-            .done();
-
-        builder
-            .signal("stderr_emit")
-            .with_param("message", VariantType::ByteArray)
-            .done();
+    #[func]
+    fn mount_physical_dir(&mut self, host_path: GodotString, guest_path: Variant) {
+        let host_path = String::from(host_path);
+        let guest_path = if guest_path.is_nil() {
+            host_path.clone()
+        } else {
+            String::from_variant(&guest_path)
+        };
+        self.physical_mount
+            .insert(guest_path.into(), host_path.into());
     }
 
-    #[method]
-    fn mount_physical_dir(&mut self, host_path: String, #[opt] guest_path: Option<String>) {
-        self.physical_mount.insert(
-            guest_path.unwrap_or_else(|| host_path.clone()).into(),
-            host_path.into(),
-        );
-    }
-
-    #[method]
-    fn write_memory_file(&mut self, path: String, data: Variant, #[opt] offset: Option<usize>) {
+    #[func]
+    fn write_memory_file(&mut self, path: GodotString, data: Variant, offset: Variant) {
         fn f(root: Arc<Dir>, path: &Path, data: &[u8], offset: Option<usize>) -> Result<(), Error> {
             let mut node: Arc<dyn Node> = root;
             for c in path.parent().unwrap_or(path).components() {
@@ -201,29 +176,49 @@ impl WasiContext {
         }
 
         Self::wrap_result(move || {
-            let path = PathBuf::from(path);
+            let offset = if offset.is_nil() {
+                None
+            } else if let Ok(v) = i64::try_from_variant(&offset) {
+                Some(usize::try_from(v)?)
+            } else {
+                bail_with_site!("Unknown offset {}", offset)
+            };
+
+            let path = PathBuf::from(String::from(path));
 
             let f = |data| f(self.memfs_root.clone(), &path, data, offset);
 
-            match data.dispatch() {
-                VariantDispatch::ByteArray(v) => f(&*v.read()),
-                VariantDispatch::GodotString(v) => f(v.to_string().as_bytes()),
-                VariantDispatch::Int32Array(v) => unsafe { f(as_bytes(&*v.read())) },
-                VariantDispatch::Float32Array(v) => unsafe { f(as_bytes(&*v.read())) },
-                _ => bail_with_site!("Unknown value {}", data),
+            if let Ok(v) = PackedByteArray::try_from_variant(&data) {
+                f(&v.to_vec())
+            } else if let Ok(v) = GodotString::try_from_variant(&data) {
+                f(format!("{}", v.to_string()).as_bytes())
+            } else if let Ok(v) = PackedInt32Array::try_from_variant(&data) {
+                unsafe { f(as_bytes(&v.to_vec())) }
+            } else if let Ok(v) = PackedInt64Array::try_from_variant(&data) {
+                unsafe { f(as_bytes(&v.to_vec())) }
+            } else if let Ok(v) = PackedFloat32Array::try_from_variant(&data) {
+                unsafe { f(as_bytes(&v.to_vec())) }
+            } else if let Ok(v) = PackedFloat64Array::try_from_variant(&data) {
+                unsafe { f(as_bytes(&v.to_vec())) }
+            } else {
+                bail_with_site!("Unknown value {}", data)
             }
         });
     }
 
-    #[method]
-    fn read_memory_file(
-        &self,
-        path: String,
-        length: usize,
-        #[opt] offset: usize,
-    ) -> Option<PoolArray<u8>> {
+    #[func]
+    fn read_memory_file(&self, path: GodotString, length: i64, offset: Variant) -> PackedByteArray {
         Self::wrap_result(move || {
-            let path = PathBuf::from(path);
+            let length = usize::try_from(length)?;
+            let offset = if offset.is_nil() {
+                0
+            } else if let Ok(v) = i64::try_from_variant(&offset) {
+                usize::try_from(v)?
+            } else {
+                bail_with_site!("Unknown offset {}", offset)
+            };
+
+            let path = PathBuf::from(String::from(path));
 
             let mut node: Arc<dyn Node> = self.memfs_root.clone();
             for c in path.parent().unwrap_or(&path).components() {
@@ -241,7 +236,7 @@ impl WasiContext {
                 }
             }
 
-            let Some(name) = path.file_name().and_then(|v| v.to_str()) else { return Ok(PoolArray::new()) };
+            let Some(name) = path.file_name().and_then(|v| v.to_str()) else { return Ok(PackedByteArray::new()) };
             let Some(n) = node.as_any().downcast_ref::<Dir>() else { bail_with_site!("Cannot create directory") };
             let content = n.content.read();
             let Some(file) = content.get(name).and_then(|v| v.as_any().downcast_ref::<File>()) else { bail_with_site!("File not found") };
@@ -252,7 +247,7 @@ impl WasiContext {
                 None => content.len(),
             };
             let s = &content[offset.min(content.len())..end];
-            Ok(PoolArray::from_slice(s))
-        })
+            Ok(PackedByteArray::from(s))
+        }).unwrap_or_else(|| PackedByteArray::new())
     }
 }

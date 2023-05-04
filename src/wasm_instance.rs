@@ -6,10 +6,10 @@ use anyhow::{bail, Error};
 use godot::prelude::*;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
 use scopeguard::guard;
-#[cfg(feature = "memory-limiter")]
-use wasmtime::ResourceLimiter;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
+#[cfg(feature = "memory-limiter")]
+use wasmtime::ResourceLimiter;
 use wasmtime::{
     AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
 };
@@ -146,7 +146,7 @@ impl InstanceData {
             builder = builder.args(&store.data().config.wasi_args)?;
 
             store.data_mut().wasi_ctx = if let Some(ctx) = &store.data().config.wasi_context {
-                Some(WasiContext::build_ctx(ctx.clone(), builder)?)
+                Some(WasiContext::build_ctx(ctx.share(), builder)?)
             } else {
                 Some(builder.inherit_stdout().inherit_stderr().build())
             };
@@ -231,7 +231,14 @@ impl InstanceData {
                         match insts.get(&v.instance_id()) {
                             Some(v) => break v,
                             None => {
-                                let t = f(&mut *store, v.bind().get_data()?, &mut *insts, host)?;
+                                let t = f(
+                                    &mut *store,
+                                    v.bind().get_data()?,
+                                    &mut *insts,
+                                    host,
+                                    #[cfg(feature = "wasi")]
+                                    wasi_linker,
+                                )?;
                                 insts.insert(v.instance_id(), t);
                             }
                         }

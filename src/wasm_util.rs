@@ -217,10 +217,16 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
 /// WARNING: Incredibly unsafe.
 /// It's just used as workaround to pass Godot objects across closure.
 /// (At least until it supports multi-threading)
-struct SendSyncWrapper<T>(T);
+pub(crate) struct SendSyncWrapper<T>(T);
 
 unsafe impl<T> Send for SendSyncWrapper<T> {}
 unsafe impl<T> Sync for SendSyncWrapper<T> {}
+
+impl<T> SendSyncWrapper<T> {
+    pub(crate) fn new(v: T) -> Self {
+        Self(v)
+    }
+}
 
 impl<T> Deref for SendSyncWrapper<T> {
     type Target = T;

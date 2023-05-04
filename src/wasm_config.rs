@@ -5,7 +5,7 @@ use crate::wasi_ctx::WasiContext;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 
-#[derive(Clone, Default, Debug)]
+#[derive(Default, Debug)]
 pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
@@ -22,7 +22,7 @@ pub struct Config {
     #[cfg(feature = "wasi")]
     pub with_wasi: bool,
     #[cfg(feature = "wasi")]
-    pub wasi_context: Option<Instance<WasiContext>>,
+    pub wasi_context: Option<Gd<WasiContext>>,
     #[cfg(feature = "wasi")]
     pub wasi_args: Vec<String>,
 
@@ -55,6 +55,25 @@ fn compute_epoch(v: Option<Variant>) -> Result<u64, VariantConversionError> {
     }
 }
 
+#[cfg(feature = "wasi")]
+fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, VariantConversionError> {
+    let v = match v {
+        Some(v) => match <Array<Variant>>::try_from_variant(&v) {
+            Ok(v) => v,
+            Err(_) => return Err(VariantConversionError),
+        },
+        None => return Ok(Vec::new()),
+    };
+    let mut ret = Vec::with_capacity(v.len());
+    for i in v.iter_shared() {
+        ret.push(match String::try_from_variant(&i) {
+            Ok(v) => v,
+            Err(_) => return Err(VariantConversionError),
+        });
+    }
+    Ok(ret)
+}
+
 impl FromVariant for Config {
     fn try_from_variant(v: &Variant) -> Result<Self, VariantConversionError> {
         if v.is_nil() {
@@ -80,7 +99,7 @@ impl FromVariant for Config {
             #[cfg(feature = "wasi")]
             wasi_context: get_field(&dict, "wasi.wasi_context")?,
             #[cfg(feature = "wasi")]
-            wasi_args: get_field(&dict, "wasi.args")?.unwrap_or_default(),
+            wasi_args: get_wasi_args(dict.get("wasi.args"))?,
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })
