@@ -56,6 +56,7 @@ impl<T: ?Sized> Deref for CapAccessor<T> {
 pub trait Node: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn parent(&self) -> Option<Arc<dyn Node>>;
+    fn set_parent(&self, new_parent: Weak<dyn Node>);
     fn filetype(&self) -> FileType;
     fn filestat(&self) -> Filestat;
     fn child(&self, _name: &str) -> Option<Arc<dyn Node>> {
@@ -78,7 +79,7 @@ pub trait Node: Send + Sync {
 }
 
 pub struct Dir {
-    parent: Weak<dyn Node>,
+    parent: RwLock<Weak<dyn Node>>,
 
     pub content: RwLock<BTreeMap<String, Arc<dyn Node>>>,
 }
@@ -92,7 +93,7 @@ impl Debug for Dir {
 impl Dir {
     pub fn new(parent: Weak<dyn Node>) -> Self {
         Self {
-            parent,
+            parent: RwLock::new(parent),
 
             content: RwLock::default(),
         }
@@ -105,7 +106,11 @@ impl Node for Dir {
     }
 
     fn parent(&self) -> Option<Arc<dyn Node>> {
-        self.parent.upgrade()
+        self.parent.read().upgrade()
+    }
+
+    fn set_parent(&self, new_parent: Weak<dyn Node>) {
+        *self.parent.write() = new_parent;
     }
 
     fn filetype(&self) -> FileType {
@@ -451,6 +456,8 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
                 Entry::Occupied(_) => return Err(Error::exist()),
                 Entry::Vacant(v) => v.insert(node.clone()),
             };
+
+            node.set_parent(Arc::downgrade(&*dest) as _);
         }
 
         content.remove(path);
@@ -459,7 +466,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
 }
 
 pub struct File {
-    parent: Weak<dyn Node>,
+    parent: RwLock<Weak<dyn Node>>,
 
     pub content: RwLock<Vec<u8>>,
 }
@@ -467,7 +474,7 @@ pub struct File {
 impl File {
     pub fn new(parent: Weak<dyn Node>) -> Self {
         Self {
-            parent,
+            parent: RwLock::new(parent),
 
             content: RwLock::default(),
         }
@@ -480,7 +487,11 @@ impl Node for File {
     }
 
     fn parent(&self) -> Option<Arc<dyn Node>> {
-        self.parent.upgrade()
+        self.parent.read().upgrade()
+    }
+
+    fn set_parent(&self, new_parent: Weak<dyn Node>) {
+        *self.parent.write() = new_parent;
     }
 
     fn filetype(&self) -> FileType {
@@ -773,14 +784,17 @@ impl WasiFile for CapAccessor<OpenFile> {
 }
 
 struct Link {
-    parent: Weak<dyn Node>,
+    parent: RwLock<Weak<dyn Node>>,
 
     path: PathBuf,
 }
 
 impl Link {
     fn new(parent: Weak<dyn Node>, path: PathBuf) -> Self {
-        Self { parent, path }
+        Self {
+            parent: RwLock::new(parent),
+            path,
+        }
     }
 }
 
@@ -790,7 +804,11 @@ impl Node for Link {
     }
 
     fn parent(&self) -> Option<Arc<dyn Node>> {
-        self.parent.upgrade()
+        self.parent.read().upgrade()
+    }
+
+    fn set_parent(&self, new_parent: Weak<dyn Node>) {
+        *self.parent.write() = new_parent;
     }
 
     fn filetype(&self) -> FileType {
