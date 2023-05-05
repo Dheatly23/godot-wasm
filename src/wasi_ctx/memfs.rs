@@ -102,7 +102,7 @@ impl Dir {
 
 impl Node for Dir {
     fn as_any(&self) -> &dyn Any {
-        &*self
+        self
     }
 
     fn parent(&self) -> Option<Arc<dyn Node>> {
@@ -159,7 +159,7 @@ impl Node for Dir {
 #[async_trait]
 impl WasiDir for CapAccessor<Arc<Dir>> {
     fn as_any(&self) -> &dyn Any {
-        &*self
+        self
     }
 
     async fn open_file(
@@ -483,7 +483,7 @@ impl File {
 
 impl Node for File {
     fn as_any(&self) -> &dyn Any {
-        &*self
+        self
     }
 
     fn parent(&self) -> Option<Arc<dyn Node>> {
@@ -564,7 +564,7 @@ struct OpenFile {
 #[async_trait]
 impl WasiFile for CapAccessor<OpenFile> {
     fn as_any(&self) -> &dyn Any {
-        &*self
+        self
     }
 
     async fn get_filetype(&self) -> Result<FileType, Error> {
@@ -800,7 +800,7 @@ impl Link {
 
 impl Node for Link {
     fn as_any(&self) -> &dyn Any {
-        &*self
+        self
     }
 
     fn parent(&self) -> Option<Arc<dyn Node>> {
@@ -875,7 +875,7 @@ impl Node for Link {
 #[async_trait]
 impl WasiFile for CapAccessor<Arc<Link>> {
     fn as_any(&self) -> &dyn Any {
-        &*self
+        self
     }
 
     async fn get_filetype(&self) -> Result<FileType, Error> {
