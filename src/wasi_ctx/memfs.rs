@@ -8,7 +8,7 @@ use std::sync::{Arc, Weak};
 
 use async_trait::async_trait;
 use parking_lot::{Mutex, RwLock};
-use wasi_common::dir::{ReaddirCursor, ReaddirEntity};
+use wasi_common::dir::{OpenResult, ReaddirCursor, ReaddirEntity};
 use wasi_common::file::{Advice, FdFlags, FileType, Filestat, OFlags};
 use wasi_common::{Error, ErrorExt, SystemTimeSpec, WasiDir, WasiFile};
 
@@ -57,25 +57,18 @@ pub trait Node: Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn parent(&self) -> Option<Arc<dyn Node>>;
     fn filetype(&self) -> FileType;
+    fn filestat(&self) -> Filestat;
     fn child(&self, _name: &str) -> Option<Arc<dyn Node>> {
         None
     }
-    fn as_dir(
-        self: Arc<Self>,
-        _root: Option<Arc<Dir>>,
-        _cap: Capability,
-        _follow_symlink: bool,
-    ) -> Result<Box<dyn WasiDir>, Error> {
-        Err(Error::not_supported())
-    }
-    fn as_file(
+    fn open(
         self: Arc<Self>,
         _root: Option<Arc<Dir>>,
         _cap: Capability,
         _follow_symlink: bool,
         _oflags: OFlags,
         _fdflags: FdFlags,
-    ) -> Result<Box<dyn WasiFile>, Error> {
+    ) -> Result<OpenResult, Error> {
         Err(Error::not_supported())
     }
     fn as_link(&self) -> Option<PathBuf> {
@@ -119,35 +112,38 @@ impl Node for Dir {
         FileType::Directory
     }
 
+    fn filestat(&self) -> Filestat {
+        Filestat {
+            device_id: 0,
+            inode: 0,
+            filetype: self.filetype(),
+            nlink: 0,
+            size: 0,
+            atim: None,
+            mtim: None,
+            ctim: None,
+        }
+    }
+
     fn child(&self, name: &str) -> Option<Arc<dyn Node>> {
         self.content.read().get(name).cloned()
     }
 
-    fn as_dir(
-        self: Arc<Self>,
-        root: Option<Arc<Dir>>,
-        cap: Capability,
-        _follow_symlink: bool,
-    ) -> Result<Box<dyn WasiDir>, Error> {
-        Ok(Box::new(CapAccessor::new(root, self).set_cap(cap)))
-    }
-
-    fn as_file(
+    fn open(
         self: Arc<Self>,
         root: Option<Arc<Dir>>,
         cap: Capability,
         _follow_symlink: bool,
         oflags: OFlags,
         fdflags: FdFlags,
-    ) -> Result<Box<dyn WasiFile>, Error> {
-        if !oflags.contains(OFlags::DIRECTORY)
-            || oflags.contains(OFlags::TRUNCATE)
-            || !fdflags.is_empty()
-        {
+    ) -> Result<OpenResult, Error> {
+        if oflags.contains(OFlags::TRUNCATE) || !fdflags.is_empty() {
             return Err(Error::not_supported());
         }
 
-        Ok(Box::new(CapAccessor::new(root, self).set_cap(cap)))
+        Ok(OpenResult::Dir(Box::new(
+            CapAccessor::new(root, self).set_cap(cap),
+        )))
     }
 
     fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>) -> Option<Arc<dyn Node>> {
@@ -164,83 +160,88 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
     async fn open_file(
         &self,
         symlink_follow: bool,
-        path: &str,
+        mut path: &str,
         oflags: OFlags,
         read: bool,
         write: bool,
         fdflags: FdFlags,
-    ) -> Result<Box<dyn WasiFile>, Error> {
+    ) -> Result<OpenResult, Error> {
         if fdflags.intersects(FdFlags::DSYNC | FdFlags::RSYNC | FdFlags::SYNC | FdFlags::NONBLOCK) {
             return Err(Error::not_supported());
         }
-        if oflags.contains(OFlags::CREATE | OFlags::DIRECTORY) {
-            return Err(Error::not_supported());
-        }
+
+        let mut rest;
+        (path, rest) = if let Some((first, rest)) = path.split_once('/') {
+            (first, Some(rest))
+        } else {
+            (path, None)
+        };
 
         if !self.capability.write && (write || oflags.contains(OFlags::CREATE)) {
             return Err(Error::perm());
         }
-        if !self.capability.read && !oflags.contains(OFlags::CREATE) {
+        if !self.capability.read && (read || !oflags.contains(OFlags::CREATE) || rest.is_some()) {
             return Err(Error::perm());
         }
 
-        if let Some((first, rest)) = path.split_once('/') {
-            return self
-                .open_dir(symlink_follow, first)
-                .await?
-                .open_file(symlink_follow, rest, oflags, read, write, fdflags)
-                .await;
-        }
+        let mut node: Arc<dyn Node> = self.value.clone();
+        loop {
+            node = match path {
+                "" | "." => node,
+                ".." => match node.parent() {
+                    Some(v) => v,
+                    None => node,
+                },
+                p => {
+                    let n = if rest.is_none() && oflags.contains(OFlags::CREATE) {
+                        let Some(n) = node.as_any().downcast_ref::<Dir>() else { return Err(Error::not_dir()) };
+                        let mut content = n.content.write();
+                        loop {
+                            if let Some(v) = content.get(p) {
+                                break v.clone();
+                            }
+                            let v: Arc<dyn Node> = if oflags.contains(OFlags::DIRECTORY) {
+                                Arc::new(Dir::new(Arc::downgrade(&node)))
+                            } else {
+                                Arc::new(File::new(Arc::downgrade(&node)))
+                            };
+                            content.insert(p.to_owned(), v);
+                        }
+                    } else if let Some(v) = node.child(p) {
+                        v
+                    } else {
+                        return Err(Error::not_found());
+                    };
 
-        if matches!(path, "" | "." | "..") {
-            return Err(Error::invalid_argument());
-        }
-
-        let file = if oflags.contains(OFlags::CREATE) {
-            let mut content = self.content.write();
-            loop {
-                if let Some(v) = content.get(path) {
-                    break v.clone();
-                } else if oflags.contains(OFlags::EXCLUSIVE) {
-                    return Err(Error::exist());
-                } else {
-                    content.insert(
-                        path.to_owned(),
-                        Arc::new(File::new(Arc::downgrade(&self.value) as _)),
-                    );
+                    if symlink_follow {
+                        match n.link_deref(&self.root) {
+                            Some(v) => v,
+                            None => return Err(Error::not_found()),
+                        }
+                    } else {
+                        n
+                    }
                 }
-            }
-        } else if let Some(v) = self.child(path) {
-            v
-        } else {
-            return Err(Error::not_found());
-        };
+            };
 
-        file.as_file(
+            if let Some(r) = rest {
+                (path, rest) = if let Some((first, rest)) = r.split_once('/') {
+                    (first, Some(rest))
+                } else {
+                    (r, None)
+                };
+            } else {
+                break;
+            }
+        }
+
+        node.open(
             self.root.clone(),
             Capability { read, write },
             symlink_follow,
             oflags,
             fdflags,
         )
-    }
-
-    async fn open_dir(&self, symlink_follow: bool, path: &str) -> Result<Box<dyn WasiDir>, Error> {
-        if !self.capability.read {
-            return Err(Error::perm());
-        }
-
-        let file = match path {
-            "" => return Err(Error::invalid_argument()),
-            "." => self.value.clone(),
-            ".." => self.parent().unwrap_or_else(|| self.value.clone()),
-            _ => match self.child(path) {
-                Some(v) => v,
-                None => return Err(Error::not_found()),
-            },
-        };
-
-        file.as_dir(self.root.clone(), self.capability, symlink_follow)
     }
 
     async fn create_dir(&self, path: &str) -> Result<(), Error> {
@@ -285,12 +286,14 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             ix = 1;
         }
         if ix == 1 {
-            ret.push(Ok(ReaddirEntity {
-                next: <_>::from(2),
-                name: "..".to_owned(),
-                inode: 0,
-                filetype: self.filetype(),
-            }));
+            if let Some(v) = self.parent() {
+                ret.push(Ok(ReaddirEntity {
+                    next: <_>::from(2),
+                    name: "..".to_owned(),
+                    inode: 0,
+                    filetype: v.filetype(),
+                }));
+            }
             ix = 2;
         }
         for (k, v) in content.iter().skip(ix - 2) {
@@ -372,16 +375,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
     }
 
     async fn get_filestat(&self) -> Result<Filestat, Error> {
-        Ok(Filestat {
-            device_id: 0,
-            inode: 0,
-            filetype: self.filetype(),
-            nlink: 0,
-            size: 0,
-            atim: None,
-            mtim: None,
-            ctim: None,
-        })
+        Ok(self.filestat())
     }
 
     async fn get_path_filestat(
@@ -395,18 +389,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
 
         let node = match path {
             "" => return Err(Error::invalid_argument()),
-            "." => {
-                return Ok(Filestat {
-                    device_id: 0,
-                    inode: 0,
-                    filetype: self.filetype(),
-                    nlink: 0,
-                    size: 0,
-                    atim: None,
-                    mtim: None,
-                    ctim: None,
-                })
-            }
+            "." => return Ok(self.filestat()),
             ".." => self.parent(),
             path => self.child(path).and_then(|n| {
                 if follow_symlinks {
@@ -416,19 +399,9 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
                 }
             }),
         };
-        if let Some(node) = node {
-            Ok(Filestat {
-                device_id: 0,
-                inode: 0,
-                filetype: node.filetype(),
-                nlink: 0,
-                size: 0,
-                atim: None,
-                mtim: None,
-                ctim: None,
-            })
-        } else {
-            Err(Error::not_found())
+        match node {
+            Some(node) => Ok(node.filestat()),
+            None => Err(Error::not_found()),
         }
     }
 
@@ -485,102 +458,6 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
     }
 }
 
-#[async_trait]
-impl WasiFile for CapAccessor<Arc<Dir>> {
-    fn as_any(&self) -> &dyn Any {
-        &*self
-    }
-
-    async fn get_filetype(&self) -> Result<FileType, Error> {
-        Ok(self.filetype())
-    }
-
-    async fn get_fdflags(&self) -> Result<FdFlags, Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn set_fdflags(&mut self, _flags: FdFlags) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn get_filestat(&self) -> Result<Filestat, Error> {
-        Ok(Filestat {
-            device_id: 0,
-            inode: 0,
-            filetype: self.filetype(),
-            nlink: 0,
-            size: 0,
-            atim: None,
-            mtim: None,
-            ctim: None,
-        })
-    }
-
-    async fn set_filestat_size(&self, _size: u64) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn advise(&self, _offset: u64, _len: u64, _advice: Advice) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn allocate(&self, _offset: u64, _len: u64) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn set_times(
-        &self,
-        _atime: Option<SystemTimeSpec>,
-        _mtime: Option<SystemTimeSpec>,
-    ) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn read_vectored<'a>(&self, _bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn read_vectored_at<'a>(
-        &self,
-        _bufs: &mut [IoSliceMut<'a>],
-        _offset: u64,
-    ) -> Result<u64, Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn write_vectored<'a>(&self, _bufs: &[IoSlice<'a>]) -> Result<u64, Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn write_vectored_at<'a>(
-        &self,
-        _bufs: &[IoSlice<'a>],
-        _offset: u64,
-    ) -> Result<u64, Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn seek(&self, _pos: SeekFrom) -> Result<u64, Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn peek(&self, _buf: &mut [u8]) -> Result<u64, Error> {
-        Err(Error::not_supported())
-    }
-
-    fn num_ready_bytes(&self) -> Result<u64, Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn readable(&self) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn writable(&self) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-}
-
 pub struct File {
     parent: Weak<dyn Node>,
 
@@ -610,23 +487,31 @@ impl Node for File {
         FileType::RegularFile
     }
 
-    fn as_dir(
-        self: Arc<Self>,
-        _root: Option<Arc<Dir>>,
-        _cap: Capability,
-        _follow_symlink: bool,
-    ) -> Result<Box<dyn WasiDir>, Error> {
-        Err(Error::not_dir())
+    fn filestat(&self) -> Filestat {
+        Filestat {
+            device_id: 0,
+            inode: 0,
+            filetype: self.filetype(),
+            nlink: 0,
+            size: self.content.read().len() as _,
+            atim: None,
+            mtim: None,
+            ctim: None,
+        }
     }
 
-    fn as_file(
+    fn open(
         self: Arc<Self>,
         root: Option<Arc<Dir>>,
         cap: Capability,
         _follow_symlink: bool,
         oflags: OFlags,
         fdflags: FdFlags,
-    ) -> Result<Box<dyn WasiFile>, Error> {
+    ) -> Result<OpenResult, Error> {
+        if oflags.contains(OFlags::DIRECTORY) {
+            return Err(Error::not_dir());
+        }
+
         if oflags.contains(OFlags::TRUNCATE) {
             if !cap.write {
                 return Err(Error::perm());
@@ -641,7 +526,7 @@ impl Node for File {
             0
         };
 
-        Ok(Box::new(
+        Ok(OpenResult::File(Box::new(
             CapAccessor::new(
                 root,
                 OpenFile {
@@ -651,7 +536,7 @@ impl Node for File {
                 },
             )
             .set_cap(cap),
-        ))
+        )))
     }
 
     fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>) -> Option<Arc<dyn Node>> {
@@ -684,16 +569,7 @@ impl WasiFile for CapAccessor<OpenFile> {
     }
 
     async fn get_filestat(&self) -> Result<Filestat, Error> {
-        Ok(Filestat {
-            device_id: 0,
-            inode: 0,
-            filetype: self.file.filetype(),
-            nlink: 0,
-            size: self.file.content.read().len() as _,
-            atim: None,
-            mtim: None,
-            ctim: None,
-        })
+        Ok(self.file.filestat())
     }
 
     async fn set_filestat_size(&self, size: u64) -> Result<(), Error> {
@@ -921,41 +797,41 @@ impl Node for Link {
         FileType::SymbolicLink
     }
 
-    fn as_dir(
-        self: Arc<Self>,
-        root: Option<Arc<Dir>>,
-        cap: Capability,
-        follow_symlink: bool,
-    ) -> Result<Box<dyn WasiDir>, Error> {
-        if !follow_symlink {
-            return Err(Error::not_dir());
+    fn filestat(&self) -> Filestat {
+        Filestat {
+            device_id: 0,
+            inode: 0,
+            filetype: self.filetype(),
+            nlink: 0,
+            size: 0,
+            atim: None,
+            mtim: None,
+            ctim: None,
         }
-
-        self.link_deref(&root)
-            .ok_or_else(Error::not_found)
-            .and_then(|n| n.as_dir(root, cap, follow_symlink))
     }
 
-    fn as_file(
+    fn open(
         self: Arc<Self>,
         root: Option<Arc<Dir>>,
         cap: Capability,
         follow_symlink: bool,
         oflags: OFlags,
         fdflags: FdFlags,
-    ) -> Result<Box<dyn WasiFile>, Error> {
+    ) -> Result<OpenResult, Error> {
         if !follow_symlink {
             return if oflags.intersects(OFlags::DIRECTORY | OFlags::TRUNCATE) || !fdflags.is_empty()
             {
                 Err(Error::invalid_argument())
             } else {
-                Ok(Box::new(CapAccessor::new(root, self).set_cap(cap)))
+                Ok(OpenResult::File(Box::new(
+                    CapAccessor::new(root, self).set_cap(cap),
+                )))
             };
         }
 
         self.link_deref(&root)
             .ok_or_else(Error::not_found)
-            .and_then(|n| n.as_file(root, cap, follow_symlink, oflags, fdflags))
+            .and_then(|n| n.open(root, cap, follow_symlink, oflags, fdflags))
     }
 
     fn as_link(&self) -> Option<PathBuf> {
@@ -994,6 +870,10 @@ impl WasiFile for CapAccessor<Arc<Link>> {
 
     async fn set_fdflags(&mut self, _flags: FdFlags) -> Result<(), Error> {
         Err(Error::not_supported())
+    }
+
+    async fn get_filestat(&self) -> Result<Filestat, Error> {
+        Ok(self.filestat())
     }
 
     async fn set_filestat_size(&self, _size: u64) -> Result<(), Error> {

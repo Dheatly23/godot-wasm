@@ -11,6 +11,8 @@ use std::sync::{Arc, Weak};
 
 use anyhow::Error;
 use godot::prelude::*;
+use wasi_common::dir::OpenResult;
+use wasi_common::file::{FdFlags, OFlags};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{Capability, Dir, File, Node};
@@ -51,17 +53,17 @@ impl WasiContext {
 
         let ctx = ctx.build();
 
-        site_context!(ctx.push_preopened_dir(
-            site_context!(o.memfs_root.clone().as_dir(
-                Some(o.memfs_root.clone()),
-                Capability {
-                    read: true,
-                    write: !o.memfs_readonly,
-                },
-                true,
-            ))?,
-            "/",
-        ))?;
+        let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
+            Some(o.memfs_root.clone()),
+            Capability {
+                read: true,
+                write: !o.readonly,
+            },
+            true,
+            OFlags::DIRECTORY,
+            FdFlags::empty(),
+        ))? else { bail_with_site!("Root should be a directory!") };
+        site_context!(ctx.push_preopened_dir(root, "/"))?;
 
         Ok(ctx)
     }
