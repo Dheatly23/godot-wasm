@@ -2,14 +2,15 @@
 
 importer="godot_wasm.wasm"
 type="PackedDataContainer"
-path="res://.import/rustpython.wasm-91050cb66489e3a568035966a9e49a71.res"
+uid="uid://cxaewo1o5klxk"
+path="res://.godot/imported/rustpython.wasm-91050cb66489e3a568035966a9e49a71.res"
 
 [deps]
 
 source_file="res://wasm/rustpython.wasm"
-dest_files=[ "res://.import/rustpython.wasm-91050cb66489e3a568035966a9e49a71.res" ]
+dest_files=["res://.godot/imported/rustpython.wasm-91050cb66489e3a568035966a9e49a71.res"]
 
 [params]
 
 name=""
-imports=[  ]
+imports=[]
