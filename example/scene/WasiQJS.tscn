@@ -26,9 +26,14 @@ layout_mode = 2
 
 [node name="Margin" type="MarginContainer" parent="Container/Panel"]
 layout_mode = 2
+theme_override_constants/margin_left = 5
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 5
+theme_override_constants/margin_bottom = 5
 
 [node name="Tab" type="HBoxContainer" parent="Container/Panel/Margin"]
 layout_mode = 2
+theme_override_constants/separation = 5
 
 [node name="VBox" type="VBoxContainer" parent="Container/Panel/Margin/Tab"]
 layout_mode = 2
