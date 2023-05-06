@@ -2,7 +2,7 @@ extends Node
 
 signal message_emitted(msg)
 
-@export var wasm_file := "" # (String, FILE, "*.wasm,*.wat")
+@export_file("*.wasm", "*.wat") var wasm_file := ""
 
 var instance: WasmInstance = null
 
@@ -16,15 +16,14 @@ var instance: WasmInstance = null
 #		return
 #
 #	instance = InstanceHandle.new()
-#	instance.instantiate(module, {}, {}, self, "__log")
+#	instance.instantiate(module, {}, {}, Callable(self, "__log"))
 #
 #	for i in range(1, 4):
 #		for j in range(1, 4):
 #			instance.call_queue(
 #				"add", [i, j],
-#				self, "__on_result",
-#				self, "__log",
-#				[i, j]
+#				Callable(self, "__on_result").bind(i, j),
+#				Callable(self, "__log"),
 #			)
 #
 #func __log(msg: String) -> void:

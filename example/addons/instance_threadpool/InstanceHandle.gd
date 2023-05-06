@@ -1,46 +1,45 @@
 # Instance handler, has internal queue to maintain dispatch lock
 
 @tool
-extends "Callable.gd"
 class_name InstanceHandle
-
-const CallHandle = preload("CallHandle.gd")
-const Instantiator = preload("Instantiator.gd")
 
 var inst = null
 
 var _instantiate: bool = true
-var _queue: Array = []
+var _queue: Array[Callable] = []
 var _is_exec: bool = false
 var _lock: Mutex = Mutex.new()
 
 # Queue instantiation of the module
 # Returns true on successful queue invocation
 func instantiate(
-	module,
+	module: WasmModule,
 	host: Dictionary = {},
 	config: Dictionary = {},
-	err_obj: Object = null,
-	err_method: String = "",
-	err_binds: Array = []
+	err_callable: Callable = Callable(),
 ) -> bool:
-	var x: Instantiator = Instantiator.new(
-		self,
-		module,
-		host,
-		config,
-		err_obj,
-		err_method,
-		err_binds
-	)
+	var lambda := func ():
+		var inst := WasmInstance.new()
+		inst.connect("error_happened", err_callable, CONNECT_ONE_SHOT)
+
+		_lock.lock()
+		self.inst = inst.initialize(module, host, config)
+		_instantiate = false
+		if len(_queue) == 0:
+			_is_exec = false
+		else:
+			InstanceThreadpoolAutoload._push_queue(Callable(self, "_call"))
+
+		inst.disconnect("error_happened", err_callable)
+		_lock.unlock()
 
 	var ret: bool = false
-	false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
+	_lock.lock()
 	if _instantiate and not _is_exec:
 		_is_exec = true
-		InstanceThreadpoolAutoload._push_queue(x)
+		InstanceThreadpoolAutoload._push_queue(lambda)
 		ret = true
-	false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
+	_lock.unlock()
 
 	return ret
 
@@ -48,54 +47,39 @@ func instantiate(
 func call_queue(
 	name: String,
 	args: Array,
-	ret_obj: Object = null,
-	ret_method: String = "",
-	err_obj: Object = null,
-	err_method: String = "",
-	ret_binds: Array = [],
-	err_binds: Array = []
+	ret_callable: Callable = Callable(),
+	err_callable: Callable = Callable(),
 ):
-	var exec: CallHandle = CallHandle.new(
-		name,
-		args,
-		ret_obj,
-		ret_method,
-		err_obj,
-		err_method,
-		ret_binds,
-		err_binds
-	)
+	var lambda := func (inst: WasmInstance):
+		inst.connect("error_happened", err_callable, CONNECT_ONE_SHOT)
+		var ret: Array = inst.call_wasm(name, args)
+		if inst.is_connected("error_happened", err_callable):
+			InstanceThreadpoolAutoload.queue_call_main(ret_callable.bind(ret))
+			inst.disconnect("error_happened", err_callable)
 
-	false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
-	_queue.push_back(exec)
+	_lock.lock()
+	_queue.push_back(lambda)
 	if not _is_exec:
 		_is_exec = true
-		InstanceThreadpoolAutoload._push_queue(self)
-	false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
+		InstanceThreadpoolAutoload._push_queue(Callable(self, "_call"))
+	_lock.unlock()
 
 func _call():
 	var stamp: int = Time.get_ticks_msec()
-	false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
+	_lock.lock()
 
 	while len(_queue) > 0:
-		var exec: CallHandle = _queue.pop_front()
-		false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
+		var exec: Callable = _queue.pop_front()
+		_lock.unlock()
 
 		if inst != null:
-			exec._call(inst)
+			exec.call(inst)
 
 		if (Time.get_ticks_msec() - stamp) > 1000:
-			InstanceThreadpoolAutoload._push_queue(self)
+			InstanceThreadpoolAutoload._push_queue(Callable(self, "_call"))
 			return
 
-		false # _lock.lock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
+		_lock.lock()
 
 	_is_exec = false
-	false # _lock.unlock() # TODOConverter40, Image no longer requires locking, `false` helps to not break one line if/else, so it can freely be removed
-
-func _finalize_inst():
-	_instantiate = false
-	if len(_queue) == 0:
-		_is_exec = false
-	else:
-		InstanceThreadpoolAutoload._push_queue(self)
+	_lock.unlock()
