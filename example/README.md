@@ -39,6 +39,7 @@ there to open it. There are many examples to choose from:
   thread to prevent locking the main thread.
 
 * WASI RustPython
+
   This example uses WASI to execute Python code.
   Requires [RustPython](https://github.com/RustPython/RustPython)
   standalone WebAssembly binary,
@@ -47,6 +48,7 @@ there to open it. There are many examples to choose from:
   There is also a text box to run your own Python code.
 
 * WASI QuickJS
+
   This example uses WASI to execute Javascript code.
   Requires [QuickJS](https://github.com/second-state/quickjs-wasi) binary
   to be copied to `wasm/qjs.wasm`.
