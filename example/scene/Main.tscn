@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3 uid="uid://qlix1kvnk7jl"]
+[gd_scene load_steps=11 format=3 uid="uid://qlix1kvnk7jl"]
 
 [ext_resource type="Script" path="res://script/SidebarMenu.gd" id="1"]
 [ext_resource type="Theme" uid="uid://ca5y5fjlfv1ot" path="res://theme/default.theme" id="2"]
@@ -10,8 +10,6 @@
 [ext_resource type="PackedScene" uid="uid://dymy63bibij2i" path="res://scene/WasiPython.tscn" id="7_mc77c"]
 [ext_resource type="PackedScene" uid="uid://cv463osoyyr5k" path="res://scene/Connect4.tscn" id="8"]
 [ext_resource type="PackedScene" uid="uid://cc2iv5r4dc8fd" path="res://scene/WasiQJS.tscn" id="8_0k12u"]
-
-[sub_resource type="LabelSettings" id="LabelSettings_opil7"]
 
 [node name="Main" type="Control"]
 layout_mode = 3
@@ -93,4 +91,3 @@ size_flags_horizontal = 3
 [node name="Label" type="Label" parent="SidebarMenu/Panel/Scroller/VBox"]
 layout_mode = 2
 text = "Examples:"
-label_settings = SubResource("LabelSettings_opil7")

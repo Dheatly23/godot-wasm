@@ -54,3 +54,5 @@ there to open it. There are many examples to choose from:
 ## Licensing
 
 Unless otherwise noted, all script/code are licensed under Apache-2.0.
+Monocraft is owned by Idrees Hassan and licensed under SIL Open Font License
+(check `LICENSE-Monocraft` file).
