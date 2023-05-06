@@ -57,7 +57,7 @@ impl WasiContext {
             Some(o.memfs_root.clone()),
             Capability {
                 read: true,
-                write: !o.readonly,
+                write: !o.memfs_readonly,
             },
             true,
             OFlags::DIRECTORY,
