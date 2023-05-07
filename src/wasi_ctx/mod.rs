@@ -68,7 +68,7 @@ impl WasiContext {
         for (k, v) in o
             .envs
             .iter()
-            .filter(|(&ref k, _)| !config.wasi_envs.contains_key(k))
+            .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
         {
             ctx.push_env(k, v)?;
         }
@@ -246,7 +246,7 @@ impl WasiContext {
             if let Ok(v) = PackedByteArray::try_from_variant(&data) {
                 f(&v.to_vec())
             } else if let Ok(v) = GodotString::try_from_variant(&data) {
-                f(format!("{}", v.to_string()).as_bytes())
+                f(format!("{}", v).as_bytes())
             } else if let Ok(v) = PackedInt32Array::try_from_variant(&data) {
                 unsafe { f(as_bytes(&v.to_vec())) }
             } else if let Ok(v) = PackedInt64Array::try_from_variant(&data) {
@@ -303,6 +303,6 @@ impl WasiContext {
             };
             let s = &content[offset.min(content.len())..end];
             Ok(PackedByteArray::from(s))
-        }).unwrap_or_else(|| PackedByteArray::new())
+        }).unwrap_or_else(PackedByteArray::new)
     }
 }

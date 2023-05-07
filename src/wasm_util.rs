@@ -148,9 +148,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 
     let p = if let Ok(v) = <Array<Variant>>::try_from_variant(&params) {
         f(v.iter_shared().map(|v| {
-            Ok(site_context!(
-                u32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
-            )?)
+            u32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
         }))?
     } else if let Ok(v) = PackedByteArray::try_from_variant(&params) {
         f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
@@ -162,9 +160,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 
     let r = if let Ok(v) = <Array<Variant>>::try_from_variant(&results) {
         f(v.iter_shared().map(|v| {
-            Ok(site_context!(
-                u32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
-            )?)
+            u32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
         }))?
     } else if let Ok(v) = PackedByteArray::try_from_variant(&results) {
         f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?

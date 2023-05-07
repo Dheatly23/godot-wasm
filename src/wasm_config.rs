@@ -101,7 +101,7 @@ impl FromVariant for Config {
         if v.is_nil() {
             return Ok(Self::default());
         }
-        let dict = Dictionary::try_from_variant(&v)?;
+        let dict = Dictionary::try_from_variant(v)?;
 
         Ok(Self {
             #[cfg(feature = "epoch-timeout")]
