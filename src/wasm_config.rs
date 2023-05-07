@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use gdnative::prelude::*;
 
 #[cfg(feature = "wasi")]
@@ -25,6 +27,10 @@ pub struct Config {
     pub wasi_context: Option<Instance<WasiContext>>,
     #[cfg(feature = "wasi")]
     pub wasi_args: Vec<String>,
+    #[cfg(feature = "wasi")]
+    pub wasi_envs: HashMap<String, String>,
+    #[cfg(feature = "wasi")]
+    pub wasi_fs_readonly: bool,
 
     pub extern_bind: ExternBindingType,
 }
@@ -93,6 +99,10 @@ impl FromVariant for Config {
             wasi_context: get_field(&dict, "wasi.wasi_context")?,
             #[cfg(feature = "wasi")]
             wasi_args: get_field(&dict, "wasi.args")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_envs: get_field(&dict, "wasi.envs")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_fs_readonly: get_field(&dict, "wasi.fs_readonly")?.unwrap_or_default(),
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })
