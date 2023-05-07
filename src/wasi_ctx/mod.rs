@@ -13,10 +13,12 @@ use anyhow::Error;
 use godot::prelude::*;
 use wasi_common::dir::OpenResult;
 use wasi_common::file::{FdFlags, OFlags};
+use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{Capability, Dir, File, Node};
 use crate::wasi_ctx::stdio::{ContextStderr, ContextStdout};
+use crate::wasm_config::Config;
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
@@ -27,14 +29,31 @@ pub struct WasiContext {
     #[export]
     bypass_stdio: bool,
     #[export]
-    memfs_readonly: bool,
+    fs_readonly: bool,
 
     memfs_root: Arc<Dir>,
     physical_mount: HashMap<PathBuf, PathBuf>,
+    envs: HashMap<String, String>,
 }
 
 impl WasiContext {
-    pub fn build_ctx(this: Gd<Self>, mut ctx: WasiCtxBuilder) -> Result<WasiCtx, Error> {
+    pub fn init_ctx_no_context(mut ctx: WasiCtx, config: &Config) -> Result<WasiCtx, Error> {
+        for (k, v) in &config.wasi_envs {
+            ctx.push_env(k, v)?;
+        }
+
+        for a in &config.wasi_args {
+            ctx.push_arg(a)?;
+        }
+
+        Ok(ctx)
+    }
+
+    pub fn build_ctx(
+        this: Gd<Self>,
+        mut ctx: WasiCtxBuilder,
+        config: &Config,
+    ) -> Result<WasiCtx, Error> {
         let o = this.bind();
         if o.bypass_stdio {
             ctx = ctx.inherit_stdout().inherit_stderr();
@@ -44,20 +63,36 @@ impl WasiContext {
                 .stderr(Box::new(ContextStderr::new(this.share())));
         }
 
-        for (guest, host) in o.physical_mount.iter() {
-            ctx = site_context!(ctx.preopened_dir(
-                site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority()))?,
-                guest,
-            ))?;
+        let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
+
+        for (k, v) in o
+            .envs
+            .iter()
+            .filter(|(&ref k, _)| !config.wasi_envs.contains_key(k))
+        {
+            ctx.push_env(k, v)?;
         }
 
-        let ctx = ctx.build();
+        let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
+
+        for (guest, host) in o.physical_mount.iter() {
+            let dir = site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority()))?;
+            let OpenResult2::Dir(dir) = site_context!(CapDir::from_cap_std(dir).open_file_(
+                false,
+                ".",
+                OFlags::DIRECTORY,
+                true,
+                fs_writable,
+                FdFlags::empty(),
+            ))? else { bail_with_site!("Path should be a directory!") };
+            site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
+        }
 
         let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
             Some(o.memfs_root.clone()),
             Capability {
                 read: true,
-                write: !o.memfs_readonly,
+                write: !o.fs_readonly,
             },
             true,
             OFlags::DIRECTORY,
@@ -88,16 +123,34 @@ impl RefCountedVirtual for WasiContext {
         Self {
             base,
             bypass_stdio: false,
-            memfs_readonly: false,
+            fs_readonly: false,
 
             memfs_root: Arc::new(Dir::new(<Weak<Dir>>::new())),
             physical_mount: HashMap::new(),
+            envs: HashMap::new(),
         }
     }
 }
 
 #[godot_api]
 impl WasiContext {
+    #[func]
+    fn add_env_variable(&mut self, key: GodotString, value: GodotString) {
+        let k = key.chars_checked();
+        let v = value.chars_checked();
+        self.envs.insert(
+            String::from_iter(k.iter().copied()),
+            String::from_iter(v.iter().copied()),
+        );
+    }
+
+    #[func]
+    fn get_env_variable(&self, key: GodotString) -> Variant {
+        self.envs
+            .get(&String::from_iter(key.chars_checked().iter().copied()))
+            .map_or_else(Variant::nil, |v| v.to_variant())
+    }
+
     #[func]
     fn mount_physical_dir(&mut self, host_path: GodotString, guest_path: Variant) {
         let host_path = String::from(host_path);

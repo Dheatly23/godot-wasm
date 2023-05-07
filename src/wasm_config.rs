@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use godot::prelude::*;
 
 #[cfg(feature = "wasi")]
@@ -25,6 +27,10 @@ pub struct Config {
     pub wasi_context: Option<Gd<WasiContext>>,
     #[cfg(feature = "wasi")]
     pub wasi_args: Vec<String>,
+    #[cfg(feature = "wasi")]
+    pub wasi_envs: HashMap<String, String>,
+    #[cfg(feature = "wasi")]
+    pub wasi_fs_readonly: bool,
 
     pub extern_bind: ExternBindingType,
 }
@@ -74,6 +80,22 @@ fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, VariantConversionErr
     Ok(ret)
 }
 
+#[cfg(feature = "wasi")]
+fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, VariantConversionError> {
+    let v = match v {
+        Some(v) => match Dictionary::try_from_variant(&v) {
+            Ok(v) => v,
+            Err(_) => return Err(VariantConversionError),
+        },
+        None => return Ok(HashMap::new()),
+    };
+    let mut ret = HashMap::with_capacity(v.len());
+    for (k, v) in v.iter_shared() {
+        ret.insert(String::try_from_variant(&k)?, String::try_from_variant(&v)?);
+    }
+    Ok(ret)
+}
+
 impl FromVariant for Config {
     fn try_from_variant(v: &Variant) -> Result<Self, VariantConversionError> {
         if v.is_nil() {
@@ -100,6 +122,10 @@ impl FromVariant for Config {
             wasi_context: get_field(&dict, "wasi.wasi_context")?,
             #[cfg(feature = "wasi")]
             wasi_args: get_wasi_args(dict.get("wasi.args"))?,
+            #[cfg(feature = "wasi")]
+            wasi_envs: get_wasi_envs(dict.get("wasi.envs"))?,
+            #[cfg(feature = "wasi")]
+            wasi_fs_readonly: get_field(&dict, "wasi.fs_readonly")?.unwrap_or_default(),
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })

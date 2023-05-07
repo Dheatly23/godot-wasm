@@ -142,13 +142,17 @@ impl InstanceData {
 
         #[cfg(feature = "wasi")]
         let wasi_linker = if store.data().config.with_wasi {
-            let mut builder = WasiCtxBuilder::new();
-            builder = builder.args(&store.data().config.wasi_args)?;
+            let builder = WasiCtxBuilder::new();
 
-            store.data_mut().wasi_ctx = if let Some(ctx) = &store.data().config.wasi_context {
-                Some(WasiContext::build_ctx(ctx.share(), builder)?)
-            } else {
-                Some(builder.inherit_stdout().inherit_stderr().build())
+            let StoreData {
+                wasi_ctx, config, ..
+            } = store.data_mut();
+            *wasi_ctx = match &config.wasi_context {
+                Some(ctx) => Some(WasiContext::build_ctx(ctx.share(), builder, &*config)?),
+                None => Some(WasiContext::init_ctx_no_context(
+                    builder.inherit_stdout().inherit_stderr().build(),
+                    &*config,
+                )?),
             };
             let mut r = <Linker<StoreData>>::new(&ENGINE);
             add_to_linker(&mut r, |data| data.wasi_ctx.as_mut().unwrap())?;
