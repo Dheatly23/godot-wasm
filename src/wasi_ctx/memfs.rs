@@ -12,6 +12,8 @@ use wasi_common::dir::{OpenResult, ReaddirCursor, ReaddirEntity};
 use wasi_common::file::{Advice, FdFlags, FileType, Filestat, OFlags};
 use wasi_common::{Error, ErrorExt, SystemTimeSpec, WasiDir, WasiFile};
 
+const MAX_SYMLINK_DEREF: usize = 16;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Capability {
     pub read: bool,
@@ -75,7 +77,7 @@ pub trait Node: Send + Sync {
     fn as_link(&self) -> Option<PathBuf> {
         None
     }
-    fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>) -> Option<Arc<dyn Node>>;
+    fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>, _n: usize) -> Option<Arc<dyn Node>>;
 }
 
 pub struct Dir {
@@ -151,7 +153,7 @@ impl Node for Dir {
         )))
     }
 
-    fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>) -> Option<Arc<dyn Node>> {
+    fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>, _n: usize) -> Option<Arc<dyn Node>> {
         Some(self as _)
     }
 }
@@ -219,7 +221,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
                     };
 
                     if symlink_follow {
-                        match n.link_deref(&self.root) {
+                        match n.link_deref(&self.root, MAX_SYMLINK_DEREF) {
                             Some(v) => v,
                             None => return Err(Error::not_found()),
                         }
@@ -398,7 +400,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             ".." => self.parent(),
             path => self.child(path).and_then(|n| {
                 if follow_symlinks {
-                    n.link_deref(&self.root)
+                    n.link_deref(&self.root, MAX_SYMLINK_DEREF)
                 } else {
                     Some(n)
                 }
@@ -550,7 +552,7 @@ impl Node for File {
         )))
     }
 
-    fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>) -> Option<Arc<dyn Node>> {
+    fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>, _n: usize) -> Option<Arc<dyn Node>> {
         Some(self as _)
     }
 }
@@ -847,7 +849,7 @@ impl Node for Link {
             };
         }
 
-        self.link_deref(&root)
+        self.link_deref(&root, MAX_SYMLINK_DEREF)
             .ok_or_else(Error::not_found)
             .and_then(|n| n.open(root, cap, follow_symlink, oflags, fdflags))
     }
@@ -856,14 +858,21 @@ impl Node for Link {
         Some(self.path.clone())
     }
 
-    fn link_deref(self: Arc<Self>, root: &Option<Arc<Dir>>) -> Option<Arc<dyn Node>> {
+    fn link_deref(self: Arc<Self>, root: &Option<Arc<Dir>>, mut n: usize) -> Option<Arc<dyn Node>> {
+        n = match n.checked_sub(1) {
+            Some(v) => v,
+            None => return None,
+        };
+
         let mut node = self.parent();
         for c in self.path.components() {
             node = match c {
                 Component::RootDir => root.clone().map(|v| v as _),
                 Component::CurDir => continue,
                 Component::ParentDir => node.and_then(|n| n.parent()),
-                Component::Normal(name) => node.and_then(|n| n.child(name.to_str().unwrap())),
+                Component::Normal(name) => node
+                    .and_then(|n| n.child(name.to_str().unwrap()))
+                    .and_then(|v| v.link_deref(root, n)),
                 Component::Prefix(_) => return None,
             };
         }
