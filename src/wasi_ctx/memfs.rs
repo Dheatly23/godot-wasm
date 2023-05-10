@@ -433,7 +433,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
         let mut content = self.content.write();
         let node = content.get(path).ok_or_else(Error::not_found)?;
 
-        if Arc::ptr_eq(&*self, &*dest) {
+        if Arc::ptr_eq(self, dest) {
             if dest_path == path {
                 return Ok(());
             }
@@ -457,7 +457,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
                 Entry::Vacant(v) => v.insert(node.clone()),
             };
 
-            node.set_parent(Arc::downgrade(&*dest) as _);
+            node.set_parent(Arc::downgrade(dest) as _);
         }
 
         content.remove(path);

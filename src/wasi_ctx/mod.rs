@@ -80,7 +80,7 @@ impl WasiContext {
                 for (k, v) in o
                     .envs
                     .iter()
-                    .filter(|(&ref k, _)| !config.wasi_envs.contains_key(k))
+                    .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
                 {
                     ctx.push_env(k, v)?;
                 }
@@ -130,7 +130,7 @@ impl WasiContext {
                     e.downcast_ref::<Site>()
                         .copied()
                         .unwrap_or_else(|| godot_site!()),
-                    &s,
+                    s,
                 );
                 None
             }
@@ -259,8 +259,8 @@ impl WasiContext {
             match data.dispatch() {
                 VariantDispatch::ByteArray(v) => f(&*v.read()),
                 VariantDispatch::GodotString(v) => f(v.to_string().as_bytes()),
-                VariantDispatch::Int32Array(v) => unsafe { f(as_bytes(&*v.read())) },
-                VariantDispatch::Float32Array(v) => unsafe { f(as_bytes(&*v.read())) },
+                VariantDispatch::Int32Array(v) => unsafe { f(as_bytes(&v.read())) },
+                VariantDispatch::Float32Array(v) => unsafe { f(as_bytes(&v.read())) },
                 _ => bail_with_site!("Unknown value {}", data),
             }
         });

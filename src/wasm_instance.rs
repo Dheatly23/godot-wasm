@@ -238,7 +238,7 @@ impl InstanceData {
                                             &mut *insts,
                                             host,
                                             #[cfg(feature = "wasi")]
-                                            *&wasi_linker,
+                                            wasi_linker,
                                         )
                                     })
                                     .unwrap()?;
@@ -834,12 +834,12 @@ impl WasmInstance {
         self.get_memory(base, |mut store, mem| {
             let data = mem.data_mut(&mut store);
             match v.dispatch() {
-                VariantDispatch::ByteArray(v) => f(data, i, &*v.read()),
-                VariantDispatch::Int32Array(v) => f(data, i, &*v.read()),
-                VariantDispatch::Float32Array(v) => f(data, i, &*v.read()),
-                VariantDispatch::Vector2Array(v) => f(data, i, &*v.read()),
-                VariantDispatch::Vector3Array(v) => f(data, i, &*v.read()),
-                VariantDispatch::ColorArray(v) => f(data, i, &*v.read()),
+                VariantDispatch::ByteArray(v) => f(data, i, &v.read()),
+                VariantDispatch::Int32Array(v) => f(data, i, &v.read()),
+                VariantDispatch::Float32Array(v) => f(data, i, &v.read()),
+                VariantDispatch::Vector2Array(v) => f(data, i, &v.read()),
+                VariantDispatch::Vector3Array(v) => f(data, i, &v.read()),
+                VariantDispatch::ColorArray(v) => f(data, i, &v.read()),
                 _ => bail_with_site!("Unknown value"),
             }
         })
