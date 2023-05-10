@@ -823,7 +823,7 @@ impl Node for Link {
             inode: 0,
             filetype: self.filetype(),
             nlink: 0,
-            size: 0,
+            size: self.path.as_os_str().len() as _,
             atim: None,
             mtim: None,
             ctim: None,
