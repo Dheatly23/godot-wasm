@@ -195,10 +195,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
         loop {
             node = match path {
                 "" | "." => node,
-                ".." => match node.parent() {
-                    Some(v) => v,
-                    None => node,
-                },
+                ".." => node.parent().unwrap_or(node),
                 p => {
                     let n = if rest.is_none() && oflags.contains(OFlags::CREATE) {
                         let Some(n) = node.as_any().downcast_ref::<Dir>() else { return Err(Error::not_dir()) };
@@ -293,14 +290,15 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             ix = 1;
         }
         if ix == 1 {
-            if let Some(v) = self.parent() {
-                ret.push(Ok(ReaddirEntity {
-                    next: <_>::from(2),
-                    name: "..".to_owned(),
-                    inode: 0,
-                    filetype: v.filetype(),
-                }));
-            }
+            ret.push(Ok(ReaddirEntity {
+                next: <_>::from(2),
+                name: "..".to_owned(),
+                inode: 0,
+                filetype: match self.parent() {
+                    Some(v) => v.filetype(),
+                    None => self.filetype(),
+                },
+            }));
             ix = 2;
         }
         for (k, v) in content.iter().skip(ix - 2) {
@@ -394,21 +392,23 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             return Err(Error::perm());
         }
 
-        let node = match path {
+        match path {
             "" => return Err(Error::invalid_argument()),
             "." => return Ok(self.filestat()),
-            ".." => self.parent(),
-            path => self.child(path).and_then(|n| {
+            ".." => match self.parent() {
+                Some(v) => Ok(v.filestat()),
+                None => Ok(self.filestat()),
+            },
+            path => {
+                let mut node = self.child(path);
                 if follow_symlinks {
-                    n.link_deref(&self.root, MAX_SYMLINK_DEREF)
-                } else {
-                    Some(n)
+                    node = node.and_then(|n| n.link_deref(&self.root, MAX_SYMLINK_DEREF));
                 }
-            }),
-        };
-        match node {
-            Some(node) => Ok(node.filestat()),
-            None => Err(Error::not_found()),
+                match node {
+                    Some(node) => Ok(node.filestat()),
+                    None => Err(Error::not_found()),
+                }
+            }
         }
     }
 
@@ -869,7 +869,7 @@ impl Node for Link {
             node = match c {
                 Component::RootDir => root.clone().map(|v| v as _),
                 Component::CurDir => continue,
-                Component::ParentDir => node.and_then(|n| n.parent()),
+                Component::ParentDir => node.map(|n| n.parent().unwrap_or(n)),
                 Component::Normal(name) => node
                     .and_then(|n| n.child(name.to_str().unwrap()))
                     .and_then(|v| v.link_deref(root, n)),
