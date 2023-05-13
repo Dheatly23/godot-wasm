@@ -40,6 +40,8 @@ impl Timestamp {
 
                 // SAFETY: Interconvert between u/i64 to prevent panics on debug build.
                 let v_: i64 = unsafe { transmute(v) };
+                // CLIPPY: Allow this for 64-bit system
+                #[allow(clippy::useless_conversion)]
                 match ValueType::try_from(v_) {
                     Ok(v) if v_ <= 0 => v,
                     _ => ValueType::MIN,
@@ -53,6 +55,8 @@ impl Timestamp {
     }
 
     pub fn get_stamp(&self) -> Option<SystemTime> {
+        // CLIPPY: Allow this for 64-bit system
+        #[allow(clippy::unnecessary_cast)]
         let s = self.0.load(Ordering::Acquire) as i64;
 
         // SAFETY: Interconvert between u/i64 to prevent panics on debug build.
