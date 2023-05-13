@@ -89,16 +89,18 @@ impl WasiContext {
                 let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
 
                 for (guest, host) in o.physical_mount.iter() {
-                    let dir =
-                        site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority()))?;
-                    let OpenResult2::Dir(dir) = site_context!(CapDir::from_cap_std(dir).open_file_(
-                false,
-                ".",
-                OFlags::DIRECTORY,
-                true,
-                fs_writable,
-                FdFlags::empty(),
-            ))? else { bail_with_site!("Path should be a directory!") };
+                    let dir = CapDir::from_cap_std(site_context!(PhysicalDir::open_ambient_dir(
+                        host,
+                        ambient_authority(),
+                    ))?);
+                    let OpenResult2::Dir(dir) = site_context!(dir.open_file_(
+                        false,
+                        ".",
+                        OFlags::DIRECTORY,
+                        true,
+                        fs_writable,
+                        FdFlags::empty(),
+                    ))? else { bail_with_site!("Path should be a directory!") };
                     site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
                 }
 
@@ -112,7 +114,7 @@ impl WasiContext {
                     OFlags::DIRECTORY,
                     FdFlags::empty(),
                 ))? else { bail_with_site!("Root should be a directory!") };
-                site_context!(ctx.push_preopened_dir(root, "/"))?;
+                site_context!(ctx.push_preopened_dir(root, "."))?;
 
                 Ok(ctx)
             })?

@@ -45,6 +45,8 @@ pub const MODULE_INCLUDES: &[&str] = &[
     #[cfg(feature = "object-registry-extern")]
     EXTERNREF_MODULE,
     #[cfg(feature = "wasi")]
+    "wasi_unstable",
+    #[cfg(feature = "wasi")]
     "wasi_snapshot_preview0",
     #[cfg(feature = "wasi")]
     "wasi_snapshot_preview1",
