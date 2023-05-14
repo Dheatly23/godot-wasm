@@ -115,7 +115,9 @@ here are some prompts:
   skill at your favourite programming language into the game. Bonus, if
   somehow your program has bugs, it won't corrupt or crash the game.
 
-  _*Right now, very few programming language can emit standalone WASM._
+  _*Right now, very few programming language can emit standalone WASM.
+  Although WASI expands the number of language supported, it may require
+  some custom host API shim layer._
 
 ### Competitive robot/AI game
 

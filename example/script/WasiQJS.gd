@@ -16,8 +16,8 @@ func _ready():
 		__log("Cannot compile module " + wasm_file)
 		return
 
-#	wasi_ctx.connect("stdout_emit", self, "__bin_log")
-#	wasi_ctx.connect("stderr_emit", self, "__bin_log")
+#	wasi_ctx.connect("stdout_emit", self, "__log")
+#	wasi_ctx.connect("stderr_emit", self, "__log")
 	wasi_ctx.bypass_stdio = false
 	wasi_ctx.write_memory_file(
 		"hello_world.js",
@@ -26,10 +26,7 @@ func _ready():
 	)
 
 func __log(msg: String) -> void:
-	emit_signal("message_emitted", msg)
-
-func __bin_log(msg: PackedByteArray) -> void:
-	emit_signal("message_emitted", msg.get_string_from_utf8().strip_edges())
+	emit_signal("message_emitted", msg.strip_edges())
 
 #func __run(source: String, ret_method = ""):
 #	var module := file.get_module()

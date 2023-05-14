@@ -5,6 +5,7 @@ use std::io::{Cursor, IoSlice, IoSliceMut, Read, SeekFrom, Write};
 use std::ops::Deref;
 use std::path::{Component, PathBuf};
 use std::sync::{Arc, Weak};
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use parking_lot::{Mutex, RwLock};
@@ -12,7 +13,49 @@ use wasi_common::dir::{OpenResult, ReaddirCursor, ReaddirEntity};
 use wasi_common::file::{Advice, FdFlags, FileType, Filestat, OFlags};
 use wasi_common::{Error, ErrorExt, SystemTimeSpec, WasiDir, WasiFile};
 
+use crate::wasi_ctx::timestamp::FileTimestamp;
+
 const MAX_SYMLINK_DEREF: usize = 16;
+
+fn _set_times(stamp: &FileTimestamp, mtime: Option<SystemTimeSpec>, atime: Option<SystemTimeSpec>) {
+    let (m, a) = match (mtime, atime) {
+        (None, None) => return,
+        (Some(SystemTimeSpec::Absolute(a)), None) => (Some(a.into_std()), None),
+        (Some(SystemTimeSpec::SymbolicNow), None) => (Some(SystemTime::now()), None),
+        (None, Some(SystemTimeSpec::Absolute(b))) => (None, Some(b.into_std())),
+        (None, Some(SystemTimeSpec::SymbolicNow)) => (None, Some(SystemTime::now())),
+        (Some(SystemTimeSpec::Absolute(a)), Some(SystemTimeSpec::Absolute(b))) => {
+            (Some(a.into_std()), Some(b.into_std()))
+        }
+        (Some(SystemTimeSpec::SymbolicNow), Some(SystemTimeSpec::Absolute(b))) => {
+            (Some(SystemTime::now()), Some(b.into_std()))
+        }
+        (Some(SystemTimeSpec::Absolute(a)), Some(SystemTimeSpec::SymbolicNow)) => {
+            (Some(a.into_std()), Some(SystemTime::now()))
+        }
+        (Some(SystemTimeSpec::SymbolicNow), Some(SystemTimeSpec::SymbolicNow)) => {
+            let n = SystemTime::now();
+            (Some(n), Some(n))
+        }
+    };
+
+    if let Some(m) = m {
+        stamp.mtime.set_stamp(m);
+    }
+    if let Some(a) = a {
+        stamp.atime.set_stamp(a);
+    }
+}
+
+fn _touch_read(stamp: &FileTimestamp, time: Option<SystemTime>) {
+    stamp.atime.set_stamp(time.unwrap_or_else(SystemTime::now));
+}
+
+fn _touch_write(stamp: &FileTimestamp, time: Option<SystemTime>) {
+    let t = time.unwrap_or_else(SystemTime::now);
+    stamp.mtime.set_stamp(t);
+    stamp.atime.set_stamp(t);
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Capability {
@@ -61,6 +104,7 @@ pub trait Node: Send + Sync {
     fn set_parent(&self, new_parent: Weak<dyn Node>);
     fn filetype(&self) -> FileType;
     fn filestat(&self) -> Filestat;
+    fn timestamp(&self) -> &FileTimestamp;
     fn child(&self, _name: &str) -> Option<Arc<dyn Node>> {
         None
     }
@@ -82,6 +126,7 @@ pub trait Node: Send + Sync {
 
 pub struct Dir {
     parent: RwLock<Weak<dyn Node>>,
+    stamp: FileTimestamp,
 
     pub content: RwLock<BTreeMap<String, Arc<dyn Node>>>,
 }
@@ -93,9 +138,16 @@ impl Debug for Dir {
 }
 
 impl Dir {
+    #[inline]
     pub fn new(parent: Weak<dyn Node>) -> Self {
+        Self::with_timestamp(parent, FileTimestamp::new())
+    }
+
+    #[inline]
+    pub fn with_timestamp(parent: Weak<dyn Node>, stamp: FileTimestamp) -> Self {
         Self {
             parent: RwLock::new(parent),
+            stamp,
 
             content: RwLock::default(),
         }
@@ -126,10 +178,14 @@ impl Node for Dir {
             filetype: self.filetype(),
             nlink: 0,
             size: 0,
-            atim: None,
-            mtim: None,
-            ctim: None,
+            atim: self.stamp.atime.get_stamp(),
+            mtim: self.stamp.mtime.get_stamp(),
+            ctim: Some(self.stamp.ctime),
         }
+    }
+
+    fn timestamp(&self) -> &FileTimestamp {
+        &self.stamp
     }
 
     fn child(&self, name: &str) -> Option<Arc<dyn Node>> {
@@ -191,6 +247,8 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             return Err(Error::perm());
         }
 
+        let time = SystemTime::now();
+
         let mut node: Arc<dyn Node> = self.value.clone();
         loop {
             node = match path {
@@ -200,18 +258,27 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
                     let n = if rest.is_none() && oflags.contains(OFlags::CREATE) {
                         let Some(n) = node.as_any().downcast_ref::<Dir>() else { return Err(Error::not_dir()) };
                         let mut content = n.content.write();
+                        _touch_read(node.timestamp(), Some(time));
                         loop {
                             if let Some(v) = content.get(p) {
                                 break v.clone();
                             }
                             let v: Arc<dyn Node> = if oflags.contains(OFlags::DIRECTORY) {
-                                Arc::new(Dir::new(Arc::downgrade(&node)))
+                                Arc::new(Dir::with_timestamp(
+                                    Arc::downgrade(&node),
+                                    FileTimestamp::with_time(time),
+                                ))
                             } else {
-                                Arc::new(File::new(Arc::downgrade(&node)))
+                                Arc::new(File::with_timestamp(
+                                    Arc::downgrade(&node),
+                                    FileTimestamp::with_time(time),
+                                ))
                             };
                             content.insert(p.to_owned(), v);
+                            _touch_write(node.timestamp(), Some(time));
                         }
                     } else if let Some(v) = node.child(p) {
+                        _touch_read(node.timestamp(), Some(time));
                         v
                     } else {
                         return Err(Error::not_found());
@@ -261,6 +328,8 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             Entry::Occupied(_) => Err(Error::exist()),
             Entry::Vacant(v) => {
                 v.insert(Arc::new(Dir::new(Arc::downgrade(&self.value) as _)));
+
+                _touch_write(self.timestamp(), None);
                 Ok(())
             }
         }
@@ -311,6 +380,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             }));
         }
 
+        _touch_read(self.timestamp(), None);
         Ok(Box::new(ret.into_iter()))
     }
 
@@ -331,6 +401,8 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
                     Arc::downgrade(&self.value) as _,
                     PathBuf::from(old_path),
                 )));
+
+                _touch_write(self.timestamp(), None);
                 Ok(())
             }
         }
@@ -346,6 +418,8 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             None => Err(Error::not_found()),
             Some(v) if v.filetype() == FileType::Directory => {
                 content.remove(path);
+
+                _touch_write(self.timestamp(), None);
                 Ok(())
             }
             _ => Err(Error::not_dir()),
@@ -362,6 +436,8 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             None => Err(Error::not_found()),
             Some(v) if v.filetype() != FileType::Directory => {
                 content.remove(path);
+
+                _touch_write(self.timestamp(), None);
                 Ok(())
             }
             _ => Err(Error::not_dir()),
@@ -434,6 +510,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
 
         let mut content = self.content.write();
         let node = content.get(path).ok_or_else(Error::not_found)?;
+        let time = SystemTime::now();
 
         if Arc::ptr_eq(self, dest) {
             if dest_path == path {
@@ -460,23 +537,65 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             };
 
             node.set_parent(Arc::downgrade(dest) as _);
+            _touch_write(dest.timestamp(), Some(time));
         }
 
         content.remove(path);
+        _touch_write(self.timestamp(), Some(time));
+        Ok(())
+    }
+
+    async fn set_times(
+        &self,
+        path: &str,
+        atime: Option<SystemTimeSpec>,
+        mtime: Option<SystemTimeSpec>,
+        follow_symlinks: bool,
+    ) -> Result<(), Error> {
+        match path {
+            "" => return Err(Error::invalid_argument()),
+            "." => _set_times(self.timestamp(), mtime, atime),
+            ".." => _set_times(
+                match &self.parent() {
+                    Some(v) => v.timestamp(),
+                    None => self.timestamp(),
+                },
+                mtime,
+                atime,
+            ),
+            path => {
+                let mut node = self.child(path);
+                if follow_symlinks {
+                    node = node.and_then(|n| n.link_deref(&self.root, MAX_SYMLINK_DEREF));
+                }
+                match node {
+                    Some(node) => _set_times(node.timestamp(), mtime, atime),
+                    None => return Err(Error::not_found()),
+                }
+            }
+        }
+
         Ok(())
     }
 }
 
 pub struct File {
     parent: RwLock<Weak<dyn Node>>,
+    stamp: FileTimestamp,
 
     pub content: RwLock<Vec<u8>>,
 }
 
 impl File {
+    #[inline]
     pub fn new(parent: Weak<dyn Node>) -> Self {
+        Self::with_timestamp(parent, FileTimestamp::new())
+    }
+    #[inline]
+    fn with_timestamp(parent: Weak<dyn Node>, stamp: FileTimestamp) -> Self {
         Self {
             parent: RwLock::new(parent),
+            stamp,
 
             content: RwLock::default(),
         }
@@ -507,10 +626,14 @@ impl Node for File {
             filetype: self.filetype(),
             nlink: 0,
             size: self.content.read().len() as _,
-            atim: None,
-            mtim: None,
-            ctim: None,
+            atim: self.stamp.atime.get_stamp(),
+            mtim: self.stamp.mtime.get_stamp(),
+            ctim: Some(self.stamp.ctime),
         }
+    }
+
+    fn timestamp(&self) -> &FileTimestamp {
+        &self.stamp
     }
 
     fn open(
@@ -594,6 +717,8 @@ impl WasiFile for CapAccessor<OpenFile> {
             .content
             .write()
             .truncate(usize::try_from(size).unwrap_or(usize::MAX));
+
+        _touch_write(self.file.timestamp(), None);
         Ok(())
     }
 
@@ -611,10 +736,11 @@ impl WasiFile for CapAccessor<OpenFile> {
 
     async fn set_times(
         &self,
-        _atime: Option<SystemTimeSpec>,
-        _mtime: Option<SystemTimeSpec>,
+        atime: Option<SystemTimeSpec>,
+        mtime: Option<SystemTimeSpec>,
     ) -> Result<(), Error> {
-        Err(Error::not_supported())
+        _set_times(self.file.timestamp(), mtime, atime);
+        Ok(())
     }
 
     async fn read_vectored<'a>(&self, bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
@@ -633,6 +759,7 @@ impl WasiFile for CapAccessor<OpenFile> {
         let n = cursor.read_vectored(bufs)?;
         *ptr = cursor.position();
 
+        _touch_read(self.file.timestamp(), None);
         Ok(n as _)
     }
 
@@ -661,6 +788,7 @@ impl WasiFile for CapAccessor<OpenFile> {
         }
         let n = (&content[ix..]).read_vectored(bufs)?;
 
+        _touch_read(self.file.timestamp(), None);
         Ok(n as _)
     }
 
@@ -683,6 +811,7 @@ impl WasiFile for CapAccessor<OpenFile> {
             *ptr = cursor.position();
         }
 
+        _touch_write(self.file.timestamp(), None);
         Ok(n as _)
     }
 
@@ -708,6 +837,7 @@ impl WasiFile for CapAccessor<OpenFile> {
         cursor.set_position(ix as _);
         let n = cursor.write_vectored(bufs)?;
 
+        _touch_write(self.file.timestamp(), None);
         Ok(n as _)
     }
 
@@ -747,6 +877,7 @@ impl WasiFile for CapAccessor<OpenFile> {
             .unwrap_or_default()
             .read(buf)?;
 
+        _touch_read(self.file.timestamp(), None);
         Ok(n as _)
     }
 
@@ -787,6 +918,7 @@ impl WasiFile for CapAccessor<OpenFile> {
 
 struct Link {
     parent: RwLock<Weak<dyn Node>>,
+    stamp: FileTimestamp,
 
     path: PathBuf,
 }
@@ -795,6 +927,8 @@ impl Link {
     fn new(parent: Weak<dyn Node>, path: PathBuf) -> Self {
         Self {
             parent: RwLock::new(parent),
+            stamp: FileTimestamp::new(),
+
             path,
         }
     }
@@ -823,11 +957,15 @@ impl Node for Link {
             inode: 0,
             filetype: self.filetype(),
             nlink: 0,
-            size: 0,
-            atim: None,
-            mtim: None,
-            ctim: None,
+            size: self.path.as_os_str().len() as _,
+            atim: self.stamp.atime.get_stamp(),
+            mtim: self.stamp.mtime.get_stamp(),
+            ctim: Some(self.stamp.ctime),
         }
+    }
+
+    fn timestamp(&self) -> &FileTimestamp {
+        &self.stamp
     }
 
     fn open(
@@ -917,10 +1055,11 @@ impl WasiFile for CapAccessor<Arc<Link>> {
 
     async fn set_times(
         &self,
-        _atime: Option<SystemTimeSpec>,
-        _mtime: Option<SystemTimeSpec>,
+        atime: Option<SystemTimeSpec>,
+        mtime: Option<SystemTimeSpec>,
     ) -> Result<(), Error> {
-        Err(Error::not_supported())
+        _set_times(self.timestamp(), mtime, atime);
+        Ok(())
     }
 
     async fn read_vectored<'a>(&self, _bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {

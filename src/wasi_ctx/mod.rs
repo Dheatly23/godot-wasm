@@ -1,5 +1,6 @@
 mod memfs;
 mod stdio;
+mod timestamp;
 
 use std::collections::btree_map::Entry;
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{Capability, Dir, File, Node};
-use crate::wasi_ctx::stdio::{ContextStderr, ContextStdout};
+use crate::wasi_ctx::stdio::WritePipe;
 use crate::wasm_config::Config;
 use crate::{bail_with_site, site_context};
 
@@ -58,9 +59,9 @@ impl WasiContext {
         if o.bypass_stdio {
             ctx = ctx.inherit_stdout().inherit_stderr();
         } else {
-            ctx = ctx
-                .stdout(Box::new(ContextStdout::new(this.share())))
-                .stderr(Box::new(ContextStderr::new(this.share())));
+            // Stub method
+            ctx = ctx.stdout(Box::new(WritePipe::new(move |buf| {})));
+            ctx = ctx.stderr(Box::new(WritePipe::new(move |buf| {})));
         }
 
         let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
@@ -98,7 +99,7 @@ impl WasiContext {
             OFlags::DIRECTORY,
             FdFlags::empty(),
         ))? else { bail_with_site!("Root should be a directory!") };
-        site_context!(ctx.push_preopened_dir(root, "/"))?;
+        site_context!(ctx.push_preopened_dir(root, "."))?;
 
         Ok(ctx)
     }

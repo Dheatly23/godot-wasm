@@ -517,8 +517,10 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "cfg-if",
  "godot",
  "lazy_static",
+ "memchr",
  "parking_lot",
  "scopeguard",
  "slab",
