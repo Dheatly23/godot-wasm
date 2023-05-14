@@ -116,7 +116,7 @@ where
             return Ok(0);
         }
 
-        let p = buffer.as_mut_ptr();
+        let p = unsafe { buffer.as_mut_ptr().add(buffer.len()) };
         let mut n = 0;
 
         let mut l = buffer.capacity().wrapping_sub(buffer.len());
@@ -124,16 +124,20 @@ where
             let i = i.wrapping_add(1);
             if l >= i {
                 unsafe {
-                    ptr::copy_nonoverlapping(buf.as_ptr(), p.add(buffer.len()), i);
-                    buffer.set_len(buffer.len().wrapping_add(i));
-                    f(buffer.as_slice());
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p, i);
+                    let s =
+                        slice::from_raw_parts(buffer.as_mut_ptr(), buffer.len().wrapping_add(i));
                     buffer.set_len(0);
+                    f(s);
                 }
             } else {
                 unsafe {
-                    ptr::copy_nonoverlapping(buf.as_ptr(), p.add(buffer.len()), l);
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p, l);
                     buffer.set_len(0);
-                    f(slice::from_raw_parts(p, buffer.capacity()));
+                    f(slice::from_raw_parts(
+                        buffer.as_mut_ptr(),
+                        buffer.capacity(),
+                    ));
                     f(buf.get_unchecked(l..=i));
                 }
             }
@@ -142,14 +146,14 @@ where
         } else {
             if l >= buf.len() {
                 unsafe {
-                    ptr::copy_nonoverlapping(buf.as_ptr(), p.add(buffer.len()), buf.len());
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p, buf.len());
                     buffer.set_len(buffer.len().wrapping_add(buf.len()));
                 }
 
                 return Ok(buf.len());
             } else {
                 unsafe {
-                    ptr::copy_nonoverlapping(buf.as_ptr(), p.add(buffer.len()), l);
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p, l);
                     buffer.set_len(0);
                     f(slice::from_raw_parts(p, buffer.capacity()));
                 }
@@ -165,15 +169,18 @@ where
                 buf = b;
                 f(a);
             } else {
-                while buf.len() > buffer.capacity() {
-                    let (a, b) = buf.split_at(buffer.capacity());
-                    n += buffer.capacity();
+                if buf.len() >= buffer.capacity() {
+                    let i = buf
+                        .len()
+                        .wrapping_sub(buf.len().wrapping_rem(buffer.capacity()));
+                    let (a, b) = buf.split_at(i);
+                    n += a.len();
                     buf = b;
                     f(a);
                 }
 
                 unsafe {
-                    ptr::copy_nonoverlapping(buf.as_ptr(), p, buf.len());
+                    ptr::copy_nonoverlapping(buf.as_ptr(), buffer.as_mut_ptr(), buf.len());
                     buffer.set_len(buf.len());
                 }
 
