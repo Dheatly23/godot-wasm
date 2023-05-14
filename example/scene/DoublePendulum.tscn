@@ -1,6 +1,6 @@
 [gd_scene load_steps=4 format=3 uid="uid://htrdfx1x1wfl"]
 
-[ext_resource type="PackedScene" path="res://scene/Pendulum.tscn" id="1"]
+[ext_resource type="PackedScene" uid="uid://wj0exo4d4w02" path="res://scene/Pendulum.tscn" id="1"]
 [ext_resource type="Script" path="res://script/DoublePendulum.gd" id="3"]
 
 [sub_resource type="CanvasItemMaterial" id="1"]

@@ -12,10 +12,18 @@ const SCALE := 64.0
 @export var length2 := 1.0 # (float, 0.001, 10)
 @export var timestep := 0.001 # (float, 0.001, 1)
 
-@export var angle1 := 0.0 : get = get_angle1, set = set_angle1 # (float, -180, 180, 0.01)
-@export var velocity1 := 0.0 # (float, -10, 10, 0.01)
-@export var angle2 := 0.0 : get = get_angle2, set = set_angle2 # (float, -180, 180, 0.01)
-@export var velocity2 := 0.0 # (float, -10, 10, 0.01)
+@export var angle1: float:
+	get:
+		return rad_to_deg(_angle1)
+	set(v):
+		_angle1 = deg_to_rad(v)
+@export var velocity1 := 0.0
+@export var angle2: float:
+	get:
+		return rad_to_deg(_angle2)
+	set(v):
+		_angle2 = deg_to_rad(v)
+@export var velocity2 := 0.0
 
 var instance: WasmInstance = null
 
@@ -25,17 +33,8 @@ var instance: WasmInstance = null
 @onready var shaft2 := $Pendulum2/Shaft
 @onready var bulb2 := $Pendulum2/Bulb
 
-func get_angle1() -> float:
-	return rad_to_deg(angle1)
-
-func set_angle1(v: float) -> void:
-	angle1 = deg_to_rad(v)
-
-func get_angle2() -> float:
-	return rad_to_deg(angle2)
-
-func set_angle2(v: float) -> void:
-	angle2 = deg_to_rad(v)
+var _angle1 := 0.0
+var _angle2 := 0.0
 
 func _set_pendulum(
 	shaft: Node2D,
@@ -63,9 +62,9 @@ func _set_pendulum(
 	return t * Vector2(0, SCALE * length)
 
 func _update_pendulum() -> void:
-	var v := _set_pendulum(shaft1, bulb1, length1, mass1, angle1)
+	var v := _set_pendulum(shaft1, bulb1, length1, mass1, _angle1)
 	pendulum2.position = v
-	v = _set_pendulum(shaft2, bulb2, length2, mass2, angle2)
+	v = _set_pendulum(shaft2, bulb2, length2, mass2, _angle2)
 
 # Instance threadpool version
 #func _ready():
@@ -95,9 +94,9 @@ func _update_pendulum() -> void:
 #			length1,
 #			length2,
 #			timestep,
-#			angle1,
+#			_angle1,
 #			velocity1,
-#			angle2,
+#			_angle2,
 #			velocity2,
 #		],
 #		null, "",
@@ -124,9 +123,9 @@ func _update_pendulum() -> void:
 #	emit_signal("message_emitted", msg)
 #
 #func __update(ret: Array) -> void:
-#	angle1 = ret[0]
+#	_angle1 = ret[0]
 #	velocity1 = ret[1]
-#	angle2 = ret[2]
+#	_angle2 = ret[2]
 #	velocity2 = ret[3]
 #
 #	_update_pendulum()
@@ -146,9 +145,9 @@ func _process(delta):
 		return
 
 	var ret: Array = instance.call_wasm("process", [delta])
-	angle1 = ret[0]
+	_angle1 = ret[0]
 	velocity1 = ret[1]
-	angle2 = ret[2]
+	_angle2 = ret[2]
 	velocity2 = ret[3]
 
 	_update_pendulum()
@@ -163,8 +162,8 @@ func __setup():
 		length1,
 		length2,
 		timestep,
-		angle1,
+		_angle1,
 		velocity1,
-		angle2,
+		_angle2,
 		velocity2,
 	])
