@@ -219,6 +219,7 @@ unsafe impl<T> Send for SendSyncWrapper<T> {}
 unsafe impl<T> Sync for SendSyncWrapper<T> {}
 
 impl<T> SendSyncWrapper<T> {
+    #[allow(dead_code)]
     pub(crate) fn new(v: T) -> Self {
         Self(v)
     }

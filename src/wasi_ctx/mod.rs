@@ -60,8 +60,8 @@ impl WasiContext {
             ctx = ctx.inherit_stdout().inherit_stderr();
         } else {
             // Stub method
-            ctx = ctx.stdout(Box::new(WritePipe::new(move |buf| {})));
-            ctx = ctx.stderr(Box::new(WritePipe::new(move |buf| {})));
+            ctx = ctx.stdout(Box::new(WritePipe::new(move |_buf| {})));
+            ctx = ctx.stderr(Box::new(WritePipe::new(move |_buf| {})));
         }
 
         let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
