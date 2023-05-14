@@ -618,6 +618,7 @@ dependencies = [
  "cfg-if",
  "gdnative",
  "lazy_static",
+ "memchr",
  "parking_lot",
  "scopeguard",
  "slab",

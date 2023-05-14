@@ -1,29 +1,31 @@
-use std::io::{IoSlice, LineWriter, Result as IoResult, SeekFrom, Write};
+use std::io::{IoSlice, Result as IoResult, SeekFrom, Write};
+use std::ptr;
+use std::slice;
 
 use async_trait::async_trait;
-use gdnative::prelude::*;
+use memchr::memchr;
 use parking_lot::Mutex;
 use wasi_common::file::{FdFlags, FileType, WasiFile};
 use wasi_common::{Error, ErrorExt};
 
-pub struct ContextStdout {
-    writer: Mutex<LineWriter<ContextStdoutInner>>,
-}
+pub struct WritePipe<F>(Mutex<InnerWriter<F>>)
+where
+    for<'a> F: Fn(&'a [u8]) -> ();
 
-struct ContextStdoutInner {
-    base: Ref<Reference>,
-}
-
-impl ContextStdout {
-    pub fn new(base: Ref<Reference>) -> Self {
-        Self {
-            writer: Mutex::new(LineWriter::new(ContextStdoutInner { base })),
-        }
+impl<F> WritePipe<F>
+where
+    for<'a> F: Fn(&'a [u8]) -> (),
+{
+    pub fn new(f: F) -> Self {
+        Self(Mutex::new(InnerWriter::new(f)))
     }
 }
 
 #[async_trait]
-impl WasiFile for ContextStdout {
+impl<F> WasiFile for WritePipe<F>
+where
+    for<'a> F: Fn(&'a [u8]) -> () + Send + Sync + 'static,
+{
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -45,7 +47,7 @@ impl WasiFile for ContextStdout {
     }
 
     async fn write_vectored<'a>(&self, bufs: &[IoSlice<'a>]) -> Result<u64, Error> {
-        let mut writer = self.writer.lock();
+        let mut writer = self.0.lock();
         let n = writer.write_vectored(bufs)?;
 
         Ok(n as _)
@@ -60,98 +62,126 @@ impl WasiFile for ContextStdout {
     }
 }
 
-impl Write for ContextStdoutInner {
+struct InnerWriter<F>
+where
+    for<'a> F: Fn(&'a [u8]) -> (),
+{
+    buffer: Vec<u8>,
+    f: F,
+}
+
+const BUFFER_LEN: usize = 8192;
+const NL_BYTE: u8 = 10;
+
+impl<F> InnerWriter<F>
+where
+    for<'a> F: Fn(&'a [u8]) -> (),
+{
+    fn new(f: F) -> Self {
+        let mut buffer = Vec::new();
+        buffer.reserve_exact(BUFFER_LEN);
+        Self { buffer, f }
+    }
+}
+
+impl<F> Drop for InnerWriter<F>
+where
+    for<'a> F: Fn(&'a [u8]) -> (),
+{
+    fn drop(&mut self) {
+        if self.buffer.len() > 0 {
+            let f = &self.f;
+            f(self.buffer.as_slice())
+        }
+    }
+}
+
+impl<F> Write for InnerWriter<F>
+where
+    for<'a> F: Fn(&'a [u8]) -> (),
+{
     fn flush(&mut self) -> IoResult<()> {
         Ok(())
     }
 
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.write_all(buf)?;
-        Ok(buf.len())
-    }
-
-    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
-        unsafe {
-            self.base.assume_safe().emit_signal(
-                "stdout_emit",
-                &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-            );
+    fn write(&mut self, mut buf: &[u8]) -> IoResult<usize> {
+        let Self { buffer, f } = self;
+        if buffer.len() == buffer.capacity() {
+            f(buffer.as_slice());
+            // SAFETY: u8 does not have Drop
+            unsafe { buffer.set_len(0) };
         }
-        Ok(())
-    }
-}
 
-pub struct ContextStderr {
-    writer: Mutex<LineWriter<ContextStderrInner>>,
-}
-
-struct ContextStderrInner {
-    base: Ref<Reference>,
-}
-
-impl ContextStderr {
-    pub fn new(base: Ref<Reference>) -> Self {
-        Self {
-            writer: Mutex::new(LineWriter::new(ContextStderrInner { base })),
+        if buf.len() == 0 {
+            return Ok(0);
         }
-    }
-}
 
-#[async_trait]
-impl WasiFile for ContextStderr {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
+        let p = buffer.as_mut_ptr();
+        let mut n = 0;
 
-    async fn get_filetype(&self) -> Result<FileType, Error> {
-        Ok(FileType::CharacterDevice)
-    }
+        let mut l = buffer.capacity().wrapping_sub(buffer.len());
+        if let Some(i) = memchr(NL_BYTE, buf) {
+            let i = i.wrapping_add(1);
+            if l >= i {
+                unsafe {
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p.add(buffer.len()), i);
+                    buffer.set_len(buffer.len().wrapping_add(i));
+                    f(buffer.as_slice());
+                    buffer.set_len(0);
+                }
+            } else {
+                unsafe {
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p.add(buffer.len()), l);
+                    buffer.set_len(0);
+                    f(slice::from_raw_parts(p, buffer.capacity()));
+                    f(buf.get_unchecked(l..=i));
+                }
+            }
 
-    fn isatty(&self) -> bool {
-        false
-    }
+            l = i;
+        } else {
+            if l >= buf.len() {
+                unsafe {
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p.add(buffer.len()), buf.len());
+                    buffer.set_len(buffer.len().wrapping_add(buf.len()));
+                }
 
-    async fn get_fdflags(&self) -> Result<FdFlags, Error> {
-        Ok(FdFlags::APPEND)
-    }
-
-    async fn seek(&self, _pos: SeekFrom) -> Result<u64, Error> {
-        Err(Error::seek_pipe())
-    }
-
-    async fn write_vectored<'a>(&self, bufs: &[IoSlice<'a>]) -> Result<u64, Error> {
-        let mut writer = self.writer.lock();
-        let n = writer.write_vectored(bufs)?;
-
-        Ok(n as _)
-    }
-
-    async fn write_vectored_at<'a>(
-        &self,
-        _bufs: &[IoSlice<'a>],
-        _offset: u64,
-    ) -> Result<u64, Error> {
-        Err(Error::seek_pipe())
-    }
-}
-
-impl Write for ContextStderrInner {
-    fn flush(&mut self) -> IoResult<()> {
-        Ok(())
-    }
-
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.write_all(buf)?;
-        Ok(buf.len())
-    }
-
-    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
-        unsafe {
-            self.base.assume_safe().emit_signal(
-                "stderr_emit",
-                &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-            );
+                return Ok(buf.len());
+            } else {
+                unsafe {
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p.add(buffer.len()), l);
+                    buffer.set_len(0);
+                    f(slice::from_raw_parts(p, buffer.capacity()));
+                }
+            }
         }
-        Ok(())
+        (_, buf) = buf.split_at(l);
+        n += l;
+
+        while buf.len() > 0 {
+            if let Some(i) = memchr(NL_BYTE, buf) {
+                let (a, b) = buf.split_at(i.wrapping_add(1));
+                n += a.len();
+                buf = b;
+                f(a);
+            } else {
+                while buf.len() > buffer.capacity() {
+                    let (a, b) = buf.split_at(buffer.capacity());
+                    n += buffer.capacity();
+                    buf = b;
+                    f(a);
+                }
+
+                unsafe {
+                    ptr::copy_nonoverlapping(buf.as_ptr(), p, buf.len());
+                    buffer.set_len(buf.len());
+                }
+
+                n += buf.len();
+                break;
+            }
+        }
+
+        Ok(n)
     }
 }

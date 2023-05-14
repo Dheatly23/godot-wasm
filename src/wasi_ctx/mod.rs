@@ -19,7 +19,7 @@ use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{Capability, Dir, File, Node};
-use crate::wasi_ctx::stdio::{ContextStderr, ContextStdout};
+use crate::wasi_ctx::stdio::WritePipe;
 use crate::wasm_config::Config;
 use crate::{bail_with_site, site_context};
 
@@ -71,9 +71,21 @@ impl WasiContext {
                 if o.bypass_stdio {
                     ctx = ctx.inherit_stdout().inherit_stderr();
                 } else {
-                    ctx = ctx
-                        .stdout(Box::new(ContextStdout::new(b.claim())))
-                        .stderr(Box::new(ContextStderr::new(b.claim())));
+                    let base = b.claim();
+                    ctx = ctx.stdout(Box::new(WritePipe::new(move |buf| {
+                        base.assume_safe().emit_signal(
+                            "stdout_emit",
+                            &[String::from_utf8_lossy(buf).to_variant()],
+                        );
+                    })));
+
+                    let base = b.claim();
+                    ctx = ctx.stderr(Box::new(WritePipe::new(move |buf| {
+                        base.assume_safe().emit_signal(
+                            "stderr_emit",
+                            &[String::from_utf8_lossy(buf).to_variant()],
+                        );
+                    })));
                 }
 
                 let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
