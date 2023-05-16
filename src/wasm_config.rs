@@ -188,7 +188,7 @@ pub enum PipeBindingType {
 
 impl Default for PipeBindingType {
     fn default() -> Self {
-        Self::Unbound
+        Self::Context
     }
 }
 
@@ -216,7 +216,7 @@ impl FromVariant for PipeBindingType {
 impl ToVariant for PipeBindingType {
     fn to_variant(&self) -> Variant {
         match self {
-            Self::Unbound => return Variant::nil(),
+            Self::Unbound => "unbound",
             Self::Instance => "instance",
             Self::Context => "context",
         }
@@ -235,7 +235,7 @@ pub enum PipeBufferType {
 
 impl Default for PipeBufferType {
     fn default() -> Self {
-        Self::Unbuffered
+        Self::LineBuffer
     }
 }
 
@@ -263,7 +263,7 @@ impl FromVariant for PipeBufferType {
 impl ToVariant for PipeBufferType {
     fn to_variant(&self) -> Variant {
         match self {
-            Self::Unbuffered => return Variant::nil(),
+            Self::Unbuffered => "unbuffered",
             Self::LineBuffer => "line",
             Self::BlockBuffer => "block",
         }
