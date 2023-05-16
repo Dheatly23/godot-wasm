@@ -349,9 +349,9 @@ impl WasmModule {
         #[opt] config: Option<Variant>,
     ) -> Option<Instance<WasmInstance, Shared>> {
         let inst = WasmInstance::new_instance();
-        if let Ok(true) = inst.map(|v, _| {
+        if let Ok(true) = inst.map(|v, b| {
             if let Some(i) = Instance::from_base(owner.claim()) {
-                v.initialize_(i, host, config)
+                v.initialize_(b.as_ref(), i, host, config)
             } else {
                 false
             }

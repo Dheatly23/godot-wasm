@@ -1,6 +1,6 @@
-mod memfs;
-mod stdio;
-mod timestamp;
+pub mod memfs;
+pub mod stdio;
+pub mod timestamp;
 
 use std::collections::btree_map::Entry;
 use std::collections::HashMap;
@@ -19,8 +19,8 @@ use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{Capability, Dir, File, Node};
-use crate::wasi_ctx::stdio::WritePipe;
-use crate::wasm_config::Config;
+use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
+use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::{bail_with_site, site_context};
 
 #[derive(NativeClass, Debug)]
@@ -68,24 +68,68 @@ impl WasiContext {
         unsafe {
             this.assume_safe().map(move |o, b| -> Result<_, Error> {
                 let mut ctx = ctx;
-                if o.bypass_stdio {
-                    ctx = ctx.inherit_stdout().inherit_stderr();
-                } else {
-                    let base = b.claim();
-                    ctx = ctx.stdout(Box::new(WritePipe::new(move |buf| {
-                        base.assume_safe().emit_signal(
-                            "stdout_emit",
-                            &[String::from_utf8_lossy(buf).to_variant()],
-                        );
-                    })));
 
+                if config.wasi_stdout == PipeBindingType::Context {
                     let base = b.claim();
-                    ctx = ctx.stderr(Box::new(WritePipe::new(move |buf| {
-                        base.assume_safe().emit_signal(
-                            "stderr_emit",
-                            &[String::from_utf8_lossy(buf).to_variant()],
-                        );
-                    })));
+                    if o.bypass_stdio {
+                        ctx = ctx.inherit_stdout();
+                    } else {
+                        ctx = ctx.stdout(match config.wasi_stdout_buffer {
+                            PipeBufferType::Unbuffered => {
+                                Box::new(UnbufferedWritePipe::new(move |buf| {
+                                    base.assume_safe().emit_signal(
+                                        "stdout_emit",
+                                        &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                                    );
+                                })) as _
+                            }
+                            PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                                base.assume_safe().emit_signal(
+                                    "stdout_emit",
+                                    &[String::from_utf8_lossy(buf).to_variant()],
+                                );
+                            })) as _,
+                            PipeBufferType::BlockBuffer => {
+                                Box::new(BlockWritePipe::new(move |buf| {
+                                    base.assume_safe().emit_signal(
+                                        "stdout_emit",
+                                        &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                                    );
+                                })) as _
+                            }
+                        });
+                    }
+                }
+                if config.wasi_stderr == PipeBindingType::Context {
+                    let base = b.claim();
+                    if o.bypass_stdio {
+                        ctx = ctx.inherit_stderr();
+                    } else {
+                        ctx = ctx.stderr(match config.wasi_stderr_buffer {
+                            PipeBufferType::Unbuffered => {
+                                Box::new(UnbufferedWritePipe::new(move |buf| {
+                                    base.assume_safe().emit_signal(
+                                        "stderr_emit",
+                                        &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                                    );
+                                })) as _
+                            }
+                            PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                                base.assume_safe().emit_signal(
+                                    "stderr_emit",
+                                    &[String::from_utf8_lossy(buf).to_variant()],
+                                );
+                            })) as _,
+                            PipeBufferType::BlockBuffer => {
+                                Box::new(BlockWritePipe::new(move |buf| {
+                                    base.assume_safe().emit_signal(
+                                        "stderr_emit",
+                                        &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                                    );
+                                })) as _
+                            }
+                        });
+                    }
                 }
 
                 let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;

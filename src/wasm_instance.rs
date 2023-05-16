@@ -1,6 +1,8 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::mem::{size_of, transmute};
 use std::ptr;
+use std::sync::Arc;
 
 use anyhow::{bail, Error};
 use gdnative::core_types::PoolElement;
@@ -21,8 +23,14 @@ use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
 use wasmtime_wasi::WasiCtx;
 
 #[cfg(feature = "wasi")]
+use crate::wasi_ctx::stdio::{
+    BlockWritePipe, InnerStdin, LineWritePipe, OuterStdin, UnbufferedWritePipe,
+};
+#[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::{Config, ExternBindingType};
+#[cfg(feature = "wasi")]
+use crate::wasm_config::{PipeBindingType, PipeBufferType};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_engine::EPOCH;
 use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
@@ -67,6 +75,8 @@ pub struct StoreData {
 
     #[cfg(feature = "wasi")]
     pub wasi_ctx: Option<WasiCtx>,
+    #[cfg(feature = "wasi")]
+    pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
 }
 
 // SAFETY: Store data is safely contained within instance data?
@@ -112,6 +122,7 @@ impl ResourceLimiter for MemoryLimit {
 
 impl InstanceData {
     pub fn instantiate(
+        owner: &Reference,
         mut store: Store<StoreData>,
         module: Instance<WasmModule, Shared>,
         host: Option<Dictionary>,
@@ -137,11 +148,78 @@ impl InstanceData {
 
         #[cfg(feature = "wasi")]
         let wasi_linker = if store.data().config.with_wasi {
-            let builder = WasiCtxBuilder::new();
+            let mut builder = WasiCtxBuilder::new();
 
             let StoreData {
-                wasi_ctx, config, ..
+                wasi_stdin,
+                wasi_ctx,
+                config,
+                ..
             } = store.data_mut();
+
+            let inst_id = owner.get_instance_id();
+            if config.wasi_stdin == PipeBindingType::Instance {
+                let inst_id = inst_id;
+                let (outer, inner) = OuterStdin::new(move || unsafe {
+                    let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                    owner.emit_signal("stdin_request", &[]);
+                });
+                builder = builder.stdin(Box::new(outer));
+                *wasi_stdin = Some(inner as _);
+            }
+            if config.wasi_stdout == PipeBindingType::Instance {
+                let inst_id = inst_id;
+                builder = builder.stdout(match config.wasi_stdout_buffer {
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        owner.emit_signal(
+                            "stdout_emit",
+                            &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| unsafe {
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        owner.emit_signal(
+                            "stdout_emit",
+                            &[String::from_utf8_lossy(buf).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| unsafe {
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        owner.emit_signal(
+                            "stdout_emit",
+                            &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                        );
+                    })) as _,
+                });
+            }
+            if config.wasi_stderr == PipeBindingType::Instance {
+                let inst_id = inst_id;
+                builder = builder.stderr(match config.wasi_stderr_buffer {
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        owner.emit_signal(
+                            "stderr_emit",
+                            &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| unsafe {
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        owner.emit_signal(
+                            "stderr_emit",
+                            &[String::from_utf8_lossy(buf).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| unsafe {
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        owner.emit_signal(
+                            "stderr_emit",
+                            &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                        );
+                    })) as _,
+                });
+            }
+
             *wasi_ctx = match &config.wasi_context {
                 Some(ctx) => Some(WasiContext::build_ctx(ctx.clone(), builder, &*config)?),
                 None => Some(WasiContext::init_ctx_no_context(
@@ -379,6 +457,7 @@ impl WasmInstance {
 
     pub fn initialize_(
         &self,
+        owner: &Reference,
         module: Instance<WasmModule, Shared>,
         host: Option<Dictionary>,
         config: Option<Variant>,
@@ -388,6 +467,7 @@ impl WasmInstance {
 
         self.once.call_once(move || {
             match InstanceData::instantiate(
+                owner,
                 Store::new(
                     &ENGINE,
                     StoreData {
@@ -415,6 +495,8 @@ impl WasmInstance {
 
                         #[cfg(feature = "wasi")]
                         wasi_ctx: None,
+                        #[cfg(feature = "wasi")]
+                        wasi_stdin: None,
                     },
                 ),
                 module,
@@ -492,6 +574,18 @@ impl WasmInstance {
             .signal("error_happened")
             .with_param("message", VariantType::GodotString)
             .done();
+
+        builder
+            .signal("stdout_emit")
+            .with_param("message", VariantType::GodotString)
+            .done();
+
+        builder
+            .signal("stderr_emit")
+            .with_param("message", VariantType::GodotString)
+            .done();
+
+        builder.signal("stdin_request").done();
     }
 
     /// Initialize and loads module.
@@ -504,7 +598,7 @@ impl WasmInstance {
         #[opt] host: Option<Dictionary>,
         #[opt] config: Option<Variant>,
     ) -> Option<Ref<Reference>> {
-        if self.initialize_(module, host, config) {
+        if self.initialize_(owner.as_ref(), module, host, config) {
             Some(owner.claim())
         } else {
             None
@@ -666,6 +760,22 @@ impl WasmInstance {
             godot_error!("Feature object-registry-compat not enabled!");
             None
         }
+    }
+
+    #[method]
+    fn stdin_add_line(&self, #[base] _base: TRef<Reference>, line: GodotString) {
+        #[cfg(feature = "wasi")]
+        self.unwrap_data(_base, |m| {
+            m.acquire_store(|_, store| {
+                if let Some(stdin) = &store.data().wasi_stdin {
+                    stdin.add_line(line)?;
+                }
+                Ok(())
+            })
+        });
+
+        #[cfg(not(feature = "wasi"))]
+        godot_error!("Feature wasi not enabled!");
     }
 
     #[method]
