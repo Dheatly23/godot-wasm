@@ -170,12 +170,12 @@ impl WasiContext {
 
         builder
             .signal("stdout_emit")
-            .with_param("message", VariantType::ByteArray)
+            .with_param("message", VariantType::GodotString)
             .done();
 
         builder
             .signal("stderr_emit")
-            .with_param("message", VariantType::ByteArray)
+            .with_param("message", VariantType::GodotString)
             .done();
     }
 
