@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use gdnative::prelude::*;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use wasi_common::file::{FdFlags, FileType, WasiFile};
@@ -526,6 +527,82 @@ impl<F: Fn() -> () + Send + Sync + 'static> WasiFile for OuterStdin<F> {
         if *ix >= buf.len() {
             buf.clear();
             *ix = 0;
+        }
+
+        Ok(n)
+    }
+
+    async fn read_vectored_at<'a>(
+        &self,
+        _bufs: &mut [std::io::IoSliceMut<'a>],
+        _offset: u64,
+    ) -> Result<u64, Error> {
+        Err(Error::seek_pipe())
+    }
+
+    async fn readable(&self) -> Result<(), Error> {
+        Ok(())
+    }
+}
+
+pub struct ByteBufferReadPipe {
+    buf: PoolArray<u8>,
+    pos: Mutex<usize>,
+}
+
+impl ByteBufferReadPipe {
+    pub fn new(buf: PoolArray<u8>) -> Self {
+        Self {
+            buf,
+            pos: Mutex::new(0),
+        }
+    }
+}
+
+#[async_trait]
+impl WasiFile for ByteBufferReadPipe {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    async fn get_filetype(&self) -> Result<FileType, Error> {
+        Ok(FileType::Pipe)
+    }
+
+    fn isatty(&self) -> bool {
+        false
+    }
+
+    async fn get_fdflags(&self) -> Result<FdFlags, Error> {
+        Ok(FdFlags::empty())
+    }
+
+    async fn seek(&self, _pos: SeekFrom) -> Result<u64, Error> {
+        Err(Error::seek_pipe())
+    }
+
+    async fn read_vectored<'a>(&self, bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
+        let buf = self.buf.read();
+        let mut pos = self.pos.lock();
+
+        if *pos == buf.len() {
+            return Ok(0);
+        }
+
+        let mut n = 0u64;
+        for b in bufs {
+            if b.len() == 0 {
+                continue;
+            }
+
+            let l = b.len().min(buf.len() - *pos);
+            b[..l].copy_from_slice(&buf[*pos..*pos + l]);
+            n += l as u64;
+            *pos += l;
+
+            if *pos == buf.len() {
+                break;
+            }
         }
 
         Ok(n)
