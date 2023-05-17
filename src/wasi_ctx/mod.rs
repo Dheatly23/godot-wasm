@@ -18,7 +18,7 @@ use wasi_common::file::{FdFlags, OFlags};
 use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
-use crate::wasi_ctx::memfs::{Capability, Dir, File, Node};
+use crate::wasi_ctx::memfs::{Capability, Dir, File, Node, MAX_SYMLINK_DEREF};
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::{bail_with_site, site_context};
@@ -71,6 +71,7 @@ impl WasiContext {
             if let (PipeBindingType::Context, Some(file)) =
                 (&config.wasi_stdin, &config.wasi_stdin_file)
             {
+                let root = Some(o.memfs_root.clone());
                 let mut node: Arc<dyn Node> = o.memfs_root.clone();
                 for p in file.split(&['/', '\\']) {
                     match p {
@@ -79,7 +80,10 @@ impl WasiContext {
                             Some(n) => node = n,
                             _ => (),
                         },
-                        _ => match node.child(p) {
+                        _ => match node
+                            .child(p)
+                            .and_then(|n| n.link_deref(&root, MAX_SYMLINK_DEREF))
+                        {
                             Some(n) => node = n,
                             None => bail_with_site!("Path \"{}\" not found!", file),
                         },
@@ -87,7 +91,7 @@ impl WasiContext {
                 }
 
                 let OpenResult::File(file) = site_context!(node.open(
-                    Some(o.memfs_root.clone()),
+                    root,
                     Capability { read: true, write: false },
                     true,
                     OFlags::empty(),

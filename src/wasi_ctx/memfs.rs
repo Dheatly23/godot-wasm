@@ -15,7 +15,7 @@ use wasi_common::{Error, ErrorExt, SystemTimeSpec, WasiDir, WasiFile};
 
 use crate::wasi_ctx::timestamp::FileTimestamp;
 
-const MAX_SYMLINK_DEREF: usize = 16;
+pub const MAX_SYMLINK_DEREF: usize = 16;
 
 fn _set_times(stamp: &FileTimestamp, mtime: Option<SystemTimeSpec>, atime: Option<SystemTimeSpec>) {
     let (m, a) = match (mtime, atime) {
