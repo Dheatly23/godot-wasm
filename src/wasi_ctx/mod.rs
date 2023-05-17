@@ -65,91 +65,94 @@ impl WasiContext {
         ctx: WasiCtxBuilder,
         config: &Config,
     ) -> Result<WasiCtx, Error> {
-        unsafe {
-            this.assume_safe().map(move |o, b| -> Result<_, Error> {
-                let mut ctx = ctx;
+        let f = move |o: &Self, b: TRef<'_, Reference>| -> Result<_, Error> {
+            let mut ctx = ctx;
 
-                if config.wasi_stdout == PipeBindingType::Context {
+            if config.wasi_stdout == PipeBindingType::Context {
+                if o.bypass_stdio {
+                    ctx = ctx.inherit_stdout();
+                } else {
                     let base = b.claim();
-                    if o.bypass_stdio {
-                        ctx = ctx.inherit_stdout();
-                    } else {
-                        ctx = ctx.stdout(match config.wasi_stdout_buffer {
-                            PipeBufferType::Unbuffered => {
-                                Box::new(UnbufferedWritePipe::new(move |buf| {
-                                    base.assume_safe().emit_signal(
-                                        "stdout_emit",
-                                        &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-                                    );
-                                })) as _
-                            }
-                            PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                    ctx = ctx.stdout(match config.wasi_stdout_buffer {
+                        PipeBufferType::Unbuffered => {
+                            Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
+                                base.assume_safe().emit_signal(
+                                    "stdout_emit",
+                                    &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                                );
+                            })) as _
+                        }
+                        PipeBufferType::LineBuffer => {
+                            Box::new(LineWritePipe::new(move |buf| unsafe {
                                 base.assume_safe().emit_signal(
                                     "stdout_emit",
                                     &[String::from_utf8_lossy(buf).to_variant()],
                                 );
-                            })) as _,
-                            PipeBufferType::BlockBuffer => {
-                                Box::new(BlockWritePipe::new(move |buf| {
-                                    base.assume_safe().emit_signal(
-                                        "stdout_emit",
-                                        &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-                                    );
-                                })) as _
-                            }
-                        });
-                    }
+                            })) as _
+                        }
+                        PipeBufferType::BlockBuffer => {
+                            Box::new(BlockWritePipe::new(move |buf| unsafe {
+                                base.assume_safe().emit_signal(
+                                    "stdout_emit",
+                                    &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                                );
+                            })) as _
+                        }
+                    });
                 }
-                if config.wasi_stderr == PipeBindingType::Context {
+            }
+            if config.wasi_stderr == PipeBindingType::Context {
+                if o.bypass_stdio {
+                    ctx = ctx.inherit_stderr();
+                } else {
                     let base = b.claim();
-                    if o.bypass_stdio {
-                        ctx = ctx.inherit_stderr();
-                    } else {
-                        ctx = ctx.stderr(match config.wasi_stderr_buffer {
-                            PipeBufferType::Unbuffered => {
-                                Box::new(UnbufferedWritePipe::new(move |buf| {
-                                    base.assume_safe().emit_signal(
-                                        "stderr_emit",
-                                        &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-                                    );
-                                })) as _
-                            }
-                            PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                    ctx = ctx.stderr(match config.wasi_stderr_buffer {
+                        PipeBufferType::Unbuffered => {
+                            Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
+                                base.assume_safe().emit_signal(
+                                    "stderr_emit",
+                                    &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                                );
+                            })) as _
+                        }
+                        PipeBufferType::LineBuffer => {
+                            Box::new(LineWritePipe::new(move |buf| unsafe {
                                 base.assume_safe().emit_signal(
                                     "stderr_emit",
                                     &[String::from_utf8_lossy(buf).to_variant()],
                                 );
-                            })) as _,
-                            PipeBufferType::BlockBuffer => {
-                                Box::new(BlockWritePipe::new(move |buf| {
-                                    base.assume_safe().emit_signal(
-                                        "stderr_emit",
-                                        &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-                                    );
-                                })) as _
-                            }
-                        });
-                    }
+                            })) as _
+                        }
+                        PipeBufferType::BlockBuffer => {
+                            Box::new(BlockWritePipe::new(move |buf| unsafe {
+                                base.assume_safe().emit_signal(
+                                    "stderr_emit",
+                                    &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                                );
+                            })) as _
+                        }
+                    });
                 }
+            }
 
-                let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
+            let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
 
-                for (k, v) in o
-                    .envs
-                    .iter()
-                    .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
-                {
-                    ctx.push_env(k, v)?;
-                }
+            for (k, v) in o
+                .envs
+                .iter()
+                .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
+            {
+                ctx.push_env(k, v)?;
+            }
 
-                let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
+            let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
 
-                for (guest, host) in o.physical_mount.iter() {
-                    let dir = CapDir::from_cap_std(site_context!(PhysicalDir::open_ambient_dir(
-                        host,
-                        ambient_authority(),
-                    ))?);
-                    let OpenResult2::Dir(dir) = site_context!(dir.open_file_(
+            for (guest, host) in o.physical_mount.iter() {
+                let dir = CapDir::from_cap_std(site_context!(PhysicalDir::open_ambient_dir(
+                    host,
+                    ambient_authority(),
+                ))?);
+                let OpenResult2::Dir(dir) = site_context!(dir.open_file_(
                         false,
                         ".",
                         OFlags::DIRECTORY,
@@ -157,10 +160,10 @@ impl WasiContext {
                         fs_writable,
                         FdFlags::empty(),
                     ))? else { bail_with_site!("Path should be a directory!") };
-                    site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
-                }
+                site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
+            }
 
-                let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
+            let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
                     Some(o.memfs_root.clone()),
                     Capability {
                         read: true,
@@ -170,11 +173,12 @@ impl WasiContext {
                     OFlags::DIRECTORY,
                     FdFlags::empty(),
                 ))? else { bail_with_site!("Root should be a directory!") };
-                site_context!(ctx.push_preopened_dir(root, "."))?;
+            site_context!(ctx.push_preopened_dir(root, "."))?;
 
-                Ok(ctx)
-            })?
-        }
+            Ok(ctx)
+        };
+
+        unsafe { this.assume_safe().map(f)? }
     }
 
     fn wrap_result<F, T>(f: F) -> Option<T>
