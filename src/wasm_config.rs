@@ -41,6 +41,10 @@ pub struct Config {
     pub wasi_stdout_buffer: PipeBufferType,
     #[cfg(feature = "wasi")]
     pub wasi_stderr_buffer: PipeBufferType,
+    #[cfg(feature = "wasi")]
+    pub wasi_stdin_data: Option<PoolArray<u8>>,
+    #[cfg(feature = "wasi")]
+    pub wasi_stdin_file: Option<String>,
 
     pub extern_bind: ExternBindingType,
 }
@@ -123,6 +127,10 @@ impl FromVariant for Config {
             wasi_stdout_buffer: get_field(&dict, "wasi.stdout_buffer")?.unwrap_or_default(),
             #[cfg(feature = "wasi")]
             wasi_stderr_buffer: get_field(&dict, "wasi.stderr_buffer")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_stdin_data: get_field(&dict, "wasi.stdin_data")?,
+            #[cfg(feature = "wasi")]
+            wasi_stdin_file: get_field(&dict, "wasi.stdin_file")?,
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })

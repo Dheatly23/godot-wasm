@@ -68,6 +68,33 @@ impl WasiContext {
         let f = move |o: &Self, b: TRef<'_, Reference>| -> Result<_, Error> {
             let mut ctx = ctx;
 
+            if let (PipeBindingType::Context, Some(file)) =
+                (&config.wasi_stdin, &config.wasi_stdin_file)
+            {
+                let mut node: Arc<dyn Node> = o.memfs_root.clone();
+                for p in file.split(&['/', '\\']) {
+                    match p {
+                        "" | "." => continue,
+                        ".." => match node.parent() {
+                            Some(n) => node = n,
+                            _ => (),
+                        },
+                        _ => match node.child(p) {
+                            Some(n) => node = n,
+                            None => bail_with_site!("Path \"{}\" not found!", file),
+                        },
+                    }
+                }
+
+                let OpenResult::File(file) = site_context!(node.open(
+                    Some(o.memfs_root.clone()),
+                    Capability { read: true, write: false },
+                    true,
+                    OFlags::empty(),
+                    FdFlags::empty(),
+                ))? else { bail_with_site!("Path \"{}\" should be a file!", file) };
+                ctx = ctx.stdin(file);
+            }
             if config.wasi_stdout == PipeBindingType::Context {
                 if o.bypass_stdio {
                     ctx = ctx.inherit_stdout();

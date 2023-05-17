@@ -24,7 +24,7 @@ use wasmtime_wasi::WasiCtx;
 
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::stdio::{
-    BlockWritePipe, InnerStdin, LineWritePipe, OuterStdin, UnbufferedWritePipe,
+    BlockWritePipe, ByteBufferReadPipe, InnerStdin, LineWritePipe, OuterStdin, UnbufferedWritePipe,
 };
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
@@ -159,13 +159,17 @@ impl InstanceData {
 
             let inst_id = owner.get_instance_id();
             if config.wasi_stdin == PipeBindingType::Instance {
-                let inst_id = inst_id;
-                let (outer, inner) = OuterStdin::new(move || unsafe {
-                    let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
-                    owner.emit_signal("stdin_request", &[]);
-                });
-                builder = builder.stdin(Box::new(outer));
-                *wasi_stdin = Some(inner as _);
+                if let Some(data) = config.wasi_stdin_data.clone() {
+                    builder = builder.stdin(Box::new(ByteBufferReadPipe::new(data)));
+                } else {
+                    let inst_id = inst_id;
+                    let (outer, inner) = OuterStdin::new(move || unsafe {
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        owner.emit_signal("stdin_request", &[]);
+                    });
+                    builder = builder.stdin(Box::new(outer));
+                    *wasi_stdin = Some(inner as _);
+                }
             }
             if config.wasi_stdout == PipeBindingType::Instance {
                 let inst_id = inst_id;
