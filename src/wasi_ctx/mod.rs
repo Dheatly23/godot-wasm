@@ -191,15 +191,15 @@ impl WasiContext {
             }
 
             let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
-                    Some(o.memfs_root.clone()),
-                    Capability {
-                        read: true,
-                        write: fs_writable,
-                    },
-                    true,
-                    OFlags::DIRECTORY,
-                    FdFlags::empty(),
-                ))? else { bail_with_site!("Root should be a directory!") };
+                Some(o.memfs_root.clone()),
+                Capability {
+                    read: true,
+                    write: fs_writable,
+                },
+                true,
+                OFlags::DIRECTORY,
+                FdFlags::empty(),
+            ))? else { bail_with_site!("Root should be a directory!") };
             site_context!(ctx.push_preopened_dir(root, "."))?;
 
             Ok(ctx)
