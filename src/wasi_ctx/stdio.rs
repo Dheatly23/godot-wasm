@@ -426,7 +426,8 @@ pub struct InnerStdin<F: ?Sized> {
 }
 
 struct InnerInnerStdin {
-    buf: Option<String>,
+    buf: String,
+    is_eof: bool,
     ix: usize,
 }
 
@@ -443,7 +444,8 @@ impl<F: Fn() -> ()> OuterStdin<F> {
             is_dropped: AtomicBool::new(false),
             cond: Condvar::new(),
             inner: Mutex::new(InnerInnerStdin {
-                buf: Some(String::new()),
+                buf: String::new(),
+                is_eof: false,
                 ix: 0,
             }),
         });
@@ -454,8 +456,8 @@ impl<F: Fn() -> ()> OuterStdin<F> {
         let mut guard = self.0.inner.lock();
         loop {
             match &mut *guard {
-                InnerInnerStdin { buf: None, .. } => break,
-                InnerInnerStdin { buf: Some(b), ix } if *ix >= b.len() => break,
+                InnerInnerStdin { is_eof: true, .. } => break,
+                InnerInnerStdin { buf, ix, .. } if *ix >= buf.len() => break,
                 _ => (),
             }
             (&self.0.f)();
@@ -473,7 +475,11 @@ impl<F: ?Sized> InnerStdin<F> {
         }
 
         let mut guard = self.inner.lock();
-        let Some(buf) = &mut guard.buf else { return Ok(()) };
+        if guard.is_eof {
+            return Ok(());
+        }
+
+        let buf = &mut guard.buf;
         let ret = write!(&mut *buf, "{}", line);
         if buf.chars().last() != Some('\n') {
             buf.push('\n');
@@ -481,6 +487,17 @@ impl<F: ?Sized> InnerStdin<F> {
 
         self.cond.notify_one();
         ret
+    }
+
+    pub fn close_pipe(&self) {
+        if self.is_dropped.load(Ordering::Acquire) {
+            return;
+        }
+
+        let mut guard = self.inner.lock();
+        guard.is_eof = true;
+
+        self.cond.notify_one();
     }
 }
 
@@ -499,7 +516,7 @@ impl<F: Fn() -> () + Send + Sync + 'static> WasiFile for OuterStdin<F> {
     }
 
     async fn get_fdflags(&self) -> Result<FdFlags, Error> {
-        Ok(FdFlags::APPEND)
+        Ok(FdFlags::empty())
     }
 
     async fn seek(&self, _pos: SeekFrom) -> Result<u64, Error> {
@@ -508,7 +525,10 @@ impl<F: Fn() -> () + Send + Sync + 'static> WasiFile for OuterStdin<F> {
 
     async fn read_vectored<'a>(&self, bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
         let mut inner = self.ensure_nonempty();
-        let InnerInnerStdin { buf: Some(buf), ix } = &mut *inner else { return Ok(0) };
+        let InnerInnerStdin { buf, ix, is_eof } = &mut *inner;
+        if *is_eof {
+            return Ok(0);
+        }
 
         let mut n = 0u64;
         for b in bufs {

@@ -779,6 +779,22 @@ impl WasmInstance {
     }
 
     #[method]
+    fn stdin_close(&self, #[base] _base: TRef<Reference>) {
+        #[cfg(feature = "wasi")]
+        self.unwrap_data(_base, |m| {
+            m.acquire_store(|_, store| {
+                if let Some(stdin) = &store.data().wasi_stdin {
+                    stdin.close_pipe();
+                }
+                Ok(())
+            })
+        });
+
+        #[cfg(not(feature = "wasi"))]
+        godot_error!("Feature wasi not enabled!");
+    }
+
+    #[method]
     fn has_memory(&self, #[base] base: TRef<Reference>) -> bool {
         self.unwrap_data(base, |m| {
             m.acquire_store(|m, mut store| {
