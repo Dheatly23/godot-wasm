@@ -60,6 +60,9 @@ pub struct InstanceData {
     store: Mutex<Store<StoreData>>,
     instance: InstanceWasm,
     module: Instance<WasmModule, Shared>,
+
+    #[cfg(feature = "wasi")]
+    wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
 }
 
 pub struct StoreData {
@@ -75,8 +78,6 @@ pub struct StoreData {
 
     #[cfg(feature = "wasi")]
     pub wasi_ctx: Option<WasiCtx>,
-    #[cfg(feature = "wasi")]
-    pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
 }
 
 // SAFETY: Store data is safely contained within instance data?
@@ -147,14 +148,14 @@ impl InstanceData {
         }
 
         #[cfg(feature = "wasi")]
+        let mut wasi_stdin = None;
+
+        #[cfg(feature = "wasi")]
         let wasi_linker = if store.data().config.with_wasi {
             let mut builder = WasiCtxBuilder::new();
 
             let StoreData {
-                wasi_stdin,
-                wasi_ctx,
-                config,
-                ..
+                wasi_ctx, config, ..
             } = store.data_mut();
 
             let inst_id = owner.get_instance_id();
@@ -168,7 +169,7 @@ impl InstanceData {
                         owner.emit_signal("stdin_request", &[]);
                     });
                     builder = builder.stdin(Box::new(outer));
-                    *wasi_stdin = Some(inner as _);
+                    wasi_stdin = Some(inner as _);
                 }
             }
             if config.wasi_stdout == PipeBindingType::Instance {
@@ -365,6 +366,8 @@ impl InstanceData {
             instance,
             module,
             store: Mutex::new(store),
+            #[cfg(feature = "wasi")]
+            wasi_stdin,
         })
     }
 
@@ -499,8 +502,6 @@ impl WasmInstance {
 
                         #[cfg(feature = "wasi")]
                         wasi_ctx: None,
-                        #[cfg(feature = "wasi")]
-                        wasi_stdin: None,
                     },
                 ),
                 module,
@@ -770,12 +771,10 @@ impl WasmInstance {
     fn stdin_add_line(&self, #[base] _base: TRef<Reference>, line: GodotString) {
         #[cfg(feature = "wasi")]
         self.unwrap_data(_base, |m| {
-            m.acquire_store(|_, store| {
-                if let Some(stdin) = &store.data().wasi_stdin {
-                    stdin.add_line(line)?;
-                }
-                Ok(())
-            })
+            if let Some(stdin) = &m.wasi_stdin {
+                stdin.add_line(line)?;
+            }
+            Ok(())
         });
 
         #[cfg(not(feature = "wasi"))]
@@ -786,12 +785,10 @@ impl WasmInstance {
     fn stdin_close(&self, #[base] _base: TRef<Reference>) {
         #[cfg(feature = "wasi")]
         self.unwrap_data(_base, |m| {
-            m.acquire_store(|_, store| {
-                if let Some(stdin) = &store.data().wasi_stdin {
-                    stdin.close_pipe();
-                }
-                Ok(())
-            })
+            if let Some(stdin) = &m.wasi_stdin {
+                stdin.close_pipe();
+            }
+            Ok(())
         });
 
         #[cfg(not(feature = "wasi"))]
