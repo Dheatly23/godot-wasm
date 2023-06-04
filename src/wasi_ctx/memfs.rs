@@ -827,14 +827,6 @@ impl WasiFile for CapAccessor<OpenFile> {
         Err(Error::not_supported())
     }
 
-    async fn allocate(&self, _offset: u64, _len: u64) -> Result<(), Error> {
-        if !self.capability.write {
-            return Err(Error::perm());
-        }
-
-        Ok(())
-    }
-
     async fn set_times(
         &self,
         atime: Option<SystemTimeSpec>,
@@ -1147,10 +1139,6 @@ impl WasiFile for CapAccessor<Arc<Link>> {
     }
 
     async fn advise(&self, _offset: u64, _len: u64, _advice: Advice) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn allocate(&self, _offset: u64, _len: u64) -> Result<(), Error> {
         Err(Error::not_supported())
     }
 

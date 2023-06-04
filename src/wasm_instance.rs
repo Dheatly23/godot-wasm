@@ -92,31 +92,31 @@ pub struct MemoryLimit {
 
 #[cfg(feature = "memory-limiter")]
 impl ResourceLimiter for MemoryLimit {
-    fn memory_growing(&mut self, current: usize, desired: usize, _: Option<usize>) -> bool {
+    fn memory_growing(&mut self, current: usize, desired: usize, _: Option<usize>) -> Result<bool, Error> {
         if self.max_memory == u64::MAX {
-            return true;
+            return Ok(true);
         }
 
         let delta = (desired - current) as u64;
         if let Some(v) = self.max_memory.checked_sub(delta) {
             self.max_memory = v;
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
-    fn table_growing(&mut self, current: u32, desired: u32, _: Option<u32>) -> bool {
+    fn table_growing(&mut self, current: u32, desired: u32, _: Option<u32>) -> Result<bool, Error> {
         if self.max_table_entries == u64::MAX {
-            return true;
+            return Ok(true);
         }
 
         let delta = (desired - current) as u64;
         if let Some(v) = self.max_table_entries.checked_sub(delta) {
             self.max_table_entries = v;
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 }
@@ -641,7 +641,7 @@ impl WasmInstance {
                 store.gc();
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
-                    site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr()))?;
+                    site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr(), arr.len()))?;
                 }
 
                 let ret = VariantArray::new();
