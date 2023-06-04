@@ -627,6 +627,8 @@ impl WasmInstance {
                     None => bail_with_site!("Export {} does not exists", &name),
                 };
 
+                store.gc();
+
                 let ty = f.ty(&store);
                 let pi = ty.params();
                 let ri = ty.results();
@@ -638,7 +640,7 @@ impl WasmInstance {
 
                 #[cfg(feature = "epoch-timeout")]
                 store.set_epoch_deadline(store.data().config.epoch_timeout);
-                store.gc();
+
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
                     site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr(), arr.len()))?;
