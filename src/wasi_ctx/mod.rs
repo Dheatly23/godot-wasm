@@ -2,11 +2,10 @@ pub mod memfs;
 pub mod stdio;
 pub mod timestamp;
 
-use std::collections::btree_map::Entry;
 use std::collections::HashMap;
 use std::io::{Cursor, Write};
 use std::mem;
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::slice;
 use std::sync::{Arc, Weak};
 
@@ -18,7 +17,7 @@ use wasi_common::file::{FdFlags, OFlags};
 use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
-use crate::wasi_ctx::memfs::{Capability, Dir, File, Node, MAX_SYMLINK_DEREF};
+use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Node};
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::{bail_with_site, site_context};
@@ -72,23 +71,17 @@ impl WasiContext {
                 (&config.wasi_stdin, &config.wasi_stdin_file)
             {
                 let root = Some(o.memfs_root.clone());
-                let mut node: Arc<dyn Node> = o.memfs_root.clone();
-                for p in file.split(&['/', '\\']) {
-                    match p {
-                        "" | "." => continue,
-                        ".." => match node.parent() {
-                            Some(n) => node = n,
-                            _ => (),
-                        },
-                        _ => match node
-                            .child(p)
-                            .and_then(|n| n.link_deref(&root, MAX_SYMLINK_DEREF))
-                        {
-                            Some(n) => node = n,
-                            None => bail_with_site!("Path \"{}\" not found!", file),
-                        },
-                    }
-                }
+                let node = if let FileEntry::Occupied(v) = site_context!(open(
+                    file,
+                    o.memfs_root.clone(),
+                    &Some(o.memfs_root.clone()),
+                    true,
+                    false,
+                ))? {
+                    v.into_inner()
+                } else {
+                    bail_with_site!("Path \"{}\" not found!", file)
+                };
 
                 let OpenResult::File(file) = site_context!(node.open(
                     root,
@@ -280,38 +273,13 @@ impl WasiContext {
 
     #[method]
     fn write_memory_file(&mut self, path: String, data: Variant, #[opt] offset: Option<usize>) {
-        fn f(root: Arc<Dir>, path: &Path, data: &[u8], offset: Option<usize>) -> Result<(), Error> {
-            let mut node: Arc<dyn Node> = root;
-            for c in path.parent().unwrap_or(path).components() {
-                let n = match c {
-                    Component::CurDir => continue,
-                    Component::ParentDir => node.parent(),
-                    Component::RootDir => continue,
-                    Component::Normal(name) => node.child(name.to_str().unwrap()),
-                    Component::Prefix(_) => bail_with_site!("Windows-like paths is not supported"),
-                };
-                if let Some(n) = n {
-                    node = n;
-                } else if let Component::Normal(name) = c {
-                    let Some(n) = node.as_any().downcast_ref::<Dir>() else { bail_with_site!("Cannot create directory") };
-                    let n = n
-                        .content
-                        .write()
-                        .entry(name.to_str().unwrap().to_owned())
-                        .or_insert_with(|| Arc::new(Dir::new(Arc::downgrade(&node))))
-                        .clone();
-                    node = n;
-                } else {
-                    bail_with_site!("Path not found!");
-                }
-            }
-
-            let Some(name) = path.file_name().and_then(|v| v.to_str()) else { return Ok(()) };
-            let Some(n) = node.as_any().downcast_ref::<Dir>() else { bail_with_site!("Cannot create directory") };
-            match n.content.write().entry(name.to_owned()) {
-                Entry::Occupied(v) => {
-                    let Some(file) = v.get().as_any().downcast_ref::<File>() else { bail_with_site!("Is a directory") };
+        fn f(root: Arc<Dir>, path: &str, data: &[u8], offset: Option<usize>) -> Result<(), Error> {
+            match site_context!(open(path, root.clone(), &Some(root), true, true))? {
+                FileEntry::Occupied(v) => {
+                    let v = v.into_inner();
+                    let Some(file) = v.as_any().downcast_ref::<File>() else { bail_with_site!("Is a directory") };
                     let mut content = file.content.write();
+
                     if let Some(offset) = offset {
                         let mut cursor = Cursor::new(&mut *content);
                         cursor.set_position(offset as _);
@@ -321,20 +289,23 @@ impl WasiContext {
                         content.extend_from_slice(data);
                     }
                 }
-                Entry::Vacant(v) => {
-                    let mut file = File::new(Arc::downgrade(&node));
-                    *file.content.get_mut() = if let Some(offset) = offset {
-                        let mut v = match offset.checked_add(data.len()) {
-                            Some(v) => Vec::with_capacity(v),
-                            None => bail_with_site!("Data too long!"),
+                FileEntry::Vacant(v) => {
+                    v.insert(|parent, stamp| -> Result<_, Error> {
+                        let mut file = File::with_timestamp(parent, stamp);
+                        *file.content.get_mut() = if let Some(offset) = offset {
+                            let mut v = match offset.checked_add(data.len()) {
+                                Some(v) => Vec::with_capacity(v),
+                                None => bail_with_site!("Data too long!"),
+                            };
+                            v.resize(offset, 0);
+                            v.extend_from_slice(data);
+                            v
+                        } else {
+                            data.to_owned()
                         };
-                        v.resize(offset, 0);
-                        v.extend_from_slice(data);
-                        v
-                    } else {
-                        data.to_owned()
-                    };
-                    v.insert(Arc::new(file));
+
+                        Ok(Arc::new(file))
+                    })?;
                 }
             }
 
@@ -346,8 +317,6 @@ impl WasiContext {
         }
 
         Self::wrap_result(move || {
-            let path = PathBuf::from(path);
-
             let f = |data| f(self.memfs_root.clone(), &path, data, offset);
 
             match data.dispatch() {
@@ -368,28 +337,19 @@ impl WasiContext {
         #[opt] offset: usize,
     ) -> Option<PoolArray<u8>> {
         Self::wrap_result(move || {
-            let path = PathBuf::from(path);
+            let node = if let FileEntry::Occupied(v) = site_context!(open(
+                &path,
+                self.memfs_root.clone(),
+                &Some(self.memfs_root.clone()),
+                true,
+                false
+            ))? {
+                v.into_inner()
+            } else {
+                bail_with_site!("Path not found!")
+            };
 
-            let mut node: Arc<dyn Node> = self.memfs_root.clone();
-            for c in path.parent().unwrap_or(&path).components() {
-                let n = match c {
-                    Component::CurDir => continue,
-                    Component::ParentDir => node.parent(),
-                    Component::RootDir => continue,
-                    Component::Normal(name) => node.child(name.to_str().unwrap()),
-                    Component::Prefix(_) => bail_with_site!("Windows-like paths is not supported"),
-                };
-                if let Some(n) = n {
-                    node = n;
-                } else {
-                    bail_with_site!("Path not found!");
-                }
-            }
-
-            let Some(name) = path.file_name().and_then(|v| v.to_str()) else { return Ok(PoolArray::new()) };
-            let Some(n) = node.as_any().downcast_ref::<Dir>() else { bail_with_site!("Cannot create directory") };
-            let content = n.content.read();
-            let Some(file) = content.get(name).and_then(|v| v.as_any().downcast_ref::<File>()) else { bail_with_site!("File not found") };
+            let Some(file) = node.as_any().downcast_ref::<File>() else { bail_with_site!("Is not file!") };
 
             let content = file.content.read();
             let end = match offset.checked_add(length) {
