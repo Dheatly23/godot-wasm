@@ -17,11 +17,11 @@ const NL_BYTE: u8 = 10;
 
 pub struct UnbufferedWritePipe<F>(F)
 where
-    for<'a> F: Fn(&'a [u8]) -> ();
+    for<'a> F: Fn(&'a [u8]);
 
 impl<F> UnbufferedWritePipe<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     pub fn new(f: F) -> Self {
         Self(f)
@@ -31,7 +31,7 @@ where
 #[async_trait]
 impl<F> WasiFile for UnbufferedWritePipe<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> () + Send + Sync + 'static,
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
 {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -79,11 +79,11 @@ where
 
 pub struct LineWritePipe<F>(Mutex<InnerLineWriter<F>>)
 where
-    for<'a> F: Fn(&'a [u8]) -> ();
+    for<'a> F: Fn(&'a [u8]);
 
 impl<F> LineWritePipe<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     pub fn new(f: F) -> Self {
         Self(Mutex::new(InnerLineWriter::new(f)))
@@ -93,7 +93,7 @@ where
 #[async_trait]
 impl<F> WasiFile for LineWritePipe<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> () + Send + Sync + 'static,
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
 {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -137,7 +137,7 @@ where
 
 struct InnerLineWriter<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     buffer: Vec<u8>,
     f: F,
@@ -145,7 +145,7 @@ where
 
 impl<F> InnerLineWriter<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     fn new(f: F) -> Self {
         let mut buffer = Vec::new();
@@ -156,10 +156,10 @@ where
 
 impl<F> Drop for InnerLineWriter<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     fn drop(&mut self) {
-        if self.buffer.len() > 0 {
+        if !self.buffer.is_empty() {
             let f = &self.f;
             f(self.buffer.as_slice())
         }
@@ -168,7 +168,7 @@ where
 
 impl<F> Write for InnerLineWriter<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     fn flush(&mut self) -> IoResult<()> {
         Ok(())
@@ -182,7 +182,7 @@ where
             unsafe { buffer.set_len(0) };
         }
 
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(0);
         }
 
@@ -213,26 +213,24 @@ where
             }
 
             l = i;
-        } else {
-            if l >= buf.len() {
-                unsafe {
-                    ptr::copy_nonoverlapping(buf.as_ptr(), p, buf.len());
-                    buffer.set_len(buffer.len().wrapping_add(buf.len()));
-                }
+        } else if l >= buf.len() {
+            unsafe {
+                ptr::copy_nonoverlapping(buf.as_ptr(), p, buf.len());
+                buffer.set_len(buffer.len().wrapping_add(buf.len()));
+            }
 
-                return Ok(buf.len());
-            } else {
-                unsafe {
-                    ptr::copy_nonoverlapping(buf.as_ptr(), p, l);
-                    buffer.set_len(0);
-                    f(slice::from_raw_parts(p, buffer.capacity()));
-                }
+            return Ok(buf.len());
+        } else {
+            unsafe {
+                ptr::copy_nonoverlapping(buf.as_ptr(), p, l);
+                buffer.set_len(0);
+                f(slice::from_raw_parts(p, buffer.capacity()));
             }
         }
         (_, buf) = buf.split_at(l);
         n += l;
 
-        while buf.len() > 0 {
+        while !buf.is_empty() {
             if let Some(i) = memchr(NL_BYTE, buf) {
                 let (a, b) = buf.split_at(i.wrapping_add(1));
                 n += a.len();
@@ -265,11 +263,11 @@ where
 
 pub struct BlockWritePipe<F>(Mutex<InnerBlockWriter<F>>)
 where
-    for<'a> F: Fn(&'a [u8]) -> ();
+    for<'a> F: Fn(&'a [u8]);
 
 impl<F> BlockWritePipe<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     pub fn new(f: F) -> Self {
         Self(Mutex::new(InnerBlockWriter::new(f)))
@@ -279,7 +277,7 @@ where
 #[async_trait]
 impl<F> WasiFile for BlockWritePipe<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> () + Send + Sync + 'static,
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
 {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -323,7 +321,7 @@ where
 
 struct InnerBlockWriter<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     buffer: Vec<u8>,
     f: F,
@@ -331,7 +329,7 @@ where
 
 impl<F> InnerBlockWriter<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     fn new(f: F) -> Self {
         let mut buffer = Vec::new();
@@ -342,10 +340,10 @@ where
 
 impl<F> Drop for InnerBlockWriter<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     fn drop(&mut self) {
-        if self.buffer.len() > 0 {
+        if !self.buffer.is_empty() {
             let f = &self.f;
             f(self.buffer.as_slice())
         }
@@ -354,7 +352,7 @@ where
 
 impl<F> Write for InnerBlockWriter<F>
 where
-    for<'a> F: Fn(&'a [u8]) -> (),
+    for<'a> F: Fn(&'a [u8]),
 {
     fn flush(&mut self) -> IoResult<()> {
         Ok(())
@@ -368,7 +366,7 @@ where
             unsafe { buffer.set_len(0) };
         }
 
-        if buf.len() == 0 {
+        if buf.is_empty() {
             return Ok(0);
         }
 
@@ -393,7 +391,7 @@ where
         (_, buf) = buf.split_at(l);
         n += l;
 
-        if buf.len() > 0 {
+        if !buf.is_empty() {
             if buf.len() >= buffer.capacity() {
                 let i = buf
                     .len()
@@ -437,7 +435,7 @@ impl<F> Drop for OuterStdin<F> {
     }
 }
 
-impl<F: Fn() -> ()> OuterStdin<F> {
+impl<F: Fn()> OuterStdin<F> {
     pub fn new(f: F) -> (Self, Arc<InnerStdin<F>>) {
         let inner = Arc::new(InnerStdin {
             f,
@@ -460,7 +458,7 @@ impl<F: Fn() -> ()> OuterStdin<F> {
                 InnerInnerStdin { buf, ix, .. } if *ix >= buf.len() => break,
                 _ => (),
             }
-            (&self.0.f)();
+            (self.0.f)();
             self.0.cond.wait(&mut guard);
         }
 
@@ -481,7 +479,7 @@ impl<F: ?Sized> InnerStdin<F> {
 
         let buf = &mut guard.buf;
         let ret = write!(&mut *buf, "{}", line);
-        if buf.chars().last() != Some('\n') {
+        if !buf.ends_with('\n') {
             buf.push('\n');
         }
 
@@ -502,7 +500,7 @@ impl<F: ?Sized> InnerStdin<F> {
 }
 
 #[async_trait]
-impl<F: Fn() -> () + Send + Sync + 'static> WasiFile for OuterStdin<F> {
+impl<F: Fn() + Send + Sync + 'static> WasiFile for OuterStdin<F> {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
