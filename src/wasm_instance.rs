@@ -92,7 +92,12 @@ pub struct MemoryLimit {
 
 #[cfg(feature = "memory-limiter")]
 impl ResourceLimiter for MemoryLimit {
-    fn memory_growing(&mut self, current: usize, desired: usize, _: Option<usize>) -> Result<bool, Error> {
+    fn memory_growing(
+        &mut self,
+        current: usize,
+        desired: usize,
+        _: Option<usize>,
+    ) -> Result<bool, Error> {
         if self.max_memory == u64::MAX {
             return Ok(true);
         }

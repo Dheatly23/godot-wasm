@@ -188,12 +188,25 @@ impl WasmModule {
                                     Ok(())
                                 }
                                 (ExternType::Table(t1), Some(ExternType::Table(t2)))
-                                    if t1 == t2 =>
+                                    if t1.element() == t2.element()
+                                        && t1.minimum() <= t2.minimum()
+                                        && match (t1.maximum(), t2.maximum()) {
+                                            (None, _) => true,
+                                            (_, None) => false,
+                                            (Some(a), Some(b)) => a >= b,
+                                        } =>
                                 {
                                     Ok(())
                                 }
                                 (ExternType::Memory(m1), Some(ExternType::Memory(m2)))
-                                    if m1 == m2 =>
+                                    if m1.is_64() == m2.is_64()
+                                        && m1.is_shared() == m2.is_shared()
+                                        && m1.minimum() <= m2.minimum()
+                                        && match (m1.maximum(), m2.maximum()) {
+                                            (None, _) => true,
+                                            (_, None) => false,
+                                            (Some(a), Some(b)) => a >= b,
+                                        } =>
                                 {
                                     Ok(())
                                 }
@@ -224,7 +237,7 @@ impl WasmModule {
         self.once.call_once(move || match f() {
             Ok(()) => (),
             Err(e) => {
-                godot_error!("{}", e);
+                godot_error!("{:?}", e);
                 *ret = false;
             }
         });
