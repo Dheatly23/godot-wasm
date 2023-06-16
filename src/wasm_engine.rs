@@ -111,7 +111,7 @@ pub struct WasmModule {
 
     #[export(get = get_name)]
     #[allow(dead_code)]
-    name: (),
+    name: Option<i64>,
 }
 
 pub struct ModuleData {
@@ -174,8 +174,29 @@ impl WasmModule {
                         }
                         (ExternType::Func(f1), Some(ExternType::Func(f2))) if f1 == f2 => (),
                         (ExternType::Global(g1), Some(ExternType::Global(g2))) if g1 == g2 => (),
-                        (ExternType::Table(t1), Some(ExternType::Table(t2))) if t1 == t2 => (),
-                        (ExternType::Memory(m1), Some(ExternType::Memory(m2))) if m1 == m2 => (),
+                                (ExternType::Table(t1), Some(ExternType::Table(t2)))
+                                    if t1.element() == t2.element()
+                                        && t1.minimum() <= t2.minimum()
+                                        && match (t1.maximum(), t2.maximum()) {
+                                            (None, _) => true,
+                                            (_, None) => false,
+                                            (Some(a), Some(b)) => a >= b,
+                                        } =>
+                                {
+                                    ()
+                                }
+                                (ExternType::Memory(m1), Some(ExternType::Memory(m2)))
+                                    if m1.is_64() == m2.is_64()
+                                        && m1.is_shared() == m2.is_shared()
+                                        && m1.minimum() <= m2.minimum()
+                                        && match (m1.maximum(), m2.maximum()) {
+                                            (None, _) => true,
+                                            (_, None) => false,
+                                            (Some(a), Some(b)) => a >= b,
+                                        } =>
+                                {
+                                    ()
+                                }
                         (e1, Some(e2)) => {
                             bail!("Import type mismatch ({:?} != {:?})", e1, e2)
                         }
@@ -201,7 +222,7 @@ impl WasmModule {
         self.once.call_once(move || match f() {
             Ok(()) => (),
             Err(e) => {
-                godot_error!("{}", e);
+                godot_error!("{:?}", e);
                 *ret = false;
             }
         });
@@ -217,7 +238,7 @@ impl RefCountedVirtual for WasmModule {
             base,
             once: Once::new(),
             data: None,
-            name: (),
+            name: None,
         }
     }
 }

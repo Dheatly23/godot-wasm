@@ -31,6 +31,20 @@ pub struct Config {
     pub wasi_envs: HashMap<String, String>,
     #[cfg(feature = "wasi")]
     pub wasi_fs_readonly: bool,
+    #[cfg(feature = "wasi")]
+    pub wasi_stdin: PipeBindingType,
+    #[cfg(feature = "wasi")]
+    pub wasi_stdout: PipeBindingType,
+    #[cfg(feature = "wasi")]
+    pub wasi_stderr: PipeBindingType,
+    #[cfg(feature = "wasi")]
+    pub wasi_stdout_buffer: PipeBufferType,
+    #[cfg(feature = "wasi")]
+    pub wasi_stderr_buffer: PipeBufferType,
+    #[cfg(feature = "wasi")]
+    pub wasi_stdin_data: Option<PackedByteArray>,
+    #[cfg(feature = "wasi")]
+    pub wasi_stdin_file: Option<String>,
 
     pub extern_bind: ExternBindingType,
 }
@@ -126,6 +140,20 @@ impl FromVariant for Config {
             wasi_envs: get_wasi_envs(dict.get("wasi.envs"))?,
             #[cfg(feature = "wasi")]
             wasi_fs_readonly: get_field(&dict, "wasi.fs_readonly")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_stdin: get_field(&dict, "wasi.stdin")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_stdout: get_field(&dict, "wasi.stdout")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_stderr: get_field(&dict, "wasi.stderr")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_stdout_buffer: get_field(&dict, "wasi.stdout_buffer")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_stderr_buffer: get_field(&dict, "wasi.stderr_buffer")?.unwrap_or_default(),
+            #[cfg(feature = "wasi")]
+            wasi_stdin_data: get_field(&dict, "wasi.stdin_data")?,
+            #[cfg(feature = "wasi")]
+            wasi_stdin_file: get_field(&dict, "wasi.stdin_file")?,
 
             extern_bind: get_field(&dict, "godot.extern_binding")?.unwrap_or_default(),
         })
@@ -170,6 +198,94 @@ impl ToVariant for ExternBindingType {
             Self::Registry => "registry",
             #[cfg(feature = "object-registry-extern")]
             Self::Native => "native",
+        }
+        .to_variant()
+    }
+}
+
+#[cfg(feature = "wasi")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum PipeBindingType {
+    Unbound,
+    Instance,
+    Context,
+}
+
+impl Default for PipeBindingType {
+    fn default() -> Self {
+        Self::Context
+    }
+}
+
+impl FromVariant for PipeBindingType {
+    fn from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
+        if variant.is_nil() {
+            return Ok(Self::default());
+        }
+
+        let s = String::from_variant(variant)?;
+        Ok(match &*s {
+            "" | "unbound" => Self::Unbound,
+            "instance" => Self::Instance,
+            "context" => Self::Context,
+            _ => {
+                return Err(VariantConversionError)
+            }
+        })
+    }
+}
+
+impl ToVariant for PipeBindingType {
+    fn to_variant(&self) -> Variant {
+        match self {
+            Self::Unbound => "unbound",
+            Self::Instance => "instance",
+            Self::Context => "context",
+        }
+        .to_variant()
+    }
+}
+
+#[cfg(feature = "wasi")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum PipeBufferType {
+    Unbuffered,
+    LineBuffer,
+    BlockBuffer,
+}
+
+impl Default for PipeBufferType {
+    fn default() -> Self {
+        Self::LineBuffer
+    }
+}
+
+impl FromVariant for PipeBufferType {
+    fn from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
+        if variant.is_nil() {
+            return Ok(Self::default());
+        }
+
+        let s = String::from_variant(variant)?;
+        Ok(match &*s {
+            "" | "unbuffered" => Self::Unbuffered,
+            "line" => Self::LineBuffer,
+            "block" => Self::BlockBuffer,
+            _ => {
+                return Err(VariantConversionError)
+            }
+        })
+    }
+}
+
+impl ToVariant for PipeBufferType {
+    fn to_variant(&self) -> Variant {
+        match self {
+            Self::Unbuffered => "unbuffered",
+            Self::LineBuffer => "line",
+            Self::BlockBuffer => "block",
         }
         .to_variant()
     }

@@ -1,12 +1,11 @@
-mod memfs;
-mod stdio;
-mod timestamp;
+pub mod memfs;
+pub mod stdio;
+pub mod timestamp;
 
-use std::collections::btree_map::Entry;
 use std::collections::HashMap;
 use std::io::{Cursor, Write};
 use std::mem;
-use std::path::{Component, Path, PathBuf};
+use std::path::PathBuf;
 use std::slice;
 use std::sync::{Arc, Weak};
 
@@ -17,9 +16,9 @@ use wasi_common::file::{FdFlags, OFlags};
 use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
-use crate::wasi_ctx::memfs::{Capability, Dir, File, Node};
-use crate::wasi_ctx::stdio::WritePipe;
-use crate::wasm_config::Config;
+use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Node};
+use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
+use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
@@ -56,12 +55,65 @@ impl WasiContext {
         config: &Config,
     ) -> Result<WasiCtx, Error> {
         let o = this.bind();
-        if o.bypass_stdio {
-            ctx = ctx.inherit_stdout().inherit_stderr();
-        } else {
-            // Stub method
-            ctx = ctx.stdout(Box::new(WritePipe::new(move |_buf| {})));
-            ctx = ctx.stderr(Box::new(WritePipe::new(move |_buf| {})));
+        if let (PipeBindingType::Context, Some(file)) =
+            (&config.wasi_stdin, &config.wasi_stdin_file)
+        {
+            let root = Some(o.memfs_root.clone());
+            let node = if let FileEntry::Occupied(v) = site_context!(open(
+                file,
+                o.memfs_root.clone(),
+                &Some(o.memfs_root.clone()),
+                true,
+                false,
+            ))? {
+                v.into_inner()
+            } else {
+                bail_with_site!("Path \"{}\" not found!", file)
+            };
+
+            let OpenResult::File(file) = site_context!(node.open(
+                root,
+                Capability { read: true, write: false },
+                true,
+                OFlags::empty(),
+                FdFlags::empty(),
+            ))? else { bail_with_site!("Path \"{}\" should be a file!", file) };
+            ctx = ctx.stdin(file);
+        }
+        // TODO: Emit signal
+        if config.wasi_stdout == PipeBindingType::Context {
+            if o.bypass_stdio {
+                ctx = ctx.inherit_stdout();
+            } else {
+                ctx = ctx.stdout(match config.wasi_stdout_buffer {
+                    PipeBufferType::Unbuffered => {
+                        Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
+                    }
+                    PipeBufferType::LineBuffer => {
+                        Box::new(LineWritePipe::new(move |_buf| {})) as _
+                    }
+                    PipeBufferType::BlockBuffer => {
+                        Box::new(BlockWritePipe::new(move |_buf| {})) as _
+                    }
+                });
+            }
+        }
+        if config.wasi_stderr == PipeBindingType::Context {
+            if o.bypass_stdio {
+                ctx = ctx.inherit_stderr();
+            } else {
+                ctx = ctx.stderr(match config.wasi_stderr_buffer {
+                    PipeBufferType::Unbuffered => {
+                        Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
+                    }
+                    PipeBufferType::LineBuffer => {
+                        Box::new(LineWritePipe::new(move |_buf| {})) as _
+                    }
+                    PipeBufferType::BlockBuffer => {
+                        Box::new(BlockWritePipe::new(move |_buf| {})) as _
+                    }
+                });
+            }
         }
 
         let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
@@ -166,38 +218,13 @@ impl WasiContext {
 
     #[func]
     fn write_memory_file(&mut self, path: GodotString, data: Variant, offset: Variant) {
-        fn f(root: Arc<Dir>, path: &Path, data: &[u8], offset: Option<usize>) -> Result<(), Error> {
-            let mut node: Arc<dyn Node> = root;
-            for c in path.parent().unwrap_or(path).components() {
-                let n = match c {
-                    Component::CurDir => continue,
-                    Component::ParentDir => node.parent(),
-                    Component::RootDir => continue,
-                    Component::Normal(name) => node.child(name.to_str().unwrap()),
-                    Component::Prefix(_) => bail_with_site!("Windows-like paths is not supported"),
-                };
-                if let Some(n) = n {
-                    node = n;
-                } else if let Component::Normal(name) = c {
-                    let Some(n) = node.as_any().downcast_ref::<Dir>() else { bail_with_site!("Cannot create directory") };
-                    let n = n
-                        .content
-                        .write()
-                        .entry(name.to_str().unwrap().to_owned())
-                        .or_insert_with(|| Arc::new(Dir::new(Arc::downgrade(&node))))
-                        .clone();
-                    node = n;
-                } else {
-                    bail_with_site!("Path not found!");
-                }
-            }
-
-            let Some(name) = path.file_name().and_then(|v| v.to_str()) else { return Ok(()) };
-            let Some(n) = node.as_any().downcast_ref::<Dir>() else { bail_with_site!("Cannot create directory") };
-            match n.content.write().entry(name.to_owned()) {
-                Entry::Occupied(v) => {
-                    let Some(file) = v.get().as_any().downcast_ref::<File>() else { bail_with_site!("Is a directory") };
+        fn f(root: Arc<Dir>, path: &str, data: &[u8], offset: Option<usize>) -> Result<(), Error> {
+            match site_context!(open(path, root.clone(), &Some(root), true, true))? {
+                FileEntry::Occupied(v) => {
+                    let v = v.into_inner();
+                    let Some(file) = v.as_any().downcast_ref::<File>() else { bail_with_site!("Is a directory") };
                     let mut content = file.content.write();
+
                     if let Some(offset) = offset {
                         let mut cursor = Cursor::new(&mut *content);
                         cursor.set_position(offset as _);
@@ -207,20 +234,23 @@ impl WasiContext {
                         content.extend_from_slice(data);
                     }
                 }
-                Entry::Vacant(v) => {
-                    let mut file = File::new(Arc::downgrade(&node));
-                    *file.content.get_mut() = if let Some(offset) = offset {
-                        let mut v = match offset.checked_add(data.len()) {
-                            Some(v) => Vec::with_capacity(v),
-                            None => bail_with_site!("Data too long!"),
+                FileEntry::Vacant(v) => {
+                    v.insert(|parent, stamp| -> Result<_, Error> {
+                        let mut file = File::with_timestamp(parent, stamp);
+                        *file.content.get_mut() = if let Some(offset) = offset {
+                            let mut v = match offset.checked_add(data.len()) {
+                                Some(v) => Vec::with_capacity(v),
+                                None => bail_with_site!("Data too long!"),
+                            };
+                            v.resize(offset, 0);
+                            v.extend_from_slice(data);
+                            v
+                        } else {
+                            data.to_owned()
                         };
-                        v.resize(offset, 0);
-                        v.extend_from_slice(data);
-                        v
-                    } else {
-                        data.to_owned()
-                    };
-                    v.insert(Arc::new(file));
+
+                        Ok(Arc::new(file))
+                    })?;
                 }
             }
 
@@ -240,7 +270,7 @@ impl WasiContext {
                 bail_with_site!("Unknown offset {}", offset)
             };
 
-            let path = PathBuf::from(String::from(path));
+            let path = String::from(path);
 
             let f = |data| f(self.memfs_root.clone(), &path, data, offset);
 
@@ -274,28 +304,21 @@ impl WasiContext {
                 bail_with_site!("Unknown offset {}", offset)
             };
 
-            let path = PathBuf::from(String::from(path));
+            let path = String::from(path);
 
-            let mut node: Arc<dyn Node> = self.memfs_root.clone();
-            for c in path.parent().unwrap_or(&path).components() {
-                let n = match c {
-                    Component::CurDir => continue,
-                    Component::ParentDir => node.parent(),
-                    Component::RootDir => continue,
-                    Component::Normal(name) => node.child(name.to_str().unwrap()),
-                    Component::Prefix(_) => bail_with_site!("Windows-like paths is not supported"),
-                };
-                if let Some(n) = n {
-                    node = n;
-                } else {
-                    bail_with_site!("Path not found!");
-                }
-            }
+            let node = if let FileEntry::Occupied(v) = site_context!(open(
+                &path,
+                self.memfs_root.clone(),
+                &Some(self.memfs_root.clone()),
+                true,
+                false
+            ))? {
+                v.into_inner()
+            } else {
+                bail_with_site!("Path not found!")
+            };
 
-            let Some(name) = path.file_name().and_then(|v| v.to_str()) else { return Ok(PackedByteArray::new()) };
-            let Some(n) = node.as_any().downcast_ref::<Dir>() else { bail_with_site!("Cannot create directory") };
-            let content = n.content.read();
-            let Some(file) = content.get(name).and_then(|v| v.as_any().downcast_ref::<File>()) else { bail_with_site!("File not found") };
+            let Some(file) = node.as_any().downcast_ref::<File>() else { bail_with_site!("Is not file!") };
 
             let content = file.content.read();
             let end = match offset.checked_add(length) {

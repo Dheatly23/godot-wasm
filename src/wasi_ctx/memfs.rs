@@ -2,6 +2,7 @@ use std::any::Any;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::fmt::Debug;
 use std::io::{Cursor, IoSlice, IoSliceMut, Read, SeekFrom, Write};
+use std::mem::forget;
 use std::ops::Deref;
 use std::path::{Component, PathBuf};
 use std::sync::{Arc, Weak};
@@ -15,7 +16,10 @@ use wasi_common::{Error, ErrorExt, SystemTimeSpec, WasiDir, WasiFile};
 
 use crate::wasi_ctx::timestamp::FileTimestamp;
 
-const MAX_SYMLINK_DEREF: usize = 16;
+pub const MAX_SYMLINK_DEREF: usize = 16;
+
+static SPLIT_CHARS: &[char] = &['\\', '/'];
+static ILLEGAL_CHARS: &[char] = &['\\', '/', ':', '*', '?', '\"', '\'', '<', '>', '|'];
 
 fn _set_times(stamp: &FileTimestamp, mtime: Option<SystemTimeSpec>, atime: Option<SystemTimeSpec>) {
     let (m, a) = match (mtime, atime) {
@@ -55,6 +59,153 @@ fn _touch_write(stamp: &FileTimestamp, time: Option<SystemTime>) {
     let t = time.unwrap_or_else(SystemTime::now);
     stamp.mtime.set_stamp(t);
     stamp.atime.set_stamp(t);
+}
+
+pub enum FileEntry<'a> {
+    Vacant(VacantFile<'a>),
+    Occupied(OccupiedFile),
+}
+
+impl FileEntry<'_> {
+    pub fn or_insert<F, E>(self, f: F) -> Result<Arc<dyn Node>, E>
+    where
+        F: FnOnce(Weak<dyn Node>, FileTimestamp) -> Result<Arc<dyn Node>, E>,
+    {
+        match self {
+            Self::Vacant(v) => v.insert(f),
+            Self::Occupied(v) => Ok(v.into_inner()),
+        }
+    }
+}
+
+pub struct VacantFile<'a> {
+    folder: Arc<dyn Node>,
+    ptr: *const Dir,
+    name: &'a str,
+    time: SystemTime,
+}
+
+impl Drop for VacantFile<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            (*self.ptr).content.force_unlock_write();
+        }
+    }
+}
+
+impl VacantFile<'_> {
+    pub fn insert<F, E>(self, f: F) -> Result<Arc<dyn Node>, E>
+    where
+        F: FnOnce(Weak<dyn Node>, FileTimestamp) -> Result<Arc<dyn Node>, E>,
+    {
+        let file = f(
+            Arc::downgrade(&self.folder),
+            FileTimestamp::with_time(self.time),
+        )?;
+        unsafe {
+            (*(*self.ptr).content.data_ptr()).insert(self.name.to_owned(), file.clone());
+        }
+        _touch_write(self.folder.timestamp(), Some(self.time));
+        drop(self);
+        Ok(file)
+    }
+}
+
+pub struct OccupiedFile {
+    file: Arc<dyn Node>,
+}
+
+impl Deref for OccupiedFile {
+    type Target = dyn Node;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.file
+    }
+}
+
+impl OccupiedFile {
+    pub fn into_inner(self) -> Arc<dyn Node> {
+        self.file
+    }
+}
+
+pub fn open<'a>(
+    mut path: &'a str,
+    mut node: Arc<dyn Node>,
+    root: &Option<Arc<Dir>>,
+    follow_symlink: bool,
+    create_intermediate_dir: bool,
+) -> Result<FileEntry<'a>, Error> {
+    let time = SystemTime::now();
+    let mut rest;
+
+    loop {
+        (path, rest) = match path.split_once(SPLIT_CHARS) {
+            Some((f, r)) => (f, Some(r)),
+            None => (path, None),
+        };
+
+        node = match path {
+            "" | "." => node,
+            ".." => node.parent().unwrap_or(node),
+            p => {
+                if p.contains(ILLEGAL_CHARS) {
+                    return Err(Error::invalid_argument());
+                }
+
+                let n = if rest.is_none() {
+                    let Some(n) = node.as_any().downcast_ref::<Dir>() else { return Err(Error::not_dir()); };
+                    let content = n.content.write();
+                    if let Some(v) = content.get(p) {
+                        _touch_read(n.timestamp(), Some(time));
+                        v.clone()
+                    } else {
+                        forget(content);
+                        let ptr = n as _;
+                        return Ok(FileEntry::Vacant(VacantFile {
+                            folder: node,
+                            ptr,
+                            name: p,
+                            time,
+                        }));
+                    }
+                } else if create_intermediate_dir {
+                    let Some(n) = node.as_any().downcast_ref::<Dir>() else { return Err(Error::not_dir()); };
+                    let mut content = n.content.write();
+                    match content.entry(p.to_owned()) {
+                        Entry::Vacant(v) => {
+                            _touch_write(n.timestamp(), Some(time));
+                            v.insert(Arc::new(Dir::new(Arc::downgrade(&node)))).clone()
+                        }
+                        Entry::Occupied(v) => {
+                            _touch_read(n.timestamp(), Some(time));
+                            v.get().clone()
+                        }
+                    }
+                } else if let Some(n) = node.child(p) {
+                    _touch_read(node.timestamp(), Some(time));
+                    n
+                } else {
+                    return Err(Error::not_found());
+                };
+
+                if follow_symlink {
+                    match n.link_deref(root, MAX_SYMLINK_DEREF) {
+                        Some(v) => v,
+                        None => return Err(Error::not_found()),
+                    }
+                } else {
+                    n
+                }
+            }
+        };
+
+        if let Some(rest) = rest {
+            path = rest;
+        } else {
+            break Ok(FileEntry::Occupied(OccupiedFile { file: node }));
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -223,7 +374,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
     async fn open_file(
         &self,
         symlink_follow: bool,
-        mut path: &str,
+        path: &str,
         oflags: OFlags,
         read: bool,
         write: bool,
@@ -233,80 +384,28 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             return Err(Error::not_supported());
         }
 
-        let mut rest;
-        (path, rest) = if let Some((first, rest)) = path.split_once('/') {
-            (first, Some(rest))
-        } else {
-            (path, None)
-        };
-
         if !self.capability.write && (write || oflags.contains(OFlags::CREATE)) {
             return Err(Error::perm());
         }
-        if !self.capability.read && (read || !oflags.contains(OFlags::CREATE) || rest.is_some()) {
+        if !self.capability.read && (read || !oflags.contains(OFlags::CREATE)) {
             return Err(Error::perm());
         }
 
-        let time = SystemTime::now();
-
-        let mut node: Arc<dyn Node> = self.value.clone();
-        loop {
-            node = match path {
-                "" | "." => node,
-                ".." => node.parent().unwrap_or(node),
-                p => {
-                    let n = if rest.is_none() && oflags.contains(OFlags::CREATE) {
-                        let Some(n) = node.as_any().downcast_ref::<Dir>() else { return Err(Error::not_dir()) };
-                        let mut content = n.content.write();
-                        _touch_read(node.timestamp(), Some(time));
-                        loop {
-                            if let Some(v) = content.get(p) {
-                                break v.clone();
-                            }
-                            let v: Arc<dyn Node> = if oflags.contains(OFlags::DIRECTORY) {
-                                Arc::new(Dir::with_timestamp(
-                                    Arc::downgrade(&node),
-                                    FileTimestamp::with_time(time),
-                                ))
-                            } else {
-                                Arc::new(File::with_timestamp(
-                                    Arc::downgrade(&node),
-                                    FileTimestamp::with_time(time),
-                                ))
-                            };
-                            content.insert(p.to_owned(), v);
-                            _touch_write(node.timestamp(), Some(time));
-                        }
-                    } else if let Some(v) = node.child(p) {
-                        _touch_read(node.timestamp(), Some(time));
-                        v
-                    } else {
-                        return Err(Error::not_found());
-                    };
-
-                    if symlink_follow {
-                        match n.link_deref(&self.root, MAX_SYMLINK_DEREF) {
-                            Some(v) => v,
-                            None => return Err(Error::not_found()),
-                        }
-                    } else {
-                        n
-                    }
-                }
-            };
-
-            if let Some(r) = rest {
-                (path, rest) = if let Some((first, rest)) = r.split_once('/') {
-                    (first, Some(rest))
-                } else {
-                    (r, None)
-                };
+        open(
+            path,
+            self.value.clone(),
+            &self.root,
+            oflags.contains(OFlags::CREATE),
+            false,
+        )?
+        .or_insert(|parent, stamp| -> Result<_, Error> {
+            if oflags.contains(OFlags::DIRECTORY) {
+                Ok(Arc::new(Dir::with_timestamp(parent, stamp)))
             } else {
-                break;
+                Ok(Arc::new(File::with_timestamp(parent, stamp)))
             }
-        }
-
-        node.open(
+        })?
+        .open(
             self.root.clone(),
             Capability { read, write },
             symlink_follow,
@@ -320,7 +419,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             return Err(Error::perm());
         }
 
-        if matches!(path, "" | "." | "..") || path.contains('/') {
+        if matches!(path, "" | "." | "..") || path.contains(ILLEGAL_CHARS) {
             return Err(Error::invalid_argument());
         }
 
@@ -389,7 +488,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             return Err(Error::perm());
         }
 
-        if matches!(new_path, "" | "." | "..") || new_path.contains('/') {
+        if matches!(new_path, "" | "." | "..") || new_path.contains(ILLEGAL_CHARS) {
             return Err(Error::invalid_argument());
         }
 
@@ -498,7 +597,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             return Err(Error::perm());
         }
 
-        if matches!(dest_path, "" | "." | "..") || dest_path.contains('/') {
+        if matches!(dest_path, "" | "." | "..") || dest_path.contains(ILLEGAL_CHARS) {
             return Err(Error::invalid_argument());
         }
 
@@ -587,12 +686,14 @@ pub struct File {
 }
 
 impl File {
+    #[allow(dead_code)]
     #[inline]
     pub fn new(parent: Weak<dyn Node>) -> Self {
         Self::with_timestamp(parent, FileTimestamp::new())
     }
+
     #[inline]
-    fn with_timestamp(parent: Weak<dyn Node>, stamp: FileTimestamp) -> Self {
+    pub fn with_timestamp(parent: Weak<dyn Node>, stamp: FileTimestamp) -> Self {
         Self {
             parent: RwLock::new(parent),
             stamp,
@@ -724,14 +825,6 @@ impl WasiFile for CapAccessor<OpenFile> {
 
     async fn advise(&self, _offset: u64, _len: u64, _advice: Advice) -> Result<(), Error> {
         Err(Error::not_supported())
-    }
-
-    async fn allocate(&self, _offset: u64, _len: u64) -> Result<(), Error> {
-        if !self.capability.write {
-            return Err(Error::perm());
-        }
-
-        Ok(())
     }
 
     async fn set_times(
@@ -1046,10 +1139,6 @@ impl WasiFile for CapAccessor<Arc<Link>> {
     }
 
     async fn advise(&self, _offset: u64, _len: u64, _advice: Advice) -> Result<(), Error> {
-        Err(Error::not_supported())
-    }
-
-    async fn allocate(&self, _offset: u64, _len: u64) -> Result<(), Error> {
         Err(Error::not_supported())
     }
 

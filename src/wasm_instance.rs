@@ -1,6 +1,8 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::mem::{size_of, transmute};
 use std::ptr;
+use std::sync::Arc;
 
 use anyhow::{bail, Error};
 use godot::prelude::*;
@@ -19,8 +21,14 @@ use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
 use wasmtime_wasi::WasiCtx;
 
 #[cfg(feature = "wasi")]
+use crate::wasi_ctx::stdio::{
+    BlockWritePipe, ByteBufferReadPipe, InnerStdin, LineWritePipe, OuterStdin, UnbufferedWritePipe,
+};
+#[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::{Config, ExternBindingType};
+#[cfg(feature = "wasi")]
+use crate::wasm_config::{PipeBindingType, PipeBufferType};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_engine::EPOCH;
 use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
@@ -50,13 +58,16 @@ pub struct WasmInstance {
 
     #[export(get = get_module)]
     #[allow(dead_code)]
-    module: (),
+    module: Option<i64>,
 }
 
 pub struct InstanceData {
     store: Mutex<Store<StoreData>>,
     instance: InstanceWasm,
     module: Gd<WasmModule>,
+
+    #[cfg(feature = "wasi")]
+    wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
 }
 
 pub struct StoreData {
@@ -86,31 +97,36 @@ pub struct MemoryLimit {
 
 #[cfg(feature = "memory-limiter")]
 impl ResourceLimiter for MemoryLimit {
-    fn memory_growing(&mut self, current: usize, desired: usize, _: Option<usize>) -> bool {
+    fn memory_growing(
+        &mut self,
+        current: usize,
+        desired: usize,
+        _: Option<usize>,
+    ) -> Result<bool, Error> {
         if self.max_memory == u64::MAX {
-            return true;
+            return Ok(true);
         }
 
         let delta = (desired - current) as u64;
         if let Some(v) = self.max_memory.checked_sub(delta) {
             self.max_memory = v;
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 
-    fn table_growing(&mut self, current: u32, desired: u32, _: Option<u32>) -> bool {
+    fn table_growing(&mut self, current: u32, desired: u32, _: Option<u32>) -> Result<bool, Error> {
         if self.max_table_entries == u64::MAX {
-            return true;
+            return Ok(true);
         }
 
         let delta = (desired - current) as u64;
         if let Some(v) = self.max_table_entries.checked_sub(delta) {
             self.max_table_entries = v;
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 }
@@ -141,12 +157,41 @@ impl InstanceData {
         }
 
         #[cfg(feature = "wasi")]
+        let mut wasi_stdin = None;
+
+        #[cfg(feature = "wasi")]
         let wasi_linker = if store.data().config.with_wasi {
-            let builder = WasiCtxBuilder::new();
+            let mut builder = WasiCtxBuilder::new();
 
             let StoreData {
                 wasi_ctx, config, ..
             } = store.data_mut();
+
+            if config.wasi_stdin == PipeBindingType::Instance {
+                if let Some(data) = config.wasi_stdin_data.clone() {
+                    builder = builder.stdin(Box::new(ByteBufferReadPipe::new(data)));
+                } else {
+                    // TODO: Emit signal
+                    let (outer, inner) = OuterStdin::new(move || {});
+                    builder = builder.stdin(Box::new(outer));
+                    wasi_stdin = Some(inner as _);
+                }
+            }
+            if config.wasi_stdout == PipeBindingType::Instance {
+                builder = builder.stdout(match config.wasi_stdout_buffer {
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |_buf| {})) as _,
+                });
+            }
+            if config.wasi_stderr == PipeBindingType::Instance {
+                builder = builder.stderr(match config.wasi_stderr_buffer {
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |_buf| {})) as _,
+                });
+            }
+
             *wasi_ctx = match &config.wasi_context {
                 Some(ctx) => Some(WasiContext::build_ctx(ctx.share(), builder, &*config)?),
                 None => Some(WasiContext::init_ctx_no_context(
@@ -278,6 +323,8 @@ impl InstanceData {
             instance,
             module,
             store: Mutex::new(store),
+            #[cfg(feature = "wasi")]
+            wasi_stdin,
         })
     }
 
@@ -481,7 +528,7 @@ impl RefCountedVirtual for WasmInstance {
             base,
             once: Once::new(),
             data: None,
-            module: (),
+            module: None,
         }
     }
 }
@@ -534,6 +581,8 @@ impl WasmInstance {
                     None => bail_with_site!("Export {} does not exists", &name),
                 };
 
+                store.gc();
+
                 let ty = f.ty(&store);
                 let pi = ty.params();
                 let ri = ty.results();
@@ -545,10 +594,10 @@ impl WasmInstance {
 
                 #[cfg(feature = "epoch-timeout")]
                 store.set_epoch_deadline(store.data().config.epoch_timeout);
-                store.gc();
+
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
-                    site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr()))?;
+                    site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr(), arr.len()))?;
                 }
 
                 let mut ret = Array::new();
@@ -696,6 +745,34 @@ impl WasmInstance {
             })
         })
         .unwrap_or_default()
+    }
+
+    #[func]
+    fn stdin_add_line(&self, line: GodotString) {
+        #[cfg(feature = "wasi")]
+        self.unwrap_data(|m| {
+            if let Some(stdin) = &m.wasi_stdin {
+                stdin.add_line(line)?;
+            }
+            Ok(())
+        });
+
+        #[cfg(not(feature = "wasi"))]
+        godot_error!("Feature wasi not enabled!");
+    }
+
+    #[func]
+    fn stdin_close(&self) {
+        #[cfg(feature = "wasi")]
+        self.unwrap_data(|m| {
+            if let Some(stdin) = &m.wasi_stdin {
+                stdin.close_pipe();
+            }
+            Ok(())
+        });
+
+        #[cfg(not(feature = "wasi"))]
+        godot_error!("Feature wasi not enabled!");
     }
 
     #[func]
