@@ -78,18 +78,12 @@ fn compute_epoch(v: Option<Variant>) -> Result<u64, VariantConversionError> {
 #[cfg(feature = "wasi")]
 fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, VariantConversionError> {
     let v = match v {
-        Some(v) => match <Array<Variant>>::try_from_variant(&v) {
-            Ok(v) => v,
-            Err(_) => return Err(VariantConversionError),
-        },
+        Some(v) => <Array<Variant>>::try_from_variant(&v)?,
         None => return Ok(Vec::new()),
     };
     let mut ret = Vec::with_capacity(v.len());
     for i in v.iter_shared() {
-        ret.push(match String::try_from_variant(&i) {
-            Ok(v) => v,
-            Err(_) => return Err(VariantConversionError),
-        });
+        ret.push(String::try_from_variant(&i)?);
     }
     Ok(ret)
 }
@@ -97,10 +91,7 @@ fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, VariantConversionErr
 #[cfg(feature = "wasi")]
 fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, VariantConversionError> {
     let v = match v {
-        Some(v) => match Dictionary::try_from_variant(&v) {
-            Ok(v) => v,
-            Err(_) => return Err(VariantConversionError),
-        },
+        Some(v) => Dictionary::try_from_variant(&v)?,
         None => return Ok(HashMap::new()),
     };
     let mut ret = HashMap::with_capacity(v.len());
@@ -185,7 +176,7 @@ impl FromVariant for ExternBindingType {
             "compat" | "registry" => Self::Registry,
             #[cfg(feature = "object-registry-extern")]
             "extern" | "native" => Self::Native,
-            _ => return Err(VariantConversionError),
+            _ => return Err(VariantConversionError::BadValue),
         })
     }
 }
@@ -219,18 +210,18 @@ impl Default for PipeBindingType {
 }
 
 impl FromVariant for PipeBindingType {
-    fn from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
+    fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
         if variant.is_nil() {
             return Ok(Self::default());
         }
 
-        let s = String::from_variant(variant)?;
+        let s = String::try_from_variant(variant)?;
         Ok(match &*s {
             "" | "unbound" => Self::Unbound,
             "instance" => Self::Instance,
             "context" => Self::Context,
             _ => {
-                return Err(VariantConversionError)
+                return Err(VariantConversionError::BadValue)
             }
         })
     }
@@ -263,18 +254,18 @@ impl Default for PipeBufferType {
 }
 
 impl FromVariant for PipeBufferType {
-    fn from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
+    fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
         if variant.is_nil() {
             return Ok(Self::default());
         }
 
-        let s = String::from_variant(variant)?;
+        let s = String::try_from_variant(variant)?;
         Ok(match &*s {
             "" | "unbuffered" => Self::Unbuffered,
             "line" => Self::LineBuffer,
             "block" => Self::BlockBuffer,
             _ => {
-                return Err(VariantConversionError)
+                return Err(VariantConversionError::BadValue)
             }
         })
     }
