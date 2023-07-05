@@ -18,8 +18,7 @@ GDExtension.
 semver, things might break unexpectedly. Just follow the latest commit
 and you're probably safe.
 
-Documentation is the source code itself. If you want to document, great!
-But i'm just **really lazy** and perhaps old-school.
+Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
 
 ## Features
 
