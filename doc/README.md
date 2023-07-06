@@ -7,5 +7,7 @@ addon. Each class is separated into it's own file, named accordingly.
 
 * [WasmModule](./WasmModule.md)
 * [WasmInstance](./WasmInstance.md)
+* [WasmConfig](./WasmConfig.md)
+* [WasiContext](./WasiContext.md)
 * [WasmHelper](./WasmHelper.md)
 * [WasmFile](./WasmFile.md)
