@@ -15,7 +15,7 @@ use scopeguard::guard;
 use wasmtime::Linker;
 use wasmtime::{
     AsContextMut, Extern, Instance as InstanceWasm, Memory, ResourceLimiter, Store,
-    StoreContextMut, ValRaw,
+    StoreContextMut, UpdateDeadline, ValRaw,
 };
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
@@ -138,7 +138,7 @@ impl InstanceData {
             store.epoch_deadline_trap();
             EPOCH.spawn_thread(|| ENGINE.increment_epoch());
         } else {
-            store.epoch_deadline_callback(|_| Ok(EPOCH_DEADLINE));
+            store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
         }
 
         #[cfg(feature = "memory-limiter")]
