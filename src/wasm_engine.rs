@@ -166,41 +166,42 @@ impl WasmModule {
                     continue;
                 }
 
-                match deps_map.get(i.module()) {
+                let j = match deps_map.get(i.module()) {
                     None => bail!("Unknown module {}", i.module()),
-                    Some(m) => match (i.ty(), m.bind().get_data()?.module.get_export(i.name())) {
-                        (_, None) => {
-                            bail!("No import in module {} named {}", i.module(), i.name())
-                        }
-                        (ExternType::Func(f1), Some(ExternType::Func(f2))) if f1 == f2 => (),
-                        (ExternType::Global(g1), Some(ExternType::Global(g2))) if g1 == g2 => (),
-                                (ExternType::Table(t1), Some(ExternType::Table(t2)))
-                                    if t1.element() == t2.element()
-                                        && t1.minimum() <= t2.minimum()
-                                        && match (t1.maximum(), t2.maximum()) {
-                                            (None, _) => true,
-                                            (_, None) => false,
-                                            (Some(a), Some(b)) => a >= b,
-                                        } =>
-                                {
-                                    ()
-                                }
-                                (ExternType::Memory(m1), Some(ExternType::Memory(m2)))
-                                    if m1.is_64() == m2.is_64()
-                                        && m1.is_shared() == m2.is_shared()
-                                        && m1.minimum() <= m2.minimum()
-                                        && match (m1.maximum(), m2.maximum()) {
-                                            (None, _) => true,
-                                            (_, None) => false,
-                                            (Some(a), Some(b)) => a >= b,
-                                        } =>
-                                {
-                                    ()
-                                }
-                        (e1, Some(e2)) => {
-                            bail!("Import type mismatch ({:?} != {:?})", e1, e2)
-                        }
-                    },
+                    Some(m) => m.bind().get_data()?.module.get_export(i.name()),
+                };
+                let j = match j {
+                    Some(v) => v,
+                    None => {
+                        bail!("No import in module {} named {}", i.module(), i.name())
+                    }
+                };
+                let i = i.ty();
+                if !match (&i, &j) {
+                    (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
+                    (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
+                    (ExternType::Table(t1), ExternType::Table(t2)) => {
+                        t1.element() == t2.element()
+                            && t1.minimum() <= t2.minimum()
+                            && match (t1.maximum(), t2.maximum()) {
+                                (None, _) => true,
+                                (_, None) => false,
+                                (Some(a), Some(b)) => a >= b,
+                            }
+                    }
+                    (ExternType::Memory(m1), ExternType::Memory(m2)) => {
+                        m1.is_64() == m2.is_64()
+                            && m1.is_shared() == m2.is_shared()
+                            && m1.minimum() <= m2.minimum()
+                            && match (m1.maximum(), m2.maximum()) {
+                                (None, _) => true,
+                                (_, None) => false,
+                                (Some(a), Some(b)) => a >= b,
+                            }
+                    }
+                    (_, _) => false,
+                } {
+                    bail!("Import type mismatch ({:?} != {:?})", i, j)
                 }
             }
 
