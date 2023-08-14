@@ -22,17 +22,20 @@ use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
-#[class(base=RefCounted)]
+#[class(base=RefCounted, init)]
 pub struct WasiContext {
-    #[base]
-    base: Base<RefCounted>,
+    #[init(default = false)]
     #[export]
     bypass_stdio: bool,
+    #[init(default = false)]
     #[export]
     fs_readonly: bool,
 
+    #[init(default = Arc::new(Dir::new(<Weak<Dir>>::new())))]
     memfs_root: Arc<Dir>,
+    #[init(default = HashMap::new())]
     physical_mount: HashMap<PathBuf, PathBuf>,
+    #[init(default = HashMap::new())]
     envs: HashMap<String, String>,
 }
 
@@ -166,21 +169,6 @@ impl WasiContext {
                 godot_error!("{}", e);
                 None
             }
-        }
-    }
-}
-
-#[godot_api]
-impl RefCountedVirtual for WasiContext {
-    fn init(base: Base<RefCounted>) -> Self {
-        Self {
-            base,
-            bypass_stdio: false,
-            fs_readonly: false,
-
-            memfs_root: Arc::new(Dir::new(<Weak<Dir>>::new())),
-            physical_mount: HashMap::new(),
-            envs: HashMap::new(),
         }
     }
 }

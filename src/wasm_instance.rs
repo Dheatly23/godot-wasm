@@ -13,7 +13,7 @@ use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
 use wasmtime::ResourceLimiter;
 use wasmtime::{
-    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
+    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw, UpdateDeadline,
 };
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
@@ -49,14 +49,14 @@ use crate::wasm_util::{
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
-#[class(base=RefCounted)]
+#[class(base=RefCounted, init)]
 pub struct WasmInstance {
     #[base]
     base: Base<RefCounted>,
     once: Once,
     data: Option<InstanceData>,
 
-    #[export(get = get_module)]
+    #[var(get = get_module)]
     #[allow(dead_code)]
     module: Option<i64>,
 }
@@ -142,7 +142,7 @@ impl InstanceData {
             store.epoch_deadline_trap();
             EPOCH.spawn_thread(|| ENGINE.increment_epoch());
         } else {
-            store.epoch_deadline_callback(|_| Ok(EPOCH_DEADLINE));
+            store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
         }
 
         #[cfg(feature = "memory-limiter")]
@@ -518,18 +518,6 @@ impl WasmInstance {
                 None => bail_with_site!("Index out of bound {}-{}", i, i + n),
             }
         })
-    }
-}
-
-#[godot_api]
-impl RefCountedVirtual for WasmInstance {
-    fn init(base: Base<RefCounted>) -> Self {
-        Self {
-            base,
-            once: Once::new(),
-            data: None,
-            module: None,
-        }
     }
 }
 

@@ -3,6 +3,8 @@ use std::ops::{Deref, DerefMut};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg(feature = "epoch-timeout")]
 use std::time;
+#[cfg(feature = "object-registry-extern")]
+use std::ptr;
 
 use anyhow::{anyhow, bail, Error};
 use godot::prelude::*;
@@ -191,7 +193,7 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Resul
         #[cfg(feature = "object-registry-extern")]
         ValType::ExternRef => ValRaw::externref(match variant_to_externref(v) {
             Some(v) => v.to_raw(_store),
-            None => 0,
+            None => ptr::null_mut(),
         }),
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })

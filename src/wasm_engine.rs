@@ -102,14 +102,14 @@ lazy_static! {
 }
 
 #[derive(GodotClass)]
-#[class(base=RefCounted)]
+#[class(base=RefCounted, init)]
 pub struct WasmModule {
     #[base]
     base: Base<RefCounted>,
     once: Once,
     data: Option<ModuleData>,
 
-    #[export(get = get_name)]
+    #[var(get = get_name)]
     #[allow(dead_code)]
     name: Option<i64>,
 }
@@ -149,7 +149,7 @@ impl WasmModule {
             } else if let Ok(v) = String::try_from_variant(&data) {
                 Module::new(&ENGINE, &v)?
             } else if let Ok(v) = <Gd<FileAccess>>::try_from_variant(&data) {
-                Module::new(&ENGINE, &v.get_buffer(v.get_length()).to_vec())?
+                Module::new(&ENGINE, &v.get_buffer(v.get_length() as _).to_vec())?
             } else {
                 bail!("Unknown module value {}", data)
             };
@@ -228,18 +228,6 @@ impl WasmModule {
         });
 
         r
-    }
-}
-
-#[godot_api]
-impl RefCountedVirtual for WasmModule {
-    fn init(base: Base<RefCounted>) -> Self {
-        Self {
-            base,
-            once: Once::new(),
-            data: None,
-            name: None,
-        }
     }
 }
 
