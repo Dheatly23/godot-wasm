@@ -220,9 +220,7 @@ impl FromVariant for PipeBindingType {
             "" | "unbound" => Self::Unbound,
             "instance" => Self::Instance,
             "context" => Self::Context,
-            _ => {
-                return Err(VariantConversionError::BadValue)
-            }
+            _ => return Err(VariantConversionError::BadValue),
         })
     }
 }
@@ -264,9 +262,7 @@ impl FromVariant for PipeBufferType {
             "" | "unbuffered" => Self::Unbuffered,
             "line" => Self::LineBuffer,
             "block" => Self::BlockBuffer,
-            _ => {
-                return Err(VariantConversionError::BadValue)
-            }
+            _ => return Err(VariantConversionError::BadValue),
         })
     }
 }

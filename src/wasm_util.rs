@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
 use std::panic::{catch_unwind, AssertUnwindSafe};
-#[cfg(feature = "epoch-timeout")]
-use std::time;
 #[cfg(feature = "object-registry-extern")]
 use std::ptr;
+#[cfg(feature = "epoch-timeout")]
+use std::time;
 
 use anyhow::{anyhow, bail, Error};
 use godot::prelude::*;

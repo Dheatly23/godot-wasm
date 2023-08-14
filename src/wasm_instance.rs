@@ -13,7 +13,8 @@ use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
 use wasmtime::ResourceLimiter;
 use wasmtime::{
-    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw, UpdateDeadline,
+    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, UpdateDeadline,
+    ValRaw,
 };
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
@@ -179,16 +180,24 @@ impl InstanceData {
             }
             if config.wasi_stdout == PipeBindingType::Instance {
                 builder = builder.stdout(match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _,
+                    PipeBufferType::Unbuffered => {
+                        Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
+                    }
                     PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
-                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |_buf| {})) as _,
+                    PipeBufferType::BlockBuffer => {
+                        Box::new(BlockWritePipe::new(move |_buf| {})) as _
+                    }
                 });
             }
             if config.wasi_stderr == PipeBindingType::Instance {
                 builder = builder.stderr(match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _,
+                    PipeBufferType::Unbuffered => {
+                        Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
+                    }
                     PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
-                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |_buf| {})) as _,
+                    PipeBufferType::BlockBuffer => {
+                        Box::new(BlockWritePipe::new(move |_buf| {})) as _
+                    }
                 });
             }
 

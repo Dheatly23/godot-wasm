@@ -92,9 +92,7 @@ impl WasiContext {
                     PipeBufferType::Unbuffered => {
                         Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
                     }
-                    PipeBufferType::LineBuffer => {
-                        Box::new(LineWritePipe::new(move |_buf| {})) as _
-                    }
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
                     PipeBufferType::BlockBuffer => {
                         Box::new(BlockWritePipe::new(move |_buf| {})) as _
                     }
@@ -109,9 +107,7 @@ impl WasiContext {
                     PipeBufferType::Unbuffered => {
                         Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
                     }
-                    PipeBufferType::LineBuffer => {
-                        Box::new(LineWritePipe::new(move |_buf| {})) as _
-                    }
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
                     PipeBufferType::BlockBuffer => {
                         Box::new(BlockWritePipe::new(move |_buf| {})) as _
                     }
