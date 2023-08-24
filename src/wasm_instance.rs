@@ -637,10 +637,17 @@ impl WasmInstance {
                 let ty = f.ty(&store);
                 let pi = ty.params();
                 let ri = ty.results();
-                let mut arr = vec![ValRaw::i32(0); pi.len().max(ri.len())];
+                let mut arr = Vec::with_capacity(pi.len().max(ri.len()));
 
-                for (ix, t) in pi.enumerate() {
-                    arr[ix] = unsafe { to_raw(&mut store, t, args.get(ix as _))? };
+                let pl = pi.len();
+                for (t, v) in pi.zip(&args) {
+                    arr.push(unsafe { to_raw(&mut store, t, v)? });
+                }
+                if arr.len() != pl {
+                    bail_with_site!("Too few parameter (expected {}, got {})", pl, arr.len());
+                }
+                while arr.len() < ri.len() {
+                    arr.push(ValRaw::i32(0));
                 }
 
                 #[cfg(feature = "epoch-timeout")]
@@ -652,8 +659,8 @@ impl WasmInstance {
                 }
 
                 let ret = VariantArray::new();
-                for (ix, t) in ri.enumerate() {
-                    ret.push(unsafe { from_raw(&mut store, t, arr[ix])? });
+                for (t, v) in ri.zip(arr) {
+                    ret.push(unsafe { from_raw(&mut store, t, v)? });
                 }
 
                 Ok(ret.into_shared())
