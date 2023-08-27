@@ -586,7 +586,7 @@ impl WasmInstance {
                 let mut arr = Vec::with_capacity(pi.len().max(ri.len()));
 
                 let pl = pi.len();
-                for (t, v) in pi.zip(&args) {
+                for (t, v) in pi.zip(args.iter_shared()) {
                     arr.push(unsafe { to_raw(&mut store, t, v)? });
                 }
                 if arr.len() != pl {
