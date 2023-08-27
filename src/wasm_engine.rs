@@ -88,6 +88,8 @@ lazy_static! {
             .epoch_interruption(true)
             .wasm_reference_types(true)
             .wasm_simd(true)
+            .wasm_relaxed_simd(true)
+            .wasm_tail_call(true)
             .wasm_bulk_memory(true)
             .wasm_multi_value(true)
             .wasm_multi_memory(true)
