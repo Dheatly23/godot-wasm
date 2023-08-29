@@ -416,7 +416,7 @@ impl WasmInstance {
                     &s,
                 );
                 */
-                godot_error!("{}", e);
+                godot_error!("{:?}", e);
                 /*
                 self.base.emit_signal(
                     StringName::from("error_happened"),
