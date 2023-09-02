@@ -85,10 +85,11 @@ lazy_static! {
     pub static ref ENGINE: Engine = Engine::new(
         Config::new()
             .cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
+            .cranelift_nan_canonicalization(cfg!(feature = "arch-independent-wasm"))
             .epoch_interruption(true)
             .wasm_reference_types(true)
             .wasm_simd(true)
-            .wasm_relaxed_simd(true)
+            .wasm_relaxed_simd(cfg!(not(feature = "arch-independent-wasm")))
             .wasm_tail_call(true)
             .wasm_bulk_memory(true)
             .wasm_multi_value(true)
