@@ -85,11 +85,17 @@ impl WasiContext {
 
                 let OpenResult::File(file) = site_context!(node.open(
                     root,
-                    Capability { read: true, write: false },
+                    Capability {
+                        read: true,
+                        write: false
+                    },
                     true,
                     OFlags::empty(),
                     FdFlags::empty(),
-                ))? else { bail_with_site!("Path \"{}\" should be a file!", file) };
+                ))?
+                else {
+                    bail_with_site!("Path \"{}\" should be a file!", file)
+                };
                 ctx = ctx.stdin(file);
             }
             if config.wasi_stdout == PipeBindingType::Context {
@@ -177,13 +183,16 @@ impl WasiContext {
                     ambient_authority(),
                 ))?);
                 let OpenResult2::Dir(dir) = site_context!(dir.open_file_(
-                        false,
-                        ".",
-                        OFlags::DIRECTORY,
-                        true,
-                        fs_writable,
-                        FdFlags::empty(),
-                    ))? else { bail_with_site!("Path should be a directory!") };
+                    false,
+                    ".",
+                    OFlags::DIRECTORY,
+                    true,
+                    fs_writable,
+                    FdFlags::empty(),
+                ))?
+                else {
+                    bail_with_site!("Path should be a directory!")
+                };
                 site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
             }
 
@@ -196,7 +205,10 @@ impl WasiContext {
                 true,
                 OFlags::DIRECTORY,
                 FdFlags::empty(),
-            ))? else { bail_with_site!("Root should be a directory!") };
+            ))?
+            else {
+                bail_with_site!("Root should be a directory!")
+            };
             site_context!(ctx.push_preopened_dir(root, "."))?;
 
             Ok(ctx)
@@ -277,7 +289,9 @@ impl WasiContext {
             match site_context!(open(path, root.clone(), &Some(root), true, true))? {
                 FileEntry::Occupied(v) => {
                     let v = v.into_inner();
-                    let Some(file) = v.as_any().downcast_ref::<File>() else { bail_with_site!("Is a directory") };
+                    let Some(file) = v.as_any().downcast_ref::<File>() else {
+                        bail_with_site!("Is a directory")
+                    };
                     let mut content = file.content.write();
 
                     if let Some(offset) = offset {
@@ -349,7 +363,9 @@ impl WasiContext {
                 bail_with_site!("Path not found!")
             };
 
-            let Some(file) = node.as_any().downcast_ref::<File>() else { bail_with_site!("Is not file!") };
+            let Some(file) = node.as_any().downcast_ref::<File>() else {
+                bail_with_site!("Is not file!")
+            };
 
             let content = file.content.read();
             let end = match offset.checked_add(length) {
