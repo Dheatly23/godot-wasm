@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::collections::HashMap;
-use std::mem::{size_of, transmute};
+use std::mem::transmute;
 use std::ptr;
 use std::sync::Arc;
 
@@ -170,7 +170,9 @@ impl InstanceData {
                 } else {
                     let inst_id = inst_id;
                     let (outer, inner) = OuterStdin::new(move || unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                            return;
+                        };
                         owner.emit_signal("stdin_request", &[]);
                     });
                     builder = builder.stdin(Box::new(outer));
@@ -180,53 +182,73 @@ impl InstanceData {
             if config.wasi_stdout == PipeBindingType::Instance {
                 let inst_id = inst_id;
                 builder = builder.stdout(match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
-                        owner.emit_signal(
-                            "stdout_emit",
-                            &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-                        );
-                    })) as _,
+                    PipeBufferType::Unbuffered => {
+                        Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
+                            let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                                return;
+                            };
+                            owner.emit_signal(
+                                "stdout_emit",
+                                &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                            );
+                        })) as _
+                    }
                     PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                            return;
+                        };
                         owner.emit_signal(
                             "stdout_emit",
                             &[String::from_utf8_lossy(buf).to_variant()],
                         );
                     })) as _,
-                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
-                        owner.emit_signal(
-                            "stdout_emit",
-                            &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-                        );
-                    })) as _,
+                    PipeBufferType::BlockBuffer => {
+                        Box::new(BlockWritePipe::new(move |buf| unsafe {
+                            let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                                return;
+                            };
+                            owner.emit_signal(
+                                "stdout_emit",
+                                &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                            );
+                        })) as _
+                    }
                 });
             }
             if config.wasi_stderr == PipeBindingType::Instance {
                 let inst_id = inst_id;
                 builder = builder.stderr(match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
-                        owner.emit_signal(
-                            "stderr_emit",
-                            &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-                        );
-                    })) as _,
+                    PipeBufferType::Unbuffered => {
+                        Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
+                            let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                                return;
+                            };
+                            owner.emit_signal(
+                                "stderr_emit",
+                                &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                            );
+                        })) as _
+                    }
                     PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
+                        let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                            return;
+                        };
                         owner.emit_signal(
                             "stderr_emit",
                             &[String::from_utf8_lossy(buf).to_variant()],
                         );
                     })) as _,
-                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else { return };
-                        owner.emit_signal(
-                            "stderr_emit",
-                            &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
-                        );
-                    })) as _,
+                    PipeBufferType::BlockBuffer => {
+                        Box::new(BlockWritePipe::new(move |buf| unsafe {
+                            let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                                return;
+                            };
+                            owner.emit_signal(
+                                "stderr_emit",
+                                &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+                            );
+                        })) as _
+                    }
                 });
             }
 
@@ -944,29 +966,21 @@ impl WasmInstance {
 
     #[method]
     fn put_array(&self, #[base] base: TRef<Reference>, i: usize, v: Variant) -> bool {
-        fn f<T: Copy>(d: &mut [u8], i: usize, s: &[T]) -> Result<(), Error> {
-            let l = s.len() * size_of::<T>();
+        fn f<const N: usize, T>(
+            d: &mut [u8],
+            i: usize,
+            s: &[T],
+            f: impl Fn(&T, &mut [u8; N]),
+        ) -> Result<(), Error> {
+            let l = s.len() * N;
             let e = i + l;
 
-            if let Some(d) = d.get_mut(i..e) {
-                let ps = s.as_ptr() as *const u8;
-                let pd = d.as_mut_ptr();
-
-                // SAFETY: Source and destination is of the same size.
-                // alignment of destination should be enforced externally.
-                unsafe {
-                    ptr::copy_nonoverlapping(ps, pd, l);
-                }
-
-                #[cfg(target_endian = "big")]
-                if size_of::<T>() > 1 {
-                    for d in d.chunks_mut(size_of::<T>()) {
-                        debug_assert_eq!(d.len(), size_of::<T>());
-                        d.reverse();
-                    }
-                }
-            } else {
+            let Some(d) = d.get_mut(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
+            };
+
+            for (s, d) in s.iter().zip(d.chunks_mut(N)) {
+                f(s, d.try_into().unwrap())
             }
 
             Ok(())
@@ -975,13 +989,38 @@ impl WasmInstance {
         self.get_memory(base, |mut store, mem| {
             let data = mem.data_mut(&mut store);
             match v.dispatch() {
-                VariantDispatch::ByteArray(v) => f(data, i, &v.read()),
-                VariantDispatch::Int32Array(v) => f(data, i, &v.read()),
-                VariantDispatch::Float32Array(v) => f(data, i, &v.read()),
-                VariantDispatch::Vector2Array(v) => f(data, i, &v.read()),
-                VariantDispatch::Vector3Array(v) => f(data, i, &v.read()),
-                VariantDispatch::ColorArray(v) => f(data, i, &v.read()),
-                _ => bail_with_site!("Unknown value"),
+                VariantDispatch::ByteArray(v) => {
+                    let s = &*v.read();
+                    let e = i + s.len();
+                    let Some(d) = data.get_mut(i..e) else {
+                        bail_with_site!("Index out of range ({}..{})", i, e);
+                    };
+
+                    d.copy_from_slice(s);
+                    Ok(())
+                }
+                VariantDispatch::Int32Array(v) => f::<4, _>(data, i, &v.read(), |s, d| {
+                    *d = s.to_le_bytes();
+                }),
+                VariantDispatch::Float32Array(v) => f::<4, _>(data, i, &v.read(), |s, d| {
+                    *d = s.to_le_bytes();
+                }),
+                VariantDispatch::Vector2Array(v) => f::<8, _>(data, i, &v.read(), |s, d| {
+                    d[..4].copy_from_slice(&s.x.to_le_bytes());
+                    d[4..].copy_from_slice(&s.y.to_le_bytes());
+                }),
+                VariantDispatch::Vector3Array(v) => f::<12, _>(data, i, &v.read(), |s, d| {
+                    d[..4].copy_from_slice(&s.x.to_le_bytes());
+                    d[4..8].copy_from_slice(&s.y.to_le_bytes());
+                    d[8..].copy_from_slice(&s.z.to_le_bytes());
+                }),
+                VariantDispatch::ColorArray(v) => f::<16, _>(data, i, &v.read(), |s, d| {
+                    d[..4].copy_from_slice(&s.r.to_le_bytes());
+                    d[4..8].copy_from_slice(&s.g.to_le_bytes());
+                    d[8..12].copy_from_slice(&s.b.to_le_bytes());
+                    d[12..].copy_from_slice(&s.a.to_le_bytes());
+                }),
+                _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
             }
         })
         .is_some()
@@ -995,49 +1034,54 @@ impl WasmInstance {
         n: usize,
         t: i64,
     ) -> Option<Variant> {
-        fn f<T: Copy + PoolElement>(s: &[u8], i: usize, n: usize) -> Result<PoolArray<T>, Error> {
-            let l = n * size_of::<T>();
+        fn f<const N: usize, T: Copy + PoolElement>(
+            s: &[u8],
+            i: usize,
+            n: usize,
+            f: impl Fn(&[u8; N]) -> T,
+        ) -> Result<PoolArray<T>, Error> {
+            let l = n * N;
             let e = i + l;
-
-            if let Some(s) = s.get(i..e) {
-                let mut d = Vec::with_capacity(n);
-
-                let ps = s.as_ptr();
-                let pd = d.spare_capacity_mut().as_mut_ptr() as *mut u8;
-
-                // SAFETY: Source and destination are of same size.
-                // alignment of source should be enforced externally.
-                unsafe {
-                    ptr::copy_nonoverlapping(ps, pd, l);
-
-                    #[cfg(target_endian = "big")]
-                    if size_of::<T>() > 1 {
-                        // SAFETY: destination size is l
-                        for d in ptr::slice_from_raw_parts_mut(pd, l).chunks_mut(size_of::<T>()) {
-                            debug_assert_eq!(d.len(), size_of::<T>());
-                            d.reverse();
-                        }
-                    }
-
-                    // SAFETY: value is initialized
-                    d.set_len(n);
-                }
-
-                Ok(PoolArray::from_vec(d))
-            } else {
+            let Some(s) = s.get(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
-            }
+            };
+
+            Ok(s.chunks(N).map(|s| f(s.try_into().unwrap())).collect())
         }
 
         self.get_memory(base, |store, mem| {
             let data = mem.data(&store);
             match t {
-                20 => f::<u8>(data, i, n).map(Variant::new), // PoolByteArray
-                21 => f::<i32>(data, i, n).map(Variant::new), // PoolInt32Array
-                22 => f::<f32>(data, i, n).map(Variant::new), // PoolFloat32Array
-                24 => f::<Vector2>(data, i, n).map(Variant::new), // PoolVector2Array
-                25 => f::<Vector3>(data, i, n).map(Variant::new), // PoolVector3Array
-                26 => f::<Color>(data, i, n).map(Variant::new), // PoolColorArray
+                20 => {
+                    // PoolByteArray
+                    let e = i + n;
+                    let Some(s) = data.get(i..e) else {
+                        bail_with_site!("Index out of range ({}..{})", i, e);
+                    };
+
+                    Ok(Variant::new(PoolArray::from_slice(s)))
+                }
+                21 => Ok(Variant::new(f::<4, _>(data, i, n, |s| {
+                    i32::from_le_bytes(*s)
+                })?)), // PoolInt32Array
+                22 => Ok(Variant::new(f::<4, _>(data, i, n, |s| {
+                    f32::from_le_bytes(*s)
+                })?)), // PoolFloat32Array
+                24 => Ok(Variant::new(f::<8, _>(data, i, n, |s| Vector2 {
+                    x: f32::from_le_bytes(s[..4].try_into().unwrap()),
+                    y: f32::from_le_bytes(s[4..].try_into().unwrap()),
+                })?)), // PoolVector2Array
+                25 => Ok(Variant::new(f::<12, _>(data, i, n, |s| Vector3 {
+                    x: f32::from_le_bytes(s[..4].try_into().unwrap()),
+                    y: f32::from_le_bytes(s[4..8].try_into().unwrap()),
+                    z: f32::from_le_bytes(s[8..].try_into().unwrap()),
+                })?)), // PoolVector3Array
+                26 => Ok(Variant::new(f::<16, _>(data, i, n, |s| Color {
+                    r: f32::from_le_bytes(s[..4].try_into().unwrap()),
+                    g: f32::from_le_bytes(s[4..8].try_into().unwrap()),
+                    b: f32::from_le_bytes(s[8..12].try_into().unwrap()),
+                    a: f32::from_le_bytes(s[12..].try_into().unwrap()),
+                })?)), // PoolColorArray
                 ..=26 => bail_with_site!("Unsupported type ID {}", t),
                 _ => bail_with_site!("Unknown type {}", t),
             }
