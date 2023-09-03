@@ -9,8 +9,17 @@ onready var code_textbox: TextEdit = $Container/Panel/Margin/Tab/VBox/Code
 onready var file: WasmFile = load(wasm_file)
 onready var wasi_ctx: WasiContext = WasiContext.new()
 
+func __check_file() -> bool:
+	if file == null:
+		printerr("Failed to import %s" % [wasm_file])
+		return false
+	return true
+
 # Instance threadpool version
 func _ready():
+	if not __check_file():
+		return
+
 	var module := file.get_module()
 	if module == null:
 		__log("Cannot compile module " + wasm_file)
@@ -28,6 +37,9 @@ func __log(msg: String) -> void:
 	emit_signal("message_emitted", msg.strip_edges())
 
 func __run(source: String, ret_method = ""):
+	if not __check_file():
+		return
+
 	var module := file.get_module()
 	if module == null:
 		__log("Cannot compile module " + wasm_file)
@@ -87,5 +99,8 @@ func __cb_write_file(_v):
 	__log("data/output.json : %s" % r.result)
 
 func __run_custom():
+	if not __check_file():
+		return
+
 	wasi_ctx.write_memory_file("test.js", code_textbox.text)
 	__run("test.js")
