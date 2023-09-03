@@ -15,11 +15,6 @@ GODOT_DIR = "out/addons/godot_wasm/bin"
 EXAMPLE_DIR = "example"
 WASM_DIR = "example/wasm"
 WASM_CONFIG = "example/wasm/.cargo/config.toml"
-WASM_PROJECTS = [
-  "double-pendulum",
-  "host-bindings",
-  "connect-4",
-]
 
 [env.development]
 BUILD_PROFILE = "dev"
@@ -44,8 +39,6 @@ args = [
 dependencies = ["build"]
 script_runner = "@duckscript"
 script = '''
-file_globs = array *.so *.dll *.dylib
-
 dst_root_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${GODOT_DIR}
 dst_root_dir = canonicalize ${dst_root_dir}
 if not is_path_exists ${dst_root_dir}
@@ -62,19 +55,21 @@ if not not is_path_exists ${dst_dir}
   mkdir ${dst_dir}
 end
 
-for f in ${file_globs}
-  src = join_path ${src_dir} ${f}
-  src = glob_array ${src}
-  for s in ${src}
-    fname = basename ${s}
-    dst = join_path ${dst_dir} ${fname}
-    ls -l ${s}
-    cp ${s} ${dst}
-  end
-  release ${src}
+if equals ${CARGO_MAKE_RUST_TARGET_OS} windows
+  src = concat ${CARGO_MAKE_CRATE_FS_NAME} .dll
+elseif equals ${CARGO_MAKE_RUST_TARGET_OS} macos
+  src = concat ${CARGO_MAKE_CRATE_FS_NAME} .dylib
+elseif equals ${CARGO_MAKE_RUST_TARGET_OS} linux
+  src = concat lib ${CARGO_MAKE_CRATE_FS_NAME} .so
+else
+  echo Unknown os ${CARGO_MAKE_RUST_TARGET_OS}
+  exit 1
 end
 
-release ${file_globs}
+dst = join_path ${dst_dir} ${src}
+src = join_path ${src_dir} ${src}
+ls -l ${src}
+cp ${src} ${dst}
 '''
 
 [tasks.build-wasm]
@@ -93,8 +88,7 @@ wasm_dir = canonicalize ${wasm_dir}
 
 src_file = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} wasm32-unknown-unknown ${TARGET_PROFILE}
 
-f = replace ${CARGO_MAKE_CRATE_NAME} - _
-f = concat ${f} ".wasm"
+f = concat ${CARGO_MAKE_CRATE_FS_NAME} ".wasm"
 
 src_file = join_path ${src_file} ${f}
 dst_file = join_path ${wasm_dir} ${f}
@@ -130,22 +124,12 @@ echo Destination addon directory: ${dst_dir}
 glob_cp ${out_dir} ${dst_dir}
 '''
 
-[[tasks.deploy.run_task]]
-name = "deploy-workspace"
-condition = { env_true = ["CARGO_MAKE_CRATE_IS_WORKSPACE"] }
+[tasks.deploy]
+workspace = false
+run_task = "deploy-workspace"
 
-[[tasks.deploy-example.run_task]]
-name = "deploy-wasm"
-condition = { env_false = ["CARGO_MAKE_CRATE_IS_WORKSPACE"], script = '''
-#!@duckscript
-if contains ${WASM_PROJECTS} ${CARGO_MAKE_CRATE_NAME}
-  exit 0
-else
-  exit 1
-end
-''' }
-fork = true
-
-[[tasks.deploy-example.run_task]]
-name = ["deploy", "copy-addons"]
-condition = { env_true = ["CARGO_MAKE_CRATE_IS_WORKSPACE"] }
+[tasks.deploy-example]
+workspace = false
+dependencies = ["deploy", "copy-addons"]
+env = { CARGO_MAKE_WORKSPACE_INCLUDE_MEMBERS = "example/wasm/*" }
+run_task = { name = "deploy-wasm", fork = true }
