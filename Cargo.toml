@@ -12,6 +12,10 @@ crate-type = ["cdylib"]
 [profile.release]
 lto = "thin"
 codegen-units = 1
+opt-level = "z"
+panic = "abort"
+debug-assertions = false
+overflow-checks = false
 
 [dependencies]
 scopeguard = "^1.1.0"
