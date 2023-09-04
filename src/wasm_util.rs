@@ -324,10 +324,18 @@ pub fn make_host_module(
 
         let data = {
             let v = Dictionary::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))?;
-            let Some(params) = v.get(StringName::from("params")) else { bail_with_site!("Key \"params\" does not exist") };
-            let Some(results) = v.get(StringName::from("results")) else { bail_with_site!("Key \"params\" does not exist") };
-            let Some(object) = v.get(StringName::from("object")) else { bail_with_site!("Key \"params\" does not exist") };
-            let Some(method) = v.get(StringName::from("method")) else { bail_with_site!("Key \"params\" does not exist") };
+            let Some(params) = v.get(StringName::from("params")) else {
+                bail_with_site!("Key \"params\" does not exist")
+            };
+            let Some(results) = v.get(StringName::from("results")) else {
+                bail_with_site!("Key \"params\" does not exist")
+            };
+            let Some(object) = v.get(StringName::from("object")) else {
+                bail_with_site!("Key \"params\" does not exist")
+            };
+            let Some(method) = v.get(StringName::from("method")) else {
+                bail_with_site!("Key \"params\" does not exist")
+            };
 
             Data {
                 params,

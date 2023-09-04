@@ -76,11 +76,17 @@ impl WasiContext {
 
             let OpenResult::File(file) = site_context!(node.open(
                 root,
-                Capability { read: true, write: false },
+                Capability {
+                    read: true,
+                    write: false
+                },
                 true,
                 OFlags::empty(),
                 FdFlags::empty(),
-            ))? else { bail_with_site!("Path \"{}\" should be a file!", file) };
+            ))?
+            else {
+                bail_with_site!("Path \"{}\" should be a file!", file)
+            };
             ctx = ctx.stdin(file);
         }
         // TODO: Emit signal
@@ -136,7 +142,10 @@ impl WasiContext {
                 true,
                 fs_writable,
                 FdFlags::empty(),
-            ))? else { bail_with_site!("Path should be a directory!") };
+            ))?
+            else {
+                bail_with_site!("Path should be a directory!")
+            };
             site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
         }
 
@@ -149,7 +158,10 @@ impl WasiContext {
             true,
             OFlags::DIRECTORY,
             FdFlags::empty(),
-        ))? else { bail_with_site!("Root should be a directory!") };
+        ))?
+        else {
+            bail_with_site!("Root should be a directory!")
+        };
         site_context!(ctx.push_preopened_dir(root, "."))?;
 
         Ok(ctx)
@@ -315,6 +327,7 @@ impl WasiContext {
             };
             let s = &content[offset.min(content.len())..end];
             Ok(PackedByteArray::from(s))
-        }).unwrap_or_else(PackedByteArray::new)
+        })
+        .unwrap_or_else(PackedByteArray::new)
     }
 }
