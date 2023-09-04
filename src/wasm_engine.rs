@@ -340,7 +340,7 @@ impl WasmModule {
             if let Some(ExternType::Func(f)) = m.module.get_export(&name) {
                 let (p, r) = from_signature(&f)?;
                 Ok(
-                    Dictionary::from_iter([("params", p), ("results", r)].into_iter())
+                    Dictionary::from_iter([("params", p), ("results", r)])
                         .into_shared(),
                 )
             } else {
