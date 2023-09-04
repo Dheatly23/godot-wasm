@@ -543,26 +543,23 @@ impl WasmInstance {
         module: Gd<WasmModule>,
         host: Variant,
         config: Variant,
-    ) -> Gd<WasmInstance> {
+    ) -> Option<Gd<WasmInstance>> {
         let Ok(host) = variant_to_option::<Dictionary>(host) else {
-            panic!("Host is not a dictionary!")
+            godot_error!("Host is not a dictionary!");
+            return None;
         };
         let config = if config.is_nil() { None } else { Some(config) };
 
-        let ret = if self.initialize_(module, host, config) {
+        if self.initialize_(module, host, config) {
             <Gd<WasmInstance>>::try_from_instance_id(self.base.instance_id())
         } else {
             None
-        };
-        ret.unwrap()
+        }
     }
 
     #[func]
-    fn get_module(&self) -> Variant {
-        match self.unwrap_data(|m| Ok(m.module.share())) {
-            Some(v) => v.to_variant(),
-            None => Variant::nil(),
-        }
+    fn get_module(&self) -> Option<Gd<WasmModule>> {
+        self.unwrap_data(|m| Ok(m.module.share()))
     }
 
     #[func]
@@ -618,7 +615,7 @@ impl WasmInstance {
     /// Emit trap when returning from host. Only used for host binding.
     /// Returns previous error message, if any.
     #[func]
-    fn signal_error(&self, msg: StringName) -> Variant {
+    fn signal_error(&self, msg: GodotString) -> Variant {
         option_to_variant(
             self.unwrap_data(|m| {
                 m.acquire_store(|_, mut store| {

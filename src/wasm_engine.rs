@@ -270,17 +270,17 @@ impl WasmModule {
     fn get_exports(&self) -> Dictionary {
         self.unwrap_data(|m| {
             let mut ret = Dictionary::new();
-            let params_str = GodotString::from("params");
-            let results_str = GodotString::from("results");
+            let params_str = StringName::from("params");
+            let results_str = StringName::from("results");
             for i in m.module.exports() {
                 if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
                     ret.set(
                         i.name(),
-                        Dictionary::from_iter(
-                            [(params_str.to_variant(), p), (results_str.to_variant(), r)]
-                                .into_iter(),
-                        ),
+                        Dictionary::from_iter([
+                            (params_str.to_variant(), p),
+                            (results_str.to_variant(), r),
+                        ]),
                     );
                 }
             }
@@ -294,8 +294,8 @@ impl WasmModule {
     fn get_host_imports(&self) -> Dictionary {
         self.unwrap_data(|m| {
             let mut ret = Dictionary::new();
-            let params_str = GodotString::from("params");
-            let results_str = GodotString::from("results");
+            let params_str = StringName::from("params");
+            let results_str = StringName::from("results");
             for i in m.module.imports() {
                 if i.module() != HOST_MODULE {
                     continue;
@@ -304,10 +304,10 @@ impl WasmModule {
                     let (p, r) = from_signature(&f)?;
                     ret.set(
                         i.name(),
-                        Dictionary::from_iter(
-                            [(params_str.to_variant(), p), (results_str.to_variant(), r)]
-                                .into_iter(),
-                        ),
+                        Dictionary::from_iter([
+                            (params_str.to_variant(), p),
+                            (results_str.to_variant(), r),
+                        ]),
                     );
                 }
             }
@@ -342,9 +342,10 @@ impl WasmModule {
 
     // Instantiate module
     #[func]
-    fn instantiate(&self, host: Variant, config: Variant) -> Gd<WasmInstance> {
+    fn instantiate(&self, host: Variant, config: Variant) -> Option<Gd<WasmInstance>> {
         let Ok(host) = variant_to_option::<Dictionary>(host) else {
-            panic!("Host is not a dictionary!")
+            godot_error!("Host is not a dictionary!");
+            return None;
         };
         let config = if config.is_nil() { None } else { Some(config) };
 
@@ -353,9 +354,10 @@ impl WasmModule {
             .bind()
             .initialize_(Gd::from_instance_id(self.base.instance_id()), host, config)
         {
-            inst
+            Some(inst)
         } else {
-            panic!("Error instantiating")
+            godot_error!("Error instantiating");
+            None
         }
     }
 }
