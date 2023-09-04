@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::collections::HashMap;
-use std::mem::{size_of, transmute};
+use std::mem::transmute;
 use std::ptr;
 use std::sync::Arc;
 
@@ -897,29 +897,21 @@ impl WasmInstance {
 
     #[func]
     fn put_array(&self, i: i64, v: Variant) -> bool {
-        fn f<T: Copy>(d: &mut [u8], i: usize, s: &[T]) -> Result<(), Error> {
-            let l = s.len() * size_of::<T>();
+        fn f<const N: usize, T>(
+            d: &mut [u8],
+            i: usize,
+            s: &[T],
+            f: impl Fn(&T, &mut [u8; N]),
+        ) -> Result<(), Error> {
+            let l = s.len() * N;
             let e = i + l;
 
-            if let Some(d) = d.get_mut(i..e) {
-                let ps = s.as_ptr() as *const u8;
-                let pd = d.as_mut_ptr();
-
-                // SAFETY: Source and destination is of the same size.
-                // alignment of destination should be enforced externally.
-                unsafe {
-                    ptr::copy_nonoverlapping(ps, pd, l);
-                }
-
-                #[cfg(target_endian = "big")]
-                if size_of::<T>() > 1 {
-                    for d in d.chunks_mut(size_of::<T>()) {
-                        debug_assert_eq!(d.len(), size_of::<T>());
-                        d.reverse();
-                    }
-                }
-            } else {
+            let Some(d) = d.get_mut(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
+            };
+
+            for (s, d) in s.iter().zip(d.chunks_mut(N)) {
+                f(s, d.try_into().unwrap())
             }
 
             Ok(())
@@ -929,17 +921,40 @@ impl WasmInstance {
             let i = i as usize;
             let data = mem.data_mut(&mut store);
             if let Ok(v) = PackedByteArray::try_from_variant(&v) {
-                f(data, i, &v.to_vec())
+                let s = v.as_slice();
+                let e = i + s.len();
+                let Some(d) = data.get_mut(i..e) else {
+                    bail_with_site!("Index out of range ({}..{})", i, e);
+                };
+
+                d.copy_from_slice(s);
+                Ok(())
             } else if let Ok(v) = PackedInt32Array::try_from_variant(&v) {
-                f(data, i, &v.to_vec())
+                f::<4, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
+            } else if let Ok(v) = PackedInt64Array::try_from_variant(&v) {
+                f::<8, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
             } else if let Ok(v) = PackedFloat32Array::try_from_variant(&v) {
-                f(data, i, &v.to_vec())
+                f::<4, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
+            } else if let Ok(v) = PackedFloat64Array::try_from_variant(&v) {
+                f::<8, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
             } else if let Ok(v) = PackedVector2Array::try_from_variant(&v) {
-                f(data, i, &v.to_vec())
+                f::<8, _>(data, i, v.as_slice(), |s, d| {
+                    d[..4].copy_from_slice(&s.x.to_le_bytes());
+                    d[4..].copy_from_slice(&s.y.to_le_bytes());
+                })
             } else if let Ok(v) = PackedVector3Array::try_from_variant(&v) {
-                f(data, i, &v.to_vec())
+                f::<12, _>(data, i, v.as_slice(), |s, d| {
+                    d[..4].copy_from_slice(&s.x.to_le_bytes());
+                    d[4..8].copy_from_slice(&s.y.to_le_bytes());
+                    d[8..].copy_from_slice(&s.z.to_le_bytes());
+                })
             } else if let Ok(v) = PackedColorArray::try_from_variant(&v) {
-                f(data, i, &v.to_vec())
+                f::<16, _>(data, i, v.as_slice(), |s, d| {
+                    d[..4].copy_from_slice(&s.r.to_le_bytes());
+                    d[4..8].copy_from_slice(&s.g.to_le_bytes());
+                    d[8..12].copy_from_slice(&s.b.to_le_bytes());
+                    d[12..].copy_from_slice(&s.a.to_le_bytes());
+                })
             } else {
                 bail_with_site!("Unknown value")
             }
@@ -949,55 +964,88 @@ impl WasmInstance {
 
     #[func]
     fn get_array(&self, i: i64, n: i64, t: i64) -> Variant {
-        fn f<T, A>(s: &[u8], i: usize, n: usize) -> Result<A, Error>
-        where
-            T: Copy,
-            for<'a> A: From<&'a [T]>,
-        {
-            let l = n * size_of::<T>();
+        fn f<const N: usize, T, R: FromIterator<T>>(
+            s: &[u8],
+            i: usize,
+            n: usize,
+            f: impl Fn(&[u8; N]) -> T,
+        ) -> Result<R, Error> {
+            let l = n * N;
             let e = i + l;
-
-            if let Some(s) = s.get(i..e) {
-                let mut d = Vec::with_capacity(n);
-
-                let ps = s.as_ptr();
-                let pd = d.spare_capacity_mut().as_mut_ptr() as *mut u8;
-
-                // SAFETY: Source and destination are of same size.
-                // alignment of source should be enforced externally.
-                unsafe {
-                    ptr::copy_nonoverlapping(ps, pd, l);
-
-                    #[cfg(target_endian = "big")]
-                    if size_of::<T>() > 1 {
-                        // SAFETY: destination size is l
-                        for d in ptr::slice_from_raw_parts_mut(pd, l).chunks_mut(size_of::<T>()) {
-                            debug_assert_eq!(d.len(), size_of::<T>());
-                            d.reverse();
-                        }
-                    }
-
-                    // SAFETY: value is initialized
-                    d.set_len(n);
-                }
-
-                Ok(A::from(&d))
-            } else {
+            let Some(s) = s.get(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
-            }
+            };
+
+            Ok(s.chunks(N).map(|s| f(s.try_into().unwrap())).collect())
         }
 
         option_to_variant(self.get_memory(|store, mem| {
             let (i, n) = (i as usize, n as usize);
             let data = mem.data(&store);
             match t {
-                20 => f::<u8, PackedByteArray>(data, i, n).map(Variant::from), // PoolByteArray
-                21 => f::<i32, PackedInt32Array>(data, i, n).map(Variant::from), // PoolInt32Array
-                22 => f::<f32, PackedFloat32Array>(data, i, n).map(Variant::from), // PoolFloat32Array
-                24 => f::<Vector2, PackedVector2Array>(data, i, n).map(Variant::from), // PoolVector2Array
-                25 => f::<Vector3, PackedVector3Array>(data, i, n).map(Variant::from), // PoolVector3Array
-                26 => f::<Color, PackedColorArray>(data, i, n).map(Variant::from), // PoolColorArray
-                ..=26 => bail_with_site!("Unsupported type ID {}", t),
+                29 => {
+                    let e = i + n;
+                    let Some(s) = data.get(i..e) else {
+                        bail_with_site!("Index out of range ({}..{})", i, e);
+                    };
+
+                    Ok(Variant::from(PackedByteArray::from(s)))
+                }
+                30 => Ok(Variant::from(f::<4, _, PackedInt32Array>(
+                    data,
+                    i,
+                    n,
+                    |s| i32::from_le_bytes(*s),
+                )?)),
+                31 => Ok(Variant::from(f::<8, _, PackedInt64Array>(
+                    data,
+                    i,
+                    n,
+                    |s| i64::from_le_bytes(*s),
+                )?)),
+                32 => Ok(Variant::from(f::<4, _, PackedFloat32Array>(
+                    data,
+                    i,
+                    n,
+                    |s| f32::from_le_bytes(*s),
+                )?)),
+                33 => Ok(Variant::from(f::<8, _, PackedFloat64Array>(
+                    data,
+                    i,
+                    n,
+                    |s| f64::from_le_bytes(*s),
+                )?)),
+                35 => Ok(Variant::from(f::<8, _, PackedVector2Array>(
+                    data,
+                    i,
+                    n,
+                    |s| Vector2 {
+                        x: f32::from_le_bytes(s[..4].try_into().unwrap()),
+                        y: f32::from_le_bytes(s[4..].try_into().unwrap()),
+                    },
+                )?)),
+                36 => Ok(Variant::from(f::<12, _, PackedVector3Array>(
+                    data,
+                    i,
+                    n,
+                    |s| Vector3 {
+                        x: f32::from_le_bytes(s[..4].try_into().unwrap()),
+                        y: f32::from_le_bytes(s[4..8].try_into().unwrap()),
+                        z: f32::from_le_bytes(s[8..].try_into().unwrap()),
+                    },
+                )?)),
+                37 => Ok(Variant::from(f::<16, _, PackedColorArray>(
+                    data,
+                    i,
+                    n,
+                    |s| Color {
+                        r: f32::from_le_bytes(s[..4].try_into().unwrap()),
+                        g: f32::from_le_bytes(s[4..8].try_into().unwrap()),
+                        b: f32::from_le_bytes(s[8..12].try_into().unwrap()),
+                        a: f32::from_le_bytes(s[12..].try_into().unwrap()),
+                    },
+                )?)),
+                ..=37 => bail_with_site!("Unsupported type ID {}", t),
                 _ => bail_with_site!("Unknown type {}", t),
             }
         }))
