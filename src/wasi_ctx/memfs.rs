@@ -154,7 +154,9 @@ pub fn open<'a>(
                 }
 
                 let n = if rest.is_none() {
-                    let Some(n) = node.as_any().downcast_ref::<Dir>() else { return Err(Error::not_dir()); };
+                    let Some(n) = node.as_any().downcast_ref::<Dir>() else {
+                        return Err(Error::not_dir());
+                    };
                     let content = n.content.write();
                     if let Some(v) = content.get(p) {
                         _touch_read(n.timestamp(), Some(time));
@@ -170,7 +172,9 @@ pub fn open<'a>(
                         }));
                     }
                 } else if create_intermediate_dir {
-                    let Some(n) = node.as_any().downcast_ref::<Dir>() else { return Err(Error::not_dir()); };
+                    let Some(n) = node.as_any().downcast_ref::<Dir>() else {
+                        return Err(Error::not_dir());
+                    };
                     let mut content = n.content.write();
                     match content.entry(p.to_owned()) {
                         Entry::Vacant(v) => {
@@ -601,7 +605,9 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             return Err(Error::invalid_argument());
         }
 
-        let Some(dest) = dest_dir.as_any().downcast_ref::<Self>() else { return Err(Error::not_supported()) };
+        let Some(dest) = dest_dir.as_any().downcast_ref::<Self>() else {
+            return Err(Error::not_supported());
+        };
 
         if !dest.capability.write {
             return Err(Error::perm());
@@ -920,7 +926,10 @@ impl WasiFile for CapAccessor<OpenFile> {
         let Ok(ix): Result<usize, _> = ptr
             .checked_add(offset)
             .ok_or_else(Error::overflow)?
-            .try_into() else { return Ok(0) };
+            .try_into()
+        else {
+            return Ok(0);
+        };
         let mut content = self.file.content.write();
 
         if ix >= content.len() {

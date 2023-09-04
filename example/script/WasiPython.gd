@@ -9,8 +9,17 @@ signal message_emitted(msg)
 @onready var file: WasmFile = load(wasm_file)
 @onready var wasi_ctx: WasiContext = WasiContext.new()
 
+func __check_file() -> bool:
+	if file == null:
+		printerr("Failed to import %s" % [wasm_file])
+		return false
+	return true
+
 # Instance threadpool version
 func _ready():
+	if not __check_file():
+		return
+
 	var module := file.get_module()
 	if module == null:
 		__log("Cannot compile module " + wasm_file)
@@ -86,6 +95,9 @@ func __log(msg: String) -> void:
 
 # Non threadpool version
 func __run(source: String, ret_method = ""):
+	if not __check_file():
+		return
+
 	var module := file.get_module()
 	if module == null:
 		__log("Cannot compile module " + wasm_file)
@@ -120,5 +132,8 @@ func __cb_write_file(_v):
 	__log("data/output.json : %s" % r.data)
 
 func __run_custom():
+	if not __check_file():
+		return
+
 	wasi_ctx.write_memory_file("test.py", code_textbox.text, null)
 	__run("test.py")

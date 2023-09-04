@@ -206,7 +206,9 @@ impl WasiContext {
             match site_context!(open(path, root.clone(), &Some(root), true, true))? {
                 FileEntry::Occupied(v) => {
                     let v = v.into_inner();
-                    let Some(file) = v.as_any().downcast_ref::<File>() else { bail_with_site!("Is a directory") };
+                    let Some(file) = v.as_any().downcast_ref::<File>() else {
+                        bail_with_site!("Is a directory")
+                    };
                     let mut content = file.content.write();
 
                     if let Some(offset) = offset {
@@ -302,7 +304,9 @@ impl WasiContext {
                 bail_with_site!("Path not found!")
             };
 
-            let Some(file) = node.as_any().downcast_ref::<File>() else { bail_with_site!("Is not file!") };
+            let Some(file) = node.as_any().downcast_ref::<File>() else {
+                bail_with_site!("Is not file!")
+            };
 
             let content = file.content.read();
             let end = match offset.checked_add(length) {
