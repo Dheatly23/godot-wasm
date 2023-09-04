@@ -332,9 +332,7 @@ impl WasmModule {
         self.unwrap_data(|m| {
             if let Some(ExternType::Func(f)) = m.module.get_export(&name.to_string()) {
                 let (p, r) = from_signature(&f)?;
-                Ok(Dictionary::from_iter(
-                    [("params", p), ("results", r)].into_iter(),
-                ))
+                Ok(Dictionary::from_iter([("params", p), ("results", r)]))
             } else {
                 bail!("No function named {}", name);
             }

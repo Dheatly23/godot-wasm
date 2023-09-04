@@ -256,7 +256,7 @@ impl WasiContext {
         }
 
         unsafe fn as_bytes<T: Copy>(s: &[T]) -> &[u8] {
-            slice::from_raw_parts(s.as_ptr() as *const u8, s.len() * mem::size_of::<T>())
+            slice::from_raw_parts(s.as_ptr() as *const u8, mem::size_of_val(s))
         }
 
         Self::wrap_result(move || {
