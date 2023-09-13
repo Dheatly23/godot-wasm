@@ -154,9 +154,15 @@ impl WasmModule {
                 VariantDispatch::ByteArray(v) => Module::new(&ENGINE, &*v.read()),
                 VariantDispatch::GodotString(v) => Module::new(&ENGINE, &v.to_string()),
                 VariantDispatch::Object(v) => {
-                    let v = <Ref<gdnative::api::File>>::from_variant(&v)?;
-                    let v = unsafe { v.assume_safe() };
-                    Module::new(&ENGINE, &*v.get_buffer(v.get_len()).read())
+                    if let Ok(v) = <Ref<gdnative::api::File>>::from_variant(&v) {
+                        let v = unsafe { v.assume_safe() };
+                        Module::new(&ENGINE, &*v.get_buffer(v.get_len()).read())
+                    } else {
+                        let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
+                        let v = unsafe { v.assume_safe() };
+                        v.map(|this, _| Ok(this.get_data()?.module.clone()))
+                            .unwrap()
+                    }
                 }
                 _ => bail!("Unknown module value {}", data),
             }?;
@@ -339,10 +345,7 @@ impl WasmModule {
         self.unwrap_data(|m| {
             if let Some(ExternType::Func(f)) = m.module.get_export(&name) {
                 let (p, r) = from_signature(&f)?;
-                Ok(
-                    Dictionary::from_iter([("params", p), ("results", r)])
-                        .into_shared(),
-                )
+                Ok(Dictionary::from_iter([("params", p), ("results", r)]).into_shared())
             } else {
                 bail!("No function named {}", name);
             }
