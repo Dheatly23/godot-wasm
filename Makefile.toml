@@ -72,6 +72,84 @@ ls -l ${src}
 cp ${src} ${dst}
 '''
 
+# Add more targets if needed
+[tasks.deploy-workspace-cross.env.CUSTOM_CROSS_TARGETS]
+condition = { env_not_set = ["CUSTOM_CROSS_TARGETS"] }
+value = "i686-pc-windows-gnu;x86_64-pc-windows-gnu"
+
+[tasks.deploy-workspace-cross.env.CUSTOM_CROSS_TARGETS_OUT]
+condition = { env_not_set = ["CUSTOM_CROSS_TARGETS_OUT"] }
+value = "i686-pc-windows-msvc;x86_64-pc-windows-msvc"
+
+[tasks.deploy-workspace-cross.install_crate]
+crate_name = "cross"
+binary = "cross"
+
+[tasks.deploy-workspace-cross]
+dependencies = ["deploy-workspace"]
+script_runner = "@duckscript"
+script = '''
+dst_root_dir = join_path ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY} ${GODOT_DIR}
+dst_root_dir = canonicalize ${dst_root_dir}
+if not is_path_exists ${dst_root_dir}
+  echo No path exist: ${dst_root_dir}
+  exit 1
+end
+
+targets = split ${CUSTOM_CROSS_TARGETS} ;
+targets_out = split ${CUSTOM_CROSS_TARGETS_OUT} ;
+
+i = array_length ${targets}
+while greater_than ${i} 0
+
+i = calc ${i} - 1
+target = array_get ${targets} ${i}
+target_out = array_get ${targets_out} ${i}
+
+exec --fail-on-error cross build --profile ${BUILD_PROFILE} --target ${target}
+
+src_dir = join_path ${CARGO_MAKE_CRATE_TARGET_DIRECTORY} ${target} ${TARGET_PROFILE}
+dst_dir = join_path ${dst_root_dir} ${target_out}
+
+echo Destination:
+echo ${dst_dir}
+if not not is_path_exists ${dst_dir}
+  mkdir ${dst_dir}
+end
+
+src = concat ${CARGO_MAKE_CRATE_FS_NAME} .dll
+
+dst = join_path ${dst_dir} ${src}
+src = join_path ${src_dir} ${src}
+ls -l ${src}
+cp ${src} ${dst}
+
+end
+
+release ${targets}
+release ${targets_out}
+'''
+
+[tasks.deploy-workspace-wsl]
+dependencies = ["deploy-workspace"]
+command = "wsl"
+args = [
+  "-e",
+  "bash",
+  "-i",
+  "-c",
+  "$0 $@",
+  "cargo",
+  "make",
+  "--disable-check-for-updates",
+  "--no-on-error",
+  "--loglevel=info",
+  "--profile=${CARGO_MAKE_PROFILE}",
+  "--allow-private",
+  "--no-workspace",
+  "deploy-workspace",
+]
+
 [tasks.build-wasm]
 run_task = "build"
 
@@ -126,7 +204,17 @@ glob_cp ${out_dir} ${dst_dir}
 
 [tasks.deploy]
 workspace = false
-run_task = "deploy-workspace"
+
+[[tasks.deploy.run_task]]
+name = "deploy-workspace-wsl"
+condition = { platforms = ["windows"], env_true = ["USE_WSL"] }
+
+[[tasks.deploy.run_task]]
+name = "deploy-workspace-cross"
+condition = { platforms = ["linux"], env_true = ["USE_CROSS"] }
+
+[[tasks.deploy.run_task]]
+name = "deploy-workspace"
 
 [tasks.deploy-example]
 workspace = false
