@@ -153,6 +153,8 @@ impl WasmModule {
                 Module::new(&ENGINE, &v)?
             } else if let Ok(v) = <Gd<FileAccess>>::try_from_variant(&data) {
                 Module::new(&ENGINE, &v.get_buffer(v.get_length() as _).to_vec())?
+            } else if let Ok(v) = <Gd<WasmModule>>::try_from_variant(&data) {
+                v.bind().get_data()?.module.clone()
             } else {
                 bail!("Unknown module value {}", data)
             };

@@ -47,6 +47,14 @@ To build the addon:
 3. Run `cargo make deploy`
 4. Copy addon in `out/addons/godot_wasm` to your project
 
+### Cross-Compilation
+To cross-compile, we use WSL (Windows) and [cross](https://crates.io/crates/cross) (Linux).
+By default, it is disabled.
+To enable it, set environment variable `USE_WSL` or `USE_CROSS`.
+
+Note: It may be broken at the moment, so feel free to submit an issue.
+Only Linux → Windows and Windows → Linux is currently supported.
+
 ## Using the Library
 After adding it to your Godot project, there are 3 classes added by the library:
 * `WasmModule` : Contains the compiled WebAssembly module.
