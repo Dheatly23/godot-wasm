@@ -202,7 +202,7 @@ impl InstanceData {
             }
 
             *wasi_ctx = match &config.wasi_context {
-                Some(ctx) => Some(WasiContext::build_ctx(ctx.share(), builder, &*config)?),
+                Some(ctx) => Some(WasiContext::build_ctx(ctx.clone(), builder, &*config)?),
                 None => Some(WasiContext::init_ctx_no_context(
                     builder.inherit_stdout().inherit_stderr().build(),
                     &*config,
@@ -559,7 +559,7 @@ impl WasmInstance {
 
     #[func]
     fn get_module(&self) -> Option<Gd<WasmModule>> {
-        self.unwrap_data(|m| Ok(m.module.share()))
+        self.unwrap_data(|m| Ok(m.module.clone()))
     }
 
     #[func]

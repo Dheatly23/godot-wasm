@@ -259,7 +259,7 @@ impl WasmModule {
     fn get_imported_modules(&self) -> Array<Variant> {
         self.unwrap_data(|m| {
             Ok(<Array<Variant>>::from_iter(
-                m.imports.values().map(|v| v.share().to_variant()),
+                m.imports.values().map(|v| v.clone().to_variant()),
             ))
         })
         .unwrap_or_default()
