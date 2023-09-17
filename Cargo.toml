@@ -31,7 +31,7 @@ memchr = { version = "^2.5", optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "2b6fce29d9a681517a697ccd4068641387fcfbb1"
+rev = "00ba8c9d68be5eac95e92c96c262b74c080051b6"
 
 [dependencies.wasmtime]
 version = "^12.0"
