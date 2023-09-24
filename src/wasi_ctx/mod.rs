@@ -61,12 +61,10 @@ impl WasiContext {
 
     pub fn build_ctx(
         this: Instance<Self>,
-        ctx: WasiCtxBuilder,
+        mut ctx: WasiCtxBuilder,
         config: &Config,
     ) -> Result<WasiCtx, Error> {
         let f = move |o: &Self, b: TRef<'_, Reference>| -> Result<_, Error> {
-            let mut ctx = ctx;
-
             if let (PipeBindingType::Context, Some(file)) =
                 (&config.wasi_stdin, &config.wasi_stdin_file)
             {
@@ -96,14 +94,14 @@ impl WasiContext {
                 else {
                     bail_with_site!("Path \"{}\" should be a file!", file)
                 };
-                ctx = ctx.stdin(file);
+                ctx.stdin(file);
             }
             if config.wasi_stdout == PipeBindingType::Context {
                 if o.bypass_stdio {
-                    ctx = ctx.inherit_stdout();
+                    ctx.inherit_stdout();
                 } else {
                     let base = b.claim();
-                    ctx = ctx.stdout(match config.wasi_stdout_buffer {
+                    ctx.stdout(match config.wasi_stdout_buffer {
                         PipeBufferType::Unbuffered => {
                             Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
                                 base.assume_safe().emit_signal(
@@ -133,10 +131,10 @@ impl WasiContext {
             }
             if config.wasi_stderr == PipeBindingType::Context {
                 if o.bypass_stdio {
-                    ctx = ctx.inherit_stderr();
+                    ctx.inherit_stderr();
                 } else {
                     let base = b.claim();
-                    ctx = ctx.stderr(match config.wasi_stderr_buffer {
+                    ctx.stderr(match config.wasi_stderr_buffer {
                         PipeBufferType::Unbuffered => {
                             Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
                                 base.assume_safe().emit_signal(
@@ -165,7 +163,9 @@ impl WasiContext {
                 }
             }
 
-            let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
+            let c = ctx.build();
+            drop(ctx);
+            let mut ctx = Self::init_ctx_no_context(c, config)?;
 
             for (k, v) in o
                 .envs
