@@ -170,16 +170,16 @@ impl InstanceData {
 
             if config.wasi_stdin == PipeBindingType::Instance {
                 if let Some(data) = config.wasi_stdin_data.clone() {
-                    builder = builder.stdin(Box::new(ByteBufferReadPipe::new(data)));
+                    builder.stdin(Box::new(ByteBufferReadPipe::new(data)));
                 } else {
                     // TODO: Emit signal
                     let (outer, inner) = OuterStdin::new(move || {});
-                    builder = builder.stdin(Box::new(outer));
+                    builder.stdin(Box::new(outer));
                     wasi_stdin = Some(inner as _);
                 }
             }
             if config.wasi_stdout == PipeBindingType::Instance {
-                builder = builder.stdout(match config.wasi_stdout_buffer {
+                builder.stdout(match config.wasi_stdout_buffer {
                     PipeBufferType::Unbuffered => {
                         Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
                     }
@@ -190,7 +190,7 @@ impl InstanceData {
                 });
             }
             if config.wasi_stderr == PipeBindingType::Instance {
-                builder = builder.stderr(match config.wasi_stderr_buffer {
+                builder.stderr(match config.wasi_stderr_buffer {
                     PipeBufferType::Unbuffered => {
                         Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
                     }

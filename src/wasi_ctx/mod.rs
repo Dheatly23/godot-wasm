@@ -87,14 +87,14 @@ impl WasiContext {
             else {
                 bail_with_site!("Path \"{}\" should be a file!", file)
             };
-            ctx = ctx.stdin(file);
+            ctx.stdin(file);
         }
         // TODO: Emit signal
         if config.wasi_stdout == PipeBindingType::Context {
             if o.bypass_stdio {
-                ctx = ctx.inherit_stdout();
+                ctx.inherit_stdout();
             } else {
-                ctx = ctx.stdout(match config.wasi_stdout_buffer {
+                ctx.stdout(match config.wasi_stdout_buffer {
                     PipeBufferType::Unbuffered => {
                         Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
                     }
@@ -107,9 +107,9 @@ impl WasiContext {
         }
         if config.wasi_stderr == PipeBindingType::Context {
             if o.bypass_stdio {
-                ctx = ctx.inherit_stderr();
+                ctx.inherit_stderr();
             } else {
-                ctx = ctx.stderr(match config.wasi_stderr_buffer {
+                ctx.stderr(match config.wasi_stderr_buffer {
                     PipeBufferType::Unbuffered => {
                         Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
                     }
@@ -121,7 +121,9 @@ impl WasiContext {
             }
         }
 
-        let mut ctx = Self::init_ctx_no_context(ctx.build(), config)?;
+        let c = ctx.build();
+        drop(ctx);
+        let mut ctx = Self::init_ctx_no_context(c, config)?;
 
         for (k, v) in o
             .envs
