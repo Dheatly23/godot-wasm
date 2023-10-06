@@ -142,6 +142,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
+name = "camino"
+version = "1.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c59e92b5a388f549b863a7bea62612c09f24c8393560709a54558a9abdfb3b9c"
+
+[[package]]
 name = "cap-fs-ext"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -654,6 +660,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "camino",
  "cfg-if",
  "gdnative",
  "lazy_static",

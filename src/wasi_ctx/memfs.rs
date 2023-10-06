@@ -2,14 +2,15 @@ use std::any::Any;
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::fmt::Debug;
 use std::io::{Cursor, IoSlice, IoSliceMut, Read, SeekFrom, Write};
-use std::mem::forget;
+use std::mem::transmute;
 use std::ops::Deref;
-use std::path::{Component, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use std::time::SystemTime;
 
 use async_trait::async_trait;
-use parking_lot::{Mutex, RwLock};
+use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
+use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
 use wasi_common::dir::{OpenResult, ReaddirCursor, ReaddirEntity};
 use wasi_common::file::{Advice, FdFlags, FileType, Filestat, OFlags};
 use wasi_common::{Error, ErrorExt, SystemTimeSpec, WasiDir, WasiFile};
@@ -18,7 +19,6 @@ use crate::wasi_ctx::timestamp::FileTimestamp;
 
 pub const MAX_SYMLINK_DEREF: usize = 16;
 
-static SPLIT_CHARS: &[char] = &['\\', '/'];
 static ILLEGAL_CHARS: &[char] = &['\\', '/', ':', '*', '?', '\"', '\'', '<', '>', '|'];
 
 fn _set_times(stamp: &FileTimestamp, mtime: Option<SystemTimeSpec>, atime: Option<SystemTimeSpec>) {
@@ -79,22 +79,14 @@ impl FileEntry<'_> {
 }
 
 pub struct VacantFile<'a> {
+    guard: DirContentGuard<'a>,
     folder: Arc<dyn Node>,
-    ptr: *const Dir,
     name: &'a str,
     time: SystemTime,
 }
 
-impl Drop for VacantFile<'_> {
-    fn drop(&mut self) {
-        unsafe {
-            (*self.ptr).content.force_unlock_write();
-        }
-    }
-}
-
 impl VacantFile<'_> {
-    pub fn insert<F, E>(self, f: F) -> Result<Arc<dyn Node>, E>
+    pub fn insert<F, E>(mut self, f: F) -> Result<Arc<dyn Node>, E>
     where
         F: FnOnce(Weak<dyn Node>, FileTimestamp) -> Result<Arc<dyn Node>, E>,
     {
@@ -102,9 +94,7 @@ impl VacantFile<'_> {
             Arc::downgrade(&self.folder),
             FileTimestamp::with_time(self.time),
         )?;
-        unsafe {
-            (*(*self.ptr).content.data_ptr()).insert(self.name.to_owned(), file.clone());
-        }
+        self.guard.insert(self.name.to_owned(), file.clone());
         _touch_write(self.folder.timestamp(), Some(self.time));
         drop(self);
         Ok(file)
@@ -130,30 +120,28 @@ impl OccupiedFile {
 }
 
 pub fn open<'a>(
-    mut path: &'a str,
+    path: &'a str,
     mut node: Arc<dyn Node>,
     root: &Option<Arc<Dir>>,
     follow_symlink: bool,
     create_intermediate_dir: bool,
 ) -> Result<FileEntry<'a>, Error> {
     let time = SystemTime::now();
-    let mut rest;
 
-    loop {
-        (path, rest) = match path.split_once(SPLIT_CHARS) {
-            Some((f, r)) => (f, Some(r)),
-            None => (path, None),
-        };
-
-        node = match path {
-            "" | "." => node,
-            ".." => node.parent().unwrap_or(node),
-            p => {
+    let mut it = Utf8Path::new(path).components().peekable();
+    while let Some(c) = it.next() {
+        node = match c {
+            Utf8Component::Prefix(_) | Utf8Component::RootDir => {
+                return Err(Error::invalid_argument())
+            }
+            Utf8Component::CurDir => continue,
+            Utf8Component::ParentDir => node.parent().unwrap_or(node),
+            Utf8Component::Normal(p) => {
                 if p.contains(ILLEGAL_CHARS) {
                     return Err(Error::invalid_argument());
                 }
 
-                let n = if rest.is_none() {
+                let n = if it.peek().is_none() {
                     let Some(n) = node.as_any().downcast_ref::<Dir>() else {
                         return Err(Error::not_dir());
                     };
@@ -162,11 +150,11 @@ pub fn open<'a>(
                         _touch_read(n.timestamp(), Some(time));
                         v.clone()
                     } else {
-                        forget(content);
-                        let ptr = n as _;
+                        // SAFETY: Node is living at least as long as guard is.
+                        let guard = unsafe { transmute(content) };
                         return Ok(FileEntry::Vacant(VacantFile {
+                            guard,
                             folder: node,
-                            ptr,
                             name: p,
                             time,
                         }));
@@ -203,13 +191,9 @@ pub fn open<'a>(
                 }
             }
         };
-
-        if let Some(rest) = rest {
-            path = rest;
-        } else {
-            break Ok(FileEntry::Occupied(OccupiedFile { file: node }));
-        }
     }
+
+    Ok(FileEntry::Occupied(OccupiedFile { file: node }))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -273,17 +257,20 @@ pub trait Node: Send + Sync {
     ) -> Result<OpenResult, Error> {
         Err(Error::not_supported())
     }
-    fn as_link(&self) -> Option<PathBuf> {
+    fn as_link(&self) -> Option<Utf8PathBuf> {
         None
     }
     fn link_deref(self: Arc<Self>, _root: &Option<Arc<Dir>>, _n: usize) -> Option<Arc<dyn Node>>;
 }
 
+type DirContent = RwLock<BTreeMap<String, Arc<dyn Node>>>;
+type DirContentGuard<'a> = RwLockWriteGuard<'a, BTreeMap<String, Arc<dyn Node>>>;
+
 pub struct Dir {
     parent: RwLock<Weak<dyn Node>>,
     stamp: FileTimestamp,
 
-    pub content: RwLock<BTreeMap<String, Arc<dyn Node>>>,
+    pub content: DirContent,
 }
 
 impl Debug for Dir {
@@ -502,7 +489,7 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
             Entry::Vacant(v) => {
                 v.insert(Arc::new(Link::new(
                     Arc::downgrade(&self.value) as _,
-                    PathBuf::from(old_path),
+                    Utf8PathBuf::from(old_path),
                 )));
 
                 _touch_write(self.timestamp(), None);
@@ -554,7 +541,10 @@ impl WasiDir for CapAccessor<Arc<Dir>> {
 
         match self.child(path) {
             None => Err(Error::not_found()),
-            Some(v) => v.as_link().ok_or_else(Error::not_supported),
+            Some(v) => match v.as_link() {
+                None => Err(Error::not_supported()),
+                Some(v) => Ok(v.into()),
+            },
         }
     }
 
@@ -1022,11 +1012,11 @@ struct Link {
     parent: RwLock<Weak<dyn Node>>,
     stamp: FileTimestamp,
 
-    path: PathBuf,
+    path: Utf8PathBuf,
 }
 
 impl Link {
-    fn new(parent: Weak<dyn Node>, path: PathBuf) -> Self {
+    fn new(parent: Weak<dyn Node>, path: Utf8PathBuf) -> Self {
         Self {
             parent: RwLock::new(parent),
             stamp: FileTimestamp::new(),
@@ -1094,7 +1084,7 @@ impl Node for Link {
             .and_then(|n| n.open(root, cap, follow_symlink, oflags, fdflags))
     }
 
-    fn as_link(&self) -> Option<PathBuf> {
+    fn as_link(&self) -> Option<Utf8PathBuf> {
         Some(self.path.clone())
     }
 
@@ -1107,13 +1097,13 @@ impl Node for Link {
         let mut node = self.parent();
         for c in self.path.components() {
             node = match c {
-                Component::RootDir => root.clone().map(|v| v as _),
-                Component::CurDir => continue,
-                Component::ParentDir => node.map(|n| n.parent().unwrap_or(n)),
-                Component::Normal(name) => node
-                    .and_then(|n| n.child(name.to_str().unwrap()))
+                Utf8Component::RootDir => root.clone().map(|v| v as _),
+                Utf8Component::CurDir => continue,
+                Utf8Component::ParentDir => node.map(|n| n.parent().unwrap_or(n)),
+                Utf8Component::Normal(name) => node
+                    .and_then(|n| n.child(name))
                     .and_then(|v| v.link_deref(root, n)),
-                Component::Prefix(_) => return None,
+                Utf8Component::Prefix(_) => return None,
             };
         }
 
