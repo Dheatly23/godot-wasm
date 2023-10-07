@@ -38,20 +38,15 @@ there to open it. There are many examples to choose from:
   to think, to prevent infinite loop. The robot is also ran under separate
   thread to prevent locking the main thread.
 
-* WASI RustPython
+* Run WASM File
 
-  This example uses WASI to execute Python code.
-  Requires [RustPython](https://github.com/RustPython/RustPython)
-  standalone WebAssembly binary,
-  which is not shipped because of it's size (~20 MB).
-  Put the binary file at `wasm/rustpython.wasm` and run this example.
-  There is also a text box to run your own Python code.
+  This examples can run any Webassembly file,
+  provided it exports `_start` function (which is usually true).
+  It also links WASI automatically.
 
-* WASI QuickJS
-
-  This example uses WASI to execute Javascript code.
-  Requires [QuickJS](https://github.com/second-state/quickjs-wasi) binary
-  to be copied to `wasm/qjs.wasm`.
+  By default, it has example Python and Javascript code inside.
+  You can run it using [RustPython](https://github.com/RustPython/RustPython)
+  or [QuickJS](https://github.com/second-state/quickjs-wasi).
 
 ## Licensing
 

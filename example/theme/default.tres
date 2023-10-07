@@ -139,6 +139,19 @@ margin_right = 1.0
 margin_top = 1.0
 margin_bottom = 1.0
 
+[sub_resource type="StyleBoxTexture" id=31]
+resource_name = "Sunked Disabled"
+content_margin_left = 2.0
+content_margin_right = 2.0
+content_margin_top = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource( 2 )
+region_rect = Rect2( 24, 16, 8, 8 )
+margin_left = 1.0
+margin_right = 1.0
+margin_top = 1.0
+margin_bottom = 1.0
+
 [sub_resource type="StyleBoxTexture" id=7]
 resource_name = "Sunken Inactive"
 content_margin_left = 2.0
@@ -208,19 +221,6 @@ margin_left = 2.0
 expand_margin_left = 2.0
 expand_margin_right = 2.0
 
-[sub_resource type="StyleBoxTexture" id=31]
-resource_name = "Sunked Disabled"
-content_margin_left = 2.0
-content_margin_right = 2.0
-content_margin_top = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource( 2 )
-region_rect = Rect2( 24, 16, 8, 8 )
-margin_left = 1.0
-margin_right = 1.0
-margin_top = 1.0
-margin_bottom = 1.0
-
 [sub_resource type="AtlasTexture" id=25]
 atlas = ExtResource( 4 )
 region = Rect2( 0, 0, 16, 16 )
@@ -263,6 +263,10 @@ HScrollBar/styles/grabber_highlight = SubResource( 3 )
 HScrollBar/styles/grabber_pressed = SubResource( 5 )
 HScrollBar/styles/scroll = SubResource( 6 )
 HScrollBar/styles/scroll_focus = SubResource( 5 )
+ItemList/styles/bg = SubResource( 6 )
+ItemList/styles/bg_focus = SubResource( 2 )
+ItemList/styles/selected = SubResource( 31 )
+ItemList/styles/selected_focus = SubResource( 5 )
 LineEdit/styles/focus = SubResource( 2 )
 LineEdit/styles/normal = SubResource( 6 )
 LineEdit/styles/read_only = SubResource( 7 )
@@ -284,12 +288,13 @@ TextEdit/styles/completion = SubResource( 8 )
 TextEdit/styles/focus = SubResource( 2 )
 TextEdit/styles/normal = SubResource( 6 )
 TextEdit/styles/read_only = SubResource( 7 )
+TooltipLabel/colors/font_color = Color( 1, 1, 1, 1 )
 Tree/icons/checked = SubResource( 10 )
 Tree/icons/unchecked = SubResource( 14 )
 Tree/styles/bg = SubResource( 6 )
 Tree/styles/bg_focus = SubResource( 2 )
 Tree/styles/selected = SubResource( 31 )
-Tree/styles/selected_focus = SubResource( 2 )
+Tree/styles/selected_focus = SubResource( 5 )
 VScrollBar/styles/grabber = SubResource( 9 )
 VScrollBar/styles/grabber_highlight = SubResource( 3 )
 VScrollBar/styles/grabber_pressed = SubResource( 5 )

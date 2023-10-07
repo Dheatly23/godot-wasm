@@ -106,10 +106,10 @@ pub struct OccupiedFile {
 }
 
 impl Deref for OccupiedFile {
-    type Target = dyn Node;
+    type Target = Arc<dyn Node>;
 
     fn deref(&self) -> &Self::Target {
-        &*self.file
+        &self.file
     }
 }
 
@@ -1008,15 +1008,15 @@ impl WasiFile for CapAccessor<OpenFile> {
     }
 }
 
-struct Link {
+pub struct Link {
     parent: RwLock<Weak<dyn Node>>,
     stamp: FileTimestamp,
 
-    path: Utf8PathBuf,
+    pub path: Utf8PathBuf,
 }
 
 impl Link {
-    fn new(parent: Weak<dyn Node>, path: Utf8PathBuf) -> Self {
+    pub fn new(parent: Weak<dyn Node>, path: Utf8PathBuf) -> Self {
         Self {
             parent: RwLock::new(parent),
             stamp: FileTimestamp::new(),
