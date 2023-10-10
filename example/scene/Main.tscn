@@ -34,18 +34,6 @@ anchor_bottom = 1.0
 mouse_filter = 2
 color = Color(0, 0, 0, 1)
 
-[node name="LogContainer" parent="." instance=ExtResource("5")]
-layout_mode = 0
-anchors_preset = 0
-anchor_top = 1.0
-anchor_right = 0.0
-offset_left = 20.0
-offset_top = -20.0
-offset_right = 20.0
-offset_bottom = -20.0
-grow_vertical = 0
-label_count = 50
-
 [node name="SubViewportContainer" type="SubViewportContainer" parent="."]
 layout_mode = 0
 anchor_right = 1.0
@@ -57,6 +45,16 @@ transparent_bg = true
 handle_input_locally = false
 size = Vector2i(1152, 648)
 render_target_update_mode = 4
+
+[node name="LogContainer" parent="." instance=ExtResource( 5 )]
+anchor_top = 1.0
+anchor_right = 0.0
+margin_left = 20.0
+margin_top = -20.0
+margin_right = 20.0
+margin_bottom = -20.0
+grow_vertical = 0
+label_count = 50
 
 [node name="Detect" type="Control" parent="."]
 anchors_preset = 0
