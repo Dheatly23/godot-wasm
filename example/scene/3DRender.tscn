@@ -1,0 +1,32 @@
+[gd_scene load_steps=6 format=2]
+
+[ext_resource path="res://3DEnv.tres" type="Environment" id=1]
+[ext_resource path="res://script/3DRender.gd" type="Script" id=2]
+[ext_resource path="res://img/Texture.png" type="Texture" id=4]
+
+[sub_resource type="SpatialMaterial" id=3]
+vertex_color_use_as_albedo = true
+params_diffuse_mode = 1
+albedo_texture = ExtResource( 4 )
+
+[sub_resource type="PlaneMesh" id=4]
+size = Vector2( 5, 5 )
+
+[node name="Root" type="Spatial"]
+script = ExtResource( 2 )
+wasm_file = "res://wasm/three_d_render.wasm"
+
+[node name="Camera" type="Camera" parent="."]
+transform = Transform( 0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 5.774, 5.774, 5.774 )
+environment = ExtResource( 1 )
+projection = 1
+current = true
+size = 10.0
+
+[node name="OmniLight" type="DirectionalLight" parent="."]
+transform = Transform( -0.5, -0.433013, 0.75, 0, 0.866026, 0.5, -0.866025, 0.25, -0.433013, 0, 0, 0 )
+
+[node name="Mesh" type="MeshInstance" parent="."]
+material_override = SubResource( 3 )
+mesh = SubResource( 4 )
+skeleton = NodePath("")

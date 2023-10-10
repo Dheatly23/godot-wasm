@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=2]
+[gd_scene load_steps=11 format=2]
 
 [ext_resource path="res://script/SidebarMenu.gd" type="Script" id=1]
 [ext_resource path="res://theme/default.tres" type="Theme" id=2]
@@ -8,6 +8,7 @@
 [ext_resource path="res://scene/HostBindings.tscn" type="PackedScene" id=6]
 [ext_resource path="res://scene/DoublePendulum.tscn" type="PackedScene" id=7]
 [ext_resource path="res://scene/Connect4.tscn" type="PackedScene" id=8]
+[ext_resource path="res://scene/3DRender.tscn" type="PackedScene" id=9]
 [ext_resource path="res://scene/RunWasi.tscn" type="PackedScene" id=11]
 
 [node name="Main" type="Control"]
@@ -16,8 +17,8 @@ anchor_bottom = 1.0
 mouse_filter = 1
 theme = ExtResource( 2 )
 script = ExtResource( 3 )
-scenes = [ ExtResource( 4 ), ExtResource( 6 ), ExtResource( 7 ), ExtResource( 8 ), ExtResource( 11 ) ]
-names = [ "Hello World", "Host Bindings", "Double Pendulum", "Connect 4", "Run WASM File" ]
+scenes = [ ExtResource( 4 ), ExtResource( 6 ), ExtResource( 7 ), ExtResource( 8 ), ExtResource( 9 ), ExtResource( 11 ) ]
+names = [ "Hello World", "Host Bindings", "Double Pendulum", "Connect 4", "3D Render", "Run WASM File" ]
 
 [node name="Tween" type="Tween" parent="."]
 

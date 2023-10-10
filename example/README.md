@@ -38,6 +38,11 @@ there to open it. There are many examples to choose from:
   to think, to prevent infinite loop. The robot is also ran under separate
   thread to prevent locking the main thread.
 
+* 3D Render
+
+  Using webassembly to accelerate 3D mesh generation.
+  You can change the code yourself to do whatever you want.
+
 * Run WASM File
 
   This examples can run any Webassembly file,
