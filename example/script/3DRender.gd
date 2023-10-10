@@ -1,12 +1,12 @@
-extends Spatial
+extends Node3D
 
 signal message_emitted(msg)
 
-export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
+@export_file("*.wasm","*.wat") var wasm_file := ""
 
-onready var wasi_ctx: WasiContext = WasiContext.new()
+@onready var wasi_ctx: WasiContext = WasiContext.new()
 
-onready var _mesh := ArrayMesh.new()
+@onready var _mesh := ArrayMesh.new()
 
 var instance: WasmInstance = null
 
@@ -46,8 +46,8 @@ func _ready():
 #	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
 #	return
 
-	wasi_ctx.connect("stdout_emit", self, "__emit_log")
-	wasi_ctx.connect("stderr_emit", self, "__emit_log")
+#	wasi_ctx.connect("stdout_emit", self, "__emit_log")
+#	wasi_ctx.connect("stderr_emit", self, "__emit_log")
 
 	var file: WasmFile = load(wasm_file)
 	if file == null:
@@ -91,32 +91,32 @@ func _process(delta):
 	data[Mesh.ARRAY_VERTEX] = instance.get_array(
 		instance.get_32(p),
 		instance.get_32(p + 4),
-		TYPE_VECTOR3_ARRAY
+		TYPE_PACKED_VECTOR3_ARRAY
 	)
 	data[Mesh.ARRAY_NORMAL] = instance.get_array(
 		instance.get_32(p + 8),
 		instance.get_32(p + 12),
-		TYPE_VECTOR3_ARRAY
+		TYPE_PACKED_VECTOR3_ARRAY
 	)
 	data[Mesh.ARRAY_TANGENT] = instance.get_array(
 		instance.get_32(p + 16),
 		instance.get_32(p + 20) * 4,
-		TYPE_REAL_ARRAY
+		TYPE_PACKED_FLOAT32_ARRAY
 	)
 	data[Mesh.ARRAY_TEX_UV] = instance.get_array(
 		instance.get_32(p + 24),
 		instance.get_32(p + 28),
-		TYPE_VECTOR2_ARRAY
+		TYPE_PACKED_VECTOR2_ARRAY
 	)
 	data[Mesh.ARRAY_COLOR] = instance.get_array(
 		instance.get_32(p + 32),
 		instance.get_32(p + 36),
-		TYPE_COLOR_ARRAY
+		TYPE_PACKED_COLOR_ARRAY
 	)
 	data[Mesh.ARRAY_INDEX] = instance.get_array(
 		instance.get_32(p + 40),
 		instance.get_32(p + 44),
-		TYPE_INT_ARRAY
+		TYPE_PACKED_INT32_ARRAY
 	)
 
 	_mesh.clear_surfaces()

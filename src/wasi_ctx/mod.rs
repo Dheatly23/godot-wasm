@@ -18,7 +18,9 @@ use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node}
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
-use crate::wasm_util::{FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST};
+use crate::wasm_util::{
+    option_to_variant, variant_to_option, FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST,
+};
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
@@ -185,50 +187,61 @@ impl WasiContext {
 
 #[godot_api]
 impl WasiContext {
-    #[method]
-    fn add_env_variable(&mut self, key: String, value: String) {
-        self.envs.insert(key, value);
+    #[func]
+    fn add_env_variable(&mut self, key: GodotString, value: GodotString) {
+        self.envs.insert(key.to_string(), value.to_string());
     }
 
-    #[method]
-    fn get_env_variable(&self, key: String) -> Variant {
+    #[func]
+    fn get_env_variable(&self, key: GodotString) -> Variant {
         self.envs
-            .get(&key)
+            .get(&key.to_string())
             .map_or_else(Variant::nil, |v| v.to_variant())
     }
 
-    #[method]
-    fn delete_env_variable(&mut self, key: String) -> Option<GodotString> {
-        self.envs.remove(&key).map(GodotString::from)
+    #[func]
+    fn delete_env_variable(&mut self, key: GodotString) -> Variant {
+        option_to_variant(self.envs.remove(&key.to_string()).map(GodotString::from))
     }
 
-    #[method]
-    fn mount_physical_dir(&mut self, host_path: String, #[opt] guest_path: Option<String>) {
+    #[func]
+    fn mount_physical_dir(&mut self, host_path: GodotString, guest_path: Variant) {
+        let host_path = host_path.to_string();
+        let guest_path = match variant_to_option(guest_path) {
+            Ok(v) => v,
+            Err(e) => {
+                godot_error!("{}", e);
+                return;
+            }
+        };
         self.physical_mount.insert(
             guest_path.unwrap_or_else(|| host_path.clone()).into(),
             host_path.into(),
         );
     }
 
-    #[method]
-    fn get_mounts(&self) -> Dictionary<Unique> {
+    #[func]
+    fn get_mounts(&self) -> Dictionary {
         self.physical_mount
             .iter()
-            .map(|(k, v)| (GodotString::from_str(k), GodotString::from_str(v)))
+            .map(|(k, v)| (GodotString::from(k), GodotString::from(v)))
             .collect()
     }
 
-    #[method]
-    fn unmount_physical_dir(&mut self, guest_path: String) -> bool {
+    #[func]
+    fn unmount_physical_dir(&mut self, guest_path: GodotString) -> bool {
         self.physical_mount
-            .remove(Utf8Path::new(&guest_path))
+            .remove(Utf8Path::new(&guest_path.to_string()))
             .is_some()
     }
 
-    #[method]
-    fn file_is_exist(&self, path: String, #[opt] follow_symlink: Option<bool>) -> u32 {
+    #[func]
+    fn file_is_exist(&self, path: GodotString, follow_symlink: Variant) -> u32 {
+        let Ok(follow_symlink) = variant_to_option(follow_symlink) else {
+            return FILE_NOTEXIST;
+        };
         match open(
-            &path,
+            &path.to_string(),
             self.memfs_root.clone(),
             &Some(self.memfs_root.clone()),
             follow_symlink.unwrap_or(false),
@@ -244,16 +257,12 @@ impl WasiContext {
         }
     }
 
-    #[method]
-    fn file_make_dir(
-        &self,
-        path: String,
-        name: GodotString,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> bool {
+    #[func]
+    fn file_make_dir(&self, path: GodotString, name: GodotString, follow_symlink: Variant) -> bool {
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -278,16 +287,12 @@ impl WasiContext {
         .unwrap_or(false)
     }
 
-    #[method]
-    fn file_make_file(
-        &self,
-        path: String,
-        name: GodotString,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> bool {
+    #[func]
+    fn file_make_file(&self, path: GodotString, name: GodotString, follow_symlink: Variant) -> bool {
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -312,17 +317,18 @@ impl WasiContext {
         .unwrap_or(false)
     }
 
-    #[method]
+    #[func]
     fn file_make_link(
         &self,
-        path: String,
+        path: GodotString,
         name: GodotString,
         link: GodotString,
-        #[opt] follow_symlink: Option<bool>,
+        follow_symlink: Variant,
     ) -> bool {
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -347,16 +353,12 @@ impl WasiContext {
         .unwrap_or(false)
     }
 
-    #[method]
-    fn file_delete_file(
-        &self,
-        path: String,
-        name: GodotString,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> bool {
+    #[func]
+    fn file_delete_file(&self, path: GodotString, name: GodotString, follow_symlink: Variant) -> bool {
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -377,15 +379,12 @@ impl WasiContext {
         .is_some()
     }
 
-    #[method]
-    fn file_dir_list(
-        &self,
-        path: String,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> Option<PoolArray<GodotString>> {
+    #[func]
+    fn file_dir_list(&self, path: GodotString, follow_symlink: Variant) -> PackedStringArray {
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -401,18 +400,19 @@ impl WasiContext {
                 .content
                 .read()
                 .keys()
-                .map(GodotString::from_str)
+                .map(GodotString::from)
                 .collect();
             Ok(ret)
         })
-        .unwrap_or_else(PackedByteArray::new)
+        .unwrap_or_else(PackedStringArray::new)
     }
 
-    #[method]
-    fn file_stat(&self, path: String, #[opt] follow_symlink: Option<bool>) -> Option<Dictionary> {
-        Self::wrap_result(move || {
+    #[func]
+    fn file_stat(&self, path: GodotString, follow_symlink: Variant) -> Variant {
+        option_to_variant(Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -422,7 +422,7 @@ impl WasiContext {
             };
 
             let stat = f.filestat();
-            let dict = Dictionary::new();
+            let mut dict = Dictionary::new();
             dict.insert(
                 "filetype",
                 match stat.filetype {
@@ -432,7 +432,7 @@ impl WasiContext {
                     _ => FILE_NOTEXIST,
                 },
             );
-            dict.insert("size", stat.size);
+            dict.insert("size", stat.size as i64);
 
             fn g(time: SystemTime) -> i64 {
                 let v = to_unix_time(time);
@@ -447,25 +447,21 @@ impl WasiContext {
             dict.insert("mtime", stat.mtim.map_or(0, g));
             dict.insert("ctime", stat.ctim.map_or(0, g));
 
-            Ok(dict.into_shared())
-        })
+            Ok(dict)
+        }))
     }
 
-    #[method]
-    fn file_set_time(
-        &self,
-        path: String,
-        time: Dictionary,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> bool {
+    #[func]
+    fn file_set_time(&self, path: GodotString, time: Dictionary, follow_symlink: Variant) -> bool {
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let mtime = time
                 .get("mtime")
-                .and_then(|v| <Option<i64>>::from_variant(&v).transpose())
+                .and_then(|v| variant_to_option::<i64>(v).transpose())
                 .transpose()?;
             let atime = time
                 .get("atime")
-                .and_then(|v| <Option<i64>>::from_variant(&v).transpose())
+                .and_then(|v| variant_to_option::<i64>(v).transpose())
                 .transpose()?;
 
             let (mtime, atime) = match (
@@ -481,7 +477,7 @@ impl WasiContext {
             };
 
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -503,15 +499,12 @@ impl WasiContext {
         .is_some()
     }
 
-    #[method]
-    fn file_link_target(
-        &self,
-        path: String,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> Option<GodotString> {
-        Self::wrap_result(move || {
+    #[func]
+    fn file_link_target(&self, path: GodotString, follow_symlink: Variant) -> Variant {
+        option_to_variant(Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -523,19 +516,22 @@ impl WasiContext {
                 bail_with_site!("Path {path} is not a symlink")
             };
 
-            Ok(GodotString::from_str(&link.path))
-        })
+            Ok(GodotString::from(&link.path))
+        }))
     }
 
-    #[method]
+    #[func]
     fn file_read(
         &self,
-        path: String,
-        length: usize,
-        #[opt] offset: Option<usize>,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> Option<PoolArray<u8>> {
-        Self::wrap_result(move || {
+        path: GodotString,
+        length: i64,
+        offset: Variant,
+        follow_symlink: Variant,
+    ) -> Variant {
+        option_to_variant(Self::wrap_result(move || {
+            let length = length as usize;
+            let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let offset = offset.unwrap_or(0);
             let end = if length > 0 {
                 match offset.checked_add(length) {
@@ -547,7 +543,7 @@ impl WasiContext {
             };
 
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -568,7 +564,7 @@ impl WasiContext {
                 s = guard.get(offset..);
             }
             if let Some(s) = s {
-                Ok(PoolArray::from_slice(s))
+                Ok(PackedByteArray::from(s))
             } else {
                 if let Some(end) = end {
                     bail_with_site!(
@@ -585,21 +581,21 @@ impl WasiContext {
                     )
                 }
             }
-        })
+        }))
     }
 
-    #[method]
+    #[func]
     fn file_write(
         &self,
-        path: String,
+        path: GodotString,
         data: Variant,
-        #[opt] offset: Option<usize>,
-        #[opt] truncate: Option<bool>,
-        #[opt] follow_symlink: Option<bool>,
+        offset: Variant,
+        truncate: Variant,
+        follow_symlink: Variant,
     ) -> bool {
         fn f<R>(
             root: Arc<Dir>,
-            path: String,
+            path: GodotString,
             follow_symlink: bool,
             truncate: bool,
             offset: usize,
@@ -607,7 +603,7 @@ impl WasiContext {
             f_: impl FnOnce(&mut [u8]) -> Result<R, Error>,
         ) -> Result<R, Error> {
             let Ok(FileEntry::Occupied(f)) =
-                open(&path, root.clone(), &Some(root), follow_symlink, false)
+                open(&path.to_string(), root.clone(), &Some(root), follow_symlink, false)
             else {
                 bail_with_site!("Failed to open path {path}")
             };
@@ -625,7 +621,7 @@ impl WasiContext {
 
         fn g<const N: usize, T>(
             root: Arc<Dir>,
-            path: String,
+            path: GodotString,
             follow_symlink: bool,
             truncate: bool,
             offset: Option<usize>,
@@ -652,12 +648,13 @@ impl WasiContext {
             f(root, path, follow_symlink, truncate, offset, end, f_)
         }
 
-        let follow_symlink = follow_symlink.unwrap_or(false);
-        let truncate = truncate.unwrap_or(false);
 
-        Self::wrap_result(move || match data.dispatch() {
-            VariantDispatch::ByteArray(s) => {
-                let s = s.read();
+        Self::wrap_result(move || {
+            let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
+            let truncate = variant_to_option(truncate)?.unwrap_or(false);
+            let follow_symlink = variant_to_option(follow_symlink)?.unwrap_or(false);
+            if let Ok(s) = PackedByteArray::try_from_variant(&data) {
+                let s = s.as_slice();
                 let offset = offset.unwrap_or(0);
                 let Some(end) = s.len().checked_add(offset) else {
                     bail_with_site!("Length overflowed")
@@ -675,8 +672,7 @@ impl WasiContext {
                         Ok(())
                     },
                 )
-            }
-            VariantDispatch::GodotString(s) => {
+            } else if let Ok(s) = GodotString::try_from_variant(&data) {
                 let s = s.to_string();
                 let s = s.as_bytes();
                 let offset = offset.unwrap_or(0);
@@ -696,65 +692,91 @@ impl WasiContext {
                         Ok(())
                     },
                 )
+            } else if let Ok(s) = PackedInt32Array::try_from_variant(&data) {
+                g::<4, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                )
+            } else if let Ok(s) = PackedInt64Array::try_from_variant(&data) {
+                g::<8, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                )
+            } else if let Ok(s) = PackedFloat32Array::try_from_variant(&data) {
+                g::<4, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                )
+            } else if let Ok(s) = PackedFloat64Array::try_from_variant(&data) {
+                g::<8, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                )
+            } else if let Ok(s) = PackedVector2Array::try_from_variant(&data) {
+                g::<8, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| {
+                        d[..4].copy_from_slice(&s.x.to_le_bytes());
+                        d[4..].copy_from_slice(&s.y.to_le_bytes());
+                    },
+                )
+            } else if let Ok(s) = PackedVector3Array::try_from_variant(&data) {
+                g::<12, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| {
+                        d[..4].copy_from_slice(&s.x.to_le_bytes());
+                        d[4..8].copy_from_slice(&s.y.to_le_bytes());
+                        d[8..].copy_from_slice(&s.z.to_le_bytes());
+                    },
+                )
+            } else if let Ok(s) = PackedColorArray::try_from_variant(&data) {
+                g::<16, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| {
+                        d[..4].copy_from_slice(&s.r.to_le_bytes());
+                        d[4..8].copy_from_slice(&s.g.to_le_bytes());
+                        d[8..12].copy_from_slice(&s.b.to_le_bytes());
+                        d[12..].copy_from_slice(&s.a.to_le_bytes());
+                    },
+                )
+            } else {
+                bail_with_site!("Unknown value type {:?}", data.get_type())
             }
-            VariantDispatch::Int32Array(s) => g::<4, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| *d = s.to_le_bytes(),
-            ),
-            VariantDispatch::Float32Array(s) => g::<4, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| *d = s.to_le_bytes(),
-            ),
-            VariantDispatch::Vector2Array(s) => g::<8, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| {
-                    d[..4].copy_from_slice(&s.x.to_le_bytes());
-                    d[4..].copy_from_slice(&s.y.to_le_bytes());
-                },
-            ),
-            VariantDispatch::Vector3Array(s) => g::<12, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| {
-                    d[..4].copy_from_slice(&s.x.to_le_bytes());
-                    d[4..8].copy_from_slice(&s.y.to_le_bytes());
-                    d[8..].copy_from_slice(&s.z.to_le_bytes());
-                },
-            ),
-            VariantDispatch::ColorArray(s) => g::<16, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| {
-                    d[..4].copy_from_slice(&s.r.to_le_bytes());
-                    d[4..8].copy_from_slice(&s.g.to_le_bytes());
-                    d[8..12].copy_from_slice(&s.b.to_le_bytes());
-                    d[12..].copy_from_slice(&s.a.to_le_bytes());
-                },
-            ),
-            _ => bail_with_site!("Unknown value type {:?}", data.get_type()),
         })
         .is_some()
     }

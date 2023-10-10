@@ -130,6 +130,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
+name = "camino"
+version = "1.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c59e92b5a388f549b863a7bea62612c09f24c8393560709a54558a9abdfb3b9c"
+
+[[package]]
 name = "cap-fs-ext"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -516,6 +522,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e4afd9ad95555081e109fe1d21f2a30c691b5f0919c67dfa690a2e1eb6bd51c"
 
 [[package]]
+name = "glam"
+version = "0.24.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5418c17512bdf42730f9032c74e1ae39afc408745ebb2acf72fbc4691c17945"
+
+[[package]]
 name = "godot"
 version = "0.1.0"
 source = "git+https://github.com/godot-rust/gdext?rev=00ba8c9d68be5eac95e92c96c262b74c080051b6#00ba8c9d68be5eac95e92c96c262b74c080051b6"
@@ -551,7 +563,7 @@ name = "godot-core"
 version = "0.1.0"
 source = "git+https://github.com/godot-rust/gdext?rev=00ba8c9d68be5eac95e92c96c262b74c080051b6#00ba8c9d68be5eac95e92c96c262b74c080051b6"
 dependencies = [
- "glam",
+ "glam 0.23.0",
  "godot-bindings",
  "godot-codegen",
  "godot-ffi",
@@ -591,6 +603,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "camino",
  "cfg-if",
  "godot",
  "lazy_static",
@@ -1180,6 +1193,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "three-d-render"
+version = "0.1.0"
+dependencies = [
+ "glam 0.24.2",
 ]
 
 [[package]]
