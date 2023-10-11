@@ -151,16 +151,16 @@ impl Renderable for Wave {
 
             let mut q = Quat::from_array([0.0; 4]);
             let mut v;
-            v = Vec2::new((p4 - p0) * SQRT_2, 1.0).normalize();
+            v = Vec2::new((p4 - p0) * FRAC_1_SQRT_2, 1.0).normalize();
             v.x *= FRAC_1_SQRT_2;
             q = q + Quat::from_xyzw(-v.x, 0.0, v.x, v.y);
-            v = Vec2::new((p4 - p1) * SQRT_2, 1.0).normalize();
+            v = Vec2::new((p4 - p1) * FRAC_1_SQRT_2, 1.0).normalize();
             v.x *= FRAC_1_SQRT_2;
             q = q + Quat::from_xyzw(v.x, 0.0, v.x, v.y);
-            v = Vec2::new((p4 - p2) * SQRT_2, 1.0).normalize();
+            v = Vec2::new((p4 - p2) * FRAC_1_SQRT_2, 1.0).normalize();
             v.x *= FRAC_1_SQRT_2;
             q = q + Quat::from_xyzw(-v.x, 0.0, -v.x, v.y);
-            v = Vec2::new((p4 - p3) * SQRT_2, 1.0).normalize();
+            v = Vec2::new((p4 - p3) * FRAC_1_SQRT_2, 1.0).normalize();
             v.x *= FRAC_1_SQRT_2;
             q = q + Quat::from_xyzw(v.x, 0.0, -v.x, v.y);
 
