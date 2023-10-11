@@ -19,7 +19,8 @@ pub struct Wave {
     height: usize,
 }
 
-const SIZE: usize = 16;
+const SIZE: usize = 64;
+const SPEED_SCALE: f32 = 16.0;
 
 impl Renderable for Wave {
     fn new() -> Self {
@@ -44,7 +45,8 @@ impl Renderable for Wave {
         ret
     }
 
-    fn step(&mut self, _time: f32, delta: f32) {
+    fn step(&mut self, _time: f32, mut delta: f32) {
+        delta *= SPEED_SCALE;
         for ((i, (p, t)), (x, y)) in self.arr.iter().zip(&mut self.temp).enumerate().zip(
             (0..self.height)
                 .cycle()
@@ -68,8 +70,8 @@ impl Renderable for Wave {
         }
 
         for (i, j) in self.arr.iter_mut().zip(&self.temp) {
-            i.position += i.velocity * delta;
             i.velocity += *j * delta;
+            i.position += i.velocity * delta;
         }
     }
 
