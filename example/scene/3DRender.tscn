@@ -1,6 +1,6 @@
 [gd_scene load_steps=6 format=3 uid="uid://drrbuolr657o5"]
 
-[ext_resource type="Environment" path="res://3DEnv.tres" id="1"]
+[ext_resource type="Environment" uid="uid://cwmtgvxfifmvu" path="res://3DEnv.tres" id="1"]
 [ext_resource type="Script" path="res://script/3DRender.gd" id="2"]
 [ext_resource type="Texture2D" uid="uid://bsem86lb4btpi" path="res://img/Texture.png" id="4"]
 
