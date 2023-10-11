@@ -288,7 +288,12 @@ impl WasiContext {
     }
 
     #[func]
-    fn file_make_file(&self, path: GodotString, name: GodotString, follow_symlink: Variant) -> bool {
+    fn file_make_file(
+        &self,
+        path: GodotString,
+        name: GodotString,
+        follow_symlink: Variant,
+    ) -> bool {
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -354,7 +359,12 @@ impl WasiContext {
     }
 
     #[func]
-    fn file_delete_file(&self, path: GodotString, name: GodotString, follow_symlink: Variant) -> bool {
+    fn file_delete_file(
+        &self,
+        path: GodotString,
+        name: GodotString,
+        follow_symlink: Variant,
+    ) -> bool {
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -396,12 +406,7 @@ impl WasiContext {
                 bail_with_site!("Path {path} is not a directory")
             };
 
-            let ret = dir
-                .content
-                .read()
-                .keys()
-                .map(GodotString::from)
-                .collect();
+            let ret = dir.content.read().keys().map(GodotString::from).collect();
             Ok(ret)
         })
         .unwrap_or_else(PackedStringArray::new)
@@ -602,9 +607,13 @@ impl WasiContext {
             end: usize,
             f_: impl FnOnce(&mut [u8]) -> Result<R, Error>,
         ) -> Result<R, Error> {
-            let Ok(FileEntry::Occupied(f)) =
-                open(&path.to_string(), root.clone(), &Some(root), follow_symlink, false)
-            else {
+            let Ok(FileEntry::Occupied(f)) = open(
+                &path.to_string(),
+                root.clone(),
+                &Some(root),
+                follow_symlink,
+                false,
+            ) else {
                 bail_with_site!("Failed to open path {path}")
             };
             let Some(f) = f.as_any().downcast_ref::<File>() else {
@@ -647,7 +656,6 @@ impl WasiContext {
 
             f(root, path, follow_symlink, truncate, offset, end, f_)
         }
-
 
         Self::wrap_result(move || {
             let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
