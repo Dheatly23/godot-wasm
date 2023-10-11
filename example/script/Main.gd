@@ -5,7 +5,7 @@ extends Control
 @export var scenes: Array[PackedScene] = []
 @export var names: Array[String] = []
 
-@onready var tween := create_tween()
+@onready var tween: Tween = null
 @onready var sidebar := $SidebarMenu
 @onready var panel := $SidebarMenu/Panel
 @onready var detector := $Detect
@@ -16,7 +16,8 @@ var child_scene: Node = null
 var is_shown := false
 
 func _show_menu():
-	tween.kill()
+	if tween:
+		tween.kill()
 	tween = create_tween()
 	tween.tween_property(
 		sidebar,
@@ -27,7 +28,8 @@ func _show_menu():
 	tween.play()
 
 func _hide_menu():
-	tween.kill()
+	if tween:
+		tween.kill()
 	tween = create_tween()
 	tween.tween_property(
 		sidebar,
