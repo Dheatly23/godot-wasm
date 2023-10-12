@@ -47,4 +47,4 @@ func __cb():
 	for i in range(1, 4):
 		for j in range(1, 4):
 			var ret: Array = instance.call_wasm("add", [i, j])
-			emit_signal("message_emitted", "%s + %s = %s" % [i, j, ret[0]])
+			message_emitted.emit("%s + %s = %s" % [i, j, ret[0]])

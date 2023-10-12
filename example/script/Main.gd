@@ -69,5 +69,5 @@ func __load_scene(name: String, scene: PackedScene) -> void:
 	logger.add_text("Loading example: %s" % [name])
 
 	child_scene = scene.instantiate(PackedScene.GEN_EDIT_STATE_DISABLED)
-	child_scene.connect("message_emitted",Callable(logger,"add_text"))
+	child_scene.connect("message_emitted", Callable(logger,"add_text"))
 	view.add_child(child_scene)

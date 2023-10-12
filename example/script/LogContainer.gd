@@ -1,6 +1,6 @@
 extends VBoxContainer
 
-@export var label_count := 0 # (int, 100)
+@export_range(0, 100) var label_count := 0
 
 var labels := []
 

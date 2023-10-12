@@ -2,7 +2,7 @@ extends Node
 
 signal message_emitted(msg)
 
-@export var wasm_file := "" # (String, FILE, "*.wasm,*.wat")
+@export_file("*.wasm","*.wat") var wasm_file := ""
 
 var instance: WasmInstance = null
 
@@ -74,4 +74,4 @@ func __cb():
 
 func __write(ptr: int, sz: int) -> void:
 	var buf: PackedByteArray = instance.memory_read(ptr, sz)
-	emit_signal("message_emitted", buf.get_string_from_utf8())
+	message_emitted.emit(buf.get_string_from_utf8())

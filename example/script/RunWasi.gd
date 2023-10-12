@@ -163,7 +163,7 @@ func __select_popup(id):
 			var name := t.get_parent().get_text(0)
 
 			if !wasi_ctx.file_delete_file(path, name, false):
-				emit_signal("message_emitted", "Cannot delete file")
+				message_emitted.emit("Cannot delete file")
 
 			__refresh_files()
 
@@ -179,10 +179,10 @@ func __create_file():
 
 	if create_file:
 		if !wasi_ctx.file_make_file(path, name, false):
-			emit_signal("message_emitted", "Cannot create file")
+			message_emitted.emit("Cannot create file")
 	else:
 		if !wasi_ctx.file_make_dir(path, name, false):
-			emit_signal("message_emitted", "Cannot create folder")
+			message_emitted.emit("Cannot create folder")
 
 	__refresh_files()
 
@@ -197,7 +197,7 @@ func __open_file():
 
 	var content = wasi_ctx.file_read(path, 1_000_000, 0, true)
 	if content == null:
-		emit_signal("message_emitted", "Cannot open file!")
+		message_emitted.emit("Cannot open file!")
 		return
 	content = content.get_string_from_utf8()
 
@@ -209,13 +209,13 @@ func __save_file():
 	if path == "":
 		return
 	if !wasi_ctx.file_write(path, file_text.text, 0, true, true):
-		emit_signal("message_emitted", "Cannot save file!")
+		message_emitted.emit("Cannot save file!")
 
 func __emit_log(msg):
-	emit_signal("message_emitted", msg)
+	message_emitted.emit(msg)
 
 func __file_name_dialog_entered(_new_text):
-	file_name_dialog.get_ok().emit_signal("pressed")
+	file_name_dialog.get_ok().pressed.emit()
 
 func __open_arg_dialog():
 	$ArgEnvDialog.popup_centered_clamped(
@@ -307,10 +307,10 @@ func __execute():
 		last_file_path = exec_file_box.text
 		wasm_module = WasmHelper.load_wasm_file("wasm_file", last_file_path)
 	if wasm_module == null:
-		emit_signal("message_emitted", "Cannot open executable!")
+		message_emitted.emit("Cannot open executable!")
 		return
 
-	emit_signal("message_emitted", "Running file")
+	message_emitted.emit("Running file")
 	var args := ["wasm_file"]
 	for i in range(0, arg_list.get_item_count()):
 		args.append(arg_list.get_item_text(i))

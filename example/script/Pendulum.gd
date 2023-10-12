@@ -4,26 +4,26 @@ signal message_emitted(msg)
 
 const SCALE := 64.0
 
-@export var wasm_file := "" # (String, FILE, "*.wasm,*.wat")
+@export_file("*.wasm","*.wat") var wasm_file := ""
 
-@export var mass1 := 1.0 # (float, 0.001, 10)
-@export var length1 := 1.0 # (float, 0.001, 10)
-@export var mass2 := 1.0 # (float, 0.001, 10)
-@export var length2 := 1.0 # (float, 0.001, 10)
-@export var timestep := 0.001 # (float, 0.001, 1)
+@export_range(0.001, 10) var mass1 := 1.0
+@export_range(0.001, 10) var length1 := 1.0
+@export_range(0.001, 10) var mass2 := 1.0
+@export_range(0.001, 10) var length2 := 1.0
+@export_range(0.001, 1) var timestep := 0.001
 
-@export var angle1: float:
+@export_range(-180, 180, 0.1) var angle1: float:
 	get:
 		return rad_to_deg(_angle1)
 	set(v):
 		_angle1 = deg_to_rad(v)
-@export var velocity1 := 0.0
-@export var angle2: float:
+@export_range(0, 100, 0.01) var velocity1 := 0.0
+@export_range(-180, 180, 0.1) var angle2: float:
 	get:
 		return rad_to_deg(_angle2)
 	set(v):
 		_angle2 = deg_to_rad(v)
-@export var velocity2 := 0.0
+@export_range(0, 100, 0.01) var velocity2 := 0.0
 
 var instance: WasmInstance = null
 

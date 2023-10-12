@@ -17,7 +17,7 @@ const WIDTH = 7
 const HEIGHT = 5
 const TILE_SIZE = 32
 
-@export var wasm_file := "" # (String, FILE, "*.wasm,*.wat")
+@export_file("*.wasm","*.wat") var wasm_file := ""
 
 @onready var tiles: TileMap = $Tiles
 @onready var selector: Node2D = $Tiles/Selector
@@ -225,7 +225,7 @@ func _input(event):
 				robot_think(x)
 
 func __log(msg: String) -> void:
-	emit_signal("message_emitted", msg)
+	message_emitted.emit(msg)
 
 func __robot_move(res: Array) -> void:
 	if turn == TileState.RED and len(res) >= 1:

@@ -51,11 +51,11 @@ func _ready():
 
 	var file: WasmFile = load(wasm_file)
 	if file == null:
-		emit_signal("message_emitted", "Failed to load module")
+		message_emitted.emit("Failed to load module")
 		return
 	var module: WasmModule = file.get_module()
 	if module == null:
-		emit_signal("message_emitted", "Failed to load module")
+		message_emitted.emit("Failed to load module")
 		return
 
 	instance = WasmInstance.new().initialize(
@@ -69,9 +69,9 @@ func _ready():
 		}
 	)
 	if instance == null:
-		emit_signal("message_emitted", "Failed to instantiate module")
+		message_emitted.emit("Failed to instantiate module")
 	if instance.call_wasm("init", []) == null:
-		emit_signal("message_emitted", "Failed to call init")
+		message_emitted.emit("Failed to call init")
 
 func _process(delta):
 	if instance == null:
@@ -79,7 +79,7 @@ func _process(delta):
 
 	var ret = instance.call_wasm("process", [delta])
 	if ret == null:
-		emit_signal("message_emitted", "Failed to call process")
+		message_emitted.emit("Failed to call process")
 		instance = null
 		return
 
@@ -123,4 +123,4 @@ func _process(delta):
 	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
 
 func __emit_log(msg):
-	emit_signal("message_emitted", msg.strip_edges())
+	message_emitted.emit(msg.strip_edges())
