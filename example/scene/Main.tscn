@@ -12,6 +12,8 @@
 [ext_resource type="PackedScene" uid="uid://dq6gab2nu3kvo" path="res://scene/RunWasi.tscn" id="8_hy7s2"]
 
 [node name="Main" type="Control"]
+texture_filter = 1
+texture_repeat = 1
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -43,6 +45,7 @@ stretch = true
 [node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
 transparent_bg = true
 handle_input_locally = false
+canvas_item_default_texture_filter = 0
 size = Vector2i(1152, 648)
 render_target_update_mode = 4
 

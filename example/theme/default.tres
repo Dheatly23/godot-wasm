@@ -17,8 +17,6 @@ texture_margin_left = 2.0
 texture_margin_top = 2.0
 texture_margin_right = 2.0
 texture_margin_bottom = 2.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(0, 0, 8, 8)
 
 [sub_resource type="StyleBoxTexture" id="1"]
@@ -28,8 +26,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(16, 24, 8, 8)
 
 [sub_resource type="StyleBoxFlat" id="2"]
@@ -52,8 +48,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(16, 8, 8, 8)
 
 [sub_resource type="StyleBoxTexture" id="4"]
@@ -67,8 +61,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(0, 8, 8, 8)
 
 [sub_resource type="StyleBoxTexture" id="5"]
@@ -82,8 +74,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(24, 0, 8, 8)
 
 [sub_resource type="AtlasTexture" id="10"]
@@ -147,8 +137,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(0, 24, 8, 8)
 
 [sub_resource type="StyleBoxTexture" id="6"]
@@ -162,8 +150,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(8, 0, 8, 8)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qcany"]
@@ -186,8 +172,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(8, 0, 8, 8)
 
 [sub_resource type="StyleBoxTexture" id="31"]
@@ -201,8 +185,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(24, 16, 8, 8)
 
 [sub_resource type="StyleBoxTexture" id="7"]
@@ -216,8 +198,6 @@ texture_margin_left = 1.0
 texture_margin_top = 1.0
 texture_margin_right = 1.0
 texture_margin_bottom = 1.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(8, 16, 8, 8)
 
 [sub_resource type="AtlasTexture" id="30"]
@@ -236,8 +216,6 @@ texture_margin_left = 2.0
 texture_margin_top = 2.0
 texture_margin_right = 2.0
 texture_margin_bottom = 2.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(0, 0, 8, 8)
 
 [sub_resource type="StyleBoxFlat" id="19"]
@@ -248,16 +226,12 @@ bg_color = Color(0.4, 0.4, 0.4, 1)
 resource_name = "HSeparator Left"
 texture = ExtResource("2")
 expand_margin_left = 2.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(0, 0, 6, 2)
 
 [sub_resource type="StyleBoxTexture" id="21"]
 resource_name = "HSeparator Right"
 texture = ExtResource("2")
 expand_margin_right = 2.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(2, 0, 4, 2)
 
 [sub_resource type="StyleBoxTexture" id="17"]
@@ -271,8 +245,6 @@ texture_margin_left = 2.0
 texture_margin_top = 2.0
 texture_margin_right = 2.0
 texture_margin_bottom = 2.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(16, 16, 8, 8)
 
 [sub_resource type="StyleBoxTexture" id="18"]
@@ -280,8 +252,6 @@ resource_name = "HSeparator"
 texture = ExtResource("2")
 expand_margin_left = 2.0
 expand_margin_right = 2.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(0, 0, 6, 2)
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_16ejs"]
@@ -304,8 +274,6 @@ texture_margin_left = 2.0
 texture_margin_top = 2.0
 texture_margin_right = 2.0
 texture_margin_bottom = 2.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(0, 0, 8, 8)
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_esbsp"]
@@ -323,8 +291,6 @@ texture_margin_top = 20.0
 texture_margin_right = 2.0
 texture_margin_bottom = 2.0
 expand_margin_top = 18.0
-axis_stretch_horizontal = 1
-axis_stretch_vertical = 1
 region_rect = Rect2(0, 0, 8, 26)
 
 [sub_resource type="AtlasTexture" id="25"]
