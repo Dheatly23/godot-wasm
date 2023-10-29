@@ -24,14 +24,14 @@ parking_lot = "^0.12"
 anyhow = "^1.0"
 lazy_static = "^1.4"
 slab = { version = "^0.4", optional = true }
-wasi-common = { version = "^13.0", optional = true }
+wasi-common = { version = "^14.0", optional = true }
 async-trait = { version = "^0.1", optional = true }
 cfg-if = { version = "^1.0", optional = true }
 memchr = { version = "^2.5", optional = true }
 camino = { version = "^1.1", optional = true }
 
 [dependencies.wasmtime]
-version = "^13.0"
+version = "^14.0"
 default-features = false
 features = [
   "cranelift",
@@ -40,7 +40,7 @@ features = [
 ]
 
 [dependencies.wasmtime-wasi]
-version = "^13.0"
+version = "^14.0"
 optional = true
 default-features = false
 features = [
