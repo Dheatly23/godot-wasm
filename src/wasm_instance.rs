@@ -168,7 +168,6 @@ impl InstanceData {
                 if let Some(data) = config.wasi_stdin_data.clone() {
                     builder.stdin(Box::new(ByteBufferReadPipe::new(data)));
                 } else {
-                    let inst_id = inst_id;
                     let (outer, inner) = OuterStdin::new(move || unsafe {
                         let Some(owner) = Reference::try_from_instance_id(inst_id) else {
                             return;
@@ -180,7 +179,6 @@ impl InstanceData {
                 }
             }
             if config.wasi_stdout == PipeBindingType::Instance {
-                let inst_id = inst_id;
                 builder.stdout(match config.wasi_stdout_buffer {
                     PipeBufferType::Unbuffered => {
                         Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
@@ -216,7 +214,6 @@ impl InstanceData {
                 });
             }
             if config.wasi_stderr == PipeBindingType::Instance {
-                let inst_id = inst_id;
                 builder.stderr(match config.wasi_stderr_buffer {
                     PipeBufferType::Unbuffered => {
                         Box::new(UnbufferedWritePipe::new(move |buf| unsafe {

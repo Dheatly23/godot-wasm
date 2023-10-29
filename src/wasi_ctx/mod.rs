@@ -646,21 +646,19 @@ impl WasiContext {
             }
             if let Some(s) = s {
                 Ok(PoolArray::from_slice(s))
+            } else if let Some(end) = end {
+                bail_with_site!(
+                    "Index {}..{} overflowed (file size is {})",
+                    offset,
+                    end,
+                    guard.len()
+                )
             } else {
-                if let Some(end) = end {
-                    bail_with_site!(
-                        "Index {}..{} overflowed (file size is {})",
-                        offset,
-                        end,
-                        guard.len()
-                    )
-                } else {
-                    bail_with_site!(
-                        "Index {}.. overflowed (file size is {})",
-                        offset,
-                        guard.len()
-                    )
-                }
+                bail_with_site!(
+                    "Index {}.. overflowed (file size is {})",
+                    offset,
+                    guard.len()
+                )
             }
         })
     }
@@ -769,7 +767,7 @@ impl WasiContext {
                     offset,
                     end,
                     move |d| {
-                        d.copy_from_slice(&s);
+                        d.copy_from_slice(s);
                         Ok(())
                     },
                 )
