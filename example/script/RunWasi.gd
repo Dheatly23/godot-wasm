@@ -13,15 +13,19 @@ onready var file_popup: PopupMenu = $PopupFileMenu
 onready var file_name_dialog := $FileNameDialog
 onready var file_name_dialog_text: LineEdit = $FileNameDialog/Box/LineEdit
 
-onready var arg_list: ItemList = $ArgEnvDialog/Margin/HBox/VBox/Args
-onready var env_list: ItemList = $ArgEnvDialog/Margin/HBox/VBox2/Envs
+onready var arg_list: ItemList = $ArgEnvDialog/Margin/Tabs/Arguments/Args
+onready var env_list: ItemList = $"ArgEnvDialog/Margin/Tabs/Environment Variables/Envs"
+onready var mnt_list: ItemList = $ArgEnvDialog/Margin/Tabs/Mounts/Mounts
 
 onready var arg_dialog_text: TextEdit = $ArgDialog/ArgTxt
 onready var env_dialog_key: LineEdit = $EnvDialog/Grid/KeyTxt
 onready var env_dialog_val: TextEdit = $EnvDialog/Grid/ValTxt
+onready var mnt_dialog_host: LineEdit = $MountDialog/Grid/HostTxt
+onready var mnt_dialog_guest: LineEdit = $MountDialog/Grid/GuestTxt
 
 onready var exec_file_box := $Center/Panel/Margin/VBox/HBox/ExecFile
 
+var select_file_cmd := 0
 var create_file := false
 var edited_arg_ix := 0
 var edited_env_ix := 0
@@ -98,7 +102,7 @@ I don't really feel like putting Lorem Ipsum here :)
 	__refresh_files()
 
 func __exec_file_pressed():
-	$FileDialog.popup_centered_clamped(
+	$ExecFileDialog.popup_centered_clamped(
 		Vector2(500, 500),
 		get_viewport_rect().size.aspect()
 	)
@@ -297,6 +301,48 @@ func __edited_environment():
 		var v := env_dialog_val.text
 		wasi_ctx.add_env_variable(k, v)
 		env_list.set_item_text(edited_env_ix, "%s : %s" % [k, v])
+
+func __refresh_mounts():
+	var d: Dictionary = wasi_ctx.get_mounts()
+	var j := 0
+	mnt_list.clear()
+	for k in d:
+		var v = d[k]
+		mnt_list.add_item("%s : %s" % [k, v])
+		mnt_list.set_item_metadata(j, k)
+		j += 1
+
+func __add_mount():
+	mnt_dialog_host.text = ""
+	mnt_dialog_guest.text = ""
+	$MountDialog.popup_centered_clamped(
+		Vector2(200, 100),
+		get_viewport_rect().size.aspect()
+	)
+
+func __delete_mount():
+	var i := mnt_list.get_selected_items()
+	if i.empty():
+		return
+	wasi_ctx.unmount_physical_dir(mnt_list.get_item_metadata(i[0]))
+	__refresh_mounts()
+
+func __added_mount():
+	var host := mnt_dialog_host.text
+	var guest := mnt_dialog_guest.text
+	if host == "" or guest == "":
+		return
+	wasi_ctx.mount_physical_dir(host, guest)
+	__refresh_mounts()
+
+func __open_mount_file():
+	$MountFileDialog.popup_centered_clamped(
+		Vector2(500, 500),
+		get_viewport_rect().size.aspect()
+	)
+
+func __select_mount_file(dir):
+	mnt_dialog_host.text = dir
 
 func __execute():
 	if wasm_module == null or last_file_path != exec_file_box.text:
