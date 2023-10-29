@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=44 format=3 uid="uid://cia5aaiffmela"]
+[gd_resource type="Theme" load_steps=49 format=3 uid="uid://cia5aaiffmela"]
 
 [ext_resource type="Texture2D" uid="uid://cnps27bugfq4c" path="res://img/Panel.png" id="2"]
 [ext_resource type="Texture2D" uid="uid://cteblfclicpc1" path="res://img/Checked.png" id="3"]
@@ -254,6 +254,67 @@ expand_margin_left = 2.0
 expand_margin_right = 2.0
 region_rect = Rect2(0, 0, 6, 2)
 
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_n831m"]
+resource_name = "Sunken Normal"
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("2")
+texture_margin_left = 1.0
+texture_margin_top = 1.0
+texture_margin_right = 1.0
+texture_margin_bottom = 1.0
+region_rect = Rect2(8, 0, 8, 8)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wmdre"]
+resource_name = "Raised Disabled"
+texture = ExtResource("2")
+texture_margin_left = 1.0
+texture_margin_top = 1.0
+texture_margin_right = 1.0
+texture_margin_bottom = 1.0
+region_rect = Rect2(16, 24, 8, 8)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_iddwl"]
+resource_name = "Raised Active"
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("2")
+texture_margin_left = 1.0
+texture_margin_top = 1.0
+texture_margin_right = 1.0
+texture_margin_bottom = 1.0
+region_rect = Rect2(16, 8, 8, 8)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_o2cjy"]
+resource_name = "Sunken Active"
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("2")
+texture_margin_left = 1.0
+texture_margin_top = 1.0
+texture_margin_right = 1.0
+texture_margin_bottom = 1.0
+region_rect = Rect2(24, 0, 8, 8)
+
+[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_sn2su"]
+resource_name = "Raised Normal"
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+texture = ExtResource("2")
+texture_margin_left = 1.0
+texture_margin_top = 1.0
+texture_margin_right = 1.0
+texture_margin_bottom = 1.0
+region_rect = Rect2(0, 8, 8, 8)
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_16ejs"]
 resource_name = "Focus Box"
 draw_center = false
@@ -360,6 +421,11 @@ PopupMenu/styles/panel = SubResource("8")
 PopupMenu/styles/panel_disabled = SubResource("17")
 PopupMenu/styles/separator = SubResource("18")
 PopupPanel/styles/panel = SubResource("8")
+TabContainer/styles/panel = SubResource("StyleBoxTexture_n831m")
+TabContainer/styles/tab_disabled = SubResource("StyleBoxTexture_wmdre")
+TabContainer/styles/tab_hovered = SubResource("StyleBoxTexture_iddwl")
+TabContainer/styles/tab_selected = SubResource("StyleBoxTexture_o2cjy")
+TabContainer/styles/tab_unselected = SubResource("StyleBoxTexture_sn2su")
 TextEdit/styles/completion = SubResource("8")
 TextEdit/styles/focus = SubResource("2")
 TextEdit/styles/normal = SubResource("6")

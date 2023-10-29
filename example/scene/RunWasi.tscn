@@ -21,7 +21,8 @@ theme = ExtResource("1")
 script = ExtResource("3")
 
 [node name="Center" type="CenterContainer" parent="."]
-layout_mode = 0
+layout_mode = 1
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
@@ -121,7 +122,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 color = Color(0, 0, 0, 0.752941)
 
-[node name="FileDialog" type="FileDialog" parent="."]
+[node name="ExecFileDialog" type="FileDialog" parent="."]
 canvas_item_default_texture_filter = 0
 position = Vector2i(0, 36)
 size = Vector2i(326, 157)
@@ -171,55 +172,77 @@ theme_override_constants/margin_top = 2
 theme_override_constants/margin_right = 2
 theme_override_constants/margin_bottom = 2
 
-[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin"]
+[node name="Tabs" type="TabContainer" parent="ArgEnvDialog/Panel/Margin"]
 layout_mode = 2
 
-[node name="VBox" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/HBox"]
+[node name="Arguments" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Args" type="ItemList" parent="ArgEnvDialog/Panel/Margin/HBox/VBox"]
+[node name="Args" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments"]
 layout_mode = 2
 size_flags_vertical = 3
 allow_reselect = true
 
-[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin/HBox/VBox"]
+[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments"]
 layout_mode = 2
 
-[node name="Add" type="Button" parent="ArgEnvDialog/Panel/Margin/HBox/VBox/HBox"]
+[node name="Add" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments/HBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "Add"
 
-[node name="Remove" type="Button" parent="ArgEnvDialog/Panel/Margin/HBox/VBox/HBox"]
+[node name="Remove" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments/HBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "Remove"
 
-[node name="VBox2" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/HBox"]
+[node name="Environment Variables" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs"]
+visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="Envs" type="ItemList" parent="ArgEnvDialog/Panel/Margin/HBox/VBox2"]
+[node name="Envs" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables"]
 layout_mode = 2
 size_flags_vertical = 3
 allow_reselect = true
 
-[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin/HBox/VBox2"]
+[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables"]
 layout_mode = 2
 
-[node name="Add" type="Button" parent="ArgEnvDialog/Panel/Margin/HBox/VBox2/HBox"]
+[node name="Add" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/HBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 text = "Add"
 
-[node name="Remove" type="Button" parent="ArgEnvDialog/Panel/Margin/HBox/VBox2/HBox"]
+[node name="Remove" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/HBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
+text = "Remove"
+
+[node name="Mounts" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs"]
+visible = false
+layout_mode = 2
+
+[node name="Mounts" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts"]
+layout_mode = 2
+
+[node name="Add" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Add"
+
+[node name="Remove" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
 text = "Remove"
 
 [node name="Overlay2" type="ColorRect" parent="ArgEnvDialog"]
@@ -247,6 +270,10 @@ canvas_item_default_texture_filter = 0
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = -28.0
 columns = 2
 
 [node name="KeyLbl" type="Label" parent="ArgEnvDialog/EnvDialog/Grid"]
@@ -268,6 +295,53 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 highlight_current_line = true
 
+[node name="MountDialog" type="ConfirmationDialog" parent="ArgEnvDialog"]
+canvas_item_default_texture_filter = 0
+
+[node name="Grid" type="GridContainer" parent="ArgEnvDialog/MountDialog"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = -28.0
+grow_horizontal = 2
+grow_vertical = 2
+columns = 3
+
+[node name="HostLbl" type="Label" parent="ArgEnvDialog/MountDialog/Grid"]
+layout_mode = 2
+text = "Host :"
+
+[node name="HostTxt" type="LineEdit" parent="ArgEnvDialog/MountDialog/Grid"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Host Absolute Path"
+
+[node name="FileBtn" type="Button" parent="ArgEnvDialog/MountDialog/Grid"]
+custom_minimum_size = Vector2(15, 15)
+layout_mode = 2
+icon = SubResource("1")
+expand_icon = true
+
+[node name="GuestLbl" type="Label" parent="ArgEnvDialog/MountDialog/Grid"]
+layout_mode = 2
+text = "Guest :"
+
+[node name="GuestTxt" type="LineEdit" parent="ArgEnvDialog/MountDialog/Grid"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Guest Absolute Path"
+
+[node name="MountFileDialog" type="FileDialog" parent="ArgEnvDialog/MountDialog"]
+canvas_item_default_texture_filter = 0
+title = "Open a Directory"
+ok_button_text = "Select Current Folder"
+mode_overrides_title = false
+file_mode = 2
+access = 2
+
 [connection signal="pressed" from="Center/Panel/Margin/VBox/FileEdit/VBox/HBoxContainer/SaveButon" to="." method="__save_file"]
 [connection signal="item_activated" from="Center/Panel/Margin/VBox/FileEdit/VBox2/FileTree" to="." method="__open_file"]
 [connection signal="item_mouse_selected" from="Center/Panel/Margin/VBox/FileEdit/VBox2/FileTree" to="." method="__open_file_context"]
@@ -276,24 +350,31 @@ highlight_current_line = true
 [connection signal="pressed" from="Center/Panel/Margin/VBox/HBox/Setting" to="." method="__open_arg_dialog"]
 [connection signal="pressed" from="Center/Panel/Margin/VBox/Execute" to="." method="__execute"]
 [connection signal="id_pressed" from="PopupFileMenu" to="." method="__select_popup"]
-[connection signal="about_to_popup" from="FileDialog" to="Overlay" method="show"]
-[connection signal="close_requested" from="FileDialog" to="Overlay" method="hide"]
-[connection signal="file_selected" from="FileDialog" to="." method="__select_exec_file"]
+[connection signal="about_to_popup" from="ExecFileDialog" to="Overlay" method="show"]
+[connection signal="close_requested" from="ExecFileDialog" to="Overlay" method="hide"]
+[connection signal="file_selected" from="ExecFileDialog" to="." method="__select_exec_file"]
 [connection signal="about_to_popup" from="FileNameDialog" to="Overlay" method="show"]
 [connection signal="close_requested" from="FileNameDialog" to="Overlay" method="hide"]
 [connection signal="confirmed" from="FileNameDialog" to="." method="__create_file"]
 [connection signal="about_to_popup" from="ArgEnvDialog" to="Overlay" method="show"]
 [connection signal="close_requested" from="ArgEnvDialog" to="Overlay" method="hide"]
 [connection signal="close_requested" from="ArgEnvDialog" to="ArgEnvDialog" method="hide"]
-[connection signal="item_activated" from="ArgEnvDialog/Panel/Margin/HBox/VBox/Args" to="." method="__edit_argument"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/HBox/VBox/HBox/Add" to="." method="__add_argument"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/HBox/VBox/HBox/Remove" to="." method="__delete_argument"]
-[connection signal="item_activated" from="ArgEnvDialog/Panel/Margin/HBox/VBox2/Envs" to="." method="__edit_environment"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/HBox/VBox2/HBox/Add" to="." method="__add_environment"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/HBox/VBox2/HBox/Remove" to="." method="__delete_environment"]
+[connection signal="item_activated" from="ArgEnvDialog/Panel/Margin/Tabs/Arguments/Args" to="." method="__edit_argument"]
+[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Arguments/HBox/Add" to="." method="__add_argument"]
+[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Arguments/HBox/Remove" to="." method="__delete_argument"]
+[connection signal="item_activated" from="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/Envs" to="." method="__edit_environment"]
+[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/HBox/Add" to="." method="__add_environment"]
+[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/HBox/Remove" to="." method="__delete_environment"]
+[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Mounts/HBox/Add" to="." method="__add_mount"]
+[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Mounts/HBox/Remove" to="." method="__delete_mount"]
 [connection signal="about_to_popup" from="ArgEnvDialog/ArgDialog" to="ArgEnvDialog/Overlay2" method="show"]
 [connection signal="close_requested" from="ArgEnvDialog/ArgDialog" to="ArgEnvDialog/Overlay2" method="hide"]
 [connection signal="confirmed" from="ArgEnvDialog/ArgDialog" to="." method="__edited_argument"]
 [connection signal="about_to_popup" from="ArgEnvDialog/EnvDialog" to="ArgEnvDialog/Overlay2" method="show"]
 [connection signal="close_requested" from="ArgEnvDialog/EnvDialog" to="ArgEnvDialog/Overlay2" method="hide"]
 [connection signal="confirmed" from="ArgEnvDialog/EnvDialog" to="." method="__edited_environment"]
+[connection signal="about_to_popup" from="ArgEnvDialog/MountDialog" to="ArgEnvDialog/Overlay2" method="show"]
+[connection signal="close_requested" from="ArgEnvDialog/MountDialog" to="ArgEnvDialog/Overlay2" method="hide"]
+[connection signal="confirmed" from="ArgEnvDialog/MountDialog" to="." method="__added_mount"]
+[connection signal="pressed" from="ArgEnvDialog/MountDialog/Grid/FileBtn" to="." method="__open_mount_file"]
+[connection signal="dir_selected" from="ArgEnvDialog/MountDialog/MountFileDialog" to="." method="__select_mount_file"]
