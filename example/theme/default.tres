@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=49 format=3 uid="uid://cia5aaiffmela"]
+[gd_resource type="Theme" load_steps=37 format=3 uid="uid://cia5aaiffmela"]
 
 [ext_resource type="Texture2D" uid="uid://cnps27bugfq4c" path="res://img/Panel.png" id="2"]
 [ext_resource type="Texture2D" uid="uid://cteblfclicpc1" path="res://img/Checked.png" id="3"]
@@ -6,7 +6,7 @@
 [ext_resource type="Texture2D" uid="uid://btta570ljbnh5" path="res://img/DialogPanel.png" id="5"]
 [ext_resource type="FontFile" uid="uid://bj75htksyl2ki" path="res://Monocraft.otf" id="5_x34lh"]
 
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_xjeuj"]
+[sub_resource type="StyleBoxTexture" id="8"]
 resource_name = "Raised Sunken Normal"
 content_margin_left = 3.0
 content_margin_top = 3.0
@@ -152,28 +152,6 @@ texture_margin_right = 1.0
 texture_margin_bottom = 1.0
 region_rect = Rect2(8, 0, 8, 8)
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_qcany"]
-resource_name = "Focus Box"
-draw_center = false
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.6, 1, 1, 1)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_fx2wl"]
-resource_name = "Sunken Normal"
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("2")
-texture_margin_left = 1.0
-texture_margin_top = 1.0
-texture_margin_right = 1.0
-texture_margin_bottom = 1.0
-region_rect = Rect2(8, 0, 8, 8)
-
 [sub_resource type="StyleBoxTexture" id="31"]
 resource_name = "Sunked Disabled"
 content_margin_left = 2.0
@@ -204,19 +182,6 @@ region_rect = Rect2(8, 16, 8, 8)
 resource_name = "Up Down Arrow"
 atlas = ExtResource("4")
 region = Rect2(0, 48, 16, 16)
-
-[sub_resource type="StyleBoxTexture" id="8"]
-resource_name = "Raised Sunken Normal"
-content_margin_left = 3.0
-content_margin_top = 3.0
-content_margin_right = 3.0
-content_margin_bottom = 3.0
-texture = ExtResource("2")
-texture_margin_left = 2.0
-texture_margin_top = 2.0
-texture_margin_right = 2.0
-texture_margin_bottom = 2.0
-region_rect = Rect2(0, 0, 8, 8)
 
 [sub_resource type="StyleBoxFlat" id="19"]
 resource_name = "Hover Box"
@@ -254,94 +219,11 @@ expand_margin_left = 2.0
 expand_margin_right = 2.0
 region_rect = Rect2(0, 0, 6, 2)
 
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_n831m"]
-resource_name = "Sunken Normal"
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("2")
-texture_margin_left = 1.0
-texture_margin_top = 1.0
-texture_margin_right = 1.0
-texture_margin_bottom = 1.0
-region_rect = Rect2(8, 0, 8, 8)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_wmdre"]
-resource_name = "Raised Disabled"
-texture = ExtResource("2")
-texture_margin_left = 1.0
-texture_margin_top = 1.0
-texture_margin_right = 1.0
-texture_margin_bottom = 1.0
-region_rect = Rect2(16, 24, 8, 8)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_iddwl"]
-resource_name = "Raised Active"
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("2")
-texture_margin_left = 1.0
-texture_margin_top = 1.0
-texture_margin_right = 1.0
-texture_margin_bottom = 1.0
-region_rect = Rect2(16, 8, 8, 8)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_o2cjy"]
-resource_name = "Sunken Active"
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("2")
-texture_margin_left = 1.0
-texture_margin_top = 1.0
-texture_margin_right = 1.0
-texture_margin_bottom = 1.0
-region_rect = Rect2(24, 0, 8, 8)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_sn2su"]
-resource_name = "Raised Normal"
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-texture = ExtResource("2")
-texture_margin_left = 1.0
-texture_margin_top = 1.0
-texture_margin_right = 1.0
-texture_margin_bottom = 1.0
-region_rect = Rect2(0, 8, 8, 8)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_16ejs"]
-resource_name = "Focus Box"
-draw_center = false
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.6, 1, 1, 1)
-
-[sub_resource type="StyleBoxTexture" id="StyleBoxTexture_pml3u"]
-resource_name = "Raised Sunken Normal"
-content_margin_left = 3.0
-content_margin_top = 3.0
-content_margin_right = 3.0
-content_margin_bottom = 3.0
-texture = ExtResource("2")
-texture_margin_left = 2.0
-texture_margin_top = 2.0
-texture_margin_right = 2.0
-texture_margin_bottom = 2.0
-region_rect = Rect2(0, 0, 8, 8)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_esbsp"]
+[sub_resource type="AtlasTexture" id="25"]
 atlas = ExtResource("4")
 region = Rect2(0, 0, 16, 16)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_8nxfc"]
+[sub_resource type="AtlasTexture" id="26"]
 atlas = ExtResource("4")
 region = Rect2(16, 0, 16, 16)
 
@@ -353,14 +235,6 @@ texture_margin_right = 2.0
 texture_margin_bottom = 2.0
 expand_margin_top = 18.0
 region_rect = Rect2(0, 0, 8, 26)
-
-[sub_resource type="AtlasTexture" id="25"]
-atlas = ExtResource("4")
-region = Rect2(0, 0, 16, 16)
-
-[sub_resource type="AtlasTexture" id="26"]
-atlas = ExtResource("4")
-region = Rect2(16, 0, 16, 16)
 
 [sub_resource type="StyleBoxTexture" id="22"]
 texture = ExtResource("5")
@@ -374,7 +248,7 @@ region_rect = Rect2(0, 0, 8, 26)
 [resource]
 default_font = ExtResource("5_x34lh")
 default_font_size = 9
-AcceptDialog/styles/panel = SubResource("StyleBoxTexture_xjeuj")
+AcceptDialog/styles/panel = SubResource("8")
 Button/styles/disabled = SubResource("1")
 Button/styles/focus = SubResource("2")
 Button/styles/hover = SubResource("3")
@@ -400,8 +274,8 @@ HScrollBar/styles/scroll = SubResource("6")
 HScrollBar/styles/scroll_focus = SubResource("5")
 ItemList/styles/bg = SubResource("6")
 ItemList/styles/bg_focus = SubResource("2")
-ItemList/styles/focus = SubResource("StyleBoxFlat_qcany")
-ItemList/styles/panel = SubResource("StyleBoxTexture_fx2wl")
+ItemList/styles/focus = SubResource("1")
+ItemList/styles/panel = SubResource("6")
 ItemList/styles/selected = SubResource("31")
 ItemList/styles/selected_focus = SubResource("5")
 LineEdit/styles/focus = SubResource("2")
@@ -421,11 +295,11 @@ PopupMenu/styles/panel = SubResource("8")
 PopupMenu/styles/panel_disabled = SubResource("17")
 PopupMenu/styles/separator = SubResource("18")
 PopupPanel/styles/panel = SubResource("8")
-TabContainer/styles/panel = SubResource("StyleBoxTexture_n831m")
-TabContainer/styles/tab_disabled = SubResource("StyleBoxTexture_wmdre")
-TabContainer/styles/tab_hovered = SubResource("StyleBoxTexture_iddwl")
-TabContainer/styles/tab_selected = SubResource("StyleBoxTexture_o2cjy")
-TabContainer/styles/tab_unselected = SubResource("StyleBoxTexture_sn2su")
+TabContainer/styles/panel = SubResource("6")
+TabContainer/styles/tab_disabled = SubResource("1")
+TabContainer/styles/tab_hovered = SubResource("3")
+TabContainer/styles/tab_selected = SubResource("5")
+TabContainer/styles/tab_unselected = SubResource("4")
 TextEdit/styles/completion = SubResource("8")
 TextEdit/styles/focus = SubResource("2")
 TextEdit/styles/normal = SubResource("6")
@@ -435,8 +309,8 @@ Tree/icons/checked = SubResource("10")
 Tree/icons/unchecked = SubResource("14")
 Tree/styles/bg = SubResource("6")
 Tree/styles/bg_focus = SubResource("2")
-Tree/styles/focus = SubResource("StyleBoxFlat_16ejs")
-Tree/styles/panel = SubResource("StyleBoxTexture_pml3u")
+Tree/styles/focus = SubResource("1")
+Tree/styles/panel = SubResource("8")
 Tree/styles/selected = SubResource("31")
 Tree/styles/selected_focus = SubResource("5")
 VScrollBar/styles/grabber = SubResource("9")
@@ -447,8 +321,8 @@ VScrollBar/styles/scroll_focus = SubResource("5")
 Window/constants/close_h_offset = 19
 Window/constants/close_v_offset = 16
 Window/constants/title_height = 18
-Window/icons/close = SubResource("AtlasTexture_esbsp")
-Window/icons/close_pressed = SubResource("AtlasTexture_8nxfc")
+Window/icons/close = SubResource("25")
+Window/icons/close_pressed = SubResource("26")
 Window/styles/embedded_border = SubResource("StyleBoxTexture_pjst5")
 WindowDialog/colors/title_color = Color(1, 1, 1, 1)
 WindowDialog/constants/close_v_ofs = 16
