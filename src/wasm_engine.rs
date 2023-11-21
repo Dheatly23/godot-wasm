@@ -114,7 +114,7 @@ pub struct WasmModule {
 
     #[var(get = get_name)]
     #[allow(dead_code)]
-    name: GString
+    name: GString,
 }
 
 pub struct ModuleData {

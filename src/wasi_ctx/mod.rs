@@ -288,12 +288,7 @@ impl WasiContext {
     }
 
     #[func]
-    fn file_make_file(
-        &self,
-        path: GString,
-        name: GString,
-        follow_symlink: Variant,
-    ) -> bool {
+    fn file_make_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -359,12 +354,7 @@ impl WasiContext {
     }
 
     #[func]
-    fn file_delete_file(
-        &self,
-        path: GString,
-        name: GString,
-        follow_symlink: Variant,
-    ) -> bool {
+    fn file_delete_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use godot::prelude::*;
 use godot::builtin::meta::GodotConvert;
+use godot::prelude::*;
 
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
@@ -201,9 +201,13 @@ impl FromGodot for ExternBindingType {
         let chars = unsafe { via.chars_unchecked() };
 
         match chars {
-            [] | ['n', 'o', 'n', 'e'] | ['n', 'o', '_', 'b', 'i', 'n', 'd', 'i', 'n', 'g'] => Some(Self::None),
+            [] | ['n', 'o', 'n', 'e'] | ['n', 'o', '_', 'b', 'i', 'n', 'd', 'i', 'n', 'g'] => {
+                Some(Self::None)
+            }
             #[cfg(feature = "object-registry-compat")]
-            ['c', 'o', 'm', 'p', 'a', 't'] | ['r', 'e', 'g', 'i', 's', 't', 'r', 'y'] => Some(Self::Registry),
+            ['c', 'o', 'm', 'p', 'a', 't'] | ['r', 'e', 'g', 'i', 's', 't', 'r', 'y'] => {
+                Some(Self::Registry)
+            }
             #[cfg(feature = "object-registry-extern")]
             ['e', 'x', 't', 'e', 'r', 'n'] | ['n', 'a', 't', 'i', 'v', 'e'] => Some(Self::Native),
             _ => None,
