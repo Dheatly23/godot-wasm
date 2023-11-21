@@ -59,7 +59,7 @@ pub struct WasmInstance {
 
     #[var(get = get_module)]
     #[allow(dead_code)]
-    module: Option<i64>,
+    module: GString,
 }
 
 pub struct InstanceData {
@@ -615,7 +615,7 @@ impl WasmInstance {
     /// Emit trap when returning from host. Only used for host binding.
     /// Returns previous error message, if any.
     #[func]
-    fn signal_error(&self, msg: GodotString) -> Variant {
+    fn signal_error(&self, msg: GString) -> Variant {
         option_to_variant(
             self.unwrap_data(|m| {
                 m.acquire_store(|_, mut store| {
@@ -749,7 +749,7 @@ impl WasmInstance {
     }
 
     #[func]
-    fn stdin_add_line(&self, line: GodotString) {
+    fn stdin_add_line(&self, line: GString) {
         #[cfg(feature = "wasi")]
         self.unwrap_data(|m| {
             if let Some(stdin) = &m.wasi_stdin {

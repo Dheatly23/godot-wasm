@@ -114,11 +114,11 @@ pub struct WasmModule {
 
     #[var(get = get_name)]
     #[allow(dead_code)]
-    name: Option<i64>,
+    name: GString
 }
 
 pub struct ModuleData {
-    name: GodotString,
+    name: GString,
     pub module: Module,
     pub imports: HashMap<String, Gd<WasmModule>>,
 }
@@ -145,7 +145,7 @@ impl WasmModule {
         }
     }
 
-    fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
+    fn _initialize(&self, name: GString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
             let module = if let Ok(v) = PackedByteArray::try_from_variant(&data) {
                 Module::new(&ENGINE, &v.to_vec())?
@@ -242,7 +242,7 @@ impl WasmModule {
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
     #[func]
-    fn initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> Gd<WasmModule> {
+    fn initialize(&self, name: GString, data: Variant, imports: Dictionary) -> Gd<WasmModule> {
         let ret = if self._initialize(name, data, imports) {
             <Gd<WasmModule>>::try_from_instance_id(self.base.instance_id())
         } else {
@@ -351,7 +351,7 @@ impl WasmModule {
         };
         let config = if config.is_nil() { None } else { Some(config) };
 
-        let inst = <Gd<WasmInstance>>::new_default();
+        let inst = WasmInstance::new_gd();
         if inst
             .bind()
             .initialize_(Gd::from_instance_id(self.base.instance_id()), host, config)

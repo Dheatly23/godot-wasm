@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use godot::prelude::*;
+use godot::builtin::meta::GodotConvert;
 
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
@@ -49,7 +50,7 @@ pub struct Config {
     pub extern_bind: ExternBindingType,
 }
 
-fn get_field<T: FromVariant>(
+fn get_field<T: FromGodot>(
     d: &Dictionary,
     name: &'static str,
 ) -> Result<Option<T>, VariantConversionError> {
@@ -101,13 +102,8 @@ fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, VariantC
     Ok(ret)
 }
 
-impl FromVariant for Config {
-    fn try_from_variant(v: &Variant) -> Result<Self, VariantConversionError> {
-        if v.is_nil() {
-            return Ok(Self::default());
-        }
-        let dict = Dictionary::try_from_variant(v)?;
-
+impl Config {
+    fn convert(dict: Dictionary) -> Result<Self, VariantConversionError> {
         Ok(Self {
             #[cfg(feature = "epoch-timeout")]
             with_epoch: get_field(&dict, "engine.use_epoch")?.unwrap_or_default(),
@@ -151,6 +147,27 @@ impl FromVariant for Config {
     }
 }
 
+impl GodotConvert for Config {
+    type Via = Dictionary;
+}
+
+impl FromGodot for Config {
+    fn try_from_variant(v: &Variant) -> Result<Self, VariantConversionError> {
+        if v.is_nil() {
+            return Ok(Self::default());
+        }
+        Self::convert(Dictionary::try_from_variant(v)?)
+    }
+
+    fn try_from_godot(via: Self::Via) -> Option<Self> {
+        Self::convert(via).ok()
+    }
+
+    fn from_godot(via: Self::Via) -> Self {
+        Self::convert(via).unwrap()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ExternBindingType {
@@ -167,22 +184,35 @@ impl Default for ExternBindingType {
     }
 }
 
-impl FromVariant for ExternBindingType {
+impl GodotConvert for ExternBindingType {
+    type Via = GString;
+}
+
+impl FromGodot for ExternBindingType {
     fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
-        let s = String::try_from_variant(variant)?;
-        Ok(match &*s {
-            "" | "none" | "no_binding" => Self::None,
+        match Self::try_from_godot(GString::try_from_variant(variant)?) {
+            Some(v) => Ok(v),
+            None => Err(VariantConversionError::BadValue),
+        }
+    }
+
+    fn try_from_godot(via: Self::Via) -> Option<Self> {
+        // SAFETY: Eh whatevers, if it blows up i assume no responsibility
+        let chars = unsafe { via.chars_unchecked() };
+
+        match chars {
+            [] | ['n', 'o', 'n', 'e'] | ['n', 'o', '_', 'b', 'i', 'n', 'd', 'i', 'n', 'g'] => Some(Self::None),
             #[cfg(feature = "object-registry-compat")]
-            "compat" | "registry" => Self::Registry,
+            ['c', 'o', 'm', 'p', 'a', 't'] | ['r', 'e', 'g', 'i', 's', 't', 'r', 'y'] => Some(Self::Registry),
             #[cfg(feature = "object-registry-extern")]
-            "extern" | "native" => Self::Native,
-            _ => return Err(VariantConversionError::BadValue),
-        })
+            ['e', 'x', 't', 'e', 'r', 'n'] | ['n', 'a', 't', 'i', 'v', 'e'] => Some(Self::Native),
+            _ => None,
+        }
     }
 }
 
-impl ToVariant for ExternBindingType {
-    fn to_variant(&self) -> Variant {
+impl ToGodot for ExternBindingType {
+    fn to_godot(&self) -> Self::Via {
         match self {
             Self::None => "none",
             #[cfg(feature = "object-registry-compat")]
@@ -190,7 +220,7 @@ impl ToVariant for ExternBindingType {
             #[cfg(feature = "object-registry-extern")]
             Self::Native => "native",
         }
-        .to_variant()
+        .into()
     }
 }
 
@@ -209,30 +239,43 @@ impl Default for PipeBindingType {
     }
 }
 
-impl FromVariant for PipeBindingType {
+impl GodotConvert for PipeBindingType {
+    type Via = GString;
+}
+
+impl FromGodot for PipeBindingType {
     fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
         if variant.is_nil() {
             return Ok(Self::default());
         }
 
-        let s = String::try_from_variant(variant)?;
-        Ok(match &*s {
-            "" | "unbound" => Self::Unbound,
-            "instance" => Self::Instance,
-            "context" => Self::Context,
-            _ => return Err(VariantConversionError::BadValue),
-        })
+        match Self::try_from_godot(GString::try_from_variant(variant)?) {
+            Some(v) => Ok(v),
+            None => Err(VariantConversionError::BadValue),
+        }
+    }
+
+    fn try_from_godot(via: Self::Via) -> Option<Self> {
+        // SAFETY: Eh whatevers, if it blows up i assume no responsibility
+        let chars = unsafe { via.chars_unchecked() };
+
+        match chars {
+            [] | ['u', 'n', 'b', 'o', 'u', 'n', 'd'] => Some(Self::Unbound),
+            ['i', 'n', 's', 't', 'a', 'n', 'c', 'e'] => Some(Self::Instance),
+            ['c', 'o', 'n', 't', 'e', 'x', 't'] => Some(Self::Context),
+            _ => None,
+        }
     }
 }
 
-impl ToVariant for PipeBindingType {
-    fn to_variant(&self) -> Variant {
+impl ToGodot for PipeBindingType {
+    fn to_godot(&self) -> Self::Via {
         match self {
             Self::Unbound => "unbound",
             Self::Instance => "instance",
             Self::Context => "context",
         }
-        .to_variant()
+        .into()
     }
 }
 
@@ -251,29 +294,42 @@ impl Default for PipeBufferType {
     }
 }
 
-impl FromVariant for PipeBufferType {
+impl GodotConvert for PipeBufferType {
+    type Via = GString;
+}
+
+impl FromGodot for PipeBufferType {
     fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
         if variant.is_nil() {
             return Ok(Self::default());
         }
 
-        let s = String::try_from_variant(variant)?;
-        Ok(match &*s {
-            "" | "unbuffered" => Self::Unbuffered,
-            "line" => Self::LineBuffer,
-            "block" => Self::BlockBuffer,
-            _ => return Err(VariantConversionError::BadValue),
-        })
+        match Self::try_from_godot(GString::try_from_variant(variant)?) {
+            Some(v) => Ok(v),
+            None => Err(VariantConversionError::BadValue),
+        }
+    }
+
+    fn try_from_godot(via: Self::Via) -> Option<Self> {
+        // SAFETY: Eh whatevers, if it blows up i assume no responsibility
+        let chars = unsafe { via.chars_unchecked() };
+
+        match chars {
+            [] | ['u', 'n', 'b', 'u', 'f', 'f', 'e', 'r', 'e', 'd'] => Some(Self::Unbuffered),
+            ['l', 'i', 'n', 'e'] => Some(Self::LineBuffer),
+            ['b', 'l', 'o', 'c', 'k'] => Some(Self::BlockBuffer),
+            _ => None,
+        }
     }
 }
 
-impl ToVariant for PipeBufferType {
-    fn to_variant(&self) -> Variant {
+impl ToGodot for PipeBufferType {
+    fn to_godot(&self) -> Self::Via {
         match self {
             Self::Unbuffered => "unbuffered",
             Self::LineBuffer => "line",
             Self::BlockBuffer => "block",
         }
-        .to_variant()
+        .into()
     }
 }

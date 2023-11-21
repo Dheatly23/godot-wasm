@@ -188,24 +188,24 @@ impl WasiContext {
 #[godot_api]
 impl WasiContext {
     #[func]
-    fn add_env_variable(&mut self, key: GodotString, value: GodotString) {
+    fn add_env_variable(&mut self, key: GString, value: GString) {
         self.envs.insert(key.to_string(), value.to_string());
     }
 
     #[func]
-    fn get_env_variable(&self, key: GodotString) -> Variant {
+    fn get_env_variable(&self, key: GString) -> Variant {
         self.envs
             .get(&key.to_string())
             .map_or_else(Variant::nil, |v| v.to_variant())
     }
 
     #[func]
-    fn delete_env_variable(&mut self, key: GodotString) -> Variant {
-        option_to_variant(self.envs.remove(&key.to_string()).map(GodotString::from))
+    fn delete_env_variable(&mut self, key: GString) -> Variant {
+        option_to_variant(self.envs.remove(&key.to_string()).map(GString::from))
     }
 
     #[func]
-    fn mount_physical_dir(&mut self, host_path: GodotString, guest_path: Variant) {
+    fn mount_physical_dir(&mut self, host_path: GString, guest_path: Variant) {
         let host_path = host_path.to_string();
         let guest_path = match variant_to_option(guest_path) {
             Ok(v) => v,
@@ -224,19 +224,19 @@ impl WasiContext {
     fn get_mounts(&self) -> Dictionary {
         self.physical_mount
             .iter()
-            .map(|(k, v)| (GodotString::from(k), GodotString::from(v)))
+            .map(|(k, v)| (GString::from(k), GString::from(v)))
             .collect()
     }
 
     #[func]
-    fn unmount_physical_dir(&mut self, guest_path: GodotString) -> bool {
+    fn unmount_physical_dir(&mut self, guest_path: GString) -> bool {
         self.physical_mount
             .remove(Utf8Path::new(&guest_path.to_string()))
             .is_some()
     }
 
     #[func]
-    fn file_is_exist(&self, path: GodotString, follow_symlink: Variant) -> u32 {
+    fn file_is_exist(&self, path: GString, follow_symlink: Variant) -> u32 {
         let Ok(follow_symlink) = variant_to_option(follow_symlink) else {
             return FILE_NOTEXIST;
         };
@@ -258,7 +258,7 @@ impl WasiContext {
     }
 
     #[func]
-    fn file_make_dir(&self, path: GodotString, name: GodotString, follow_symlink: Variant) -> bool {
+    fn file_make_dir(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -290,8 +290,8 @@ impl WasiContext {
     #[func]
     fn file_make_file(
         &self,
-        path: GodotString,
-        name: GodotString,
+        path: GString,
+        name: GString,
         follow_symlink: Variant,
     ) -> bool {
         Self::wrap_result(move || {
@@ -325,9 +325,9 @@ impl WasiContext {
     #[func]
     fn file_make_link(
         &self,
-        path: GodotString,
-        name: GodotString,
-        link: GodotString,
+        path: GString,
+        name: GString,
+        link: GString,
         follow_symlink: Variant,
     ) -> bool {
         Self::wrap_result(move || {
@@ -361,8 +361,8 @@ impl WasiContext {
     #[func]
     fn file_delete_file(
         &self,
-        path: GodotString,
-        name: GodotString,
+        path: GString,
+        name: GString,
         follow_symlink: Variant,
     ) -> bool {
         Self::wrap_result(move || {
@@ -390,7 +390,7 @@ impl WasiContext {
     }
 
     #[func]
-    fn file_dir_list(&self, path: GodotString, follow_symlink: Variant) -> PackedStringArray {
+    fn file_dir_list(&self, path: GString, follow_symlink: Variant) -> PackedStringArray {
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -406,14 +406,14 @@ impl WasiContext {
                 bail_with_site!("Path {path} is not a directory")
             };
 
-            let ret = dir.content.read().keys().map(GodotString::from).collect();
+            let ret = dir.content.read().keys().map(GString::from).collect();
             Ok(ret)
         })
         .unwrap_or_else(PackedStringArray::new)
     }
 
     #[func]
-    fn file_stat(&self, path: GodotString, follow_symlink: Variant) -> Variant {
+    fn file_stat(&self, path: GString, follow_symlink: Variant) -> Variant {
         option_to_variant(Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -457,7 +457,7 @@ impl WasiContext {
     }
 
     #[func]
-    fn file_set_time(&self, path: GodotString, time: Dictionary, follow_symlink: Variant) -> bool {
+    fn file_set_time(&self, path: GString, time: Dictionary, follow_symlink: Variant) -> bool {
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let mtime = time
@@ -505,7 +505,7 @@ impl WasiContext {
     }
 
     #[func]
-    fn file_link_target(&self, path: GodotString, follow_symlink: Variant) -> Variant {
+    fn file_link_target(&self, path: GString, follow_symlink: Variant) -> Variant {
         option_to_variant(Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -521,14 +521,14 @@ impl WasiContext {
                 bail_with_site!("Path {path} is not a symlink")
             };
 
-            Ok(GodotString::from(&link.path))
+            Ok(GString::from(&link.path))
         }))
     }
 
     #[func]
     fn file_read(
         &self,
-        path: GodotString,
+        path: GString,
         length: i64,
         offset: Variant,
         follow_symlink: Variant,
@@ -590,7 +590,7 @@ impl WasiContext {
     #[func]
     fn file_write(
         &self,
-        path: GodotString,
+        path: GString,
         data: Variant,
         offset: Variant,
         truncate: Variant,
@@ -598,7 +598,7 @@ impl WasiContext {
     ) -> bool {
         fn f<R>(
             root: Arc<Dir>,
-            path: GodotString,
+            path: GString,
             follow_symlink: bool,
             truncate: bool,
             offset: usize,
@@ -628,7 +628,7 @@ impl WasiContext {
 
         fn g<const N: usize, T>(
             root: Arc<Dir>,
-            path: GodotString,
+            path: GString,
             follow_symlink: bool,
             truncate: bool,
             offset: Option<usize>,
@@ -678,7 +678,7 @@ impl WasiContext {
                         Ok(())
                     },
                 )
-            } else if let Ok(s) = GodotString::try_from_variant(&data) {
+            } else if let Ok(s) = GString::try_from_variant(&data) {
                 let s = s.to_string();
                 let s = s.as_bytes();
                 let offset = offset.unwrap_or(0);

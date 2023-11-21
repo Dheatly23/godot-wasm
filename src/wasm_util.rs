@@ -97,11 +97,11 @@ pub fn add_site(e: Error, site: Site<'static>) -> Error {
 }
 */
 
-pub fn option_to_variant<T: ToVariant>(t: Option<T>) -> Variant {
+pub fn option_to_variant<T: ToGodot>(t: Option<T>) -> Variant {
     t.map_or_else(Variant::nil, |t| t.to_variant())
 }
 
-pub fn variant_to_option<T: FromVariant>(v: Variant) -> Result<Option<T>, VariantConversionError> {
+pub fn variant_to_option<T: FromGodot>(v: Variant) -> Result<Option<T>, VariantConversionError> {
     if v.is_nil() {
         Ok(None)
     } else {
@@ -253,7 +253,7 @@ fn wrap_godot_method(
     store: impl AsContextMut<Data = StoreData>,
     ty: FuncType,
     obj: Variant,
-    method: GodotString,
+    method: GString,
 ) -> Func {
     let obj = SendSyncWrapper(obj);
     let method = SendSyncWrapper(method);
@@ -321,14 +321,14 @@ pub fn make_host_module(
 ) -> Result<HashMap<String, Extern>, Error> {
     let mut ret = HashMap::new();
     for (k, v) in dict.iter_shared() {
-        let k = site_context!(GodotString::try_from_variant(&k).map_err(|e| anyhow!("{:?}", e)))?
+        let k = site_context!(GString::try_from_variant(&k).map_err(|e| anyhow!("{:?}", e)))?
             .to_string();
 
         struct Data {
             params: Variant,
             results: Variant,
             object: Variant,
-            method: GodotString,
+            method: GString,
         }
 
         let data = {
