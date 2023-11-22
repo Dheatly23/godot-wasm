@@ -1,66 +1,60 @@
+#![allow(unused_parens, unused_assignments)]
+use std::mem::{size_of, size_of_val};
+
 use anyhow::Error;
 use gdnative::prelude::*;
-use wasmtime::{Caller, Extern, Linker};
+use wasmtime::{Caller, Extern, Func, StoreContextMut};
 
-use crate::site_context;
 use crate::wasm_instance::StoreData;
-use crate::wasm_util::OBJREGISTRY_MODULE;
+use crate::{func_registry, site_context};
 
-macro_rules! setget_value {
-    (#getter $x:ident as $ex:expr) => {$ex};
-    (#getter $x:ident) => {$x};
-    (
-        $linker:ident,
-        $(($name:literal =>
-            ($($x:ident : $tx:ty $(as $ex:expr)?),* $(,)?) $($v:tt)*
-        )),* $(,)?
-    ) => {$(
-        #[allow(unused_parens)]
-        $linker.func_wrap(
-            OBJREGISTRY_MODULE,
-            concat!($name, ".get"),
-            |ctx: Caller<StoreData>, i: u32| -> Result<($($tx),*), Error> {
-                let v = ctx.data().get_registry()?.get_or_nil(i as _);
-                let $($v)* = site_context!(<_>::from_variant(&v))?;
-                Ok(($(setget_value!(#getter $x $(as $ex)?)),*))
-            }
-        ).unwrap();
-
-        $linker.func_wrap(
-            OBJREGISTRY_MODULE,
-            concat!($name, ".set"),
-            |mut ctx: Caller<StoreData>, i: u32, $($x : $tx),*| -> Result<(), Error> {
+macro_rules! prim_value {
+    (#writer $tx:ty as $ti:ty) => {$ti};
+    (#writer $tx:ty) => {$tx};
+    (#reader $x:ident as $ti:ty) => {<$ti>::from($x)};
+    (#reader $x:ident) => {$x};
+    ($((
+        $head:tt => <$tv:ty>
+        ($($x:ident : $tx:ty $(as $ti:ty)?),* $(,)?)
+        $($v:tt)*
+    )),* $(,)?) => {$(
+        func_registry!{
+            $head,
+            get => |ctx: Caller<T>, i: u32| -> Result<($($tx),*), Error> {
+                let v = ctx.data().as_ref().get_registry()?.get_or_nil(i as _);
+                let $($v)* = site_context!(<$tv>::from_variant(&v))?;
+                Ok(($($x.into()),*))
+            },
+            set => |mut ctx: Caller<T>, i: u32, $($x : $tx),*| -> Result<(), Error> {
                 let v = $($v)*;
-                ctx.data_mut().get_registry_mut()?.replace(i as _, v.to_variant());
+                ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, <$tv>::from(v).to_variant());
                 Ok(())
-            }
-        ).unwrap();
-
-        $linker.func_wrap(
-            OBJREGISTRY_MODULE,
-            concat!($name, ".new"),
-            |mut ctx: Caller<StoreData>, $($x : $tx),*| -> Result<u32, Error> {
+            },
+            new => |mut ctx: Caller<T>, $($x : $tx),*| -> Result<u32, Error> {
                 let v = $($v)*;
-                Ok(ctx.data_mut().get_registry_mut()?.register(v.to_variant()) as _)
-            }
-        ).unwrap();
-    )*};
-}
+                Ok(ctx.data_mut().as_mut().get_registry_mut()?.register(v.to_variant()) as _)
+            },
+            read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
+                let $($v)* = site_context!(<$tv>::from_variant(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
+                let mem = match ctx.get_export("memory") {
+                    Some(Extern::Memory(v)) => v,
+                    _ => return Ok(0),
+                };
 
-macro_rules! readwrite_value {
-    (
-        $linker:ident,
-        $(($name:literal =>
-            $v:ident : $t:ty [$c:expr]
-            [$($sz:literal | $($i:ident $([$ix:literal])?).+ : $g:ty);* $(;)?]
-        )),* $(,)?
-    ) => {$(
-        #[allow(unused_assignments)]
-        $linker.func_wrap(
-            OBJREGISTRY_MODULE,
-            concat!($name, ".read"),
-            |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
-                let $v = site_context!(<$t>::from_variant(&ctx.data().get_registry()?.get_or_nil(i as _)))?;
+                let mut p = p as usize;
+                $({
+                    let v = prim_value!(#reader $x $(as $ti)?);
+                    site_context!(mem.write(
+                        &mut ctx,
+                        p,
+                        &v.to_le_bytes(),
+                    ))?;
+                    p += size_of_val(&v);
+                })*
+
+                Ok(1)
+            },
+            write => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -68,65 +62,20 @@ macro_rules! readwrite_value {
 
                 let mut p = p as usize;
                 $(
-                    site_context!(mem.write(
-                        &mut ctx,
-                        p,
-                        &<$g>::from($($i $([$ix])?).+).to_le_bytes(),
-                    ))?;
-                    p += $sz;
+                    let $x: $tx = {
+                        const SIZE: usize = size_of::<prim_value!(#writer $tx $(as $ti)?)>();
+                        let mut s = [0u8; SIZE];
+                        site_context!(mem.read(&ctx, p, &mut s))?;
+                        p += SIZE;
+                        <prim_value!(#writer $tx $(as $ti)?)>::from_le_bytes(s).into()
+                    };
                 )*
+
+                let v = <$tv>::from($($v)*);
+                ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, v.to_variant());
                 Ok(1)
-            }
-        ).unwrap();
-
-        #[allow(unused_assignments)]
-        $linker.func_wrap(
-            OBJREGISTRY_MODULE,
-            concat!($name, ".write"),
-            |mut ctx: Caller<StoreData>, i: u32, p: u32| -> Result<u32, Error> {
-                let mem = match ctx.get_export("memory") {
-                    Some(Extern::Memory(v)) => v,
-                    _ => return Ok(0),
-                };
-
-                let mut p = p as usize;
-                #[allow(unused_assignments)]
-                let mut $v: $t = $c;
-                $({
-                    let mut s = [0u8; $sz];
-                    site_context!(mem.read(&mut ctx, p, &mut s))?;
-                    $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
-                    p += $sz;
-                })*
-
-                ctx.data_mut().get_registry_mut()?.replace(i as _, $v.to_variant());
-                Ok(1)
-            }
-        ).unwrap();
-
-        #[allow(unused_assignments)]
-        $linker.func_wrap(
-            OBJREGISTRY_MODULE,
-            concat!($name, ".write_new"),
-            |mut ctx: Caller<StoreData>, p: u32| -> Result<u32, Error> {
-                let mem = match ctx.get_export("memory") {
-                    Some(Extern::Memory(v)) => v,
-                    _ => return Ok(0),
-                };
-
-                let mut p = p as usize;
-                #[allow(unused_assignments)]
-                let mut $v: $t = $c;
-                $({
-                    let mut s = [0u8; $sz];
-                    site_context!(mem.read(&mut ctx, p, &mut s))?;
-                    $($i $([$ix])?).+ = <$g>::from_le_bytes(s).into();
-                    p += $sz;
-                })*
-
-                Ok(ctx.data_mut().get_registry_mut()?.register($v.to_variant()) as _)
-            }
-        ).unwrap();
+            },
+        }
     )*};
 }
 
@@ -145,163 +94,141 @@ impl BoolWrapper {
     }
 }
 
-impl From<bool> for BoolWrapper {
-    #[inline]
-    fn from(b: bool) -> Self {
-        Self(b.into())
+impl FromVariant for BoolWrapper {
+    fn from_variant(variant: &Variant) -> Result<Self, FromVariantError> {
+        Ok(Self(bool::from_variant(variant)?.into()))
     }
 }
 
-impl From<BoolWrapper> for bool {
+impl ToVariant for BoolWrapper {
+    fn to_variant(&self) -> Variant {
+        (self.0 != 0).to_variant()
+    }
+}
+
+impl From<BoolWrapper> for u32 {
     #[inline]
     fn from(v: BoolWrapper) -> Self {
-        v.0 != 0
+        v.0 as _
     }
 }
 
-#[inline]
-pub fn register_functions(linker: &mut Linker<StoreData>) {
-    setget_value!(
-        linker,
-        ("bool" => (v: u32 as {let v: bool = v; v as _}) v),
-        ("int" => (v: i64) v),
-        ("float" => (v: f64) v),
-        ("vector2" => (x: f32, y: f32) Vector2 {x, y}),
-        ("vector3" => (x: f32, y: f32, z: f32) Vector3 {x, y, z}),
-        ("quat" => (x: f32, y: f32, z: f32, w: f32) Quat {x, y, z, w}),
-        ("rect2" => (x: f32, y: f32, w: f32, h: f32) Rect2 {
-            position: Vector2 {x, y},
-            size: Vector2 {x: w, y: h},
-        }),
-        ("transform2d" =>
-            (ax: f32, ay: f32, bx: f32, by: f32, ox: f32, oy: f32)
-            Transform2D {
-                a: Vector2 {x: ax, y: ay},
-                b: Vector2 {x: bx, y: by},
-                origin: Vector2 {x: ox, y: oy},
-            }
-        ),
-        ("plane" => (a: f32, b: f32, c: f32, d: f32) Plane {
-            normal: Vector3 {x: a, y: b, z: c},
-            d,
-        }),
-        ("aabb" => (x: f32, y: f32, z: f32, w: f32, h: f32, t: f32) Aabb {
-            position : Vector3 {x, y, z},
-            size: Vector3 {x: w, y: h, z: t},
-        }),
-        ("basis" =>
-            (ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, cx: f32, cy: f32, cz: f32)
-            Basis {
+impl From<u32> for BoolWrapper {
+    #[inline]
+    fn from(v: u32) -> Self {
+        Self((v != 0).into())
+    }
+}
+
+#[derive(Default)]
+pub struct Funcs {
+    r#bool: BoolFuncs,
+    int: IntFuncs,
+    float: FloatFuncs,
+    vector2: Vector2Funcs,
+    vector3: Vector3Funcs,
+    quat: QuatFuncs,
+    rect2: Rect2Funcs,
+    transform2d: Transform2DFuncs,
+    plane: PlaneFuncs,
+    aabb: AabbFuncs,
+    basis: BasisFuncs,
+    transform: TransformFuncs,
+    color: ColorFuncs,
+}
+
+impl Funcs {
+    pub fn get_func<T>(&mut self, store: &mut StoreContextMut<'_, T>, name: &str) -> Option<Func>
+    where
+        T: AsRef<StoreData> + AsMut<StoreData>,
+    {
+        if let r @ Some(_) = self.r#bool.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.int.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.float.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.vector2.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.vector3.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.quat.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.rect2.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.transform2d.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.plane.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.aabb.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.basis.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.transform.get_func(&mut *store, name) {
+            r
+        } else {
+            self.color.get_func(&mut *store, name)
+        }
+    }
+}
+
+prim_value! {
+    ((BoolFuncs, "bool.") => <BoolWrapper> (v: u32 as BoolWrapper) v),
+    ((IntFuncs, "int.") => <i64> (v: i64) v),
+    ((FloatFuncs, "float.") => <f64> (v: f64) v),
+    ((Vector2Funcs, "vector2.") => <Vector2> (x: f32, y: f32) Vector2 {x, y}),
+    ((Vector3Funcs, "vector3.") => <Vector3> (x: f32, y: f32, z: f32) Vector3 {x, y, z}),
+    ((QuatFuncs, "quat.") => <Quat> (x: f32, y: f32, z: f32, w: f32) Quat {x, y, z, w}),
+    ((Rect2Funcs, "rect2.") => <Rect2> (x: f32, y: f32, w: f32, h: f32) Rect2 {
+        position: Vector2 {x, y},
+        size: Vector2 {x: w, y: h},
+    }),
+    ((Transform2DFuncs, "transform2d.") =>
+        <Transform2D>
+        (ax: f32, ay: f32, bx: f32, by: f32, ox: f32, oy: f32)
+        Transform2D {
+            a: Vector2 {x: ax, y: ay},
+            b: Vector2 {x: bx, y: by},
+            origin: Vector2 {x: ox, y: oy},
+        }
+    ),
+    ((PlaneFuncs, "plane.") => <Plane> (a: f32, b: f32, c: f32, d: f32) Plane {
+        normal: Vector3 {x: a, y: b, z: c},
+        d,
+    }),
+    ((AabbFuncs, "aabb.") => <Aabb> (x: f32, y: f32, z: f32, w: f32, h: f32, t: f32) Aabb {
+        position : Vector3 {x, y, z},
+        size: Vector3 {x: w, y: h, z: t},
+    }),
+    ((BasisFuncs, "basis.") =>
+        <Basis>
+        (ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32, cx: f32, cy: f32, cz: f32)
+        Basis {
+            elements: [
+                Vector3 {x: ax, y: ay, z: az},
+                Vector3 {x: bx, y: by, z: bz},
+                Vector3 {x: cx, y: cy, z: cz},
+            ],
+        }
+    ),
+    ((TransformFuncs, "transform.") =>
+        <Transform>
+        (
+            ax: f32, ay: f32, az: f32,
+            bx: f32, by: f32, bz: f32,
+            cx: f32, cy: f32, cz: f32,
+            ox: f32, oy: f32, oz: f32,
+        )
+        Transform {
+            basis: Basis {
                 elements: [
                     Vector3 {x: ax, y: ay, z: az},
                     Vector3 {x: bx, y: by, z: bz},
                     Vector3 {x: cx, y: cy, z: cz},
                 ],
-            }
-        ),
-        ("transform" =>
-            (
-                ax: f32, ay: f32, az: f32,
-                bx: f32, by: f32, bz: f32,
-                cx: f32, cy: f32, cz: f32,
-                ox: f32, oy: f32, oz: f32,
-            )
-            Transform {
-                basis: Basis {
-                    elements: [
-                        Vector3 {x: ax, y: ay, z: az},
-                        Vector3 {x: bx, y: by, z: bz},
-                        Vector3 {x: cx, y: cy, z: cz},
-                    ],
-                },
-                origin: Vector3 {x: ox, y: oy, z: oz},
-            }
-        ),
-        ("color" => (r: f32, g: f32, b: f32, a: f32) Color {r, g, b, a}),
-    );
-
-    readwrite_value!(
-        linker,
-        ("bool" => v: bool [false] [1 | v: BoolWrapper]),
-        ("int" => v: i64 [0i64] [8 | v: i64]),
-        ("float" => v: f64 [0f64] [8 | v: f64]),
-        ("vector2" => v: Vector2 [Vector2::ZERO] [4 | v.x: f32; 4 | v.y: f32]),
-        ("vector3" => v: Vector3 [Vector3::ZERO] [
-            4 | v.x: f32;
-            4 | v.y: f32;
-            4 | v.z: f32;
-        ]),
-        ("quat" => v: Quat [Quat {x: 0.0, y: 0.0, z: 0.0, w: 0.0}] [
-            4 | v.x: f32;
-            4 | v.y: f32;
-            4 | v.z: f32;
-            4 | v.w: f32;
-        ]),
-        ("rect2" => v: Rect2 [Rect2 {position: Vector2::ZERO, size: Vector2::ZERO}] [
-            4 | v.position.x: f32;
-            4 | v.position.y: f32;
-            4 | v.size.x: f32;
-            4 | v.size.y: f32;
-        ]),
-        ("transform2d" => v: Transform2D [Transform2D {
-            a: Vector2::ZERO,
-            b: Vector2::ZERO,
-            origin: Vector2::ZERO,
-        }] [
-            4 | v.a.x: f32;
-            4 | v.a.y: f32;
-            4 | v.b.x: f32;
-            4 | v.b.y: f32;
-            4 | v.origin.x: f32;
-            4 | v.origin.y: f32;
-        ]),
-        ("plane" => v: Plane [Plane {normal: Vector3::ZERO, d: 0.0}] [
-            4 | v.normal.x: f32;
-            4 | v.normal.y: f32;
-            4 | v.normal.z: f32;
-            4 | v.d: f32;
-        ]),
-        ("aabb" => v: Aabb [Aabb {position: Vector3::ZERO, size: Vector3::ZERO}] [
-            4 | v.position.x: f32;
-            4 | v.position.y: f32;
-            4 | v.position.z: f32;
-            4 | v.size.x: f32;
-            4 | v.size.y: f32;
-            4 | v.size.z: f32;
-        ]),
-        ("basis" => v: Basis [Basis {elements: [Vector3::ZERO; 3]}] [
-            4 | v.elements[0].x: f32;
-            4 | v.elements[0].y: f32;
-            4 | v.elements[0].z: f32;
-            4 | v.elements[1].x: f32;
-            4 | v.elements[1].y: f32;
-            4 | v.elements[1].z: f32;
-            4 | v.elements[2].x: f32;
-            4 | v.elements[2].y: f32;
-            4 | v.elements[2].z: f32;
-        ]),
-        ("transform" => v: Transform [Transform {
-            basis: Basis {elements: [Vector3::ZERO; 3]},
-            origin: Vector3::ZERO,
-        }] [
-            4 | v.basis.elements[0].x: f32;
-            4 | v.basis.elements[0].y: f32;
-            4 | v.basis.elements[0].z: f32;
-            4 | v.basis.elements[1].x: f32;
-            4 | v.basis.elements[1].y: f32;
-            4 | v.basis.elements[1].z: f32;
-            4 | v.basis.elements[2].x: f32;
-            4 | v.basis.elements[2].y: f32;
-            4 | v.basis.elements[2].z: f32;
-            4 | v.origin.x: f32;
-            4 | v.origin.y: f32;
-            4 | v.origin.z: f32;
-        ]),
-        ("color" => v: Color [Color {r: 0.0, g: 0.0, b: 0.0, a: 0.0}] [
-            4 | v.r: f32;
-            4 | v.g: f32;
-            4 | v.b: f32;
-            4 | v.a: f32;
-        ]),
-    );
+            },
+            origin: Vector3 {x: ox, y: oy, z: oz},
+        }
+    ),
+    ((ColorFuncs, "color.") => <Color> (r: f32, g: f32, b: f32, a: f32) Color {r, g, b, a}),
 }

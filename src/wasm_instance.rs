@@ -35,9 +35,9 @@ use crate::wasm_config::{PipeBindingType, PipeBufferType};
 use crate::wasm_engine::EPOCH;
 use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
 #[cfg(feature = "object-registry-extern")]
-use crate::wasm_externref::EXTERNREF_LINKER;
+use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
-use crate::wasm_objregistry::{ObjectRegistry, OBJREGISTRY_LINKER};
+use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_DEADLINE;
 #[cfg(feature = "object-registry-extern")]
@@ -53,11 +53,11 @@ use crate::{bail_with_site, site_context};
 #[user_data(gdnative::export::user_data::ArcData<WasmInstance>)]
 pub struct WasmInstance {
     once: Once,
-    data: Option<InstanceData>,
+    data: Option<InstanceData<StoreData>>,
 }
 
-pub struct InstanceData {
-    store: Mutex<Store<StoreData>>,
+pub struct InstanceData<T> {
+    store: Mutex<Store<T>>,
     instance: InstanceWasm,
     module: Instance<WasmModule, Shared>,
 
@@ -83,6 +83,18 @@ pub struct StoreData {
 // SAFETY: Store data is safely contained within instance data?
 unsafe impl Send for StoreData {}
 unsafe impl Sync for StoreData {}
+
+impl AsRef<Self> for StoreData {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+impl AsMut<Self> for StoreData {
+    fn as_mut(&mut self) -> &mut Self {
+        self
+    }
+}
 
 #[cfg(feature = "memory-limiter")]
 pub struct MemoryLimit {
@@ -126,15 +138,18 @@ impl ResourceLimiter for MemoryLimit {
     }
 }
 
-impl InstanceData {
+impl<T> InstanceData<T>
+where
+    T: AsRef<StoreData> + AsMut<StoreData>,
+{
     pub fn instantiate(
         owner: &Reference,
-        mut store: Store<StoreData>,
+        mut store: Store<T>,
         module: Instance<WasmModule, Shared>,
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
         #[cfg(feature = "epoch-timeout")]
-        if store.data().config.with_epoch {
+        if store.data().as_ref().config.with_epoch {
             store.epoch_deadline_trap();
             EPOCH.spawn_thread(|| ENGINE.increment_epoch());
         } else {
@@ -143,25 +158,26 @@ impl InstanceData {
 
         #[cfg(feature = "memory-limiter")]
         {
-            if let Some(v) = store.data().config.max_memory {
-                store.data_mut().memory_limits.max_memory = v;
+            let data = store.data_mut().as_mut();
+            if let Some(v) = data.config.max_memory {
+                data.memory_limits.max_memory = v;
             }
-            if let Some(v) = store.data().config.max_entries {
-                store.data_mut().memory_limits.max_table_entries = v;
+            if let Some(v) = data.config.max_entries {
+                data.memory_limits.max_table_entries = v;
             }
-            store.limiter(|data| &mut data.memory_limits);
+            store.limiter(|data| &mut data.as_mut().memory_limits);
         }
 
         #[cfg(feature = "wasi")]
         let mut wasi_stdin = None;
 
         #[cfg(feature = "wasi")]
-        let wasi_linker = if store.data().config.with_wasi {
+        let wasi_linker = if store.data().as_ref().config.with_wasi {
             let mut builder = WasiCtxBuilder::new();
 
             let StoreData {
                 wasi_ctx, config, ..
-            } = store.data_mut();
+            } = store.data_mut().as_mut();
 
             let inst_id = owner.get_instance_id();
             if config.wasi_stdin == PipeBindingType::Instance {
@@ -256,116 +272,16 @@ impl InstanceData {
                     &*config,
                 )?),
             };
-            let mut r = <Linker<StoreData>>::new(&ENGINE);
-            add_to_linker(&mut r, |data| data.wasi_ctx.as_mut().unwrap())?;
+            let mut r = <Linker<T>>::new(&ENGINE);
+            add_to_linker(&mut r, |data| data.as_mut().wasi_ctx.as_mut().unwrap())?;
             Some(r)
         } else {
             None
         };
 
-        match store.data().config.extern_bind {
-            ExternBindingType::None => (),
-            #[cfg(feature = "object-registry-compat")]
-            ExternBindingType::Registry => {
-                store.data_mut().object_registry = Some(ObjectRegistry::default());
-            }
-            _ => panic!("Unimplemented binding"),
-        }
-
-        type InstMap = HashMap<Ref<Reference, Shared>, InstanceWasm>;
-
-        fn f(
-            store: &mut Store<StoreData>,
-            module: &ModuleData,
-            insts: &mut InstMap,
-            host: &Option<HashMap<String, Extern>>,
-            #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<StoreData>>,
-        ) -> Result<InstanceWasm, Error> {
-            let it = module.module.imports();
-            let mut imports = Vec::with_capacity(it.len());
-
-            for i in it {
-                match (i.module(), &store.data().config) {
-                    (HOST_MODULE, _) => {
-                        if let Some(host) = host.as_ref() {
-                            if let Some(v) = host.get(i.name()) {
-                                imports.push(v.clone());
-                                continue;
-                            }
-                        }
-                    }
-                    #[cfg(feature = "object-registry-compat")]
-                    (
-                        OBJREGISTRY_MODULE,
-                        Config {
-                            extern_bind: ExternBindingType::Registry,
-                            ..
-                        },
-                    ) => {
-                        if let Some(v) = OBJREGISTRY_LINKER.get_by_import(&mut *store, &i) {
-                            imports.push(v);
-                            continue;
-                        }
-                    }
-                    #[cfg(feature = "object-registry-extern")]
-                    (
-                        EXTERNREF_MODULE,
-                        Config {
-                            extern_bind: ExternBindingType::Native,
-                            ..
-                        },
-                    ) => {
-                        if let Some(v) = EXTERNREF_LINKER.get_by_import(&mut *store, &i) {
-                            imports.push(v);
-                            continue;
-                        }
-                    }
-                    _ => (),
-                }
-
-                #[cfg(feature = "wasi")]
-                if let Some(l) = wasi_linker.as_ref() {
-                    if let Some(v) = l.get_by_import(&mut *store, &i) {
-                        imports.push(v);
-                        continue;
-                    }
-                }
-
-                if let Some(v) = module.imports.get(i.module()) {
-                    let v = loop {
-                        match insts.get(v.base()) {
-                            Some(v) => break v,
-                            None => {
-                                let t = v
-                                    .script()
-                                    .map(|m| {
-                                        f(
-                                            &mut *store,
-                                            m.get_data()?,
-                                            &mut *insts,
-                                            host,
-                                            #[cfg(feature = "wasi")]
-                                            wasi_linker,
-                                        )
-                                    })
-                                    .unwrap()?;
-                                insts.insert(v.base().clone(), t);
-                            }
-                        }
-                    };
-
-                    if let Some(v) = v.get_export(&mut *store, i.name()) {
-                        imports.push(v.clone());
-                        continue;
-                    }
-                }
-
-                bail!("Unknown import {:?}.{:?}", i.module(), i.name());
-            }
-
-            #[cfg(feature = "epoch-timeout")]
-            store.set_epoch_deadline(store.data().config.epoch_timeout);
-            InstanceWasm::new(store, &module.module, &imports)
+        #[cfg(feature = "object-registry-compat")]
+        if store.data().as_ref().config.extern_bind == ExternBindingType::Registry {
+            store.data_mut().as_mut().object_registry = Some(ObjectRegistry::default());
         }
 
         let host = host.map(|h| make_host_module(&mut store, h)).transpose()?;
@@ -375,11 +291,15 @@ impl InstanceData {
             .script()
             .map(move |m| {
                 let mut insts = HashMap::new();
-                f(
+                Self::instantiate_wasm(
                     sp,
                     m.get_data()?,
                     &mut insts,
                     &host,
+                    #[cfg(feature = "object-registry-compat")]
+                    &mut ObjregistryFuncs::default(),
+                    #[cfg(feature = "object-registry-extern")]
+                    &mut ExternrefFuncs::default(),
                     #[cfg(feature = "wasi")]
                     wasi_linker.as_ref(),
                 )
@@ -395,16 +315,119 @@ impl InstanceData {
         })
     }
 
+    fn instantiate_wasm(
+        store: &mut Store<T>,
+        module: &ModuleData,
+        insts: &mut HashMap<Ref<Reference, Shared>, InstanceWasm>,
+        host: &Option<HashMap<String, Extern>>,
+        #[cfg(feature = "object-registry-compat")] objregistry_funcs: &mut ObjregistryFuncs,
+        #[cfg(feature = "object-registry-extern")] externref_funcs: &mut ExternrefFuncs,
+        #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<T>>,
+    ) -> Result<InstanceWasm, Error> {
+        let it = module.module.imports();
+        let mut imports = Vec::with_capacity(it.len());
+
+        for i in it {
+            match (i.module(), &store.data().as_ref().config) {
+                (HOST_MODULE, _) => {
+                    if let Some(host) = host.as_ref() {
+                        if let Some(v) = host.get(i.name()) {
+                            imports.push(v.clone());
+                            continue;
+                        }
+                    }
+                }
+                #[cfg(feature = "object-registry-compat")]
+                (
+                    OBJREGISTRY_MODULE,
+                    Config {
+                        extern_bind: ExternBindingType::Registry,
+                        ..
+                    },
+                ) => {
+                    if let Some(v) =
+                        objregistry_funcs.get_func(&mut store.as_context_mut(), i.name())
+                    {
+                        imports.push(v.into());
+                        continue;
+                    }
+                }
+                #[cfg(feature = "object-registry-extern")]
+                (
+                    EXTERNREF_MODULE,
+                    Config {
+                        extern_bind: ExternBindingType::Native,
+                        ..
+                    },
+                ) => {
+                    if let Some(v) = externref_funcs.get_func(&mut store.as_context_mut(), i.name())
+                    {
+                        imports.push(v.into());
+                        continue;
+                    }
+                }
+                _ => (),
+            }
+
+            #[cfg(feature = "wasi")]
+            if let Some(l) = wasi_linker.as_ref() {
+                if let Some(v) = l.get_by_import(&mut *store, &i) {
+                    imports.push(v);
+                    continue;
+                }
+            }
+
+            if let Some(v) = module.imports.get(i.module()) {
+                let v = loop {
+                    match insts.get(v.base()) {
+                        Some(v) => break v,
+                        None => {
+                            let t = v
+                                .script()
+                                .map(|m| {
+                                    Self::instantiate_wasm(
+                                        &mut *store,
+                                        m.get_data()?,
+                                        &mut *insts,
+                                        host,
+                                        #[cfg(feature = "object-registry-compat")]
+                                        &mut *objregistry_funcs,
+                                        #[cfg(feature = "object-registry-extern")]
+                                        &mut *externref_funcs,
+                                        #[cfg(feature = "wasi")]
+                                        wasi_linker,
+                                    )
+                                })
+                                .unwrap()?;
+                            insts.insert(v.base().clone(), t);
+                        }
+                    }
+                };
+
+                if let Some(v) = v.get_export(&mut *store, i.name()) {
+                    imports.push(v.clone());
+                    continue;
+                }
+            }
+
+            bail!("Unknown import {:?}.{:?}", i.module(), i.name());
+        }
+
+        #[cfg(feature = "epoch-timeout")]
+        store.set_epoch_deadline(store.data().as_ref().config.epoch_timeout);
+        InstanceWasm::new(store, &module.module, &imports)
+    }
+
     fn acquire_store<F, R>(&self, f: F) -> R
     where
-        for<'a> F: FnOnce(&Self, StoreContextMut<'a, StoreData>) -> R,
+        for<'a> F: FnOnce(&Self, StoreContextMut<'a, T>) -> R,
     {
         let mut guard_ = self.store.lock();
 
         let _scope;
         // SAFETY: Context should be destroyed after function call
         unsafe {
-            let p = &mut guard_.data_mut().mutex_raw as *mut _;
+            let p = &mut guard_.data_mut().as_mut().mutex_raw as *mut _;
             let mut v = self.store.raw() as *const _;
             ptr::swap(p, &mut v);
             _scope = guard(p, move |p| {
@@ -458,7 +481,7 @@ impl WasmInstance {
         }
     }
 
-    pub fn get_data(&self) -> Result<&InstanceData, Error> {
+    pub fn get_data(&self) -> Result<&InstanceData<StoreData>, Error> {
         if let OnceState::Done = self.once.state() {
             Ok(self.data.as_ref().unwrap())
         } else {
@@ -468,7 +491,7 @@ impl WasmInstance {
 
     pub fn unwrap_data<F, R>(&self, base: TRef<Reference>, f: F) -> Option<R>
     where
-        F: FnOnce(&InstanceData) -> Result<R, Error>,
+        F: FnOnce(&InstanceData<StoreData>) -> Result<R, Error>,
     {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
@@ -535,7 +558,10 @@ impl WasmInstance {
                     // SAFETY: Should be called only once and nobody else can read module data
                     #[allow(mutable_transmutes)]
                     let data = unsafe {
-                        transmute::<&Option<InstanceData>, &mut Option<InstanceData>>(&self.data)
+                        transmute::<
+                            &Option<InstanceData<StoreData>>,
+                            &mut Option<InstanceData<StoreData>>,
+                        >(&self.data)
                     };
                     *data = Some(v);
                 }

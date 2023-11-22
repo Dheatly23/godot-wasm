@@ -3,12 +3,9 @@ mod funcs;
 use std::mem;
 
 use gdnative::prelude::*;
-use lazy_static::lazy_static;
 use slab::Slab;
-use wasmtime::Linker;
 
-use crate::wasm_engine::ENGINE;
-use crate::wasm_instance::StoreData;
+pub use funcs::Funcs;
 
 pub struct ObjectRegistry {
     slab: Slab<Variant>,
@@ -59,14 +56,4 @@ impl ObjectRegistry {
     pub fn get_or_nil(&self, ix: usize) -> Variant {
         self.get(ix).unwrap_or_else(Variant::nil)
     }
-}
-
-lazy_static! {
-    pub static ref OBJREGISTRY_LINKER: Linker<StoreData> = {
-        let mut linker: Linker<StoreData> = Linker::new(&ENGINE);
-
-        funcs::register_functions(&mut linker);
-
-        linker
-    };
 }

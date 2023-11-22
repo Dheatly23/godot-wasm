@@ -8,15 +8,29 @@ mod primitive;
 mod string;
 mod typeis;
 
-use wasmtime::Linker;
+use wasmtime::{Func, StoreContextMut};
 
 use crate::wasm_instance::StoreData;
 
 macro_rules! register{
     ($($m:ident),* $(,)?) => {
-        #[inline]
-        pub fn register_functions(linker: &mut Linker<StoreData>) {
-            $($m::register_functions(&mut *linker);)*
+        #[derive(Default)]
+        pub struct Funcs {
+            $($m: $m::Funcs),*
+        }
+
+        impl Funcs {
+            pub fn get_func<T>(&mut self, store: &mut StoreContextMut<'_, T>, name: &str) -> Option<Func>
+            where
+                T: AsRef<StoreData> + AsMut<StoreData>,
+            {
+                $(if let r @ Some(_) = self.$m.get_func(&mut *store, name) {
+                    r
+                } else)*
+                {
+                    None
+                }
+            }
         }
     };
 }

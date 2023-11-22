@@ -89,6 +89,31 @@ pub fn add_site(e: Error, site: Site<'static>) -> Error {
     }
 }
 
+#[macro_export]
+macro_rules! func_registry{
+    ($head:literal, $($t:tt)*) => {
+        $crate::func_registry!{(Funcs, $head), $($t)*}
+    };
+    (($fi:ident, $head:literal) $(, $i:ident => $e:expr)* $(,)?) => {
+        #[derive(Default)]
+        pub struct $fi {
+            $($i: Option<Func>),*
+        }
+
+        impl $fi {
+            pub fn get_func<T>(&mut self, store: &mut StoreContextMut<'_, T>, name: &str) -> Option<Func>
+            where
+                T: AsRef<StoreData> + AsMut<StoreData>,
+            {
+                match name {
+                    $(concat!($head, stringify!($i)) => Some(self.$i.get_or_insert_with(move || Func::wrap(store, $e)).clone()),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
 pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), Error> {
     let p = sig.params();
     let r = sig.results();
@@ -189,14 +214,17 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
     })
 }
 
-fn wrap_godot_method(
-    store: impl AsContextMut<Data = StoreData>,
+fn wrap_godot_method<T>(
+    store: impl AsContextMut<Data = T>,
     ty: FuncType,
     obj: Variant,
     method: GodotString,
-) -> Func {
+) -> Func
+where
+    T: AsRef<StoreData> + AsMut<StoreData>,
+{
     let ty_cloned = ty.clone();
-    let f = move |mut ctx: Caller<StoreData>, args: &mut [ValRaw]| -> Result<(), Error> {
+    let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> Result<(), Error> {
         let pi = ty.params();
         let mut p = Vec::with_capacity(pi.len());
         for (ix, t) in pi.enumerate() {
@@ -209,9 +237,10 @@ fn wrap_godot_method(
         };
         let r = ctx
             .data_mut()
+            .as_mut()
             .release_store(|| unsafe { site_context!(obj.call(method.clone(), &p)) })?;
 
-        if let Some(msg) = ctx.data_mut().error_signal.take() {
+        if let Some(msg) = ctx.data_mut().as_mut().error_signal.take() {
             return Err(Error::msg(msg));
         }
 
@@ -234,7 +263,7 @@ fn wrap_godot_method(
             epoch_autoreset: true,
             epoch_timeout,
             ..
-        } = ctx.data().config
+        } = ctx.data().as_ref().config
         {
             ctx.as_context_mut().set_epoch_deadline(epoch_timeout);
         }
@@ -245,10 +274,13 @@ fn wrap_godot_method(
     unsafe { Func::new_unchecked(store, ty_cloned, f) }
 }
 
-pub fn make_host_module(
-    store: &mut Store<StoreData>,
+pub fn make_host_module<T>(
+    store: &mut Store<T>,
     dict: Dictionary,
-) -> Result<HashMap<String, Extern>, Error> {
+) -> Result<HashMap<String, Extern>, Error>
+where
+    T: AsRef<StoreData> + AsMut<StoreData>,
+{
     let mut ret = HashMap::new();
     for (k, v) in dict.iter() {
         let k = site_context!(GodotString::from_variant(&k))?.to_string();
