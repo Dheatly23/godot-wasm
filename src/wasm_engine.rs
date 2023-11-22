@@ -10,6 +10,8 @@ use lazy_static::lazy_static;
 #[cfg(feature = "epoch-timeout")]
 use parking_lot::{Condvar, Mutex};
 use parking_lot::{Once, OnceState};
+#[cfg(feature = "wasi-preview2")]
+use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::wasm_instance::WasmInstance;
@@ -115,8 +117,35 @@ pub struct WasmModule {
 
 pub struct ModuleData {
     name: GodotString,
-    pub module: Module,
+    pub module: ModuleType,
     pub imports: HashMap<String, Instance<WasmModule, Shared>>,
+}
+
+#[derive(Clone)]
+pub enum ModuleType {
+    Core(Module),
+    #[cfg(feature = "wasi-preview2")]
+    Component(Component),
+}
+
+impl ModuleType {
+    pub fn get_core(&self) -> Result<&Module, Error> {
+        #[allow(irrefutable_let_patterns)]
+        if let Self::Core(m) = self {
+            Ok(m)
+        } else {
+            bail!("Module is a component")
+        }
+    }
+
+    #[cfg(feature = "wasi-preview2")]
+    pub fn get_component(&self) -> Result<&Component, Error> {
+        if let Self::Component(m) = self {
+            Ok(m)
+        } else {
+            bail!("Module is a component")
+        }
+    }
 }
 
 impl WasmModule {
@@ -148,15 +177,30 @@ impl WasmModule {
         }
     }
 
+    fn load_module(bytes: &[u8]) -> Result<ModuleType, Error> {
+        #[cfg(feature = "wasi-preview2")]
+        {
+            let bytes = wat::parse_bytes(bytes)?;
+            if wasmparser::Parser::is_component(&bytes) {
+                Ok(ModuleType::Component(Component::new(&ENGINE, &bytes)?))
+            } else {
+                Ok(ModuleType::Core(Module::new(&ENGINE, &bytes)?))
+            }
+        }
+
+        #[cfg(not(feature = "wasi-preview2"))]
+        Ok(ModuleType::Core(Module::new(&ENGINE, bytes)?))
+    }
+
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
             let module = match VariantDispatch::from(&data) {
-                VariantDispatch::ByteArray(v) => Module::new(&ENGINE, &*v.read()),
-                VariantDispatch::GodotString(v) => Module::new(&ENGINE, &v.to_string()),
+                VariantDispatch::ByteArray(v) => Self::load_module(&*v.read()),
+                VariantDispatch::GodotString(v) => Self::load_module(v.to_string().as_bytes()),
                 VariantDispatch::Object(v) => {
                     if let Ok(v) = <Ref<gdnative::api::File>>::from_variant(&v) {
                         let v = unsafe { v.assume_safe() };
-                        Module::new(&ENGINE, &*v.get_buffer(v.get_len()).read())
+                        Self::load_module(&*v.get_buffer(v.get_len()).read())
                     } else {
                         let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
                         let v = unsafe { v.assume_safe() };
@@ -167,57 +211,35 @@ impl WasmModule {
                 _ => bail!("Unknown module value {}", data),
             }?;
 
-            let mut deps_map = HashMap::with_capacity(imports.len() as _);
-            for (k, v) in imports.iter() {
-                let k = String::from_variant(&k)?;
-                let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
-                deps_map.insert(k, v);
-            }
-
-            for i in module.imports() {
-                if MODULE_INCLUDES.iter().any(|j| *j == i.module()) {
-                    continue;
+            let mut deps_map = HashMap::new();
+            #[allow(irrefutable_let_patterns)]
+            if let ModuleType::Core(module) = &module {
+                deps_map = HashMap::with_capacity(imports.len() as _);
+                for (k, v) in imports.iter() {
+                    let k = String::from_variant(&k)?;
+                    let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
+                    deps_map.insert(k, v);
                 }
 
-                let j = match deps_map.get(i.module()) {
-                    None => bail!("Unknown module {}", i.module()),
-                    Some(m) => m
+                Self::validate_module(module, &deps_map)?;
+            }
+            #[cfg(feature = "wasi-preview2")]
+            if let ModuleType::Component(_) = &module {
+                deps_map = HashMap::with_capacity(imports.len() as _);
+                for (k, v) in imports.iter() {
+                    let k = String::from_variant(&k)?;
+                    let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
+                    if !v
                         .script()
-                        .map(|m| m.get_data().map(|v| v.module.get_export(i.name())))
-                        .unwrap()?,
-                };
-                let j = match j {
-                    Some(v) => v,
-                    None => {
-                        bail!("No import in module {} named {}", i.module(), i.name())
+                        .map(|m| {
+                            m.get_data()
+                                .map(|m| matches!(m.module, ModuleType::Core(_)))
+                        })
+                        .unwrap()?
+                    {
+                        bail!("Import {} is not a core module", k);
                     }
-                };
-                let i = i.ty();
-                if !match (&i, &j) {
-                    (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
-                    (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
-                    (ExternType::Table(t1), ExternType::Table(t2)) => {
-                        t1.element() == t2.element()
-                            && t1.minimum() <= t2.minimum()
-                            && match (t1.maximum(), t2.maximum()) {
-                                (None, _) => true,
-                                (_, None) => false,
-                                (Some(a), Some(b)) => a >= b,
-                            }
-                    }
-                    (ExternType::Memory(m1), ExternType::Memory(m2)) => {
-                        m1.is_64() == m2.is_64()
-                            && m1.is_shared() == m2.is_shared()
-                            && m1.minimum() <= m2.minimum()
-                            && match (m1.maximum(), m2.maximum()) {
-                                (None, _) => true,
-                                (_, None) => false,
-                                (Some(a), Some(b)) => a >= b,
-                            }
-                    }
-                    (_, _) => false,
-                } {
-                    bail!("Import type mismatch ({:?} != {:?})", i, j)
+                    deps_map.insert(k, v);
                 }
             }
 
@@ -246,6 +268,68 @@ impl WasmModule {
 
         r
     }
+
+    fn validate_module(
+        module: &Module,
+        deps_map: &HashMap<String, Instance<WasmModule, Shared>>,
+    ) -> Result<(), Error> {
+        for i in module.imports() {
+            if MODULE_INCLUDES.iter().any(|j| *j == i.module()) {
+                continue;
+            }
+
+            let j = match deps_map.get(i.module()) {
+                None => bail!("Unknown module {}", i.module()),
+                Some(m) => m
+                    .script()
+                    .map(|m| -> Result<_, Error> {
+                        match &m.get_data()?.module {
+                            ModuleType::Core(m) => Ok(m.get_export(i.name())),
+                            #[cfg(feature = "wasi-preview2")]
+                            ModuleType::Component(_) => {
+                                bail!("Import {} is a component", i.module())
+                            }
+                        }
+                    })
+                    .unwrap()?,
+            };
+            let j = match j {
+                Some(v) => v,
+                None => {
+                    bail!("No import in module {} named {}", i.module(), i.name())
+                }
+            };
+            let i = i.ty();
+            if !match (&i, &j) {
+                (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
+                (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
+                (ExternType::Table(t1), ExternType::Table(t2)) => {
+                    t1.element() == t2.element()
+                        && t1.minimum() <= t2.minimum()
+                        && match (t1.maximum(), t2.maximum()) {
+                            (None, _) => true,
+                            (_, None) => false,
+                            (Some(a), Some(b)) => a >= b,
+                        }
+                }
+                (ExternType::Memory(m1), ExternType::Memory(m2)) => {
+                    m1.is_64() == m2.is_64()
+                        && m1.is_shared() == m2.is_shared()
+                        && m1.minimum() <= m2.minimum()
+                        && match (m1.maximum(), m2.maximum()) {
+                            (None, _) => true,
+                            (_, None) => false,
+                            (Some(a), Some(b)) => a >= b,
+                        }
+                }
+                (_, _) => false,
+            } {
+                bail!("Import type mismatch ({:?} != {:?})", i, j)
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[methods]
@@ -255,6 +339,34 @@ impl WasmModule {
         builder
             .property::<Option<GodotString>>("name")
             .with_getter(|v, _| v.unwrap_data(|m| Ok(m.name.clone())))
+            .done();
+
+        builder
+            .property::<bool>("is_component")
+            .with_getter(|v, _| {
+                v.unwrap_data(|_m| {
+                    #[cfg(feature = "wasi-preview2")]
+                    return Ok(matches!(_m.module, ModuleType::Component(_)));
+
+                    #[cfg(not(feature = "wasi-preview2"))]
+                    Ok(false)
+                })
+                .unwrap_or_default()
+            })
+            .done();
+
+        builder
+            .property::<bool>("is_core_module")
+            .with_getter(|v, _| {
+                v.unwrap_data(|_m| {
+                    #[cfg(feature = "wasi-preview2")]
+                    return Ok(matches!(_m.module, ModuleType::Core(_)));
+
+                    #[cfg(not(feature = "wasi-preview2"))]
+                    Ok(true)
+                })
+                .unwrap_or_default()
+            })
             .done();
     }
 
@@ -287,7 +399,7 @@ impl WasmModule {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
-            for i in m.module.exports() {
+            for i in m.module.get_core()?.exports() {
                 if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
                     ret.insert(
@@ -310,7 +422,7 @@ impl WasmModule {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
-            for i in m.module.imports() {
+            for i in m.module.get_core()?.imports() {
                 if i.module() != HOST_MODULE {
                     continue;
                 }
@@ -333,7 +445,7 @@ impl WasmModule {
     fn has_function(&self, name: String) -> bool {
         self.unwrap_data(|m| {
             Ok(matches!(
-                m.module.get_export(&name),
+                m.module.get_core()?.get_export(&name),
                 Some(ExternType::Func(_))
             ))
         })
@@ -343,7 +455,7 @@ impl WasmModule {
     #[method]
     fn get_signature(&self, name: String) -> Option<Dictionary> {
         self.unwrap_data(|m| {
-            if let Some(ExternType::Func(f)) = m.module.get_export(&name) {
+            if let Some(ExternType::Func(f)) = m.module.get_core()?.get_export(&name) {
                 let (p, r) = from_signature(&f)?;
                 Ok(Dictionary::from_iter([("params", p), ("results", r)]).into_shared())
             } else {

@@ -33,7 +33,7 @@ use crate::wasm_config::{Config, ExternBindingType};
 use crate::wasm_config::{PipeBindingType, PipeBufferType};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_engine::EPOCH;
-use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
+use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, ENGINE};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
@@ -57,12 +57,12 @@ pub struct WasmInstance {
 }
 
 pub struct InstanceData<T> {
-    store: Mutex<Store<T>>,
-    instance: InstanceWasm,
-    module: Instance<WasmModule, Shared>,
+    pub store: Mutex<Store<T>>,
+    pub instance: InstanceWasm,
+    pub module: Instance<WasmModule, Shared>,
 
     #[cfg(feature = "wasi")]
-    wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
+    pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
 }
 
 pub struct StoreData {
@@ -324,7 +324,10 @@ where
         #[cfg(feature = "object-registry-extern")] externref_funcs: &mut ExternrefFuncs,
         #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<T>>,
     ) -> Result<InstanceWasm, Error> {
-        let it = module.module.imports();
+        let ModuleType::Core(module_) = &module.module else {
+            bail_with_site!("Cannot instantiate component")
+        };
+        let it = module_.imports();
         let mut imports = Vec::with_capacity(it.len());
 
         for i in it {
@@ -415,10 +418,10 @@ where
 
         #[cfg(feature = "epoch-timeout")]
         store.set_epoch_deadline(store.data().as_ref().config.epoch_timeout);
-        InstanceWasm::new(store, &module.module, &imports)
+        InstanceWasm::new(store, &module_, &imports)
     }
 
-    fn acquire_store<F, R>(&self, f: F) -> R
+    pub fn acquire_store<F, R>(&self, f: F) -> R
     where
         for<'a> F: FnOnce(&Self, StoreContextMut<'a, T>) -> R,
     {
