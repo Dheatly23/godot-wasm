@@ -187,9 +187,9 @@ impl WasmModule {
         {
             let bytes = wat::parse_bytes(bytes)?;
             if wasmparser::Parser::is_component(&bytes) {
-                Ok(ModuleType::Component(Component::new(&ENGINE, &bytes)?))
+                Ok(ModuleType::Component(Component::from_binary(&ENGINE, &bytes)?))
             } else {
-                Ok(ModuleType::Core(Module::new(&ENGINE, &bytes)?))
+                Ok(ModuleType::Core(Module::from_binary(&ENGINE, &bytes)?))
             }
         }
 
