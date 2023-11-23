@@ -84,21 +84,26 @@ impl Drop for EpochThreadHandle {
 }
 
 lazy_static! {
-    pub static ref ENGINE: Engine = Engine::new(
-        Config::new()
-            .cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
+    pub static ref ENGINE: Engine = {
+        let mut config = Config::new();
+        config.cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
             .cranelift_nan_canonicalization(cfg!(feature = "deterministic-wasm"))
             .epoch_interruption(true)
             .wasm_reference_types(true)
             .wasm_simd(true)
-            .wasm_relaxed_simd(cfg!(not(feature = "deterministic-wasm")))
+            .wasm_relaxed_simd(true)
+            .relaxed_simd_deterministic(cfg!(feature = "deterministic-wasm"))
             .wasm_tail_call(true)
             .wasm_bulk_memory(true)
             .wasm_multi_value(true)
             .wasm_multi_memory(true)
-            .wasm_memory64(true)
-    )
-    .unwrap();
+            .wasm_memory64(true);
+        config.wasm_threads(false); // Disable threads for now
+        #[cfg(feature = "wasi-preview2")]
+        config.wasm_component_model(true);
+
+        Engine::new(&mut config).unwrap()
+    };
 }
 
 #[cfg(feature = "epoch-timeout")]
@@ -224,22 +229,9 @@ impl WasmModule {
                 Self::validate_module(module, &deps_map)?;
             }
             #[cfg(feature = "wasi-preview2")]
-            if let ModuleType::Component(_) = &module {
-                deps_map = HashMap::with_capacity(imports.len() as _);
-                for (k, v) in imports.iter() {
-                    let k = String::from_variant(&k)?;
-                    let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
-                    if !v
-                        .script()
-                        .map(|m| {
-                            m.get_data()
-                                .map(|m| matches!(m.module, ModuleType::Core(_)))
-                        })
-                        .unwrap()?
-                    {
-                        bail!("Import {} is not a core module", k);
-                    }
-                    deps_map.insert(k, v);
+            if let ModuleType::Component(_) = module {
+                if imports.len() > 0 {
+                    bail!("Imports not supported with component yet");
                 }
             }
 
