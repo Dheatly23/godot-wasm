@@ -10,10 +10,14 @@ use gdnative::log::Site;
 use gdnative::prelude::*;
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
+#[cfg(feature = "epoch-timeout")]
+use wasmtime::UpdateDeadline;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
 
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_config::Config;
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_engine::{ENGINE, EPOCH};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
@@ -315,4 +319,31 @@ where
     }
 
     Ok(ret)
+}
+
+pub fn config_store_common<T>(store: &mut Store<T>) -> Result<(), Error>
+where
+    T: AsRef<StoreData> + AsMut<StoreData>,
+{
+    #[cfg(feature = "epoch-timeout")]
+    if store.data().as_ref().config.with_epoch {
+        store.epoch_deadline_trap();
+        EPOCH.spawn_thread(|| ENGINE.increment_epoch());
+    } else {
+        store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
+    }
+
+    #[cfg(feature = "memory-limiter")]
+    {
+        let data = store.data_mut().as_mut();
+        if let Some(v) = data.config.max_memory {
+            data.memory_limits.max_memory = v;
+        }
+        if let Some(v) = data.config.max_entries {
+            data.memory_limits.max_table_entries = v;
+        }
+        store.limiter(|data| &mut data.as_mut().memory_limits);
+    }
+
+    Ok(())
 }

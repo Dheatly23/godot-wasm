@@ -11,12 +11,16 @@ use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
 use scopeguard::guard;
+#[cfg(feature = "wasi-preview2")]
+use wasmtime::component::Instance as InstanceComp;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 use wasmtime::{
     AsContextMut, Extern, Instance as InstanceWasm, Memory, ResourceLimiter, Store,
-    StoreContextMut, UpdateDeadline, ValRaw,
+    StoreContextMut, ValRaw,
 };
+#[cfg(feature = "wasi-preview2")]
+use wasmtime_wasi::preview2::{Table as WasiTable, WasiCtx as WasiCtxPv2, WasiView};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
 #[cfg(feature = "wasi")]
@@ -31,20 +35,18 @@ use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::{Config, ExternBindingType};
 #[cfg(feature = "wasi")]
 use crate::wasm_config::{PipeBindingType, PipeBufferType};
-#[cfg(feature = "epoch-timeout")]
-use crate::wasm_engine::EPOCH;
 use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, ENGINE};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
-#[cfg(feature = "epoch-timeout")]
-use crate::wasm_util::EPOCH_DEADLINE;
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
-use crate::wasm_util::{from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT};
+use crate::wasm_util::{
+    config_store_common, from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT,
+};
 use crate::{bail_with_site, site_context};
 
 #[derive(NativeClass)]
@@ -58,11 +60,37 @@ pub struct WasmInstance {
 
 pub struct InstanceData<T> {
     pub store: Mutex<Store<T>>,
-    pub instance: InstanceWasm,
+    pub instance: InstanceType,
     pub module: Instance<WasmModule, Shared>,
 
     #[cfg(feature = "wasi")]
     pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
+}
+
+pub enum InstanceType {
+    Core(InstanceWasm),
+    #[cfg(feature = "wasi-preview2")]
+    Component(InstanceComp),
+}
+
+impl InstanceType {
+    pub fn get_core(&self) -> Result<&InstanceWasm, Error> {
+        #[allow(irrefutable_let_patterns)]
+        if let Self::Core(m) = self {
+            Ok(m)
+        } else {
+            bail!("Instance is a component")
+        }
+    }
+
+    #[cfg(feature = "wasi-preview2")]
+    pub fn get_component(&self) -> Result<&InstanceComp, Error> {
+        if let Self::Component(m) = self {
+            Ok(m)
+        } else {
+            bail!("Instance is a component")
+        }
+    }
 }
 
 pub struct StoreData {
@@ -77,7 +105,7 @@ pub struct StoreData {
     pub object_registry: Option<ObjectRegistry>,
 
     #[cfg(feature = "wasi")]
-    pub wasi_ctx: Option<WasiCtx>,
+    pub wasi_ctx: MaybeWasi,
 }
 
 // SAFETY: Store data is safely contained within instance data?
@@ -96,10 +124,92 @@ impl AsMut<Self> for StoreData {
     }
 }
 
+impl Default for StoreData {
+    fn default() -> Self {
+        Self {
+            mutex_raw: ptr::null(),
+            config: Config::default(),
+            error_signal: None,
+
+            #[cfg(feature = "memory-limiter")]
+            memory_limits: MemoryLimit {
+                max_memory: u64::MAX,
+                max_table_entries: u64::MAX,
+            },
+
+            #[cfg(feature = "object-registry-compat")]
+            object_registry: None,
+
+            #[cfg(feature = "wasi")]
+            wasi_ctx: MaybeWasi::NoCtx,
+        }
+    }
+}
+
+impl StoreData {
+    pub fn new(config: Config) -> Self {
+        Self {
+            mutex_raw: ptr::null(),
+            config,
+            error_signal: None,
+
+            #[cfg(feature = "memory-limiter")]
+            memory_limits: MemoryLimit {
+                max_memory: u64::MAX,
+                max_table_entries: u64::MAX,
+            },
+
+            #[cfg(feature = "object-registry-compat")]
+            object_registry: None,
+
+            #[cfg(feature = "wasi")]
+            wasi_ctx: MaybeWasi::NoCtx,
+        }
+    }
+}
+
+pub enum MaybeWasi {
+    NoCtx,
+    Preview1(WasiCtx),
+    #[cfg(feature = "wasi-preview2")]
+    Preview2(WasiCtxPv2, WasiTable),
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl WasiView for StoreData {
+    fn table(&self) -> &WasiTable {
+        match &self.wasi_ctx {
+            MaybeWasi::Preview2(_, tbl) => tbl,
+            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+
+    fn table_mut(&mut self) -> &mut WasiTable {
+        match &mut self.wasi_ctx {
+            MaybeWasi::Preview2(_, tbl) => tbl,
+            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+
+    fn ctx(&self) -> &WasiCtxPv2 {
+        match &self.wasi_ctx {
+            MaybeWasi::Preview2(ctx, _) => ctx,
+            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+
+    fn ctx_mut(&mut self) -> &mut WasiCtxPv2 {
+        match &mut self.wasi_ctx {
+            MaybeWasi::Preview2(ctx, _) => ctx,
+            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+}
+
 #[cfg(feature = "memory-limiter")]
 pub struct MemoryLimit {
-    max_memory: u64,
-    max_table_entries: u64,
+    pub max_memory: u64,
+    pub max_table_entries: u64,
 }
 
 #[cfg(feature = "memory-limiter")]
@@ -148,25 +258,7 @@ where
         module: Instance<WasmModule, Shared>,
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
-        #[cfg(feature = "epoch-timeout")]
-        if store.data().as_ref().config.with_epoch {
-            store.epoch_deadline_trap();
-            EPOCH.spawn_thread(|| ENGINE.increment_epoch());
-        } else {
-            store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
-        }
-
-        #[cfg(feature = "memory-limiter")]
-        {
-            let data = store.data_mut().as_mut();
-            if let Some(v) = data.config.max_memory {
-                data.memory_limits.max_memory = v;
-            }
-            if let Some(v) = data.config.max_entries {
-                data.memory_limits.max_table_entries = v;
-            }
-            store.limiter(|data| &mut data.as_mut().memory_limits);
-        }
+        config_store_common(&mut store)?;
 
         #[cfg(feature = "wasi")]
         let mut wasi_stdin = None;
@@ -266,14 +358,19 @@ where
             }
 
             *wasi_ctx = match &config.wasi_context {
-                Some(ctx) => Some(WasiContext::build_ctx(ctx.clone(), builder, &*config)?),
-                None => Some(WasiContext::init_ctx_no_context(
+                Some(ctx) => {
+                    MaybeWasi::Preview1(WasiContext::build_ctx(ctx.clone(), builder, &*config)?)
+                }
+                None => MaybeWasi::Preview1(WasiContext::init_ctx_no_context(
                     builder.inherit_stdout().inherit_stderr().build(),
                     &*config,
                 )?),
             };
             let mut r = <Linker<T>>::new(&ENGINE);
-            add_to_linker(&mut r, |data| data.as_mut().wasi_ctx.as_mut().unwrap())?;
+            add_to_linker(&mut r, |data| match &mut data.as_mut().wasi_ctx {
+                MaybeWasi::Preview1(ctx) => ctx,
+                _ => panic!("Requested WASI Preview 1 interface while none set, this is a bug"),
+            })?;
             Some(r)
         } else {
             None
@@ -307,7 +404,7 @@ where
             .unwrap()?;
 
         Ok(Self {
-            instance,
+            instance: InstanceType::Core(instance),
             module,
             store: Mutex::new(store),
             #[cfg(feature = "wasi")]
@@ -325,7 +422,8 @@ where
         #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<T>>,
     ) -> Result<InstanceWasm, Error> {
         #[allow(irrefutable_let_patterns)]
-        let ModuleType::Core(module_) = &module.module else {
+        let ModuleType::Core(module_) = &module.module
+        else {
             bail_with_site!("Cannot instantiate component")
         };
         let it = module_.imports();
@@ -552,7 +650,7 @@ impl WasmInstance {
                         object_registry: None,
 
                         #[cfg(feature = "wasi")]
-                        wasi_ctx: None,
+                        wasi_ctx: MaybeWasi::NoCtx,
                     },
                 ),
                 module,
@@ -584,12 +682,12 @@ impl WasmInstance {
         for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> Result<R, Error>,
     {
         self.unwrap_data(base, |m| {
-            m.acquire_store(
-                |m, mut store| match m.instance.get_memory(&mut store, MEMORY_EXPORT) {
+            m.acquire_store(|m, mut store| {
+                match m.instance.get_core()?.get_memory(&mut store, MEMORY_EXPORT) {
                     Some(mem) => f(store, mem),
                     None => bail_with_site!("No memory exported"),
-                },
-            )
+                }
+            })
         })
     }
 
@@ -673,7 +771,7 @@ impl WasmInstance {
     ) -> Option<VariantArray> {
         self.unwrap_data(base, move |m| {
             m.acquire_store(move |m, mut store| {
-                let f = match m.instance.get_export(&mut store, &name) {
+                let f = match m.instance.get_core()?.get_export(&mut store, &name) {
                     Some(f) => match f {
                         Extern::Func(f) => f,
                         _ => bail_with_site!("Export {} is not a function", &name),
@@ -863,7 +961,7 @@ impl WasmInstance {
         self.unwrap_data(base, |m| {
             m.acquire_store(|m, mut store| {
                 Ok(matches!(
-                    m.instance.get_export(&mut store, MEMORY_EXPORT),
+                    m.instance.get_core()?.get_export(&mut store, MEMORY_EXPORT),
                     Some(Extern::Memory(_))
                 ))
             })
