@@ -324,6 +324,7 @@ where
         #[cfg(feature = "object-registry-extern")] externref_funcs: &mut ExternrefFuncs,
         #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<T>>,
     ) -> Result<InstanceWasm, Error> {
+        #[allow(irrefutable_let_patterns)]
         let ModuleType::Core(module_) = &module.module else {
             bail_with_site!("Cannot instantiate component")
         };
