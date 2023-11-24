@@ -102,7 +102,7 @@ lazy_static! {
         #[cfg(feature = "wasi-preview2")]
         config.wasm_component_model(true);
 
-        Engine::new(&mut config).unwrap()
+        Engine::new(&config).unwrap()
     };
 }
 
@@ -202,12 +202,12 @@ impl WasmModule {
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         let f = move || -> Result<(), Error> {
             let module = match VariantDispatch::from(&data) {
-                VariantDispatch::ByteArray(v) => Self::load_module(&*v.read()),
+                VariantDispatch::ByteArray(v) => Self::load_module(&v.read()),
                 VariantDispatch::GodotString(v) => Self::load_module(v.to_string().as_bytes()),
                 VariantDispatch::Object(v) => {
                     if let Ok(v) = <Ref<gdnative::api::File>>::from_variant(&v) {
                         let v = unsafe { v.assume_safe() };
-                        Self::load_module(&*v.get_buffer(v.get_len()).read())
+                        Self::load_module(&v.get_buffer(v.get_len()).read())
                     } else {
                         let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
                         let v = unsafe { v.assume_safe() };
@@ -232,7 +232,7 @@ impl WasmModule {
             }
             #[cfg(feature = "wasi-preview2")]
             if let ModuleType::Component(_) = module {
-                if imports.len() > 0 {
+                if !imports.is_empty() {
                     bail!("Imports not supported with component yet");
                 }
             }

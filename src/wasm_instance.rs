@@ -517,7 +517,7 @@ where
 
         #[cfg(feature = "epoch-timeout")]
         store.set_epoch_deadline(store.data().as_ref().config.epoch_timeout);
-        InstanceWasm::new(store, &module_, &imports)
+        InstanceWasm::new(store, module_, &imports)
     }
 
     pub fn acquire_store<F, R>(&self, f: F) -> R

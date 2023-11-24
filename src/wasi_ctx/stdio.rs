@@ -50,7 +50,7 @@ impl<T> Deref for StreamWrapper<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        &*self.inner
+        &self.inner
     }
 }
 
@@ -148,7 +148,7 @@ where
 {
     fn write(&mut self, bytes: Bytes) -> StreamResult<()> {
         let f = &self.0;
-        f(&*bytes);
+        f(&bytes);
         Ok(())
     }
 
@@ -249,7 +249,7 @@ where
     for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
 {
     fn write(&mut self, bytes: Bytes) -> StreamResult<()> {
-        match self.0.lock().write(&*bytes) {
+        match self.0.lock().write(&bytes) {
             Ok(n) => debug_assert_eq!(bytes.len(), n),
             Err(e) => return Err(StreamError::LastOperationFailed(e.into())),
         }
@@ -482,7 +482,7 @@ where
     for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
 {
     fn write(&mut self, bytes: Bytes) -> StreamResult<()> {
-        match self.0.lock().write(&*bytes) {
+        match self.0.lock().write(&bytes) {
             Ok(n) => debug_assert_eq!(bytes.len(), n),
             Err(e) => return Err(StreamError::LastOperationFailed(e.into())),
         }

@@ -44,7 +44,7 @@ fn instantiate(config: Config, module: Instance<WasmModule, Shared>) -> Result<C
     let mut store = Store::new(&ENGINE, StoreData::new(config));
     config_store_common(&mut store)?;
 
-    let config = &store.data().as_ref().config;
+    let config = &store.data().config;
     let ctx = if let Config {
         with_wasi: true,
         wasi_context: Some(ctx),
@@ -68,7 +68,7 @@ fn instantiate(config: Config, module: Instance<WasmModule, Shared>) -> Result<C
         instance: InstanceData {
             store: Mutex::new(store),
             instance: InstanceType::Component(instance),
-            module: module,
+            module,
 
             wasi_stdin: None,
         },
@@ -114,7 +114,7 @@ impl WasiCommand {
 
     pub fn initialize_(
         &self,
-        owner: &Reference,
+        _owner: &Reference,
         module: Instance<WasmModule, Shared>,
         config: Option<Variant>,
     ) -> bool {
