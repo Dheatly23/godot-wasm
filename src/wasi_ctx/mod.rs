@@ -20,7 +20,9 @@ use wasmtime_wasi::preview2::{
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
-use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, StreamWrapper, UnbufferedWritePipe};
+#[cfg(feature = "wasi-preview2")]
+use crate::wasi_ctx::stdio::StreamWrapper;
+use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::wasm_util::{FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST};
