@@ -511,7 +511,7 @@ where
                 }
             }
 
-            bail!("Unknown import {:?}.{:?}", i.module(), i.name());
+            bail_with_site!("Unknown import {:?}.{:?}", i.module(), i.name());
         }
 
         #[cfg(feature = "epoch-timeout")]
@@ -666,7 +666,7 @@ impl WasmInstance {
     {
         self.unwrap_data(base, |m| {
             m.acquire_store(|m, mut store| {
-                match m.instance.get_core()?.get_memory(&mut store, MEMORY_EXPORT) {
+                match site_context!(m.instance.get_core())?.get_memory(&mut store, MEMORY_EXPORT) {
                     Some(mem) => f(store, mem),
                     None => bail_with_site!("No memory exported"),
                 }
@@ -695,7 +695,7 @@ impl WasmInstance {
             let data = mem.data_mut(&mut store);
             match data.get_mut(i..i + n) {
                 Some(s) => f(s),
-                None => bail!("Index out of bound {}-{}", i, i + n),
+                None => bail_with_site!("Index out of bound {}-{}", i, i + n),
             }
         })
     }
@@ -754,7 +754,7 @@ impl WasmInstance {
     ) -> Option<VariantArray> {
         self.unwrap_data(base, move |m| {
             m.acquire_store(move |m, mut store| {
-                let f = match m.instance.get_core()?.get_export(&mut store, &name) {
+                let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &name) {
                     Some(f) => match f {
                         Extern::Func(f) => f,
                         _ => bail_with_site!("Export {} is not a function", &name),
@@ -944,7 +944,7 @@ impl WasmInstance {
         self.unwrap_data(base, |m| {
             m.acquire_store(|m, mut store| {
                 Ok(matches!(
-                    m.instance.get_core()?.get_export(&mut store, MEMORY_EXPORT),
+                    site_context!(m.instance.get_core())?.get_export(&mut store, MEMORY_EXPORT),
                     Some(Extern::Memory(_))
                 ))
             })

@@ -4,6 +4,7 @@ use std::{sync::Arc, thread, time};
 
 use anyhow::{bail, Error};
 use gdnative::export::user_data::Map;
+use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
@@ -18,6 +19,7 @@ use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
 use crate::wasm_util::{from_signature, HOST_MODULE, MODULE_INCLUDES};
+use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
 #[derive(Default)]
@@ -163,7 +165,7 @@ impl WasmModule {
         if let Some(data) = self.data.get() {
             Ok(data)
         } else {
-            bail!("Uninitialized module")
+            bail_with_site!("Uninitialized module")
         }
     }
 
@@ -174,7 +176,13 @@ impl WasmModule {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{:?}", e);
+                let s = format!("{:?}", e);
+                error(
+                    e.downcast_ref::<Site>()
+                        .copied()
+                        .unwrap_or_else(|| godot_site!()),
+                    &s,
+                );
                 None
             }
         }
@@ -183,18 +191,22 @@ impl WasmModule {
     fn load_module(bytes: &[u8]) -> Result<ModuleType, Error> {
         #[cfg(feature = "wasi-preview2")]
         {
-            let bytes = wat::parse_bytes(bytes)?;
+            let bytes = site_context!(wat::parse_bytes(bytes))?;
             if wasmparser::Parser::is_component(&bytes) {
-                Ok(ModuleType::Component(Component::from_binary(
-                    &ENGINE, &bytes,
+                Ok(ModuleType::Component(site_context!(
+                    Component::from_binary(&ENGINE, &bytes,)
                 )?))
             } else {
-                Ok(ModuleType::Core(Module::from_binary(&ENGINE, &bytes)?))
+                Ok(ModuleType::Core(site_context!(Module::from_binary(
+                    &ENGINE, &bytes
+                ))?))
             }
         }
 
         #[cfg(not(feature = "wasi-preview2"))]
-        Ok(ModuleType::Core(Module::new(&ENGINE, bytes)?))
+        Ok(ModuleType::Core(site_context!(Module::new(
+            &ENGINE, bytes
+        ))?))
     }
 
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
@@ -207,13 +219,13 @@ impl WasmModule {
                         let v = unsafe { v.assume_safe() };
                         Self::load_module(&v.get_buffer(v.get_len()).read())
                     } else {
-                        let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
+                        let v = site_context!(<Instance<WasmModule, Shared>>::from_variant(&v))?;
                         let v = unsafe { v.assume_safe() };
                         v.map(|this, _| Ok(this.get_data()?.module.clone()))
                             .unwrap()
                     }
                 }
-                _ => bail!("Unknown module value {}", data),
+                _ => bail_with_site!("Unknown module value {}", data),
             }?;
 
             let mut deps_map = HashMap::new();
@@ -221,8 +233,8 @@ impl WasmModule {
             if let ModuleType::Core(module) = &module {
                 deps_map = HashMap::with_capacity(imports.len() as _);
                 for (k, v) in imports.iter() {
-                    let k = String::from_variant(&k)?;
-                    let v = <Instance<WasmModule, Shared>>::from_variant(&v)?;
+                    let k = site_context!(String::from_variant(&k))?;
+                    let v = site_context!(<Instance<WasmModule, Shared>>::from_variant(&v))?;
                     deps_map.insert(k, v);
                 }
 
@@ -231,7 +243,7 @@ impl WasmModule {
             #[cfg(feature = "wasi-preview2")]
             if let ModuleType::Component(_) = module {
                 if !imports.is_empty() {
-                    bail!("Imports not supported with component yet");
+                    bail_with_site!("Imports not supported with component yet");
                 }
             }
 
@@ -259,7 +271,7 @@ impl WasmModule {
             }
 
             let j = match deps_map.get(i.module()) {
-                None => bail!("Unknown module {}", i.module()),
+                None => bail_with_site!("Unknown module {}", i.module()),
                 Some(m) => m
                     .script()
                     .map(|m| -> Result<_, Error> {
@@ -267,7 +279,7 @@ impl WasmModule {
                             ModuleType::Core(m) => Ok(m.get_export(i.name())),
                             #[cfg(feature = "wasi-preview2")]
                             ModuleType::Component(_) => {
-                                bail!("Import {} is a component", i.module())
+                                bail_with_site!("Import {} is a component", i.module())
                             }
                         }
                     })
@@ -276,7 +288,7 @@ impl WasmModule {
             let j = match j {
                 Some(v) => v,
                 None => {
-                    bail!("No import in module {} named {}", i.module(), i.name())
+                    bail_with_site!("No import in module {} named {}", i.module(), i.name())
                 }
             };
             let i = i.ty();
@@ -304,7 +316,7 @@ impl WasmModule {
                 }
                 (_, _) => false,
             } {
-                bail!("Import type mismatch ({:?} != {:?})", i, j)
+                bail_with_site!("Import type mismatch ({:?} != {:?})", i, j)
             }
         }
 
@@ -379,7 +391,7 @@ impl WasmModule {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
-            for i in m.module.get_core()?.exports() {
+            for i in site_context!(m.module.get_core())?.exports() {
                 if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
                     ret.insert(
@@ -402,7 +414,7 @@ impl WasmModule {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
-            for i in m.module.get_core()?.imports() {
+            for i in site_context!(m.module.get_core())?.imports() {
                 if i.module() != HOST_MODULE {
                     continue;
                 }
@@ -425,7 +437,7 @@ impl WasmModule {
     fn has_function(&self, name: String) -> bool {
         self.unwrap_data(|m| {
             Ok(matches!(
-                m.module.get_core()?.get_export(&name),
+                site_context!(m.module.get_core())?.get_export(&name),
                 Some(ExternType::Func(_))
             ))
         })
@@ -435,11 +447,12 @@ impl WasmModule {
     #[method]
     fn get_signature(&self, name: String) -> Option<Dictionary> {
         self.unwrap_data(|m| {
-            if let Some(ExternType::Func(f)) = m.module.get_core()?.get_export(&name) {
+            if let Some(ExternType::Func(f)) = site_context!(m.module.get_core())?.get_export(&name)
+            {
                 let (p, r) = from_signature(&f)?;
                 Ok(Dictionary::from_iter([("params", p), ("results", r)]).into_shared())
             } else {
-                bail!("No function named {}", name);
+                bail_with_site!("No function named {}", name);
             }
         })
     }
