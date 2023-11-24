@@ -10,6 +10,7 @@ use wasmtime::Store;
 use wasmtime_wasi::preview2::command::sync::{add_to_linker, Command};
 use wasmtime_wasi::preview2::{Table, WasiCtxBuilder};
 
+use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
 use crate::wasm_engine::{WasmModule, ENGINE};
 use crate::wasm_instance::{InstanceData, InstanceType, MaybeWasi, StoreData};
@@ -43,10 +44,19 @@ fn instantiate(config: Config, module: Instance<WasmModule, Shared>) -> Result<C
     let mut store = Store::new(&ENGINE, StoreData::new(config));
     config_store_common(&mut store)?;
 
-    let ctx = WasiCtxBuilder::new()
-        .inherit_stdout()
-        .inherit_stderr()
-        .build();
+    let config = &store.data().as_ref().config;
+    let ctx = if let Config {
+        with_wasi: true,
+        wasi_context: Some(ctx),
+        ..
+    } = config
+    {
+        WasiContext::build_ctx_preview_2(ctx.clone(), WasiCtxBuilder::new(), config)?
+    } else {
+        let mut ctx = WasiCtxBuilder::new();
+        WasiContext::init_ctx_no_context_preview_2(ctx.inherit_stdout().inherit_stderr(), config)?;
+        ctx.build()
+    };
     store.data_mut().wasi_ctx = MaybeWasi::Preview2(ctx, Table::new());
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
