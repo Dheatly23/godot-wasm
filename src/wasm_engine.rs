@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::mem::transmute;
 #[cfg(feature = "epoch-timeout")]
 use std::{sync::Arc, thread, time};
 
@@ -7,9 +6,10 @@ use anyhow::{bail, Error};
 use gdnative::export::user_data::Map;
 use gdnative::prelude::*;
 use lazy_static::lazy_static;
+use once_cell::sync::OnceCell;
+use parking_lot::Once;
 #[cfg(feature = "epoch-timeout")]
 use parking_lot::{Condvar, Mutex};
-use parking_lot::{Once, OnceState};
 #[cfg(feature = "wasi-preview2")]
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module};
@@ -116,8 +116,7 @@ lazy_static! {
 #[register_with(Self::register_properties)]
 #[user_data(gdnative::export::user_data::ArcData<WasmModule>)]
 pub struct WasmModule {
-    once: Once,
-    data: Option<ModuleData>,
+    data: OnceCell<ModuleData>,
 }
 
 pub struct ModuleData {
@@ -156,14 +155,13 @@ impl ModuleType {
 impl WasmModule {
     fn new(_owner: &Reference) -> Self {
         Self {
-            once: Once::new(),
-            data: None,
+            data: OnceCell::new(),
         }
     }
 
     pub fn get_data(&self) -> Result<&ModuleData, Error> {
-        if let OnceState::Done = self.once.state() {
-            Ok(self.data.as_ref().unwrap())
+        if let Some(data) = self.data.get() {
+            Ok(data)
         } else {
             bail!("Uninitialized module")
         }
@@ -200,7 +198,7 @@ impl WasmModule {
     }
 
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
-        let f = move || -> Result<(), Error> {
+        match self.data.get_or_try_init(move || -> Result<_, Error> {
             let module = match VariantDispatch::from(&data) {
                 VariantDispatch::ByteArray(v) => Self::load_module(&v.read()),
                 VariantDispatch::GodotString(v) => Self::load_module(v.to_string().as_bytes()),
@@ -237,30 +235,18 @@ impl WasmModule {
                 }
             }
 
-            // SAFETY: Should be called only once and nobody else can read module data
-            #[allow(mutable_transmutes)]
-            let this = unsafe { transmute::<&Self, &mut Self>(self) };
-            this.data = Some(ModuleData {
+            Ok(ModuleData {
                 name,
                 module,
                 imports: deps_map,
-            });
-
-            Ok(())
-        };
-
-        let mut r = true;
-        let ret = &mut r;
-
-        self.once.call_once(move || match f() {
-            Ok(()) => (),
+            })
+        }) {
+            Ok(_) => true,
             Err(e) => {
                 godot_error!("{:?}", e);
-                *ret = false;
+                false
             }
-        });
-
-        r
+        }
     }
 
     fn validate_module(

@@ -1,6 +1,5 @@
 use std::any::Any;
 use std::collections::HashMap;
-use std::mem::transmute;
 use std::ptr;
 use std::sync::Arc;
 
@@ -9,7 +8,8 @@ use gdnative::core_types::PoolElement;
 use gdnative::export::user_data::Map;
 use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
-use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
+use once_cell::sync::OnceCell;
+use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use scopeguard::guard;
 #[cfg(feature = "wasi-preview2")]
 use wasmtime::component::Instance as InstanceComp;
@@ -54,8 +54,7 @@ use crate::{bail_with_site, site_context};
 #[register_with(Self::register_properties)]
 #[user_data(gdnative::export::user_data::ArcData<WasmInstance>)]
 pub struct WasmInstance {
-    once: Once,
-    data: Option<InstanceData<StoreData>>,
+    data: OnceCell<InstanceData<StoreData>>,
 }
 
 pub struct InstanceData<T> {
@@ -578,16 +577,15 @@ impl StoreData {
 impl WasmInstance {
     fn new(_owner: &Reference) -> Self {
         Self {
-            once: Once::new(),
-            data: None,
+            data: OnceCell::new(),
         }
     }
 
     pub fn get_data(&self) -> Result<&InstanceData<StoreData>, Error> {
-        if let OnceState::Done = self.once.state() {
-            Ok(self.data.as_ref().unwrap())
+        if let Some(data) = self.data.get() {
+            Ok(data)
         } else {
-            bail_with_site!("Uninitialized module")
+            bail_with_site!("Uninitialized instance")
         }
     }
 
@@ -618,11 +616,8 @@ impl WasmInstance {
         host: Option<Dictionary>,
         config: Option<Variant>,
     ) -> bool {
-        let mut r = true;
-        let ret = &mut r;
-
-        self.once.call_once(move || {
-            match InstanceData::instantiate(
+        match self.data.get_or_try_init(move || {
+            InstanceData::instantiate(
                 owner,
                 Store::new(
                     &ENGINE,
@@ -655,26 +650,14 @@ impl WasmInstance {
                 ),
                 module,
                 host,
-            ) {
-                Ok(v) => {
-                    // SAFETY: Should be called only once and nobody else can read module data
-                    #[allow(mutable_transmutes)]
-                    let data = unsafe {
-                        transmute::<
-                            &Option<InstanceData<StoreData>>,
-                            &mut Option<InstanceData<StoreData>>,
-                        >(&self.data)
-                    };
-                    *data = Some(v);
-                }
-                Err(e) => {
-                    godot_error!("{}", e);
-                    *ret = false;
-                }
+            )
+        }) {
+            Ok(_) => true,
+            Err(e) => {
+                godot_error!("{}", e);
+                false
             }
-        });
-
-        r
+        }
     }
 
     fn get_memory<F, R>(&self, base: TRef<Reference>, f: F) -> Option<R>

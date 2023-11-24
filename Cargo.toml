@@ -50,6 +50,12 @@ features = [
   "sync",
 ]
 
+[dependencies.once_cell]
+version = "^1.18"
+features = [
+  "parking_lot",
+]
+
 [features]
 default = ["epoch-timeout", "memory-limiter", "object-registry", "wasi"]
 memory-limiter = []

@@ -1,10 +1,9 @@
-use std::mem::transmute;
-
 use anyhow::Error;
 use gdnative::export::user_data::Map;
 use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
-use parking_lot::{Mutex, Once, OnceState};
+use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use wasmtime::component::Linker;
 use wasmtime::Store;
 use wasmtime_wasi::preview2::command::sync::{add_to_linker, Command};
@@ -22,8 +21,7 @@ use crate::{bail_with_site, site_context};
 #[register_with(Self::register_properties)]
 #[user_data(gdnative::export::user_data::ArcData<WasiCommand>)]
 pub struct WasiCommand {
-    once: Once,
-    data: Option<CommandData>,
+    data: OnceCell<CommandData>,
 }
 
 pub struct CommandData {
@@ -79,16 +77,15 @@ fn instantiate(config: Config, module: Instance<WasmModule, Shared>) -> Result<C
 impl WasiCommand {
     fn new(_owner: &Reference) -> Self {
         Self {
-            once: Once::new(),
-            data: None,
+            data: OnceCell::new(),
         }
     }
 
     pub fn get_data(&self) -> Result<&CommandData, Error> {
-        if let OnceState::Done = self.once.state() {
-            Ok(self.data.as_ref().unwrap())
+        if let Some(data) = self.data.get() {
+            Ok(data)
         } else {
-            bail_with_site!("Uninitialized module")
+            bail_with_site!("Uninitialized instance")
         }
     }
 
@@ -118,11 +115,8 @@ impl WasiCommand {
         module: Instance<WasmModule, Shared>,
         config: Option<Variant>,
     ) -> bool {
-        let mut r = true;
-        let ret = &mut r;
-
-        self.once.call_once(move || {
-            match instantiate(
+        match self.data.get_or_try_init(move || {
+            instantiate(
                 match config {
                     Some(v) => match Config::from_variant(&v) {
                         Ok(v) => v,
@@ -134,23 +128,14 @@ impl WasiCommand {
                     None => Config::default(),
                 },
                 module,
-            ) {
-                Ok(v) => {
-                    // SAFETY: Should be called only once and nobody else can read module data
-                    #[allow(mutable_transmutes)]
-                    let data = unsafe {
-                        transmute::<&Option<CommandData>, &mut Option<CommandData>>(&self.data)
-                    };
-                    *data = Some(v);
-                }
-                Err(e) => {
-                    godot_error!("{}", e);
-                    *ret = false;
-                }
+            )
+        }) {
+            Ok(_) => true,
+            Err(e) => {
+                godot_error!("{}", e);
+                false
             }
-        });
-
-        r
+        }
     }
 }
 
