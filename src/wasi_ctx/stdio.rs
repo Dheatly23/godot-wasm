@@ -224,7 +224,10 @@ where
             unsafe {
                 ptr::copy_nonoverlapping(buf.as_ptr(), p, l);
                 buffer.set_len(0);
-                f(slice::from_raw_parts(p, buffer.capacity()));
+                f(slice::from_raw_parts(
+                    buffer.as_mut_ptr(),
+                    buffer.capacity(),
+                ));
             }
         }
         (_, buf) = buf.split_at(l);
@@ -385,7 +388,7 @@ where
             unsafe {
                 ptr::copy_nonoverlapping(buf.as_ptr(), p, l);
                 buffer.set_len(0);
-                f(slice::from_raw_parts(p, buffer.capacity()));
+                f(slice::from_raw_parts(buffer.as_mut_ptr(), buffer.capacity()));
             }
         }
         (_, buf) = buf.split_at(l);
