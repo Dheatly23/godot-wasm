@@ -24,7 +24,7 @@ parking_lot = "^0.12"
 anyhow = "^1.0"
 lazy_static = "^1.4"
 slab = { version = "^0.4", optional = true }
-wasi-common = { version = "^14.0", optional = true }
+wasi-common = { version = "^15.0", optional = true }
 wasmparser = { version = "^0.115", optional = true }
 bytes = { version = "^1.5", optional = true }
 wat = { version = "^1.0", optional = true }
@@ -34,7 +34,7 @@ memchr = { version = "^2.5", optional = true }
 camino = { version = "^1.1", optional = true }
 
 [dependencies.wasmtime]
-version = "^14.0"
+version = "^15.0"
 default-features = false
 features = [
   "cranelift",
@@ -43,7 +43,7 @@ features = [
 ]
 
 [dependencies.wasmtime-wasi]
-version = "^14.0"
+version = "^15.0"
 optional = true
 default-features = false
 features = [
