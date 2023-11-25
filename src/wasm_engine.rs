@@ -173,6 +173,7 @@ impl WasmModule {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
+                /*
                 let s = format!("{:?}", e);
                 error(
                     e.downcast_ref::<Site>()
@@ -180,6 +181,8 @@ impl WasmModule {
                         .unwrap_or_else(|| godot_site!()),
                     &s,
                 );
+                */
+                godot_error!("{:?}", e);
                 None
             }
         }
@@ -206,14 +209,14 @@ impl WasmModule {
         ))?))
     }
 
-    fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
+    fn _initialize(&self, name: GString, data: Variant, imports: Dictionary) -> bool {
         match self.data.get_or_try_init(move || -> Result<_, Error> {
             let module = if let Ok(v) = PackedByteArray::try_from_variant(&data) {
-                Self::load_module(&ENGINE, &v.to_vec())?
+                Self::load_module(&v.to_vec())?
             } else if let Ok(v) = String::try_from_variant(&data) {
-                Self::load_module(&ENGINE, &v)?
+                Self::load_module(v.as_bytes())?
             } else if let Ok(v) = <Gd<FileAccess>>::try_from_variant(&data) {
-                Self::load_module(&ENGINE, &v.get_buffer(v.get_length() as _).to_vec())?
+                Self::load_module(&v.get_buffer(v.get_length() as _).to_vec())?
             } else if let Ok(v) = <Gd<WasmModule>>::try_from_variant(&data) {
                 v.bind().get_data()?.module.clone()
             } else {
@@ -224,9 +227,11 @@ impl WasmModule {
             #[allow(irrefutable_let_patterns)]
             if let ModuleType::Core(module) = &module {
                 deps_map = HashMap::with_capacity(imports.len() as _);
-                for (k, v) in imports.iter() {
-                    let k = String::try_from_variant(&k).map_err(|e| site_context!(anyhow!("{:?}", e)))?;
-                    let v = <Gd<WasmModule>>::try_from_variant(&v).map_err(|e| site_context!(anyhow!("{:?}", e)))?;
+                for (k, v) in imports.iter_shared() {
+                    let k = String::try_from_variant(&k)
+                        .map_err(|e| site_context!(anyhow!("{:?}", e)))?;
+                    let v = <Gd<WasmModule>>::try_from_variant(&v)
+                        .map_err(|e| site_context!(anyhow!("{:?}", e)))?;
                     deps_map.insert(k, v);
                 }
 
@@ -255,7 +260,7 @@ impl WasmModule {
 
     fn validate_module(
         module: &Module,
-        deps_map: &HashMap<String, Instance<WasmModule, Shared>>,
+        deps_map: &HashMap<String, Gd<WasmModule>>,
     ) -> Result<(), Error> {
         for i in module.imports() {
             if MODULE_INCLUDES.iter().any(|j| *j == i.module()) {
@@ -265,7 +270,7 @@ impl WasmModule {
             let j = match deps_map.get(i.module()) {
                 None => bail!("Unknown module {}", i.module()),
                 Some(m) => match &m.bind().get_data()?.module {
-                    ModuleType::Core(m) => Ok(m.get_export(i.name())),
+                    ModuleType::Core(m) => m.get_export(i.name()),
                     #[cfg(feature = "wasi-preview2")]
                     ModuleType::Component(_) => {
                         bail_with_site!("Import {} is a component", i.module())
@@ -406,7 +411,9 @@ impl WasmModule {
     #[func]
     fn get_signature(&self, name: StringName) -> Dictionary {
         self.unwrap_data(|m| {
-            if let Some(ExternType::Func(f)) = site_context!(m.module.get_core())?.get_export(&name.to_string()) {
+            if let Some(ExternType::Func(f)) =
+                site_context!(m.module.get_core())?.get_export(&name.to_string())
+            {
                 let (p, r) = from_signature(&f)?;
                 Ok(Dictionary::from_iter([("params", p), ("results", r)]))
             } else {

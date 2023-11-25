@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use godot::prelude::*;
 #[cfg(feature = "wasi-preview2")]
 use bytes::Bytes;
+use godot::prelude::*;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use wasi_common::file::{FdFlags, FileType, WasiFile};

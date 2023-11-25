@@ -15,8 +15,7 @@ use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
 use wasmtime::ResourceLimiter;
 use wasmtime::{
-    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, UpdateDeadline,
-    ValRaw,
+    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
 };
 #[cfg(feature = "wasi-preview2")]
 use wasmtime_wasi::preview2::{Table as WasiTable, WasiCtx as WasiCtxPv2, WasiView};
@@ -31,7 +30,9 @@ use crate::wasi_ctx::stdio::{
 };
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
-use crate::wasm_config::{Config, ExternBindingType};
+use crate::wasm_config::Config;
+#[cfg(any(feature = "object-registry-compat", feature = "object-registry-extern"))]
+use crate::wasm_config::ExternBindingType;
 #[cfg(feature = "wasi")]
 use crate::wasm_config::{PipeBindingType, PipeBufferType};
 use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, ENGINE};
@@ -44,8 +45,8 @@ use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{
-    config_store_common, from_raw, make_host_module, option_to_variant, to_raw, variant_to_option, HOST_MODULE,
-    MEMORY_EXPORT,
+    config_store_common, from_raw, make_host_module, option_to_variant, to_raw, variant_to_option,
+    HOST_MODULE, MEMORY_EXPORT,
 };
 use crate::{bail_with_site, site_context};
 
@@ -58,13 +59,13 @@ pub struct WasmInstance {
 
     #[var(get = get_module)]
     #[allow(dead_code)]
-    module: GString,
+    module: Option<Gd<WasmModule>>,
 }
 
 pub struct InstanceData<T> {
     pub store: Mutex<Store<T>>,
     pub instance: InstanceType,
-    module: Gd<WasmModule>,
+    pub module: Gd<WasmModule>,
 
     #[cfg(feature = "wasi")]
     pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
@@ -256,7 +257,7 @@ where
     T: AsRef<StoreData> + AsMut<StoreData>,
 {
     pub fn instantiate(
-        mut store: Store<StoreData>,
+        mut store: Store<T>,
         module: Gd<WasmModule>,
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
@@ -424,10 +425,10 @@ where
 
             if let Some(v) = module.imports.get(i.module()) {
                 let v = loop {
-                    match insts.get(v.base()) {
+                    match insts.get(&v.instance_id()) {
                         Some(v) => break v,
                         None => {
-                            let t = f(
+                            let t = Self::instantiate_wasm(
                                 &mut *store,
                                 v.bind().get_data()?,
                                 &mut *insts,
@@ -439,7 +440,7 @@ where
                                 #[cfg(feature = "wasi")]
                                 wasi_linker,
                             )?;
-                            insts.insert(v.base().clone(), t);
+                            insts.insert(v.instance_id(), t);
                         }
                     }
                 };
@@ -557,7 +558,6 @@ impl WasmInstance {
     ) -> bool {
         match self.data.get_or_try_init(move || {
             InstanceData::instantiate(
-                owner,
                 Store::new(
                     &ENGINE,
                     StoreData {
@@ -603,7 +603,7 @@ impl WasmInstance {
     where
         for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> Result<R, Error>,
     {
-        self.unwrap_data(base, |m| {
+        self.unwrap_data(|m| {
             m.acquire_store(|m, mut store| {
                 match site_context!(m.instance.get_core())?.get_memory(&mut store, MEMORY_EXPORT) {
                     Some(mem) => f(store, mem),

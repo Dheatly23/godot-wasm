@@ -1,7 +1,5 @@
 use anyhow::Error;
-use gdnative::export::user_data::Map;
-use gdnative::log::{error, godot_site, Site};
-use gdnative::prelude::*;
+use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use wasmtime::component::Linker;
@@ -16,12 +14,16 @@ use crate::wasm_instance::{InstanceData, InstanceType, MaybeWasi, StoreData};
 use crate::wasm_util::config_store_common;
 use crate::{bail_with_site, site_context};
 
-#[derive(NativeClass)]
-#[inherit(Reference)]
-#[register_with(Self::register_properties)]
-#[user_data(gdnative::export::user_data::ArcData<WasiCommand>)]
+#[derive(GodotClass)]
+#[class(base=RefCounted, init)]
 pub struct WasiCommand {
+    #[base]
+    base: Base<RefCounted>,
     data: OnceCell<CommandData>,
+
+    #[var(get = get_module)]
+    #[allow(dead_code)]
+    module: Option<Gd<WasmModule>>,
 }
 
 pub struct CommandData {
@@ -29,15 +31,8 @@ pub struct CommandData {
     bindings: Command,
 }
 
-fn instantiate(config: Config, module: Instance<WasmModule, Shared>) -> Result<CommandData, Error> {
-    let comp = module
-        .script()
-        .map(|m| {
-            m.get_data()
-                .and_then(|m| site_context!(m.module.get_component()))
-                .map(|v| v.clone())
-        })
-        .unwrap()?;
+fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Error> {
+    let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
     let mut store = Store::new(&ENGINE, StoreData::new(config));
     config_store_common(&mut store)?;
@@ -75,12 +70,6 @@ fn instantiate(config: Config, module: Instance<WasmModule, Shared>) -> Result<C
 }
 
 impl WasiCommand {
-    fn new(_owner: &Reference) -> Self {
-        Self {
-            data: OnceCell::new(),
-        }
-    }
-
     pub fn get_data(&self) -> Result<&CommandData, Error> {
         if let Some(data) = self.data.get() {
             Ok(data)
@@ -89,13 +78,14 @@ impl WasiCommand {
         }
     }
 
-    pub fn unwrap_data<F, R>(&self, base: TRef<Reference>, f: F) -> Option<R>
+    pub fn unwrap_data<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&CommandData) -> Result<R, Error>,
     {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
+                /*
                 let s = format!("{:?}", e);
                 error(
                     e.downcast_ref::<Site>()
@@ -103,22 +93,24 @@ impl WasiCommand {
                         .unwrap_or_else(|| godot_site!()),
                     &s,
                 );
-                base.emit_signal("error_happened", &[s.owned_to_variant()]);
+                */
+                godot_error!("{:?}", e);
+                /*
+                self.base.emit_signal(
+                    StringName::from("error_happened"),
+                    &[format!("{}", e).to_variant()],
+                );
+                */
                 None
             }
         }
     }
 
-    pub fn initialize_(
-        &self,
-        _owner: &Reference,
-        module: Instance<WasmModule, Shared>,
-        config: Option<Variant>,
-    ) -> bool {
+    pub fn initialize_(&self, module: Gd<WasmModule>, config: Option<Variant>) -> bool {
         match self.data.get_or_try_init(move || {
             instantiate(
                 match config {
-                    Some(v) => match Config::from_variant(&v) {
+                    Some(v) => match Config::try_from_variant(&v) {
                         Ok(v) => v,
                         Err(e) => {
                             godot_error!("{}", e);
@@ -139,52 +131,32 @@ impl WasiCommand {
     }
 }
 
-#[methods]
+#[godot_api]
 impl WasiCommand {
-    /// Register properties
-    fn register_properties(builder: &ClassBuilder<Self>) {
-        builder
-            .property::<Option<Instance<WasmModule, Shared>>>("module")
-            .with_getter(|v, b| v.unwrap_data(b, |m| Ok(m.instance.module.clone())))
-            .done();
-
-        builder
-            .signal("error_happened")
-            .with_param("message", VariantType::GodotString)
-            .done();
-
-        builder
-            .signal("stdout_emit")
-            .with_param("message", VariantType::GodotString)
-            .done();
-
-        builder
-            .signal("stderr_emit")
-            .with_param("message", VariantType::GodotString)
-            .done();
-
-        builder.signal("stdin_request").done();
-    }
+    #[signal]
+    fn error_happened();
 
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
-    #[method]
-    fn initialize(
-        &self,
-        #[base] owner: TRef<Reference>,
-        module: Instance<WasmModule, Shared>,
-        #[opt] config: Option<Variant>,
-    ) -> Option<Ref<Reference>> {
-        if self.initialize_(owner.as_ref(), module, config) {
-            Some(owner.claim())
+    #[func]
+    fn initialize(&self, module: Gd<WasmModule>, config: Variant) -> Option<Gd<WasiCommand>> {
+        let config = if config.is_nil() { None } else { Some(config) };
+
+        if self.initialize_(module, config) {
+            <Gd<WasiCommand>>::try_from_instance_id(self.base.instance_id())
         } else {
             None
         }
     }
 
-    #[method]
-    fn run(&self, #[base] base: TRef<Reference>) -> bool {
-        self.unwrap_data(base, move |m| {
+    #[func]
+    fn get_module(&self) -> Option<Gd<WasmModule>> {
+        self.unwrap_data(|m| Ok(m.instance.module.clone()))
+    }
+
+    #[func]
+    fn run(&self) -> bool {
+        self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
                 Ok(m.bindings.wasi_cli_run().call_run(&mut store)?.is_ok())
             })
