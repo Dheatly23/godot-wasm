@@ -12,9 +12,15 @@ use godot::prelude::*;
 use wasi_common::dir::OpenResult;
 use wasi_common::file::{FdFlags, FileType, OFlags};
 use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
+#[cfg(feature = "wasi-preview2")]
+use wasmtime_wasi::preview2::{
+    DirPerms, FilePerms, WasiCtx as WasiCtxPv2, WasiCtxBuilder as WasiCtxBuilderPv2,
+};
 use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
+#[cfg(feature = "wasi-preview2")]
+use crate::wasi_ctx::stdio::StreamWrapper;
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
@@ -169,6 +175,113 @@ impl WasiContext {
         site_context!(ctx.push_preopened_dir(root, "."))?;
 
         Ok(ctx)
+    }
+
+    #[cfg(feature = "wasi-preview2")]
+    pub fn init_ctx_no_context_preview_2(
+        ctx: &mut WasiCtxBuilderPv2,
+        config: &Config,
+    ) -> Result<(), Error> {
+        for (k, v) in &config.wasi_envs {
+            ctx.env(k, v);
+        }
+
+        ctx.args(&config.wasi_args);
+
+        Ok(())
+    }
+
+    #[cfg(feature = "wasi-preview2")]
+    pub fn build_ctx_preview_2(
+        this: Instance<Self>,
+        mut ctx: WasiCtxBuilderPv2,
+        config: &Config,
+    ) -> Result<WasiCtxPv2, Error> {
+        let f = move |o: &Self, b: TRef<'_, Reference>| -> Result<_, Error> {
+            if config.wasi_stdout == PipeBindingType::Context {
+                if o.bypass_stdio {
+                    ctx.inherit_stdout();
+                } else {
+                    let base = b.claim();
+                    match config.wasi_stdout_buffer {
+                        PipeBufferType::Unbuffered => ctx.stdout(UnbufferedWritePipe::new(
+                            Self::emit_binary(base, "stdout_emit"),
+                        )),
+                        PipeBufferType::LineBuffer => ctx.stdout(StreamWrapper::from(
+                            LineWritePipe::new(Self::emit_string(base, "stdout_emit")),
+                        )),
+                        PipeBufferType::BlockBuffer => ctx.stdout(StreamWrapper::from(
+                            BlockWritePipe::new(Self::emit_binary(base, "stdout_emit")),
+                        )),
+                    };
+                }
+            }
+            if config.wasi_stderr == PipeBindingType::Context {
+                if o.bypass_stdio {
+                    ctx.inherit_stderr();
+                } else {
+                    let base = b.claim();
+                    match config.wasi_stderr_buffer {
+                        PipeBufferType::Unbuffered => ctx.stderr(UnbufferedWritePipe::new(
+                            Self::emit_binary(base, "stderr_emit"),
+                        )),
+                        PipeBufferType::LineBuffer => ctx.stderr(StreamWrapper::from(
+                            LineWritePipe::new(Self::emit_string(base, "stderr_emit")),
+                        )),
+                        PipeBufferType::BlockBuffer => ctx.stderr(StreamWrapper::from(
+                            BlockWritePipe::new(Self::emit_binary(base, "stderr_emit")),
+                        )),
+                    };
+                }
+            }
+
+            Self::init_ctx_no_context_preview_2(&mut ctx, config)?;
+
+            for (k, v) in o
+                .envs
+                .iter()
+                .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
+            {
+                ctx.env(k, v);
+            }
+
+            let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
+            let (perms, file_perms) = if fs_writable {
+                (
+                    DirPerms::READ | DirPerms::MUTATE,
+                    FilePerms::READ | FilePerms::WRITE,
+                )
+            } else {
+                (DirPerms::READ, FilePerms::READ)
+            };
+
+            for (guest, host) in o.physical_mount.iter() {
+                let dir = site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority(),))?;
+                ctx.preopened_dir(dir, perms, file_perms, guest);
+            }
+
+            // XXX: Cannot do memory filesystem yet :((
+            /*
+            let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
+                Some(o.memfs_root.clone()),
+                Capability {
+                    read: true,
+                    write: fs_writable,
+                },
+                true,
+                OFlags::DIRECTORY,
+                FdFlags::empty(),
+            ))?
+            else {
+                bail_with_site!("Root should be a directory!")
+            };
+            site_context!(ctx.push_preopened_dir(root, "."))?;
+            */
+
+            Ok(ctx.build())
+        };
+
+        unsafe { this.assume_safe().map(f)? }
     }
 
     fn wrap_result<F, T>(f: F) -> Option<T>

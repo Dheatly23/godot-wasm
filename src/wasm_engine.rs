@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::mem::transmute;
 #[cfg(feature = "epoch-timeout")]
 use std::{sync::Arc, thread, time};
 
@@ -7,15 +6,19 @@ use anyhow::{anyhow, bail, Error};
 use godot::engine::FileAccess;
 use godot::prelude::*;
 use lazy_static::lazy_static;
+use once_cell::sync::OnceCell;
+use parking_lot::Once;
 #[cfg(feature = "epoch-timeout")]
 use parking_lot::{Condvar, Mutex};
-use parking_lot::{Once, OnceState};
+#[cfg(feature = "wasi-preview2")]
+use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module};
 
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
 use crate::wasm_util::{from_signature, variant_to_option, HOST_MODULE, MODULE_INCLUDES};
+use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
 #[derive(Default)]
@@ -82,21 +85,26 @@ impl Drop for EpochThreadHandle {
 }
 
 lazy_static! {
-    pub static ref ENGINE: Engine = Engine::new(
-        Config::new()
-            .cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
+    pub static ref ENGINE: Engine = {
+        let mut config = Config::new();
+        config.cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
             .cranelift_nan_canonicalization(cfg!(feature = "deterministic-wasm"))
             .epoch_interruption(true)
             .wasm_reference_types(true)
             .wasm_simd(true)
-            .wasm_relaxed_simd(cfg!(not(feature = "deterministic-wasm")))
+            .wasm_relaxed_simd(true)
+            .relaxed_simd_deterministic(cfg!(feature = "deterministic-wasm"))
             .wasm_tail_call(true)
             .wasm_bulk_memory(true)
             .wasm_multi_value(true)
             .wasm_multi_memory(true)
-            .wasm_memory64(true)
-    )
-    .unwrap();
+            .wasm_memory64(true);
+        config.wasm_threads(false); // Disable threads for now
+        #[cfg(feature = "wasi-preview2")]
+        config.wasm_component_model(true);
+
+        Engine::new(&config).unwrap()
+    };
 }
 
 #[cfg(feature = "epoch-timeout")]
@@ -109,8 +117,7 @@ lazy_static! {
 pub struct WasmModule {
     #[base]
     base: Base<RefCounted>,
-    once: Once,
-    data: Option<ModuleData>,
+    data: OnceCell<ModuleData>,
 
     #[var(get = get_name)]
     #[allow(dead_code)]
@@ -119,16 +126,43 @@ pub struct WasmModule {
 
 pub struct ModuleData {
     name: GString,
-    pub module: Module,
+    pub module: ModuleType,
     pub imports: HashMap<String, Gd<WasmModule>>,
+}
+
+#[derive(Clone)]
+pub enum ModuleType {
+    Core(Module),
+    #[cfg(feature = "wasi-preview2")]
+    Component(Component),
+}
+
+impl ModuleType {
+    pub fn get_core(&self) -> Result<&Module, Error> {
+        #[allow(irrefutable_let_patterns)]
+        if let Self::Core(m) = self {
+            Ok(m)
+        } else {
+            bail!("Module is a component")
+        }
+    }
+
+    #[cfg(feature = "wasi-preview2")]
+    pub fn get_component(&self) -> Result<&Component, Error> {
+        if let Self::Component(m) = self {
+            Ok(m)
+        } else {
+            bail!("Module is a component")
+        }
+    }
 }
 
 impl WasmModule {
     pub fn get_data(&self) -> Result<&ModuleData, Error> {
-        if let OnceState::Done = self.once.state() {
-            Ok(self.data.as_ref().unwrap())
+        if let Some(data) = self.data.get() {
+            Ok(data)
         } else {
-            bail!("Uninitialized module")
+            bail_with_site!("Uninitialized module")
         }
     }
 
@@ -139,101 +173,141 @@ impl WasmModule {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
-                godot_error!("{:?}", e);
+                let s = format!("{:?}", e);
+                error(
+                    e.downcast_ref::<Site>()
+                        .copied()
+                        .unwrap_or_else(|| godot_site!()),
+                    &s,
+                );
                 None
             }
         }
     }
 
-    fn _initialize(&self, name: GString, data: Variant, imports: Dictionary) -> bool {
-        let f = move || -> Result<(), Error> {
+    fn load_module(bytes: &[u8]) -> Result<ModuleType, Error> {
+        #[cfg(feature = "wasi-preview2")]
+        {
+            let bytes = site_context!(wat::parse_bytes(bytes))?;
+            if wasmparser::Parser::is_component(&bytes) {
+                Ok(ModuleType::Component(site_context!(
+                    Component::from_binary(&ENGINE, &bytes,)
+                )?))
+            } else {
+                Ok(ModuleType::Core(site_context!(Module::from_binary(
+                    &ENGINE, &bytes
+                ))?))
+            }
+        }
+
+        #[cfg(not(feature = "wasi-preview2"))]
+        Ok(ModuleType::Core(site_context!(Module::new(
+            &ENGINE, bytes
+        ))?))
+    }
+
+    fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
+        match self.data.get_or_try_init(move || -> Result<_, Error> {
             let module = if let Ok(v) = PackedByteArray::try_from_variant(&data) {
-                Module::new(&ENGINE, &v.to_vec())?
+                Self::load_module(&ENGINE, &v.to_vec())?
             } else if let Ok(v) = String::try_from_variant(&data) {
-                Module::new(&ENGINE, &v)?
+                Self::load_module(&ENGINE, &v)?
             } else if let Ok(v) = <Gd<FileAccess>>::try_from_variant(&data) {
-                Module::new(&ENGINE, &v.get_buffer(v.get_length() as _).to_vec())?
+                Self::load_module(&ENGINE, &v.get_buffer(v.get_length() as _).to_vec())?
             } else if let Ok(v) = <Gd<WasmModule>>::try_from_variant(&data) {
                 v.bind().get_data()?.module.clone()
             } else {
                 bail!("Unknown module value {}", data)
             };
 
-            let mut deps_map = HashMap::with_capacity(imports.len() as _);
-            for (k, v) in imports.iter_shared() {
-                let k = String::try_from_variant(&k).map_err(|e| anyhow!("{:?}", e))?;
-                let v = <Gd<WasmModule>>::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))?;
-                deps_map.insert(k, v);
-            }
-
-            for i in module.imports() {
-                if MODULE_INCLUDES.iter().any(|j| *j == i.module()) {
-                    continue;
+            let mut deps_map = HashMap::new();
+            #[allow(irrefutable_let_patterns)]
+            if let ModuleType::Core(module) = &module {
+                deps_map = HashMap::with_capacity(imports.len() as _);
+                for (k, v) in imports.iter() {
+                    let k = String::try_from_variant(&k).map_err(|e| site_context!(anyhow!("{:?}", e)))?;
+                    let v = <Gd<WasmModule>>::try_from_variant(&v).map_err(|e| site_context!(anyhow!("{:?}", e)))?;
+                    deps_map.insert(k, v);
                 }
 
-                let j = match deps_map.get(i.module()) {
-                    None => bail!("Unknown module {}", i.module()),
-                    Some(m) => m.bind().get_data()?.module.get_export(i.name()),
-                };
-                let j = match j {
-                    Some(v) => v,
-                    None => {
-                        bail!("No import in module {} named {}", i.module(), i.name())
-                    }
-                };
-                let i = i.ty();
-                if !match (&i, &j) {
-                    (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
-                    (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
-                    (ExternType::Table(t1), ExternType::Table(t2)) => {
-                        t1.element() == t2.element()
-                            && t1.minimum() <= t2.minimum()
-                            && match (t1.maximum(), t2.maximum()) {
-                                (None, _) => true,
-                                (_, None) => false,
-                                (Some(a), Some(b)) => a >= b,
-                            }
-                    }
-                    (ExternType::Memory(m1), ExternType::Memory(m2)) => {
-                        m1.is_64() == m2.is_64()
-                            && m1.is_shared() == m2.is_shared()
-                            && m1.minimum() <= m2.minimum()
-                            && match (m1.maximum(), m2.maximum()) {
-                                (None, _) => true,
-                                (_, None) => false,
-                                (Some(a), Some(b)) => a >= b,
-                            }
-                    }
-                    (_, _) => false,
-                } {
-                    bail!("Import type mismatch ({:?} != {:?})", i, j)
+                Self::validate_module(module, &deps_map)?;
+            }
+            #[cfg(feature = "wasi-preview2")]
+            if let ModuleType::Component(_) = module {
+                if !imports.is_empty() {
+                    bail_with_site!("Imports not supported with component yet");
                 }
             }
 
-            // SAFETY: Should be called only once and nobody else can read module data
-            #[allow(mutable_transmutes)]
-            let this = unsafe { transmute::<&Self, &mut Self>(self) };
-            this.data = Some(ModuleData {
+            Ok(ModuleData {
                 name,
                 module,
                 imports: deps_map,
-            });
-
-            Ok(())
-        };
-
-        let mut r = true;
-        let ret = &mut r;
-
-        self.once.call_once(move || match f() {
-            Ok(()) => (),
+            })
+        }) {
+            Ok(_) => true,
             Err(e) => {
                 godot_error!("{:?}", e);
-                *ret = false;
+                false
             }
-        });
+        }
+    }
 
-        r
+    fn validate_module(
+        module: &Module,
+        deps_map: &HashMap<String, Instance<WasmModule, Shared>>,
+    ) -> Result<(), Error> {
+        for i in module.imports() {
+            if MODULE_INCLUDES.iter().any(|j| *j == i.module()) {
+                continue;
+            }
+
+            let j = match deps_map.get(i.module()) {
+                None => bail!("Unknown module {}", i.module()),
+                Some(m) => match &m.bind().get_data()?.module {
+                    ModuleType::Core(m) => Ok(m.get_export(i.name())),
+                    #[cfg(feature = "wasi-preview2")]
+                    ModuleType::Component(_) => {
+                        bail_with_site!("Import {} is a component", i.module())
+                    }
+                },
+            };
+            let j = match j {
+                Some(v) => v,
+                None => {
+                    bail_with_site!("No import in module {} named {}", i.module(), i.name())
+                }
+            };
+            let i = i.ty();
+            if !match (&i, &j) {
+                (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
+                (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
+                (ExternType::Table(t1), ExternType::Table(t2)) => {
+                    t1.element() == t2.element()
+                        && t1.minimum() <= t2.minimum()
+                        && match (t1.maximum(), t2.maximum()) {
+                            (None, _) => true,
+                            (_, None) => false,
+                            (Some(a), Some(b)) => a >= b,
+                        }
+                }
+                (ExternType::Memory(m1), ExternType::Memory(m2)) => {
+                    m1.is_64() == m2.is_64()
+                        && m1.is_shared() == m2.is_shared()
+                        && m1.minimum() <= m2.minimum()
+                        && match (m1.maximum(), m2.maximum()) {
+                            (None, _) => true,
+                            (_, None) => false,
+                            (Some(a), Some(b)) => a >= b,
+                        }
+                }
+                (_, _) => false,
+            } {
+                bail_with_site!("Import type mismatch ({:?} != {:?})", i, j)
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -274,7 +348,7 @@ impl WasmModule {
             let mut ret = Dictionary::new();
             let params_str = StringName::from("params");
             let results_str = StringName::from("results");
-            for i in m.module.exports() {
+            for i in site_context!(m.module.get_core())?.exports() {
                 if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
                     ret.set(
@@ -298,7 +372,7 @@ impl WasmModule {
             let mut ret = Dictionary::new();
             let params_str = StringName::from("params");
             let results_str = StringName::from("results");
-            for i in m.module.imports() {
+            for i in site_context!(m.module.get_core())?.imports() {
                 if i.module() != HOST_MODULE {
                     continue;
                 }
@@ -322,7 +396,7 @@ impl WasmModule {
     fn has_function(&self, name: StringName) -> bool {
         self.unwrap_data(|m| {
             Ok(matches!(
-                m.module.get_export(&name.to_string()),
+                site_context!(m.module.get_core())?.get_export(&name.to_string()),
                 Some(ExternType::Func(_))
             ))
         })
@@ -332,11 +406,11 @@ impl WasmModule {
     #[func]
     fn get_signature(&self, name: StringName) -> Dictionary {
         self.unwrap_data(|m| {
-            if let Some(ExternType::Func(f)) = m.module.get_export(&name.to_string()) {
+            if let Some(ExternType::Func(f)) = site_context!(m.module.get_core())?.get_export(&name.to_string()) {
                 let (p, r) = from_signature(&f)?;
                 Ok(Dictionary::from_iter([("params", p), ("results", r)]))
             } else {
-                bail!("No function named {}", name);
+                bail_with_site!("No function named {}", name);
             }
         })
         .unwrap_or_default()

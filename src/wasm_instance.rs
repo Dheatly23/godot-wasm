@@ -1,13 +1,15 @@
 use std::any::Any;
 use std::collections::HashMap;
-use std::mem::transmute;
 use std::ptr;
 use std::sync::Arc;
 
 use anyhow::{bail, Error};
 use godot::prelude::*;
-use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, Once, OnceState, RawMutex};
+use once_cell::sync::OnceCell;
+use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use scopeguard::guard;
+#[cfg(feature = "wasi-preview2")]
+use wasmtime::component::Instance as InstanceComp;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
@@ -16,6 +18,8 @@ use wasmtime::{
     AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, UpdateDeadline,
     ValRaw,
 };
+#[cfg(feature = "wasi-preview2")]
+use wasmtime_wasi::preview2::{Table as WasiTable, WasiCtx as WasiCtxPv2, WasiView};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
 #[cfg(feature = "wasi")]
@@ -30,21 +34,17 @@ use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::{Config, ExternBindingType};
 #[cfg(feature = "wasi")]
 use crate::wasm_config::{PipeBindingType, PipeBufferType};
-#[cfg(feature = "epoch-timeout")]
-use crate::wasm_engine::EPOCH;
-use crate::wasm_engine::{ModuleData, WasmModule, ENGINE};
+use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, ENGINE};
 #[cfg(feature = "object-registry-extern")]
-use crate::wasm_externref::EXTERNREF_LINKER;
+use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
-use crate::wasm_objregistry::{ObjectRegistry, OBJREGISTRY_LINKER};
-#[cfg(feature = "epoch-timeout")]
-use crate::wasm_util::EPOCH_DEADLINE;
+use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{
-    from_raw, make_host_module, option_to_variant, to_raw, variant_to_option, HOST_MODULE,
+    config_store_common, from_raw, make_host_module, option_to_variant, to_raw, variant_to_option, HOST_MODULE,
     MEMORY_EXPORT,
 };
 use crate::{bail_with_site, site_context};
@@ -54,21 +54,46 @@ use crate::{bail_with_site, site_context};
 pub struct WasmInstance {
     #[base]
     base: Base<RefCounted>,
-    once: Once,
-    data: Option<InstanceData>,
+    data: OnceCell<InstanceData<StoreData>>,
 
     #[var(get = get_module)]
     #[allow(dead_code)]
     module: GString,
 }
 
-pub struct InstanceData {
-    store: Mutex<Store<StoreData>>,
-    instance: InstanceWasm,
+pub struct InstanceData<T> {
+    pub store: Mutex<Store<T>>,
+    pub instance: InstanceType,
     module: Gd<WasmModule>,
 
     #[cfg(feature = "wasi")]
-    wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
+    pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
+}
+
+pub enum InstanceType {
+    Core(InstanceWasm),
+    #[cfg(feature = "wasi-preview2")]
+    Component(InstanceComp),
+}
+
+impl InstanceType {
+    pub fn get_core(&self) -> Result<&InstanceWasm, Error> {
+        #[allow(irrefutable_let_patterns)]
+        if let Self::Core(m) = self {
+            Ok(m)
+        } else {
+            bail!("Instance is a component")
+        }
+    }
+
+    #[cfg(feature = "wasi-preview2")]
+    pub fn get_component(&self) -> Result<&InstanceComp, Error> {
+        if let Self::Component(m) = self {
+            Ok(m)
+        } else {
+            bail!("Instance is a component")
+        }
+    }
 }
 
 pub struct StoreData {
@@ -83,17 +108,111 @@ pub struct StoreData {
     pub object_registry: Option<ObjectRegistry>,
 
     #[cfg(feature = "wasi")]
-    pub wasi_ctx: Option<WasiCtx>,
+    pub wasi_ctx: MaybeWasi,
 }
 
 // SAFETY: Store data is safely contained within instance data?
 unsafe impl Send for StoreData {}
 unsafe impl Sync for StoreData {}
 
+impl AsRef<Self> for StoreData {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+impl AsMut<Self> for StoreData {
+    fn as_mut(&mut self) -> &mut Self {
+        self
+    }
+}
+
+impl Default for StoreData {
+    fn default() -> Self {
+        Self {
+            mutex_raw: ptr::null(),
+            config: Config::default(),
+            error_signal: None,
+
+            #[cfg(feature = "memory-limiter")]
+            memory_limits: MemoryLimit {
+                max_memory: u64::MAX,
+                max_table_entries: u64::MAX,
+            },
+
+            #[cfg(feature = "object-registry-compat")]
+            object_registry: None,
+
+            #[cfg(feature = "wasi")]
+            wasi_ctx: MaybeWasi::NoCtx,
+        }
+    }
+}
+
+impl StoreData {
+    pub fn new(config: Config) -> Self {
+        Self {
+            mutex_raw: ptr::null(),
+            config,
+            error_signal: None,
+
+            #[cfg(feature = "memory-limiter")]
+            memory_limits: MemoryLimit {
+                max_memory: u64::MAX,
+                max_table_entries: u64::MAX,
+            },
+
+            #[cfg(feature = "object-registry-compat")]
+            object_registry: None,
+
+            #[cfg(feature = "wasi")]
+            wasi_ctx: MaybeWasi::NoCtx,
+        }
+    }
+}
+
+pub enum MaybeWasi {
+    NoCtx,
+    Preview1(WasiCtx),
+    #[cfg(feature = "wasi-preview2")]
+    Preview2(WasiCtxPv2, WasiTable),
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl WasiView for StoreData {
+    fn table(&self) -> &WasiTable {
+        match &self.wasi_ctx {
+            MaybeWasi::Preview2(_, tbl) => tbl,
+            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+
+    fn table_mut(&mut self) -> &mut WasiTable {
+        match &mut self.wasi_ctx {
+            MaybeWasi::Preview2(_, tbl) => tbl,
+            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+
+    fn ctx(&self) -> &WasiCtxPv2 {
+        match &self.wasi_ctx {
+            MaybeWasi::Preview2(ctx, _) => ctx,
+            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+
+    fn ctx_mut(&mut self) -> &mut WasiCtxPv2 {
+        match &mut self.wasi_ctx {
+            MaybeWasi::Preview2(ctx, _) => ctx,
+            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+}
+
 #[cfg(feature = "memory-limiter")]
 pub struct MemoryLimit {
-    max_memory: u64,
-    max_table_entries: u64,
+    pub max_memory: u64,
+    pub max_table_entries: u64,
 }
 
 #[cfg(feature = "memory-limiter")]
@@ -132,41 +251,27 @@ impl ResourceLimiter for MemoryLimit {
     }
 }
 
-impl InstanceData {
+impl<T> InstanceData<T>
+where
+    T: AsRef<StoreData> + AsMut<StoreData>,
+{
     pub fn instantiate(
         mut store: Store<StoreData>,
         module: Gd<WasmModule>,
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
-        #[cfg(feature = "epoch-timeout")]
-        if store.data().config.with_epoch {
-            store.epoch_deadline_trap();
-            EPOCH.spawn_thread(|| ENGINE.increment_epoch());
-        } else {
-            store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
-        }
-
-        #[cfg(feature = "memory-limiter")]
-        {
-            if let Some(v) = store.data().config.max_memory {
-                store.data_mut().memory_limits.max_memory = v;
-            }
-            if let Some(v) = store.data().config.max_entries {
-                store.data_mut().memory_limits.max_table_entries = v;
-            }
-            store.limiter(|data| &mut data.memory_limits);
-        }
+        config_store_common(&mut store)?;
 
         #[cfg(feature = "wasi")]
         let mut wasi_stdin = None;
 
         #[cfg(feature = "wasi")]
-        let wasi_linker = if store.data().config.with_wasi {
+        let wasi_linker = if store.data().as_ref().config.with_wasi {
             let mut builder = WasiCtxBuilder::new();
 
             let StoreData {
                 wasi_ctx, config, ..
-            } = store.data_mut();
+            } = store.data_mut().as_mut();
 
             if config.wasi_stdin == PipeBindingType::Instance {
                 if let Some(data) = config.wasi_stdin_data.clone() {
@@ -202,134 +307,47 @@ impl InstanceData {
             }
 
             *wasi_ctx = match &config.wasi_context {
-                Some(ctx) => Some(WasiContext::build_ctx(ctx.clone(), builder, &*config)?),
-                None => Some(WasiContext::init_ctx_no_context(
+                Some(ctx) => {
+                    MaybeWasi::Preview1(WasiContext::build_ctx(ctx.clone(), builder, &*config)?)
+                }
+                None => MaybeWasi::Preview1(WasiContext::init_ctx_no_context(
                     builder.inherit_stdout().inherit_stderr().build(),
                     &*config,
                 )?),
             };
-            let mut r = <Linker<StoreData>>::new(&ENGINE);
-            add_to_linker(&mut r, |data| data.wasi_ctx.as_mut().unwrap())?;
+            let mut r = <Linker<T>>::new(&ENGINE);
+            add_to_linker(&mut r, |data| match &mut data.as_mut().wasi_ctx {
+                MaybeWasi::Preview1(ctx) => ctx,
+                _ => panic!("Requested WASI Preview 1 interface while none set, this is a bug"),
+            })?;
             Some(r)
         } else {
             None
         };
 
-        #[allow(unreachable_patterns)]
-        match store.data().config.extern_bind {
-            ExternBindingType::None => (),
-            #[cfg(feature = "object-registry-compat")]
-            ExternBindingType::Registry => {
-                store.data_mut().object_registry = Some(ObjectRegistry::default());
-            }
-            _ => panic!("Unimplemented binding"),
-        }
-
-        type InstMap = HashMap<InstanceId, InstanceWasm>;
-
-        fn f(
-            store: &mut Store<StoreData>,
-            module: &ModuleData,
-            insts: &mut InstMap,
-            host: &Option<HashMap<String, Extern>>,
-            #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<StoreData>>,
-        ) -> Result<InstanceWasm, Error> {
-            let it = module.module.imports();
-            let mut imports = Vec::with_capacity(it.len());
-
-            for i in it {
-                match (i.module(), &store.data().config) {
-                    (HOST_MODULE, _) => {
-                        if let Some(host) = host.as_ref() {
-                            if let Some(v) = host.get(i.name()) {
-                                imports.push(v.clone());
-                                continue;
-                            }
-                        }
-                    }
-                    #[cfg(feature = "object-registry-compat")]
-                    (
-                        OBJREGISTRY_MODULE,
-                        Config {
-                            extern_bind: ExternBindingType::Registry,
-                            ..
-                        },
-                    ) => {
-                        if let Some(v) = OBJREGISTRY_LINKER.get_by_import(&mut *store, &i) {
-                            imports.push(v);
-                            continue;
-                        }
-                    }
-                    #[cfg(feature = "object-registry-extern")]
-                    (
-                        EXTERNREF_MODULE,
-                        Config {
-                            extern_bind: ExternBindingType::Native,
-                            ..
-                        },
-                    ) => {
-                        if let Some(v) = EXTERNREF_LINKER.get_by_import(&mut *store, &i) {
-                            imports.push(v);
-                            continue;
-                        }
-                    }
-                    _ => (),
-                }
-
-                #[cfg(feature = "wasi")]
-                if let Some(l) = wasi_linker.as_ref() {
-                    if let Some(v) = l.get_by_import(&mut *store, &i) {
-                        imports.push(v);
-                        continue;
-                    }
-                }
-
-                if let Some(v) = module.imports.get(i.module()) {
-                    let v = loop {
-                        match insts.get(&v.instance_id()) {
-                            Some(v) => break v,
-                            None => {
-                                let t = f(
-                                    &mut *store,
-                                    v.bind().get_data()?,
-                                    &mut *insts,
-                                    host,
-                                    #[cfg(feature = "wasi")]
-                                    wasi_linker,
-                                )?;
-                                insts.insert(v.instance_id(), t);
-                            }
-                        }
-                    };
-
-                    if let Some(v) = v.get_export(&mut *store, i.name()) {
-                        imports.push(v.clone());
-                        continue;
-                    }
-                }
-
-                bail!("Unknown import {:?}.{:?}", i.module(), i.name());
-            }
-
-            #[cfg(feature = "epoch-timeout")]
-            store.set_epoch_deadline(store.data().config.epoch_timeout);
-            InstanceWasm::new(store, &module.module, &imports)
+        #[cfg(feature = "object-registry-compat")]
+        if store.data().as_ref().config.extern_bind == ExternBindingType::Registry {
+            store.data_mut().as_mut().object_registry = Some(ObjectRegistry::default());
         }
 
         let host = host.map(|h| make_host_module(&mut store, h)).transpose()?;
 
         let sp = &mut store;
-        let instance = f(
+        let instance = Self::instantiate_wasm(
             sp,
             module.bind().get_data()?,
             &mut HashMap::new(),
             &host,
+            #[cfg(feature = "object-registry-compat")]
+            &mut ObjregistryFuncs::default(),
+            #[cfg(feature = "object-registry-extern")]
+            &mut ExternrefFuncs::default(),
             #[cfg(feature = "wasi")]
             wasi_linker.as_ref(),
         )?;
 
         Ok(Self {
-            instance,
+            instance: InstanceType::Core(instance),
             module,
             store: Mutex::new(store),
             #[cfg(feature = "wasi")]
@@ -337,16 +355,119 @@ impl InstanceData {
         })
     }
 
-    fn acquire_store<F, R>(&self, f: F) -> R
+    fn instantiate_wasm(
+        store: &mut Store<T>,
+        module: &ModuleData,
+        insts: &mut HashMap<InstanceId, InstanceWasm>,
+        host: &Option<HashMap<String, Extern>>,
+        #[cfg(feature = "object-registry-compat")] objregistry_funcs: &mut ObjregistryFuncs,
+        #[cfg(feature = "object-registry-extern")] externref_funcs: &mut ExternrefFuncs,
+        #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<T>>,
+    ) -> Result<InstanceWasm, Error> {
+        #[allow(irrefutable_let_patterns)]
+        let ModuleType::Core(module_) = &module.module
+        else {
+            bail_with_site!("Cannot instantiate component")
+        };
+        let it = module_.imports();
+        let mut imports = Vec::with_capacity(it.len());
+
+        for i in it {
+            match (i.module(), &store.data().as_ref().config) {
+                (HOST_MODULE, _) => {
+                    if let Some(host) = host.as_ref() {
+                        if let Some(v) = host.get(i.name()) {
+                            imports.push(v.clone());
+                            continue;
+                        }
+                    }
+                }
+                #[cfg(feature = "object-registry-compat")]
+                (
+                    OBJREGISTRY_MODULE,
+                    Config {
+                        extern_bind: ExternBindingType::Registry,
+                        ..
+                    },
+                ) => {
+                    if let Some(v) =
+                        objregistry_funcs.get_func(&mut store.as_context_mut(), i.name())
+                    {
+                        imports.push(v.into());
+                        continue;
+                    }
+                }
+                #[cfg(feature = "object-registry-extern")]
+                (
+                    EXTERNREF_MODULE,
+                    Config {
+                        extern_bind: ExternBindingType::Native,
+                        ..
+                    },
+                ) => {
+                    if let Some(v) = externref_funcs.get_func(&mut store.as_context_mut(), i.name())
+                    {
+                        imports.push(v.into());
+                        continue;
+                    }
+                }
+                _ => (),
+            }
+
+            #[cfg(feature = "wasi")]
+            if let Some(l) = wasi_linker.as_ref() {
+                if let Some(v) = l.get_by_import(&mut *store, &i) {
+                    imports.push(v);
+                    continue;
+                }
+            }
+
+            if let Some(v) = module.imports.get(i.module()) {
+                let v = loop {
+                    match insts.get(v.base()) {
+                        Some(v) => break v,
+                        None => {
+                            let t = f(
+                                &mut *store,
+                                v.bind().get_data()?,
+                                &mut *insts,
+                                host,
+                                #[cfg(feature = "object-registry-compat")]
+                                &mut *objregistry_funcs,
+                                #[cfg(feature = "object-registry-extern")]
+                                &mut *externref_funcs,
+                                #[cfg(feature = "wasi")]
+                                wasi_linker,
+                            )?;
+                            insts.insert(v.base().clone(), t);
+                        }
+                    }
+                };
+
+                if let Some(v) = v.get_export(&mut *store, i.name()) {
+                    imports.push(v.clone());
+                    continue;
+                }
+            }
+
+            bail_with_site!("Unknown import {:?}.{:?}", i.module(), i.name());
+        }
+
+        #[cfg(feature = "epoch-timeout")]
+        store.set_epoch_deadline(store.data().as_ref().config.epoch_timeout);
+        InstanceWasm::new(store, module_, &imports)
+    }
+
+    pub fn acquire_store<F, R>(&self, f: F) -> R
     where
-        for<'a> F: FnOnce(&Self, StoreContextMut<'a, StoreData>) -> R,
+        for<'a> F: FnOnce(&Self, StoreContextMut<'a, T>) -> R,
     {
         let mut guard_ = self.store.lock();
 
         let _scope;
         // SAFETY: Context should be destroyed after function call
         unsafe {
-            let p = &mut guard_.data_mut().mutex_raw as *mut _;
+            let p = &mut guard_.data_mut().as_mut().mutex_raw as *mut _;
             let mut v = self.store.raw() as *const _;
             ptr::swap(p, &mut v);
             _scope = guard(p, move |p| {
@@ -393,17 +514,17 @@ impl StoreData {
 }
 
 impl WasmInstance {
-    pub fn get_data(&self) -> Result<&InstanceData, Error> {
-        if let OnceState::Done = self.once.state() {
-            Ok(self.data.as_ref().unwrap())
+    pub fn get_data(&self) -> Result<&InstanceData<StoreData>, Error> {
+        if let Some(data) = self.data.get() {
+            Ok(data)
         } else {
-            bail_with_site!("Uninitialized module")
+            bail_with_site!("Uninitialized instance")
         }
     }
 
     pub fn unwrap_data<F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(&InstanceData) -> Result<R, Error>,
+        F: FnOnce(&InstanceData<StoreData>) -> Result<R, Error>,
     {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
@@ -434,11 +555,9 @@ impl WasmInstance {
         host: Option<Dictionary>,
         config: Option<Variant>,
     ) -> bool {
-        let mut r = true;
-        let ret = &mut r;
-
-        self.once.call_once(move || {
-            match InstanceData::instantiate(
+        match self.data.get_or_try_init(move || {
+            InstanceData::instantiate(
+                owner,
                 Store::new(
                     &ENGINE,
                     StoreData {
@@ -465,41 +584,32 @@ impl WasmInstance {
                         object_registry: None,
 
                         #[cfg(feature = "wasi")]
-                        wasi_ctx: None,
+                        wasi_ctx: MaybeWasi::NoCtx,
                     },
                 ),
                 module,
                 host,
-            ) {
-                Ok(v) => {
-                    // SAFETY: Should be called only once and nobody else can read module data
-                    #[allow(mutable_transmutes)]
-                    let data = unsafe {
-                        transmute::<&Option<InstanceData>, &mut Option<InstanceData>>(&self.data)
-                    };
-                    *data = Some(v);
-                }
-                Err(e) => {
-                    godot_error!("{}", e);
-                    *ret = false;
-                }
+            )
+        }) {
+            Ok(_) => true,
+            Err(e) => {
+                godot_error!("{}", e);
+                false
             }
-        });
-
-        r
+        }
     }
 
     fn get_memory<F, R>(&self, f: F) -> Option<R>
     where
         for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> Result<R, Error>,
     {
-        self.unwrap_data(|m| {
-            m.acquire_store(
-                |m, mut store| match m.instance.get_memory(&mut store, MEMORY_EXPORT) {
+        self.unwrap_data(base, |m| {
+            m.acquire_store(|m, mut store| {
+                match site_context!(m.instance.get_core())?.get_memory(&mut store, MEMORY_EXPORT) {
                     Some(mem) => f(store, mem),
                     None => bail_with_site!("No memory exported"),
-                },
-            )
+                }
+            })
         })
     }
 
@@ -567,7 +677,7 @@ impl WasmInstance {
         self.unwrap_data(move |m| {
             m.acquire_store(move |m, mut store| {
                 let name = name.to_string();
-                let f = match m.instance.get_export(&mut store, &name) {
+                let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &name) {
                     Some(f) => match f {
                         Extern::Func(f) => f,
                         _ => bail_with_site!("Export {} is not a function", &name),
@@ -740,7 +850,7 @@ impl WasmInstance {
         self.unwrap_data(|m| {
             m.acquire_store(|m, mut store| {
                 Ok(matches!(
-                    m.instance.get_export(&mut store, MEMORY_EXPORT),
+                    site_context!(m.instance.get_core())?.get_export(&mut store, MEMORY_EXPORT),
                     Some(Extern::Memory(_))
                 ))
             })

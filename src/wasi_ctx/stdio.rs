@@ -1,5 +1,7 @@
 use std::fmt::{Display, Result as FmtResult, Write as _};
 use std::io::{IoSlice, IoSliceMut, Result as IoResult, SeekFrom, Write};
+#[cfg(feature = "wasi-preview2")]
+use std::ops::Deref;
 use std::ptr;
 use std::slice;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -7,14 +9,52 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use godot::prelude::*;
+#[cfg(feature = "wasi-preview2")]
+use bytes::Bytes;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use wasi_common::file::{FdFlags, FileType, WasiFile};
 use wasi_common::{Error, ErrorExt};
+#[cfg(feature = "wasi-preview2")]
+use wasmtime_wasi::preview2::{
+    HostOutputStream, StdoutStream, StreamError, StreamResult, Subscribe,
+};
 
 const BUFFER_LEN: usize = 8192;
 const NL_BYTE: u8 = 10;
 
+#[cfg(feature = "wasi-preview2")]
+#[repr(transparent)]
+pub struct StreamWrapper<T> {
+    inner: Arc<T>,
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl<T> From<T> for StreamWrapper<T> {
+    fn from(v: T) -> Self {
+        Self { inner: Arc::new(v) }
+    }
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl<T> Clone for StreamWrapper<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl<T> Deref for StreamWrapper<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+#[derive(Clone)]
 pub struct UnbufferedWritePipe<F>(F)
 where
     for<'a> F: Fn(&'a [u8]);
@@ -77,6 +117,50 @@ where
     }
 }
 
+#[cfg(feature = "wasi-preview2")]
+impl<F> StdoutStream for UnbufferedWritePipe<F>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + Clone + 'static,
+{
+    fn stream(&self) -> Box<dyn HostOutputStream> {
+        Box::new(self.clone())
+    }
+
+    fn isatty(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "wasi-preview2")]
+#[async_trait]
+impl<F> Subscribe for UnbufferedWritePipe<F>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
+{
+    // Always ready
+    async fn ready(&mut self) {}
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl<F> HostOutputStream for UnbufferedWritePipe<F>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
+{
+    fn write(&mut self, bytes: Bytes) -> StreamResult<()> {
+        let f = &self.0;
+        f(&bytes);
+        Ok(())
+    }
+
+    fn flush(&mut self) -> StreamResult<()> {
+        Ok(())
+    }
+
+    fn check_write(&mut self) -> StreamResult<usize> {
+        Ok(usize::MAX)
+    }
+}
+
 pub struct LineWritePipe<F>(Mutex<InnerLineWriter<F>>)
 where
     for<'a> F: Fn(&'a [u8]);
@@ -132,6 +216,52 @@ where
 
     async fn writable(&self) -> Result<(), Error> {
         Ok(())
+    }
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl<F> StdoutStream for StreamWrapper<LineWritePipe<F>>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
+{
+    fn stream(&self) -> Box<dyn HostOutputStream> {
+        Box::new(self.clone())
+    }
+
+    fn isatty(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "wasi-preview2")]
+#[async_trait]
+impl<F> Subscribe for StreamWrapper<LineWritePipe<F>>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
+{
+    // Always ready
+    async fn ready(&mut self) {}
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl<F> HostOutputStream for StreamWrapper<LineWritePipe<F>>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
+{
+    fn write(&mut self, bytes: Bytes) -> StreamResult<()> {
+        match self.0.lock().write(&bytes) {
+            Ok(n) => debug_assert_eq!(bytes.len(), n),
+            Err(e) => return Err(StreamError::LastOperationFailed(e.into())),
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) -> StreamResult<()> {
+        Ok(())
+    }
+
+    fn check_write(&mut self) -> StreamResult<usize> {
+        Ok(usize::MAX)
     }
 }
 
@@ -224,7 +354,10 @@ where
             unsafe {
                 ptr::copy_nonoverlapping(buf.as_ptr(), p, l);
                 buffer.set_len(0);
-                f(slice::from_raw_parts(p, buffer.capacity()));
+                f(slice::from_raw_parts(
+                    buffer.as_mut_ptr(),
+                    buffer.capacity(),
+                ));
             }
         }
         (_, buf) = buf.split_at(l);
@@ -319,6 +452,52 @@ where
     }
 }
 
+#[cfg(feature = "wasi-preview2")]
+impl<F> StdoutStream for StreamWrapper<BlockWritePipe<F>>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
+{
+    fn stream(&self) -> Box<dyn HostOutputStream> {
+        Box::new(self.clone())
+    }
+
+    fn isatty(&self) -> bool {
+        false
+    }
+}
+
+#[cfg(feature = "wasi-preview2")]
+#[async_trait]
+impl<F> Subscribe for StreamWrapper<BlockWritePipe<F>>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
+{
+    // Always ready
+    async fn ready(&mut self) {}
+}
+
+#[cfg(feature = "wasi-preview2")]
+impl<F> HostOutputStream for StreamWrapper<BlockWritePipe<F>>
+where
+    for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
+{
+    fn write(&mut self, bytes: Bytes) -> StreamResult<()> {
+        match self.0.lock().write(&bytes) {
+            Ok(n) => debug_assert_eq!(bytes.len(), n),
+            Err(e) => return Err(StreamError::LastOperationFailed(e.into())),
+        }
+        Ok(())
+    }
+
+    fn flush(&mut self) -> StreamResult<()> {
+        Ok(())
+    }
+
+    fn check_write(&mut self) -> StreamResult<usize> {
+        Ok(usize::MAX)
+    }
+}
+
 struct InnerBlockWriter<F>
 where
     for<'a> F: Fn(&'a [u8]),
@@ -385,7 +564,10 @@ where
             unsafe {
                 ptr::copy_nonoverlapping(buf.as_ptr(), p, l);
                 buffer.set_len(0);
-                f(slice::from_raw_parts(p, buffer.capacity()));
+                f(slice::from_raw_parts(
+                    buffer.as_mut_ptr(),
+                    buffer.capacity(),
+                ));
             }
         }
         (_, buf) = buf.split_at(l);

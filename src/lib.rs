@@ -1,3 +1,5 @@
+#[cfg(feature = "wasi-preview2")]
+mod preview2;
 #[cfg(feature = "wasi")]
 mod wasi_ctx;
 mod wasm_config;

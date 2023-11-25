@@ -10,10 +10,14 @@ use anyhow::{anyhow, bail, Error};
 use godot::prelude::*;
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
+#[cfg(feature = "epoch-timeout")]
+use wasmtime::UpdateDeadline;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
 
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_config::Config;
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_engine::{ENGINE, EPOCH};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
@@ -96,6 +100,31 @@ pub fn add_site(e: Error, site: Site<'static>) -> Error {
     }
 }
 */
+
+#[macro_export]
+macro_rules! func_registry{
+    ($head:literal, $($t:tt)*) => {
+        $crate::func_registry!{(Funcs, $head), $($t)*}
+    };
+    (($fi:ident, $head:literal) $(, $i:ident => $e:expr)* $(,)?) => {
+        #[derive(Default)]
+        pub struct $fi {
+            $($i: Option<Func>),*
+        }
+
+        impl $fi {
+            pub fn get_func<T>(&mut self, store: &mut StoreContextMut<'_, T>, name: &str) -> Option<Func>
+            where
+                T: AsRef<StoreData> + AsMut<StoreData>,
+            {
+                match name {
+                    $(concat!($head, stringify!($i)) => Some(self.$i.get_or_insert_with(move || Func::wrap(store, $e)).clone()),)*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
 
 pub fn option_to_variant<T: ToGodot>(t: Option<T>) -> Variant {
     t.map_or_else(Variant::nil, |t| t.to_variant())
@@ -249,16 +278,19 @@ impl<T> DerefMut for SendSyncWrapper<T> {
     }
 }
 
-fn wrap_godot_method(
-    store: impl AsContextMut<Data = StoreData>,
+fn wrap_godot_method<T>(
+    store: impl AsContextMut<Data = T>,
     ty: FuncType,
     obj: Variant,
     method: GString,
-) -> Func {
+) -> Func
+where
+    T: AsRef<StoreData> + AsMut<StoreData>,
+{
     let obj = SendSyncWrapper(obj);
     let method = SendSyncWrapper(method);
     let ty_cloned = ty.clone();
-    let f = move |mut ctx: Caller<StoreData>, args: &mut [ValRaw]| -> Result<(), Error> {
+    let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> Result<(), Error> {
         let pi = ty.params();
         let mut p = Vec::with_capacity(pi.len());
         for (ix, t) in pi.enumerate() {
@@ -274,14 +306,14 @@ fn wrap_godot_method(
             Ok(v) => v,
             Err(_) => bail!("Cannot convert object"),
         };
-        let r = ctx.data_mut().release_store(|| {
+        let r = ctx.data_mut().as_mut().release_store(|| {
             site_context!(catch_unwind(AssertUnwindSafe(
                 || obj.call(StringName::from(&*method), &p)
             ))
             .map_err(|_| anyhow!("Error trying to call")))
         })?;
 
-        if let Some(msg) = ctx.data_mut().error_signal.take() {
+        if let Some(msg) = ctx.data_mut().as_mut().error_signal.take() {
             return Err(Error::msg(msg));
         }
 
@@ -304,7 +336,7 @@ fn wrap_godot_method(
             epoch_autoreset: true,
             epoch_timeout,
             ..
-        } = ctx.data().config
+        } = ctx.data().as_ref().config
         {
             ctx.as_context_mut().set_epoch_deadline(epoch_timeout);
         }
@@ -315,10 +347,13 @@ fn wrap_godot_method(
     unsafe { Func::new_unchecked(store, ty_cloned, f) }
 }
 
-pub fn make_host_module(
-    store: &mut Store<StoreData>,
+pub fn make_host_module<T>(
+    store: &mut Store<T>,
     dict: Dictionary,
-) -> Result<HashMap<String, Extern>, Error> {
+) -> Result<HashMap<String, Extern>, Error>
+where
+    T: AsRef<StoreData> + AsMut<StoreData>,
+{
     let mut ret = HashMap::new();
     for (k, v) in dict.iter_shared() {
         let k = site_context!(GString::try_from_variant(&k).map_err(|e| anyhow!("{:?}", e)))?
@@ -367,4 +402,31 @@ pub fn make_host_module(
     }
 
     Ok(ret)
+}
+
+pub fn config_store_common<T>(store: &mut Store<T>) -> Result<(), Error>
+where
+    T: AsRef<StoreData> + AsMut<StoreData>,
+{
+    #[cfg(feature = "epoch-timeout")]
+    if store.data().as_ref().config.with_epoch {
+        store.epoch_deadline_trap();
+        EPOCH.spawn_thread(|| ENGINE.increment_epoch());
+    } else {
+        store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
+    }
+
+    #[cfg(feature = "memory-limiter")]
+    {
+        let data = store.data_mut().as_mut();
+        if let Some(v) = data.config.max_memory {
+            data.memory_limits.max_memory = v;
+        }
+        if let Some(v) = data.config.max_entries {
+            data.memory_limits.max_table_entries = v;
+        }
+        store.limiter(|data| &mut data.as_mut().memory_limits);
+    }
+
+    Ok(())
 }
