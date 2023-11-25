@@ -14,29 +14,37 @@ struct WavePoint {
 #[derive(Debug, Default)]
 pub struct Wave {
     arr: Vec<WavePoint>,
-    temp: Vec<f32>,
     width: usize,
     height: usize,
+
+    residue: f32,
 }
 
 const SIZE: usize = 64;
-const SPEED_SCALE: f32 = 16.0;
+const TIME_SCALE: f32 = 1.0 / 64.0;
+const SPEED_SCALE: f32 = TIME_SCALE * 16.0;
+const MAX_REP: usize = 16;
+
+impl Wave {
+    fn xy_iter(&self) -> impl Iterator<Item = (usize, usize)> {
+        let Self { height, width, .. } = *self;
+        (0..height).flat_map(move |y| (0..width).zip(repeat(y)))
+    }
+}
 
 impl Renderable for Wave {
     fn new() -> Self {
         let mut ret = Self {
             arr: vec![WavePoint::default(); SIZE * SIZE],
-            temp: vec![0.0; SIZE * SIZE],
             width: SIZE,
             height: SIZE,
+
+            residue: 0.0,
         };
+
         let (ox, oy) = (ret.width as f32 * 0.5, ret.height as f32 * 0.5);
         let (dx, dy) = (5.0 / (ret.width - 1) as f32, 5.0 / (ret.height - 1) as f32);
-        for (p, (x, y)) in ret.arr.iter_mut().zip(
-            (0..ret.height)
-                .cycle()
-                .flat_map(|y| (0..ret.width).zip(repeat(y))),
-        ) {
+        for ((x, y), p) in ret.xy_iter().zip(ret.arr.iter_mut()) {
             let x = (x as f32 - ox) * dx;
             let y = (y as f32 - oy) * dy;
             p.position = (-(x * x + y * y)).exp() * 5.0;
@@ -46,32 +54,50 @@ impl Renderable for Wave {
     }
 
     fn step(&mut self, _time: f32, mut delta: f32) {
-        delta *= SPEED_SCALE;
-        for ((i, (p, t)), (x, y)) in self.arr.iter().zip(&mut self.temp).enumerate().zip(
-            (0..self.height)
-                .cycle()
-                .flat_map(|y| (0..self.width).zip(repeat(y))),
-        ) {
-            let mut d = p.position * -4.0;
-            if x > 0 {
-                d += self.arr[i - 1].position;
-            }
-            if x < self.width - 1 {
-                d += self.arr[i + 1].position;
-            }
-            if y > 0 {
-                d += self.arr[i - self.width].position;
-            }
-            if y < self.height - 1 {
-                d += self.arr[i + self.width].position;
+        delta += self.residue;
+        let n = (delta.div_euclid(TIME_SCALE) as usize).min(MAX_REP);
+        self.residue = delta.rem_euclid(TIME_SCALE);
+
+        for _ in 0..n {
+            for (i, (x, y)) in self.xy_iter().enumerate() {
+                let mut d = self.arr[i].position * -3.0;
+
+                let xm = x > 0;
+                let xp = x < self.width - 1;
+                let ym = y > 0;
+                let yp = y < self.height - 1;
+
+                if xm {
+                    d += self.arr[i - 1].position * 0.5;
+                }
+                if xp {
+                    d += self.arr[i + 1].position * 0.5;
+                }
+                if ym {
+                    d += self.arr[i - self.width].position * 0.5;
+                }
+                if yp {
+                    d += self.arr[i + self.width].position * 0.5;
+                }
+                if xm && ym {
+                    d += self.arr[i - self.width - 1].position * 0.25;
+                }
+                if xp && ym {
+                    d += self.arr[i - self.width + 1].position * 0.25;
+                }
+                if xm && yp {
+                    d += self.arr[i + self.width - 1].position * 0.25;
+                }
+                if xp && yp {
+                    d += self.arr[i + self.width + 1].position * 0.25;
+                }
+
+                self.arr[i].velocity += d * SPEED_SCALE;
             }
 
-            *t = d;
-        }
-
-        for (i, j) in self.arr.iter_mut().zip(&self.temp) {
-            i.velocity += *j * delta;
-            i.position += i.velocity * delta;
+            for i in self.arr.iter_mut() {
+                i.position += i.velocity * SPEED_SCALE;
+            }
         }
     }
 
@@ -89,11 +115,7 @@ impl Renderable for Wave {
         );
         let (dx_, dy_) = (dx * 5.0, dy * 5.0);
 
-        for ((i, p), (x, y)) in self.arr.iter().enumerate().zip(
-            (0..self.height)
-                .cycle()
-                .flat_map(|y| (0..self.width).zip(repeat(y))),
-        ) {
+        for ((x, y), (i, p)) in self.xy_iter().zip(self.arr.iter().enumerate()) {
             let p = p.position;
             let x_ = x as f32;
             let y_ = y as f32;
