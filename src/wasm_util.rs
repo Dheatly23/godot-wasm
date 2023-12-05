@@ -8,6 +8,7 @@ use std::time;
 
 use anyhow::{anyhow, bail, Error};
 use godot::prelude::*;
+use godot::builtin::meta::{ConvertError};
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
 #[cfg(feature = "epoch-timeout")]
@@ -130,7 +131,7 @@ pub fn option_to_variant<T: ToGodot>(t: Option<T>) -> Variant {
     t.map_or_else(Variant::nil, |t| t.to_variant())
 }
 
-pub fn variant_to_option<T: FromGodot>(v: Variant) -> Result<Option<T>, VariantConversionError> {
+pub fn variant_to_option<T: FromGodot>(v: Variant) -> Result<Option<T>, ConvertError> {
     if v.is_nil() {
         Ok(None)
     } else {

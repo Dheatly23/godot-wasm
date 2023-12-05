@@ -529,6 +529,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gensym"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "913dce4c5f06c2ea40fc178c06f777ac89fc6b1383e90c254fafb1abe4ba3c82"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+ "uuid",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -565,7 +577,7 @@ checksum = "b5418c17512bdf42730f9032c74e1ae39afc408745ebb2acf72fbc4691c17945"
 [[package]]
 name = "godot"
 version = "0.1.0"
-source = "git+https://github.com/godot-rust/gdext?rev=8ec6a229065396b209f14652334455c92063e342#8ec6a229065396b209f14652334455c92063e342"
+source = "git+https://github.com/godot-rust/gdext?rev=7dee976484db8fc756a2442a9edebcaf48f2b677#7dee976484db8fc756a2442a9edebcaf48f2b677"
 dependencies = [
  "godot-core",
  "godot-macros",
@@ -574,7 +586,7 @@ dependencies = [
 [[package]]
 name = "godot-bindings"
 version = "0.1.0"
-source = "git+https://github.com/godot-rust/gdext?rev=8ec6a229065396b209f14652334455c92063e342#8ec6a229065396b209f14652334455c92063e342"
+source = "git+https://github.com/godot-rust/gdext?rev=7dee976484db8fc756a2442a9edebcaf48f2b677#7dee976484db8fc756a2442a9edebcaf48f2b677"
 dependencies = [
  "godot4-prebuilt",
 ]
@@ -582,7 +594,7 @@ dependencies = [
 [[package]]
 name = "godot-codegen"
 version = "0.1.0"
-source = "git+https://github.com/godot-rust/gdext?rev=8ec6a229065396b209f14652334455c92063e342#8ec6a229065396b209f14652334455c92063e342"
+source = "git+https://github.com/godot-rust/gdext?rev=7dee976484db8fc756a2442a9edebcaf48f2b677#7dee976484db8fc756a2442a9edebcaf48f2b677"
 dependencies = [
  "godot-bindings",
  "godot-fmt",
@@ -596,7 +608,7 @@ dependencies = [
 [[package]]
 name = "godot-core"
 version = "0.1.0"
-source = "git+https://github.com/godot-rust/gdext?rev=8ec6a229065396b209f14652334455c92063e342#8ec6a229065396b209f14652334455c92063e342"
+source = "git+https://github.com/godot-rust/gdext?rev=7dee976484db8fc756a2442a9edebcaf48f2b677#7dee976484db8fc756a2442a9edebcaf48f2b677"
 dependencies = [
  "glam 0.23.0",
  "godot-bindings",
@@ -607,8 +619,9 @@ dependencies = [
 [[package]]
 name = "godot-ffi"
 version = "0.1.0"
-source = "git+https://github.com/godot-rust/gdext?rev=8ec6a229065396b209f14652334455c92063e342#8ec6a229065396b209f14652334455c92063e342"
+source = "git+https://github.com/godot-rust/gdext?rev=7dee976484db8fc756a2442a9edebcaf48f2b677#7dee976484db8fc756a2442a9edebcaf48f2b677"
 dependencies = [
+ "gensym",
  "godot-bindings",
  "godot-codegen",
  "paste",
@@ -617,7 +630,7 @@ dependencies = [
 [[package]]
 name = "godot-fmt"
 version = "0.1.0"
-source = "git+https://github.com/godot-rust/gdext?rev=8ec6a229065396b209f14652334455c92063e342#8ec6a229065396b209f14652334455c92063e342"
+source = "git+https://github.com/godot-rust/gdext?rev=7dee976484db8fc756a2442a9edebcaf48f2b677#7dee976484db8fc756a2442a9edebcaf48f2b677"
 dependencies = [
  "proc-macro2",
 ]
@@ -625,7 +638,7 @@ dependencies = [
 [[package]]
 name = "godot-macros"
 version = "0.1.0"
-source = "git+https://github.com/godot-rust/gdext?rev=8ec6a229065396b209f14652334455c92063e342#8ec6a229065396b209f14652334455c92063e342"
+source = "git+https://github.com/godot-rust/gdext?rev=7dee976484db8fc756a2442a9edebcaf48f2b677#7dee976484db8fc756a2442a9edebcaf48f2b677"
 dependencies = [
  "godot-bindings",
  "proc-macro2",
@@ -659,7 +672,7 @@ dependencies = [
 [[package]]
 name = "godot4-prebuilt"
 version = "0.0.0"
-source = "git+https://github.com/godot-rust/godot4-prebuilt?branch=4.1.1#fca6897dbfb1a2d9387f81491acd77f6f091b8c4"
+source = "git+https://github.com/godot-rust/godot4-prebuilt?branch=4.2#9e60296be502e294dde3f245971f2868ce553677"
 
 [[package]]
 name = "hashbrown"
@@ -1400,6 +1413,15 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
+]
+
+[[package]]
+name = "uuid"
+version = "1.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e395fcf16a7a3d8127ec99782007af141946b4795001f876d54fb0d55978560"
+dependencies = [
+ "getrandom",
 ]
 
 [[package]]

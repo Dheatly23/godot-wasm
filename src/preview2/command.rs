@@ -143,7 +143,7 @@ impl WasiCommand {
         let config = if config.is_nil() { None } else { Some(config) };
 
         if self.initialize_(module, config) {
-            <Gd<WasiCommand>>::try_from_instance_id(self.base.instance_id())
+            <Gd<WasiCommand>>::try_from_instance_id(self.base.instance_id()).ok()
         } else {
             None
         }

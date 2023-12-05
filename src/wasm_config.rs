@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use godot::builtin::meta::GodotConvert;
+use godot::builtin::meta::{GodotConvert, ConvertError};
 use godot::prelude::*;
 
 #[cfg(feature = "wasi")]
@@ -53,7 +53,7 @@ pub struct Config {
 fn get_field<T: FromGodot>(
     d: &Dictionary,
     name: &'static str,
-) -> Result<Option<T>, VariantConversionError> {
+) -> Result<Option<T>, ConvertError> {
     match d.get(name) {
         Some(v) => Some(T::try_from_variant(&v)).transpose(),
         None => Ok(None),
@@ -61,7 +61,7 @@ fn get_field<T: FromGodot>(
 }
 
 #[cfg(feature = "epoch-timeout")]
-fn compute_epoch(v: Option<Variant>) -> Result<u64, VariantConversionError> {
+fn compute_epoch(v: Option<Variant>) -> Result<u64, ConvertError> {
     const DEFAULT: u64 = EPOCH_DEADLINE.saturating_mul(EPOCH_MULTIPLIER);
     let v = match v {
         Some(v) if !v.is_nil() => v,
@@ -77,7 +77,7 @@ fn compute_epoch(v: Option<Variant>) -> Result<u64, VariantConversionError> {
 }
 
 #[cfg(feature = "wasi")]
-fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, VariantConversionError> {
+fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, ConvertError> {
     let v = match v {
         Some(v) => <Array<Variant>>::try_from_variant(&v)?,
         None => return Ok(Vec::new()),
@@ -90,7 +90,7 @@ fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, VariantConversionErr
 }
 
 #[cfg(feature = "wasi")]
-fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, VariantConversionError> {
+fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, ConvertError> {
     let v = match v {
         Some(v) => Dictionary::try_from_variant(&v)?,
         None => return Ok(HashMap::new()),
@@ -103,7 +103,7 @@ fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, VariantC
 }
 
 impl Config {
-    fn convert(dict: Dictionary) -> Result<Self, VariantConversionError> {
+    fn convert(dict: Dictionary) -> Result<Self, ConvertError> {
         Ok(Self {
             #[cfg(feature = "epoch-timeout")]
             with_epoch: get_field(&dict, "engine.use_epoch")?.unwrap_or_default(),
@@ -152,15 +152,15 @@ impl GodotConvert for Config {
 }
 
 impl FromGodot for Config {
-    fn try_from_variant(v: &Variant) -> Result<Self, VariantConversionError> {
+    fn try_from_variant(v: &Variant) -> Result<Self, ConvertError> {
         if v.is_nil() {
             return Ok(Self::default());
         }
         Self::convert(Dictionary::try_from_variant(v)?)
     }
 
-    fn try_from_godot(via: Self::Via) -> Option<Self> {
-        Self::convert(via).ok()
+    fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
+        Self::convert(via)
     }
 
     fn from_godot(via: Self::Via) -> Self {
@@ -189,28 +189,21 @@ impl GodotConvert for ExternBindingType {
 }
 
 impl FromGodot for ExternBindingType {
-    fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
-        match Self::try_from_godot(GString::try_from_variant(variant)?) {
-            Some(v) => Ok(v),
-            None => Err(VariantConversionError::BadValue),
-        }
-    }
-
-    fn try_from_godot(via: Self::Via) -> Option<Self> {
+    fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
         // SAFETY: Eh whatevers, if it blows up i assume no responsibility
         let chars = unsafe { via.chars_unchecked() };
 
         match chars {
             [] | ['n', 'o', 'n', 'e'] | ['n', 'o', '_', 'b', 'i', 'n', 'd', 'i', 'n', 'g'] => {
-                Some(Self::None)
+                Ok(Self::None)
             }
             #[cfg(feature = "object-registry-compat")]
             ['c', 'o', 'm', 'p', 'a', 't'] | ['r', 'e', 'g', 'i', 's', 't', 'r', 'y'] => {
-                Some(Self::Registry)
+                Ok(Self::Registry)
             }
             #[cfg(feature = "object-registry-extern")]
             ['e', 'x', 't', 'e', 'r', 'n'] | ['n', 'a', 't', 'i', 'v', 'e'] => Some(Self::Native),
-            _ => None,
+            _ => Err(ConvertError::with_value(via.clone())),
         }
     }
 }
@@ -248,26 +241,15 @@ impl GodotConvert for PipeBindingType {
 }
 
 impl FromGodot for PipeBindingType {
-    fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
-        if variant.is_nil() {
-            return Ok(Self::default());
-        }
-
-        match Self::try_from_godot(GString::try_from_variant(variant)?) {
-            Some(v) => Ok(v),
-            None => Err(VariantConversionError::BadValue),
-        }
-    }
-
-    fn try_from_godot(via: Self::Via) -> Option<Self> {
+    fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
         // SAFETY: Eh whatevers, if it blows up i assume no responsibility
         let chars = unsafe { via.chars_unchecked() };
 
         match chars {
-            [] | ['u', 'n', 'b', 'o', 'u', 'n', 'd'] => Some(Self::Unbound),
-            ['i', 'n', 's', 't', 'a', 'n', 'c', 'e'] => Some(Self::Instance),
-            ['c', 'o', 'n', 't', 'e', 'x', 't'] => Some(Self::Context),
-            _ => None,
+            [] | ['u', 'n', 'b', 'o', 'u', 'n', 'd'] => Ok(Self::Unbound),
+            ['i', 'n', 's', 't', 'a', 'n', 'c', 'e'] => Ok(Self::Instance),
+            ['c', 'o', 'n', 't', 'e', 'x', 't'] => Ok(Self::Context),
+            _ => Err(ConvertError::with_value(via.clone())),
         }
     }
 }
@@ -303,26 +285,15 @@ impl GodotConvert for PipeBufferType {
 }
 
 impl FromGodot for PipeBufferType {
-    fn try_from_variant(variant: &Variant) -> Result<Self, VariantConversionError> {
-        if variant.is_nil() {
-            return Ok(Self::default());
-        }
-
-        match Self::try_from_godot(GString::try_from_variant(variant)?) {
-            Some(v) => Ok(v),
-            None => Err(VariantConversionError::BadValue),
-        }
-    }
-
-    fn try_from_godot(via: Self::Via) -> Option<Self> {
+    fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
         // SAFETY: Eh whatevers, if it blows up i assume no responsibility
         let chars = unsafe { via.chars_unchecked() };
 
         match chars {
-            [] | ['u', 'n', 'b', 'u', 'f', 'f', 'e', 'r', 'e', 'd'] => Some(Self::Unbuffered),
-            ['l', 'i', 'n', 'e'] => Some(Self::LineBuffer),
-            ['b', 'l', 'o', 'c', 'k'] => Some(Self::BlockBuffer),
-            _ => None,
+            [] | ['u', 'n', 'b', 'u', 'f', 'f', 'e', 'r', 'e', 'd'] => Ok(Self::Unbuffered),
+            ['l', 'i', 'n', 'e'] => Ok(Self::LineBuffer),
+            ['b', 'l', 'o', 'c', 'k'] => Ok(Self::BlockBuffer),
+            _ => Err(ConvertError::with_value(via.clone())),
         }
     }
 }

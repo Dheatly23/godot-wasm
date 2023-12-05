@@ -321,13 +321,12 @@ impl WasmModule {
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
     #[func]
-    fn initialize(&self, name: GString, data: Variant, imports: Dictionary) -> Gd<WasmModule> {
-        let ret = if self._initialize(name, data, imports) {
-            <Gd<WasmModule>>::try_from_instance_id(self.base.instance_id())
+    fn initialize(&self, name: GString, data: Variant, imports: Dictionary) -> Option<Gd<WasmModule>> {
+        if self._initialize(name, data, imports) {
+            <Gd<WasmModule>>::try_from_instance_id(self.base.instance_id()).ok()
         } else {
             None
-        };
-        ret.unwrap()
+        }
     }
 
     #[func]

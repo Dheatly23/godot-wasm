@@ -661,7 +661,7 @@ impl WasmInstance {
         let config = if config.is_nil() { None } else { Some(config) };
 
         if self.initialize_(module, host, config) {
-            <Gd<WasmInstance>>::try_from_instance_id(self.base.instance_id())
+            <Gd<WasmInstance>>::try_from_instance_id(self.base.instance_id()).ok()
         } else {
             None
         }
