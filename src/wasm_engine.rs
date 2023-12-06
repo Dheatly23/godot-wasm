@@ -2,7 +2,7 @@ use std::collections::HashMap;
 #[cfg(feature = "epoch-timeout")]
 use std::{sync::Arc, thread, time};
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{bail, Error};
 use godot::engine::FileAccess;
 use godot::prelude::*;
 use lazy_static::lazy_static;
@@ -17,7 +17,9 @@ use wasmtime::{Config, Engine, ExternType, Module};
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
-use crate::wasm_util::{from_signature, variant_to_option, HOST_MODULE, MODULE_INCLUDES};
+use crate::wasm_util::{
+    from_signature, variant_to_option, VariantDispatch, HOST_MODULE, MODULE_INCLUDES,
+};
 use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
@@ -211,16 +213,18 @@ impl WasmModule {
 
     fn _initialize(&self, name: GString, data: Variant, imports: Dictionary) -> bool {
         match self.data.get_or_try_init(move || -> Result<_, Error> {
-            let module = if let Ok(v) = PackedByteArray::try_from_variant(&data) {
-                Self::load_module(&v.to_vec())?
-            } else if let Ok(v) = String::try_from_variant(&data) {
-                Self::load_module(v.as_bytes())?
-            } else if let Ok(v) = <Gd<FileAccess>>::try_from_variant(&data) {
-                Self::load_module(&v.get_buffer(v.get_length() as _).to_vec())?
-            } else if let Ok(v) = <Gd<WasmModule>>::try_from_variant(&data) {
-                v.bind().get_data()?.module.clone()
-            } else {
-                bail!("Unknown module value {}", data)
+            let module = match VariantDispatch::from(&data) {
+                VariantDispatch::PackedByteArray(v) => Self::load_module(v.as_slice())?,
+                VariantDispatch::String(v) => Self::load_module(v.to_string().as_bytes())?,
+                VariantDispatch::Object(v) => match v
+                    .try_cast::<FileAccess>()
+                    .map_err(|v| v.try_cast::<WasmModule>())
+                {
+                    Ok(v) => Self::load_module(&v.get_buffer(v.get_length() as _).to_vec())?,
+                    Err(Ok(v)) => v.bind().get_data()?.module.clone(),
+                    Err(Err(v)) => bail_with_site!("Unknown module value {}", v),
+                },
+                _ => bail_with_site!("Unknown module value {}", data),
             };
 
             let mut deps_map = HashMap::new();
@@ -228,10 +232,8 @@ impl WasmModule {
             if let ModuleType::Core(module) = &module {
                 deps_map = HashMap::with_capacity(imports.len() as _);
                 for (k, v) in imports.iter_shared() {
-                    let k = String::try_from_variant(&k)
-                        .map_err(|e| site_context!(anyhow!("{:?}", e)))?;
-                    let v = <Gd<WasmModule>>::try_from_variant(&v)
-                        .map_err(|e| site_context!(anyhow!("{:?}", e)))?;
+                    let k = site_context!(String::try_from_variant(&k))?;
+                    let v = site_context!(<Gd<WasmModule>>::try_from_variant(&v))?;
                     deps_map.insert(k, v);
                 }
 
@@ -321,7 +323,12 @@ impl WasmModule {
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
     #[func]
-    fn initialize(&self, name: GString, data: Variant, imports: Dictionary) -> Option<Gd<WasmModule>> {
+    fn initialize(
+        &self,
+        name: GString,
+        data: Variant,
+        imports: Dictionary,
+    ) -> Option<Gd<WasmModule>> {
         if self._initialize(name, data, imports) {
             <Gd<WasmModule>>::try_from_instance_id(self.base.instance_id()).ok()
         } else {

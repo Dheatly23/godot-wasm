@@ -46,7 +46,7 @@ use crate::wasm_util::EXTERNREF_MODULE;
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{
     config_store_common, from_raw, make_host_module, option_to_variant, to_raw, variant_to_option,
-    HOST_MODULE, MEMORY_EXPORT,
+    VariantDispatch, HOST_MODULE, MEMORY_EXPORT,
 };
 use crate::{bail_with_site, site_context};
 
@@ -1027,43 +1027,51 @@ impl WasmInstance {
         self.get_memory(|mut store, mem| {
             let i = i as usize;
             let data = mem.data_mut(&mut store);
-            if let Ok(v) = PackedByteArray::try_from_variant(&v) {
-                let s = v.as_slice();
-                let e = i + s.len();
-                let Some(d) = data.get_mut(i..e) else {
-                    bail_with_site!("Index out of range ({}..{})", i, e);
-                };
+            match VariantDispatch::from(&v) {
+                VariantDispatch::PackedByteArray(v) => {
+                    let s = v.as_slice();
+                    let e = i + s.len();
+                    let Some(d) = data.get_mut(i..e) else {
+                        bail_with_site!("Index out of range ({}..{})", i, e);
+                    };
 
-                d.copy_from_slice(s);
-                Ok(())
-            } else if let Ok(v) = PackedInt32Array::try_from_variant(&v) {
-                f::<4, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
-            } else if let Ok(v) = PackedInt64Array::try_from_variant(&v) {
-                f::<8, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
-            } else if let Ok(v) = PackedFloat32Array::try_from_variant(&v) {
-                f::<4, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
-            } else if let Ok(v) = PackedFloat64Array::try_from_variant(&v) {
-                f::<8, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
-            } else if let Ok(v) = PackedVector2Array::try_from_variant(&v) {
-                f::<8, _>(data, i, v.as_slice(), |s, d| {
-                    d[..4].copy_from_slice(&s.x.to_le_bytes());
-                    d[4..].copy_from_slice(&s.y.to_le_bytes());
-                })
-            } else if let Ok(v) = PackedVector3Array::try_from_variant(&v) {
-                f::<12, _>(data, i, v.as_slice(), |s, d| {
-                    d[..4].copy_from_slice(&s.x.to_le_bytes());
-                    d[4..8].copy_from_slice(&s.y.to_le_bytes());
-                    d[8..].copy_from_slice(&s.z.to_le_bytes());
-                })
-            } else if let Ok(v) = PackedColorArray::try_from_variant(&v) {
-                f::<16, _>(data, i, v.as_slice(), |s, d| {
-                    d[..4].copy_from_slice(&s.r.to_le_bytes());
-                    d[4..8].copy_from_slice(&s.g.to_le_bytes());
-                    d[8..12].copy_from_slice(&s.b.to_le_bytes());
-                    d[12..].copy_from_slice(&s.a.to_le_bytes());
-                })
-            } else {
-                bail_with_site!("Unknown value")
+                    d.copy_from_slice(s);
+                    Ok(())
+                }
+                VariantDispatch::PackedInt32Array(v) => {
+                    f::<4, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
+                }
+                VariantDispatch::PackedInt64Array(v) => {
+                    f::<8, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
+                }
+                VariantDispatch::PackedFloat32Array(v) => {
+                    f::<4, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
+                }
+                VariantDispatch::PackedFloat64Array(v) => {
+                    f::<8, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
+                }
+                VariantDispatch::PackedVector2Array(v) => {
+                    f::<8, _>(data, i, v.as_slice(), |s, d| {
+                        d[..4].copy_from_slice(&s.x.to_le_bytes());
+                        d[4..].copy_from_slice(&s.y.to_le_bytes());
+                    })
+                }
+                VariantDispatch::PackedVector3Array(v) => {
+                    f::<12, _>(data, i, v.as_slice(), |s, d| {
+                        d[..4].copy_from_slice(&s.x.to_le_bytes());
+                        d[4..8].copy_from_slice(&s.y.to_le_bytes());
+                        d[8..].copy_from_slice(&s.z.to_le_bytes());
+                    })
+                }
+                VariantDispatch::PackedColorArray(v) => {
+                    f::<16, _>(data, i, v.as_slice(), |s, d| {
+                        d[..4].copy_from_slice(&s.r.to_le_bytes());
+                        d[4..8].copy_from_slice(&s.g.to_le_bytes());
+                        d[8..12].copy_from_slice(&s.b.to_le_bytes());
+                        d[12..].copy_from_slice(&s.a.to_le_bytes());
+                    })
+                }
+                _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
             }
         })
         .is_some()

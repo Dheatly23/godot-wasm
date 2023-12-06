@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use godot::builtin::meta::{GodotConvert, ConvertError};
+use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
+use crate::wasm_util::VariantDispatch;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 
@@ -50,10 +51,7 @@ pub struct Config {
     pub extern_bind: ExternBindingType,
 }
 
-fn get_field<T: FromGodot>(
-    d: &Dictionary,
-    name: &'static str,
-) -> Result<Option<T>, ConvertError> {
+fn get_field<T: FromGodot>(d: &Dictionary, name: &'static str) -> Result<Option<T>, ConvertError> {
     match d.get(name) {
         Some(v) => Some(T::try_from_variant(&v)).transpose(),
         None => Ok(None),
@@ -63,17 +61,16 @@ fn get_field<T: FromGodot>(
 #[cfg(feature = "epoch-timeout")]
 fn compute_epoch(v: Option<Variant>) -> Result<u64, ConvertError> {
     const DEFAULT: u64 = EPOCH_DEADLINE.saturating_mul(EPOCH_MULTIPLIER);
-    let v = match v {
-        Some(v) if !v.is_nil() => v,
-        _ => return Ok(DEFAULT),
-    };
-    if let Ok(v) = i64::try_from_variant(&v) {
-        Ok(v.try_into()
+    match v.as_ref().map(VariantDispatch::from) {
+        None | Some(VariantDispatch::Nil) => Ok(DEFAULT),
+        Some(VariantDispatch::Int(v)) => Ok(v
+            .try_into()
             .unwrap_or(0u64)
-            .saturating_mul(EPOCH_MULTIPLIER))
-    } else {
-        Ok((f64::try_from_variant(&v)? * (EPOCH_MULTIPLIER as f64)).trunc() as _)
+            .saturating_mul(EPOCH_MULTIPLIER)),
+        Some(VariantDispatch::Float(v)) => Ok((v * (EPOCH_MULTIPLIER as f64)).trunc() as _),
+        _ => Err(v.map_or_else(ConvertError::new, ConvertError::with_value)),
     }
+    .map(|i| i.max(1))
 }
 
 #[cfg(feature = "wasi")]

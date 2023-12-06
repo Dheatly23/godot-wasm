@@ -25,7 +25,8 @@ use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe}
 use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::wasm_util::{
-    option_to_variant, variant_to_option, FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST,
+    option_to_variant, variant_to_option, VariantDispatch, FILE_DIR, FILE_FILE, FILE_LINK,
+    FILE_NOTEXIST,
 };
 use crate::{bail_with_site, site_context};
 
@@ -759,57 +760,49 @@ impl WasiContext {
             let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
             let truncate = variant_to_option(truncate)?.unwrap_or(false);
             let follow_symlink = variant_to_option(follow_symlink)?.unwrap_or(false);
-            if let Ok(s) = PackedByteArray::try_from_variant(&data) {
-                let s = s.as_slice();
-                let offset = offset.unwrap_or(0);
-                let Some(end) = s.len().checked_add(offset) else {
-                    bail_with_site!("Length overflowed")
-                };
+            match VariantDispatch::from(&data) {
+                VariantDispatch::PackedByteArray(s) => {
+                    let s = s.as_slice();
+                    let offset = offset.unwrap_or(0);
+                    let Some(end) = s.len().checked_add(offset) else {
+                        bail_with_site!("Length overflowed")
+                    };
 
-                f(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    end,
-                    move |d| {
-                        d.copy_from_slice(&s);
-                        Ok(())
-                    },
-                )
-            } else if let Ok(s) = GString::try_from_variant(&data) {
-                let s = s.to_string();
-                let s = s.as_bytes();
-                let offset = offset.unwrap_or(0);
-                let Some(end) = s.len().checked_add(offset) else {
-                    bail_with_site!("Length overflowed")
-                };
+                    f(
+                        self.memfs_root.clone(),
+                        path,
+                        follow_symlink,
+                        truncate,
+                        offset,
+                        end,
+                        move |d| {
+                            d.copy_from_slice(s);
+                            Ok(())
+                        },
+                    )
+                }
+                VariantDispatch::String(s) => {
+                    let s = s.to_string();
+                    let s = s.as_bytes();
+                    let offset = offset.unwrap_or(0);
+                    let Some(end) = s.len().checked_add(offset) else {
+                        bail_with_site!("Length overflowed")
+                    };
 
-                f(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    end,
-                    move |d| {
-                        d.copy_from_slice(s);
-                        Ok(())
-                    },
-                )
-            } else if let Ok(s) = PackedInt32Array::try_from_variant(&data) {
-                g::<4, _>(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    s.as_slice(),
-                    |s, d| *d = s.to_le_bytes(),
-                )
-            } else if let Ok(s) = PackedInt64Array::try_from_variant(&data) {
-                g::<8, _>(
+                    f(
+                        self.memfs_root.clone(),
+                        path,
+                        follow_symlink,
+                        truncate,
+                        offset,
+                        end,
+                        move |d| {
+                            d.copy_from_slice(s);
+                            Ok(())
+                        },
+                    )
+                }
+                VariantDispatch::PackedInt32Array(s) => g::<4, _>(
                     self.memfs_root.clone(),
                     path,
                     follow_symlink,
@@ -817,9 +810,8 @@ impl WasiContext {
                     offset,
                     s.as_slice(),
                     |s, d| *d = s.to_le_bytes(),
-                )
-            } else if let Ok(s) = PackedFloat32Array::try_from_variant(&data) {
-                g::<4, _>(
+                ),
+                VariantDispatch::PackedInt64Array(s) => g::<8, _>(
                     self.memfs_root.clone(),
                     path,
                     follow_symlink,
@@ -827,9 +819,8 @@ impl WasiContext {
                     offset,
                     s.as_slice(),
                     |s, d| *d = s.to_le_bytes(),
-                )
-            } else if let Ok(s) = PackedFloat64Array::try_from_variant(&data) {
-                g::<8, _>(
+                ),
+                VariantDispatch::PackedFloat32Array(s) => g::<4, _>(
                     self.memfs_root.clone(),
                     path,
                     follow_symlink,
@@ -837,9 +828,17 @@ impl WasiContext {
                     offset,
                     s.as_slice(),
                     |s, d| *d = s.to_le_bytes(),
-                )
-            } else if let Ok(s) = PackedVector2Array::try_from_variant(&data) {
-                g::<8, _>(
+                ),
+                VariantDispatch::PackedFloat64Array(s) => g::<8, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                ),
+                VariantDispatch::PackedVector2Array(s) => g::<8, _>(
                     self.memfs_root.clone(),
                     path,
                     follow_symlink,
@@ -850,9 +849,8 @@ impl WasiContext {
                         d[..4].copy_from_slice(&s.x.to_le_bytes());
                         d[4..].copy_from_slice(&s.y.to_le_bytes());
                     },
-                )
-            } else if let Ok(s) = PackedVector3Array::try_from_variant(&data) {
-                g::<12, _>(
+                ),
+                VariantDispatch::PackedVector3Array(s) => g::<12, _>(
                     self.memfs_root.clone(),
                     path,
                     follow_symlink,
@@ -864,9 +862,8 @@ impl WasiContext {
                         d[4..8].copy_from_slice(&s.y.to_le_bytes());
                         d[8..].copy_from_slice(&s.z.to_le_bytes());
                     },
-                )
-            } else if let Ok(s) = PackedColorArray::try_from_variant(&data) {
-                g::<16, _>(
+                ),
+                VariantDispatch::PackedColorArray(s) => g::<16, _>(
                     self.memfs_root.clone(),
                     path,
                     follow_symlink,
@@ -879,9 +876,8 @@ impl WasiContext {
                         d[8..12].copy_from_slice(&s.b.to_le_bytes());
                         d[12..].copy_from_slice(&s.a.to_le_bytes());
                     },
-                )
-            } else {
-                bail_with_site!("Unknown value type {:?}", data.get_type())
+                ),
+                _ => bail_with_site!("Unknown value type {:?}", data.get_type()),
             }
         })
         .is_some()

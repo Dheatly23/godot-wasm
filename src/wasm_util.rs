@@ -7,8 +7,8 @@ use std::ptr;
 use std::time;
 
 use anyhow::{anyhow, bail, Error};
+use godot::builtin::meta::ConvertError;
 use godot::prelude::*;
-use godot::builtin::meta::{ConvertError};
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
 #[cfg(feature = "epoch-timeout")]
@@ -88,7 +88,7 @@ macro_rules! site_context {
             $crate::wasm_util::add_site(anyhow::Error::from(e), gdnative::log::godot_site!())
         })
         */
-        $e
+        $e.map_err(anyhow::Error::from)
     };
 }
 
@@ -139,6 +139,94 @@ pub fn variant_to_option<T: FromGodot>(v: Variant) -> Result<Option<T>, ConvertE
     }
 }
 
+// Keep until gdext implement this
+#[derive(Clone)]
+pub enum VariantDispatch {
+    Nil,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(GString),
+    Vector2(Vector2),
+    Vector2i(Vector2i),
+    Rect2(Rect2),
+    Rect2i(Rect2i),
+    Vector3(Vector3),
+    Vector3i(Vector3i),
+    Transform2D(Transform2D),
+    Vector4(Vector4),
+    Vector4i(Vector4i),
+    Plane(Plane),
+    Quaternion(Quaternion),
+    Aabb(Aabb),
+    Basis(Basis),
+    Transform3D(Transform3D),
+    Projection(Projection),
+    Color(Color),
+    StringName(StringName),
+    NodePath(NodePath),
+    Rid(Rid),
+    Object(Gd<Object>),
+    Callable(Callable),
+    Signal(Signal),
+    Dictionary(Dictionary),
+    Array(Array<Variant>),
+    PackedByteArray(PackedByteArray),
+    PackedInt32Array(PackedInt32Array),
+    PackedInt64Array(PackedInt64Array),
+    PackedFloat32Array(PackedFloat32Array),
+    PackedFloat64Array(PackedFloat64Array),
+    PackedStringArray(PackedStringArray),
+    PackedVector2Array(PackedVector2Array),
+    PackedVector3Array(PackedVector3Array),
+    PackedColorArray(PackedColorArray),
+}
+
+impl From<&'_ Variant> for VariantDispatch {
+    fn from(var: &Variant) -> Self {
+        match var.get_type() {
+            VariantType::Nil => Self::Nil,
+            VariantType::Bool => Self::Bool(var.to()),
+            VariantType::Int => Self::Int(var.to()),
+            VariantType::Float => Self::Float(var.to()),
+            VariantType::String => Self::String(var.to()),
+            VariantType::Vector2 => Self::Vector2(var.to()),
+            VariantType::Vector2i => Self::Vector2i(var.to()),
+            VariantType::Rect2 => Self::Rect2(var.to()),
+            VariantType::Rect2i => Self::Rect2i(var.to()),
+            VariantType::Vector3 => Self::Vector3(var.to()),
+            VariantType::Vector3i => Self::Vector3i(var.to()),
+            VariantType::Transform2D => Self::Transform2D(var.to()),
+            VariantType::Vector4 => Self::Vector4(var.to()),
+            VariantType::Vector4i => Self::Vector4i(var.to()),
+            VariantType::Plane => Self::Plane(var.to()),
+            VariantType::Quaternion => Self::Quaternion(var.to()),
+            VariantType::Aabb => Self::Aabb(var.to()),
+            VariantType::Basis => Self::Basis(var.to()),
+            VariantType::Transform3D => Self::Transform3D(var.to()),
+            VariantType::Projection => Self::Projection(var.to()),
+            VariantType::Color => Self::Color(var.to()),
+            VariantType::StringName => Self::StringName(var.to()),
+            VariantType::NodePath => Self::NodePath(var.to()),
+            VariantType::Rid => Self::Rid(var.to()),
+            VariantType::Object => Self::Object(var.to()),
+            VariantType::Callable => Self::Callable(var.to()),
+            VariantType::Signal => Self::Signal(var.to()),
+            VariantType::Dictionary => Self::Dictionary(var.to()),
+            VariantType::Array => Self::Array(var.to()),
+            VariantType::PackedByteArray => Self::PackedByteArray(var.to()),
+            VariantType::PackedInt32Array => Self::PackedInt32Array(var.to()),
+            VariantType::PackedInt64Array => Self::PackedInt64Array(var.to()),
+            VariantType::PackedFloat32Array => Self::PackedFloat32Array(var.to()),
+            VariantType::PackedFloat64Array => Self::PackedFloat64Array(var.to()),
+            VariantType::PackedStringArray => Self::PackedStringArray(var.to()),
+            VariantType::PackedVector2Array => Self::PackedVector2Array(var.to()),
+            VariantType::PackedVector3Array => Self::PackedVector3Array(var.to()),
+            VariantType::PackedColorArray => Self::PackedColorArray(var.to()),
+        }
+    }
+}
+
 pub fn from_signature(sig: &FuncType) -> Result<(PackedByteArray, PackedByteArray), Error> {
     let p = sig.params();
     let r = sig.results();
@@ -175,7 +263,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
         };
 
         for i in it {
-            ret.push(match i? {
+            ret.push(match site_context!(i)? {
                 TYPE_I32 => ValType::I32,
                 TYPE_I64 => ValType::I64,
                 TYPE_F32 => ValType::F32,
@@ -189,26 +277,22 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
         Ok(ret)
     }
 
-    let p = if let Ok(v) = <Array<Variant>>::try_from_variant(&params) {
-        f(v.iter_shared()
-            .map(|v| u32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))))?
-    } else if let Ok(v) = PackedByteArray::try_from_variant(&params) {
-        f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
-    } else if let Ok(v) = PackedInt32Array::try_from_variant(&params) {
-        f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
-    } else {
-        bail!("Unconvertible value {}", params)
+    let p = match VariantDispatch::from(&params) {
+        VariantDispatch::Array(v) => f(v
+            .iter_shared()
+            .map(|v| u32::try_from_variant(&v).map_err(Error::from)))?,
+        VariantDispatch::PackedByteArray(v) => f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?,
+        VariantDispatch::PackedInt32Array(v) => f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?,
+        _ => bail_with_site!("Unconvertible value {}", params),
     };
 
-    let r = if let Ok(v) = <Array<Variant>>::try_from_variant(&results) {
-        f(v.iter_shared()
-            .map(|v| u32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))))?
-    } else if let Ok(v) = PackedByteArray::try_from_variant(&results) {
-        f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
-    } else if let Ok(v) = PackedInt32Array::try_from_variant(&results) {
-        f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?
-    } else {
-        bail!("Unconvertible value {}", results)
+    let r = match VariantDispatch::from(&results) {
+        VariantDispatch::Array(v) => f(v
+            .iter_shared()
+            .map(|v| u32::try_from_variant(&v).map_err(Error::from)))?,
+        VariantDispatch::PackedByteArray(v) => f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?,
+        VariantDispatch::PackedInt32Array(v) => f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?,
+        _ => bail_with_site!("Unconvertible value {}", results),
     };
 
     Ok(FuncType::new(p, r))
@@ -217,18 +301,10 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 // Mark this unsafe for future proofing
 pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Result<ValRaw, Error> {
     Ok(match t {
-        ValType::I32 => ValRaw::i32(site_context!(
-            i32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
-        )?),
-        ValType::I64 => ValRaw::i64(site_context!(
-            i64::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))
-        )?),
-        ValType::F32 => ValRaw::f32(
-            site_context!(f32::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e)))?.to_bits(),
-        ),
-        ValType::F64 => ValRaw::f64(
-            site_context!(f64::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e)))?.to_bits(),
-        ),
+        ValType::I32 => ValRaw::i32(site_context!(i32::try_from_variant(&v))?),
+        ValType::I64 => ValRaw::i64(site_context!(i64::try_from_variant(&v))?),
+        ValType::F32 => ValRaw::f32(site_context!(f32::try_from_variant(&v))?.to_bits()),
+        ValType::F64 => ValRaw::f64(site_context!(f64::try_from_variant(&v))?.to_bits()),
         #[cfg(feature = "object-registry-extern")]
         ValType::ExternRef => ValRaw::externref(match variant_to_externref(v) {
             Some(v) => v.to_raw(_store),
@@ -357,8 +433,7 @@ where
 {
     let mut ret = HashMap::new();
     for (k, v) in dict.iter_shared() {
-        let k = site_context!(GString::try_from_variant(&k).map_err(|e| anyhow!("{:?}", e)))?
-            .to_string();
+        let k = site_context!(GString::try_from_variant(&k))?.to_string();
 
         struct Data {
             params: Variant,
@@ -368,7 +443,7 @@ where
         }
 
         let data = {
-            let v = Dictionary::try_from_variant(&v).map_err(|e| anyhow!("{:?}", e))?;
+            let v = site_context!(Dictionary::try_from_variant(&v))?;
             let Some(params) = v.get(StringName::from("params")) else {
                 bail_with_site!("Key \"params\" does not exist")
             };
@@ -386,7 +461,7 @@ where
                 params,
                 results,
                 object,
-                method: <_>::try_from_variant(&method).map_err(|e| anyhow!("{:?}", e))?,
+                method: site_context!(GString::try_from_variant(&method))?,
             }
         };
 
