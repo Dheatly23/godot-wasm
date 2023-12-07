@@ -115,7 +115,7 @@ lazy_static! {
 }
 
 #[derive(GodotClass)]
-#[class(base=RefCounted, init)]
+#[class(base=RefCounted, init, tool)]
 pub struct WasmModule {
     #[base]
     base: Base<RefCounted>,

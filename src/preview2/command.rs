@@ -15,7 +15,7 @@ use crate::wasm_util::config_store_common;
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
-#[class(base=RefCounted, init)]
+#[class(base=RefCounted, init, tool)]
 pub struct WasiCommand {
     #[base]
     base: Base<RefCounted>,
