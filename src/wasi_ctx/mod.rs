@@ -846,8 +846,8 @@ impl WasiContext {
                     offset,
                     s.as_slice(),
                     |s, d| {
-                        d[..4].copy_from_slice(&s.x.to_le_bytes());
-                        d[4..].copy_from_slice(&s.y.to_le_bytes());
+                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[4..]).unwrap() = s.y.to_le_bytes();
                     },
                 ),
                 VariantDispatch::PackedVector3Array(s) => g::<12, _>(
@@ -858,9 +858,9 @@ impl WasiContext {
                     offset,
                     s.as_slice(),
                     |s, d| {
-                        d[..4].copy_from_slice(&s.x.to_le_bytes());
-                        d[4..8].copy_from_slice(&s.y.to_le_bytes());
-                        d[8..].copy_from_slice(&s.z.to_le_bytes());
+                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.y.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[8..]).unwrap() = s.z.to_le_bytes();
                     },
                 ),
                 VariantDispatch::PackedColorArray(s) => g::<16, _>(
@@ -871,10 +871,10 @@ impl WasiContext {
                     offset,
                     s.as_slice(),
                     |s, d| {
-                        d[..4].copy_from_slice(&s.r.to_le_bytes());
-                        d[4..8].copy_from_slice(&s.g.to_le_bytes());
-                        d[8..12].copy_from_slice(&s.b.to_le_bytes());
-                        d[12..].copy_from_slice(&s.a.to_le_bytes());
+                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.r.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.g.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[8..12]).unwrap() = s.b.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[12..]).unwrap() = s.a.to_le_bytes();
                     },
                 ),
                 _ => bail_with_site!("Unknown value type {:?}", data.get_type()),
