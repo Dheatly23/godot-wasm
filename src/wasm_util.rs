@@ -6,7 +6,7 @@ use std::ptr;
 #[cfg(feature = "epoch-timeout")]
 use std::time;
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{anyhow, Error};
 use godot::builtin::meta::ConvertError;
 use godot::prelude::*;
 #[cfg(feature = "object-registry-extern")]
@@ -355,17 +355,20 @@ impl<T> DerefMut for SendSyncWrapper<T> {
     }
 }
 
+enum CallableEnum {
+    ObjectMethod(Gd<Object>, StringName),
+    Callable(Callable),
+}
+
 fn wrap_godot_method<T>(
     store: impl AsContextMut<Data = T>,
     ty: FuncType,
-    obj: Variant,
-    method: GString,
+    callable: CallableEnum,
 ) -> Func
 where
     T: AsRef<StoreData> + AsMut<StoreData>,
 {
-    let obj = SendSyncWrapper(obj);
-    let method = SendSyncWrapper(method);
+    let callable = SendSyncWrapper(callable);
     let ty_cloned = ty.clone();
     let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> Result<(), Error> {
         let pi = ty.params();
@@ -379,16 +382,17 @@ where
         //    Ok(obj) => obj.get_ref(),
         //    Err(_) => obj.clone(),
         //};
-        let mut obj = match <Gd<Object>>::try_from_variant(&obj) {
-            Ok(v) => v,
-            Err(_) => bail!("Cannot convert object"),
+        let r = match &*callable {
+            CallableEnum::ObjectMethod(obj, method) => {
+                ctx.data_mut().as_mut().release_store(|| {
+                    site_context!(catch_unwind(AssertUnwindSafe(|| obj
+                        .clone()
+                        .call(method.clone(), &p)))
+                    .map_err(|_| anyhow!("Error trying to call")))
+                })?
+            }
+            CallableEnum::Callable(c) => c.callv(p.into_iter().collect()),
         };
-        let r = ctx.data_mut().as_mut().release_store(|| {
-            site_context!(catch_unwind(AssertUnwindSafe(
-                || obj.call(StringName::from(&*method), &p)
-            ))
-            .map_err(|_| anyhow!("Error trying to call")))
-        })?;
 
         if let Some(msg) = ctx.data_mut().as_mut().error_signal.take() {
             return Err(Error::msg(msg));
@@ -431,49 +435,46 @@ pub fn make_host_module<T>(
 where
     T: AsRef<StoreData> + AsMut<StoreData>,
 {
+    let params_str = StringName::from("params");
+    let results_str = StringName::from("results");
+    let object_str = StringName::from("object");
+    let method_str = StringName::from("method");
+    let callable_str = StringName::from("callable");
     let mut ret = HashMap::new();
     for (k, v) in dict.iter_shared() {
         let k = site_context!(GString::try_from_variant(&k))?.to_string();
 
-        struct Data {
-            params: Variant,
-            results: Variant,
-            object: Variant,
-            method: GString,
-        }
+        let v = site_context!(Dictionary::try_from_variant(&v))?;
+        let Some(params) = v.get(params_str.clone()) else {
+            bail_with_site!("Key \"params\" does not exist")
+        };
+        let Some(results) = v.get(results_str.clone()) else {
+            bail_with_site!("Key \"results\" does not exist")
+        };
 
-        let data = {
-            let v = site_context!(Dictionary::try_from_variant(&v))?;
-            let Some(params) = v.get(StringName::from("params")) else {
-                bail_with_site!("Key \"params\" does not exist")
+        let callable = if let Some(c) = v.get(callable_str.clone()) {
+            CallableEnum::Callable(site_context!(Callable::try_from_variant(&c))?)
+        } else {
+            let Some(object) = v.get(object_str.clone()) else {
+                bail_with_site!("Key \"object\" does not exist")
             };
-            let Some(results) = v.get(StringName::from("results")) else {
-                bail_with_site!("Key \"params\" does not exist")
-            };
-            let Some(object) = v.get(StringName::from("object")) else {
-                bail_with_site!("Key \"params\" does not exist")
-            };
-            let Some(method) = v.get(StringName::from("method")) else {
-                bail_with_site!("Key \"params\" does not exist")
+            let Some(method) = v.get(method_str.clone()) else {
+                bail_with_site!("Key \"method\" does not exist")
             };
 
-            Data {
-                params,
-                results,
-                object,
-                method: site_context!(GString::try_from_variant(&method))?,
-            }
+            CallableEnum::ObjectMethod(
+                site_context!(<Gd<Object>>::try_from_variant(&object))?,
+                match VariantDispatch::from(&method) {
+                    VariantDispatch::String(s) => StringName::from(&s),
+                    VariantDispatch::StringName(s) => s,
+                    _ => bail_with_site!("Unknown method name {}", method),
+                },
+            )
         };
 
         ret.insert(
             k,
-            wrap_godot_method(
-                &mut *store,
-                to_signature(data.params, data.results)?,
-                data.object,
-                data.method,
-            )
-            .into(),
+            wrap_godot_method(&mut *store, to_signature(params, results)?, callable).into(),
         );
     }
 
