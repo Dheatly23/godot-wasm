@@ -435,11 +435,11 @@ pub fn make_host_module<T>(
 where
     T: AsRef<StoreData> + AsMut<StoreData>,
 {
-    let params_str = StringName::from("params");
-    let results_str = StringName::from("results");
-    let object_str = StringName::from("object");
-    let method_str = StringName::from("method");
-    let callable_str = StringName::from("callable");
+    let params_str = StringName::from_latin1_with_nul(b"params\0");
+    let results_str = StringName::from_latin1_with_nul(b"results\0");
+    let object_str = StringName::from_latin1_with_nul(b"object\0");
+    let method_str = StringName::from_latin1_with_nul(b"method\0");
+    let callable_str = StringName::from_latin1_with_nul(b"callable\0");
     let mut ret = HashMap::new();
     for (k, v) in dict.iter_shared() {
         let k = site_context!(GString::try_from_variant(&k))?.to_string();
