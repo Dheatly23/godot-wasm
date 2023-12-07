@@ -99,6 +99,10 @@ I don't really feel like putting Lorem Ipsum here :)
 	file_popup.add_separator()
 	file_popup.add_item("Delete File")
 
+	file_tree.set_column_clip_content(0, false)
+	file_tree.set_column_expand(0, true)
+	file_tree.set_column_custom_minimum_width(0, 1000)
+
 	__refresh_files()
 
 func __exec_file_pressed():
