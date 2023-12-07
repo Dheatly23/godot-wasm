@@ -1114,19 +1114,19 @@ impl WasmInstance {
                     *d = s.to_le_bytes();
                 }),
                 VariantDispatch::Vector2Array(v) => f::<8, _>(data, i, &v.read(), |s, d| {
-                    d[..4].copy_from_slice(&s.x.to_le_bytes());
-                    d[4..].copy_from_slice(&s.y.to_le_bytes());
+                    *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut d[4..]).unwrap() = s.y.to_le_bytes();
                 }),
                 VariantDispatch::Vector3Array(v) => f::<12, _>(data, i, &v.read(), |s, d| {
-                    d[..4].copy_from_slice(&s.x.to_le_bytes());
-                    d[4..8].copy_from_slice(&s.y.to_le_bytes());
-                    d[8..].copy_from_slice(&s.z.to_le_bytes());
+                    *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut d[8..]).unwrap() = s.z.to_le_bytes();
                 }),
                 VariantDispatch::ColorArray(v) => f::<16, _>(data, i, &v.read(), |s, d| {
-                    d[..4].copy_from_slice(&s.r.to_le_bytes());
-                    d[4..8].copy_from_slice(&s.g.to_le_bytes());
-                    d[8..12].copy_from_slice(&s.b.to_le_bytes());
-                    d[12..].copy_from_slice(&s.a.to_le_bytes());
+                    *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.r.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.g.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut d[8..12]).unwrap() = s.b.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut d[12..]).unwrap() = s.a.to_le_bytes();
                 }),
                 _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
             }
