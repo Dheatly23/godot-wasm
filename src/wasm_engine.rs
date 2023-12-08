@@ -6,8 +6,7 @@ use anyhow::{bail, Error};
 use gdnative::export::user_data::Map;
 use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
-use lazy_static::lazy_static;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{OnceCell, Lazy};
 use parking_lot::Once;
 #[cfg(feature = "epoch-timeout")]
 use parking_lot::{Condvar, Mutex};
@@ -85,33 +84,29 @@ impl Drop for EpochThreadHandle {
     }
 }
 
-lazy_static! {
-    pub static ref ENGINE: Engine = {
-        let mut config = Config::new();
-        config.cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
-            .cranelift_nan_canonicalization(cfg!(feature = "deterministic-wasm"))
-            .epoch_interruption(true)
-            .wasm_reference_types(true)
-            .wasm_simd(true)
-            .wasm_relaxed_simd(true)
-            .relaxed_simd_deterministic(cfg!(feature = "deterministic-wasm"))
-            .wasm_tail_call(true)
-            .wasm_bulk_memory(true)
-            .wasm_multi_value(true)
-            .wasm_multi_memory(true)
-            .wasm_memory64(true);
-        config.wasm_threads(false); // Disable threads for now
-        #[cfg(feature = "wasi-preview2")]
-        config.wasm_component_model(true);
+pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
+    let mut config = Config::new();
+    config.cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
+        .cranelift_nan_canonicalization(cfg!(feature = "deterministic-wasm"))
+        .epoch_interruption(true)
+        .wasm_reference_types(true)
+        .wasm_simd(true)
+        .wasm_relaxed_simd(true)
+        .relaxed_simd_deterministic(cfg!(feature = "deterministic-wasm"))
+        .wasm_tail_call(true)
+        .wasm_bulk_memory(true)
+        .wasm_multi_value(true)
+        .wasm_multi_memory(true)
+        .wasm_memory64(true);
+    config.wasm_threads(false); // Disable threads for now
+    #[cfg(feature = "wasi-preview2")]
+    config.wasm_component_model(true);
 
-        Engine::new(&config).unwrap()
-    };
-}
+    Engine::new(&config).unwrap()
+});
 
 #[cfg(feature = "epoch-timeout")]
-lazy_static! {
-    pub static ref EPOCH: EpochThreadHandle = EpochThreadHandle::default();
-}
+pub static EPOCH: Lazy<EpochThreadHandle> = Lazy::new(EpochThreadHandle::default);
 
 #[derive(NativeClass)]
 #[inherit(Reference)]
