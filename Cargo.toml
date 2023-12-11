@@ -57,6 +57,7 @@ features = [
 
 [features]
 default = ["epoch-timeout", "memory-limiter", "object-registry", "wasi"]
+new-host-import = []
 memory-limiter = []
 epoch-timeout = []
 object-registry-compat = ["dep:slab"]

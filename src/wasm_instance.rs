@@ -44,9 +44,7 @@ use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
-use crate::wasm_util::{
-    config_store_common, from_raw, make_host_module, to_raw, HOST_MODULE, MEMORY_EXPORT,
-};
+use crate::wasm_util::{config_store_common, from_raw, to_raw, HostModuleCache, MEMORY_EXPORT};
 use crate::{bail_with_site, site_context};
 
 #[derive(NativeClass)]
@@ -380,8 +378,6 @@ where
             store.data_mut().as_mut().object_registry = Some(ObjectRegistry::default());
         }
 
-        let host = host.map(|h| make_host_module(&mut store, h)).transpose()?;
-
         let sp = &mut store;
         let instance = module
             .script()
@@ -391,7 +387,7 @@ where
                     sp,
                     m.get_data()?,
                     &mut insts,
-                    &host,
+                    &mut host.map(HostModuleCache::new),
                     #[cfg(feature = "object-registry-compat")]
                     &mut ObjregistryFuncs::default(),
                     #[cfg(feature = "object-registry-extern")]
@@ -415,7 +411,7 @@ where
         store: &mut Store<T>,
         module: &ModuleData,
         insts: &mut HashMap<Ref<Reference, Shared>, InstanceWasm>,
-        host: &Option<HashMap<String, Extern>>,
+        host: &mut Option<HostModuleCache<T>>,
         #[cfg(feature = "object-registry-compat")] objregistry_funcs: &mut ObjregistryFuncs,
         #[cfg(feature = "object-registry-extern")] externref_funcs: &mut ExternrefFuncs,
         #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<T>>,
@@ -429,15 +425,16 @@ where
         let mut imports = Vec::with_capacity(it.len());
 
         for i in it {
+            if let Some(v) = host
+                .as_mut()
+                .and_then(|v| v.get_extern(&mut *store, i.module(), i.name()).transpose())
+                .transpose()?
+            {
+                imports.push(v);
+                continue;
+            }
+
             match (i.module(), &store.data().as_ref().config) {
-                (HOST_MODULE, _) => {
-                    if let Some(host) = host.as_ref() {
-                        if let Some(v) = host.get(i.name()) {
-                            imports.push(v.clone());
-                            continue;
-                        }
-                    }
-                }
                 #[cfg(feature = "object-registry-compat")]
                 (
                     OBJREGISTRY_MODULE,
@@ -490,7 +487,7 @@ where
                                         &mut *store,
                                         m.get_data()?,
                                         &mut *insts,
-                                        host,
+                                        &mut *host,
                                         #[cfg(feature = "object-registry-compat")]
                                         &mut *objregistry_funcs,
                                         #[cfg(feature = "object-registry-extern")]

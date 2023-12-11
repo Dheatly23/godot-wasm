@@ -1,4 +1,7 @@
+#[cfg(not(feature = "new-host-import"))]
 use std::collections::HashMap;
+#[cfg(not(feature = "new-host-import"))]
+use std::marker::PhantomData;
 #[cfg(feature = "object-registry-extern")]
 use std::ptr;
 #[cfg(feature = "epoch-timeout")]
@@ -10,6 +13,8 @@ use gdnative::log::Site;
 use gdnative::prelude::*;
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
+#[cfg(feature = "new-host-import")]
+use wasmtime::Linker;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
@@ -53,6 +58,7 @@ pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
 #[cfg(feature = "object-registry-extern")]
 pub const EXTERNREF_MODULE: &str = "godot_object_v2";
 
+#[cfg(not(feature = "new-host-import"))]
 pub const MODULE_INCLUDES: &[&str] = &[
     HOST_MODULE,
     #[cfg(feature = "object-registry-compat")]
@@ -278,17 +284,45 @@ where
     unsafe { Func::new_unchecked(store, ty_cloned, f) }
 }
 
-pub fn make_host_module<T>(
-    store: &mut Store<T>,
-    dict: Dictionary,
-) -> Result<HashMap<String, Extern>, Error>
-where
-    T: AsRef<StoreData> + AsMut<StoreData>,
-{
-    let mut ret = HashMap::new();
-    for (k, v) in dict.iter() {
-        let k = site_context!(GodotString::from_variant(&k))?.to_string();
+#[cfg(feature = "new-host-import")]
+pub struct HostModuleCache<T> {
+    cache: Linker<T>,
+    host: Dictionary,
+}
 
+#[cfg(not(feature = "new-host-import"))]
+pub struct HostModuleCache<T> {
+    cache: HashMap<String, Extern>,
+    host: Dictionary,
+    phantom: PhantomData<T>,
+}
+
+impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
+    pub fn new(host: Dictionary) -> Self {
+        #[cfg(feature = "new-host-import")]
+        {
+            Self {
+                cache: Linker::new(&ENGINE),
+                host,
+            }
+        }
+
+        #[cfg(not(feature = "new-host-import"))]
+        {
+            Self {
+                cache: HashMap::new(),
+                host,
+                phantom: PhantomData,
+            }
+        }
+    }
+
+    pub fn get_extern<S: AsContextMut<Data = T>>(
+        &mut self,
+        store: &mut S,
+        module: &str,
+        name: &str,
+    ) -> Result<Option<Extern>, Error> {
         #[derive(FromVariant)]
         struct Data {
             params: Variant,
@@ -297,28 +331,66 @@ where
             method: GodotString,
         }
 
-        let data = site_context!(Data::from_variant(&v))?;
-        let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
-            Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-            Err(_) => data.object.clone(),
-        };
-        if !obj.has_method(data.method.clone()) {
-            bail!("Object {} has no method {}", obj, data.method);
-        }
+        #[cfg(feature = "new-host-import")]
+        if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
+            Ok(r)
+        } else if let Some(data) = self
+            .host
+            .get(module)
+            .map(|d| site_context!(Dictionary::from_variant(&d)))
+            .transpose()?
+            .and_then(|d| d.get(name))
+        {
+            let data = site_context!(Data::from_variant(&data))?;
 
-        ret.insert(
-            k,
-            wrap_godot_method(
+            let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
+                Ok(obj) => unsafe { obj.assume_safe().get_ref() },
+                Err(_) => data.object.clone(),
+            };
+            if !obj.has_method(data.method.clone()) {
+                bail!("Object {} has no method {}", obj, data.method);
+            }
+
+            let v = Extern::from(wrap_godot_method(
                 &mut *store,
                 to_signature(data.params, data.results)?,
                 data.object,
                 data.method,
-            )
-            .into(),
-        );
-    }
+            ));
+            self.cache.define(store, module, name, v.clone())?;
+            Ok(Some(v))
+        } else {
+            Ok(None)
+        }
 
-    Ok(ret)
+        #[cfg(not(feature = "new-host-import"))]
+        if module != HOST_MODULE {
+            Ok(None)
+        } else if let r @ Some(_) = self.cache.get(name).cloned() {
+            Ok(r)
+        } else if let Some(data) = self.host.get(name) {
+            let data = site_context!(Data::from_variant(&data))?;
+
+            let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
+                Ok(obj) => unsafe { obj.assume_safe().get_ref() },
+                Err(_) => data.object.clone(),
+            };
+            if !obj.has_method(data.method.clone()) {
+                bail!("Object {} has no method {}", obj, data.method);
+            }
+
+            let v = Extern::from(wrap_godot_method(
+                store,
+                to_signature(data.params, data.results)?,
+                data.object,
+                data.method,
+            ));
+            self.cache.insert(name.to_string(), v.clone());
+            Ok(Some(v))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 pub fn config_store_common<T>(store: &mut Store<T>) -> Result<(), Error>
