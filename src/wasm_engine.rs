@@ -5,7 +5,7 @@ use std::{sync::Arc, thread, time};
 use anyhow::{bail, Error};
 use godot::engine::FileAccess;
 use godot::prelude::*;
-use once_cell::sync::{OnceCell, Lazy};
+use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Once;
 #[cfg(feature = "epoch-timeout")]
 use parking_lot::{Condvar, Mutex};
@@ -16,8 +16,10 @@ use wasmtime::{Config, Engine, ExternType, Module};
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
+#[cfg(not(feature = "new-host-import"))]
+use crate::wasm_util::MODULE_INCLUDES;
 use crate::wasm_util::{
-    from_signature, variant_to_option, VariantDispatch, HOST_MODULE, MODULE_INCLUDES,
+    from_signature, variant_to_option, VariantDispatch, HOST_MODULE,
 };
 use crate::{bail_with_site, site_context};
 
@@ -87,7 +89,8 @@ impl Drop for EpochThreadHandle {
 
 pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = Config::new();
-    config.cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
+    config
+        .cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
         .cranelift_nan_canonicalization(cfg!(feature = "deterministic-wasm"))
         .epoch_interruption(true)
         .wasm_reference_types(true)
@@ -224,7 +227,7 @@ impl WasmModule {
 
             let mut deps_map = HashMap::new();
             #[allow(irrefutable_let_patterns)]
-            if let ModuleType::Core(module) = &module {
+            if let ModuleType::Core(_module) = &module {
                 deps_map = HashMap::with_capacity(imports.len() as _);
                 for (k, v) in imports.iter_shared() {
                     let k = site_context!(String::try_from_variant(&k))?;
@@ -232,7 +235,8 @@ impl WasmModule {
                     deps_map.insert(k, v);
                 }
 
-                Self::validate_module(module, &deps_map)?;
+                #[cfg(not(feature = "new-host-import"))]
+                Self::validate_module(_module, &deps_map)?;
             }
             #[cfg(feature = "wasi-preview2")]
             if let ModuleType::Component(_) = module {
@@ -255,6 +259,7 @@ impl WasmModule {
         }
     }
 
+    #[cfg(not(feature = "new-host-import"))]
     fn validate_module(
         module: &Module,
         deps_map: &HashMap<String, Gd<WasmModule>>,

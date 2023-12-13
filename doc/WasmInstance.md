@@ -182,3 +182,57 @@ Writes array of values to memory.
 ### `PackedByteArray|PackedIntArray|PackedFloatArray get_array(int ptr, int n, VariantType type)`
 
 Reads array of values from memory.
+
+### `Array read_struct(String format, int ptr)`
+
+Reads a formatted data from memory.
+
+### `int write_struct(String format, int ptr, Array data)`
+
+Writes a formatted data into memory.
+
+## Addendum 1: Struct Format String
+
+The format string used for `read_struct()` and `write_struct()`
+is defined as a list of items.
+Each item contains a type, optionally preceded by a repetition count.
+The valid types are as follows:
+
+| String | Godot Type | Byte Length | Description |
+|:------:|:----------:|:-----------:|:------------|
+| `x` | | 1 | Padding byte, will not be read/written. Padding bytes are not automatically added. |
+| `b` | `int` | 1 | Signed 8-bit number |
+| `B` | `int` | 1 | Unsigned 8-bit number |
+| `h` | `int` | 2 | Signed 16-bit number |
+| `H` | `int` | 2 | Unsigned 16-bit number |
+| `i` | `int` | 4 | Signed 32-bit number |
+| `I` | `int` | 4 | Unsigned 32-bit number |
+| `l` | `int` | 8 | Signed 64-bit number |
+| `L` | `int` | 8 | Unsigned 64-bit number |
+| `f` | `float` | 4 | 32-bit floating-point number |
+| `d` | `float` | 8 | 64-bit floating-point number |
+| `v2f` | `Vector2` | 8 | 2D vector as 2 32-bit floating-point number |
+| `v2d` | `Vector2` | 16 | 2D vector as 2 64-bit floating-point number |
+| `v2i` | `Vector2` | 8 | 2D vector as 2 32-bit signed integer number |
+| `v2l` | `Vector2` | 16 | 2D vector as 2 64-bit signed integer number |
+| `v3f` | `Vector3` | 12 | 3D vector as a 3 32-bit floating-point number |
+| `v3d` | `Vector3` | 24 | 3D vector as a 3 64-bit floating-point number |
+| `v3i` | `Vector3` | 12 | 3D vector as a 3 32-bit signed integer number |
+| `v3l` | `Vector3` | 24 | 3D vector as a 3 64-bit signed integer number |
+| `pf` | `Plane` | 16 | Plane represented as abcd 32-bit floating-point number |
+| `pd` | `Plane` | 32 | Plane represented as abcd 64-bit floating-point number |
+| `qf` | `Quat` | 16 | Quaternion represented as xyzw 32-bit floating-point number |
+| `qd` | `Quat` | 32 | Quaternion represented as xyzw 64-bit floating-point number |
+| `Cf` | `Color` | 16 | Color represented as rgba 32-bit floating-point number |
+| `Cd` | `Color` | 32 | Color represented as rgba 64-bit floating-point number |
+| `Cb` | `Color` | 4 | Color represented as rgba 8-bit integer |
+| `rf` | `Rect2` | 16 | Rect2 represented as 4 32-bit floating-point number |
+| `rd` | `Rect2` | 32 | Rect2 represented as 4 64-bit floating-point number |
+| `af` | `Aabb` | 24 | Aabb represented as 6 32-bit floating-point number |
+| `ad` | `Aabb` | 48 | Aabb represented as 6 64-bit floating-point number |
+| `mf` | `Basis` | 36 | Basis represented as 9 row-major 32-bit floating-point number |
+| `md` | `Basis` | 72 | Basis represented as 9 row-major 64-bit floating-point number |
+| `tf` | `Transform2D` | 24 | 2D transform represented as 6 32-bit floating-point number |
+| `td` | `Transform2D` | 48 | 2D transform represented as 6 64-bit floating-point number |
+| `Tf` | `Transform2D` | 48 | 3D transform represented as 12 32-bit floating-point number |
+| `Td` | `Transform2D` | 96 | 3D transform represented as 12 64-bit floating-point number |
