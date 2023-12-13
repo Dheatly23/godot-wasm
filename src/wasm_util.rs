@@ -1,9 +1,9 @@
 #[cfg(not(feature = "new-host-import"))]
 use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
-use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg(not(feature = "new-host-import"))]
 use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg(feature = "object-registry-extern")]
 use std::ptr;
 #[cfg(feature = "epoch-timeout")]
@@ -12,6 +12,7 @@ use std::time;
 use anyhow::{anyhow, Error};
 use godot::builtin::meta::ConvertError;
 use godot::prelude::*;
+use once_cell::sync::Lazy;
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
 #[cfg(feature = "new-host-import")]
@@ -434,6 +435,48 @@ where
     unsafe { Func::new_unchecked(store, ty_cloned, f) }
 }
 
+static DATA_STRS: Lazy<(StringName, StringName, StringName, StringName, StringName)> =
+    Lazy::new(|| {
+        (
+            StringName::from_latin1_with_nul(b"params\0"),
+            StringName::from_latin1_with_nul(b"results\0"),
+            StringName::from_latin1_with_nul(b"object\0"),
+            StringName::from_latin1_with_nul(b"method\0"),
+            StringName::from_latin1_with_nul(b"callable\0"),
+        )
+    });
+
+fn process_func(dict: Dictionary) -> Result<(FuncType, CallableEnum), Error> {
+    let Some(params) = dict.get(DATA_STRS.0.clone()) else {
+        bail_with_site!("Key \"params\" does not exist")
+    };
+    let Some(results) = dict.get(DATA_STRS.1.clone()) else {
+        bail_with_site!("Key \"results\" does not exist")
+    };
+
+    let callable = if let Some(c) = dict.get(DATA_STRS.4.clone()) {
+        CallableEnum::Callable(site_context!(Callable::try_from_variant(&c))?)
+    } else {
+        let Some(object) = dict.get(DATA_STRS.2.clone()) else {
+            bail_with_site!("Key \"object\" does not exist")
+        };
+        let Some(method) = dict.get(DATA_STRS.3.clone()) else {
+            bail_with_site!("Key \"method\" does not exist")
+        };
+
+        CallableEnum::ObjectMethod(
+            site_context!(<Gd<Object>>::try_from_variant(&object))?,
+            match VariantDispatch::from(&method) {
+                VariantDispatch::String(s) => StringName::from(&s),
+                VariantDispatch::StringName(s) => s,
+                _ => bail_with_site!("Unknown method name {}", method),
+            },
+        )
+    };
+
+    Ok((to_signature(params, results)?, callable))
+}
+
 #[cfg(feature = "new-host-import")]
 pub struct HostModuleCache<T> {
     cache: Linker<T>,
@@ -473,40 +516,20 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
         module: &str,
         name: &str,
     ) -> Result<Option<Extern>, Error> {
-        #[derive(FromVariant)]
-        struct Data {
-            params: Variant,
-            results: Variant,
-            object: Variant,
-            method: GodotString,
-        }
-
         #[cfg(feature = "new-host-import")]
         if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
             Ok(r)
         } else if let Some(data) = self
             .host
             .get(module)
-            .map(|d| site_context!(Dictionary::from_variant(&d)))
+            .map(|d| site_context!(Dictionary::try_from_variant(&d)))
             .transpose()?
             .and_then(|d| d.get(name))
         {
-            let data = site_context!(Data::from_variant(&data))?;
+            let (sig, callable) =
+                process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
 
-            let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
-                Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-                Err(_) => data.object.clone(),
-            };
-            if !obj.has_method(data.method.clone()) {
-                bail!("Object {} has no method {}", obj, data.method);
-            }
-
-            let v = Extern::from(wrap_godot_method(
-                &mut *store,
-                to_signature(data.params, data.results)?,
-                data.object,
-                data.method,
-            ));
+            let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
             self.cache.define(store, module, name, v.clone())?;
             Ok(Some(v))
         } else {
@@ -519,22 +542,10 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
         } else if let r @ Some(_) = self.cache.get(name).cloned() {
             Ok(r)
         } else if let Some(data) = self.host.get(name) {
-            let data = site_context!(Data::from_variant(&data))?;
+            let (sig, callable) =
+                process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
 
-            let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
-                Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-                Err(_) => data.object.clone(),
-            };
-            if !obj.has_method(data.method.clone()) {
-                bail!("Object {} has no method {}", obj, data.method);
-            }
-
-            let v = Extern::from(wrap_godot_method(
-                store,
-                to_signature(data.params, data.results)?,
-                data.object,
-                data.method,
-            ));
+            let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
             self.cache.insert(name.to_string(), v.clone());
             Ok(Some(v))
         } else {

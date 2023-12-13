@@ -18,9 +18,7 @@ use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::EPOCH_INTERVAL;
 #[cfg(not(feature = "new-host-import"))]
 use crate::wasm_util::MODULE_INCLUDES;
-use crate::wasm_util::{
-    from_signature, variant_to_option, VariantDispatch, HOST_MODULE,
-};
+use crate::wasm_util::{from_signature, variant_to_option, VariantDispatch, HOST_MODULE};
 use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]

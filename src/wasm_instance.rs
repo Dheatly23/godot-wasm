@@ -46,7 +46,7 @@ use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{
-    config_store_common, from_raw, make_host_module, option_to_variant, to_raw, variant_to_option,
+    config_store_common, from_raw, option_to_variant, to_raw, variant_to_option, HostModuleCache,
     VariantDispatch, MEMORY_EXPORT,
 };
 use crate::{bail_with_site, site_context};
@@ -1166,30 +1166,26 @@ impl WasmInstance {
         }))
     }
 
-    #[method]
-    fn read_struct(
-        &self,
-        #[base] base: TRef<Reference>,
-        format: GodotString,
-        p: usize,
-    ) -> Option<VariantArray> {
-        self.get_memory(base, |store, mem| {
-            read_struct_(mem.data(store), p, &format.to_string())
-        })
+    #[func]
+    fn read_struct(&self, format: GString, p: i64) -> Variant {
+        option_to_variant(self.get_memory(|store, mem| {
+            read_struct_(mem.data(store), p as _, unsafe {
+                &format.chars_unchecked()
+            })
+        }))
     }
 
-    #[method]
-    fn write_struct(
-        &self,
-        #[base] base: TRef<Reference>,
-        format: GodotString,
-        p: usize,
-        arr: VariantArray,
-    ) -> usize {
-        self.get_memory(base, |store, mem| {
-            write_struct_(mem.data_mut(store), p, &format.to_string(), arr)
+    #[func]
+    fn write_struct(&self, format: GString, p: i64, arr: Array<Variant>) -> i64 {
+        self.get_memory(|store, mem| {
+            write_struct_(
+                mem.data_mut(store),
+                p as _,
+                unsafe { &format.chars_unchecked() },
+                arr,
+            )
         })
-        .unwrap_or_default()
+        .unwrap_or_default() as _
     }
 }
 
@@ -1227,11 +1223,11 @@ fn process_number<I: Iterator<Item = (usize, char)>>(c: char, it: &mut Peekable<
     n
 }
 
-fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray, Error> {
-    fn f<const N: usize, T: OwnedToVariant>(
+fn read_struct_(data: &[u8], mut p: usize, format: &[char]) -> Result<Array<Variant>, Error> {
+    fn f<const N: usize, T: ToGodot>(
         data: &[u8],
         p: &mut usize,
-        a: &VariantArray<Unique>,
+        a: &mut Array<Variant>,
         r: &mut Option<u64>,
         f: impl Fn(&[u8; N]) -> T,
     ) -> Result<(), Error> {
@@ -1241,15 +1237,15 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
             let Some(data) = data.get(s..e) else {
                 bail_with_site!("Index out of range ({s}..{e})")
             };
-            a.push(f(data.try_into().unwrap()));
+            a.push(f(data.try_into().unwrap()).to_variant());
             *p += N;
         }
 
         Ok(())
     }
 
-    let ret = VariantArray::new();
-    let mut it = format.chars().enumerate().peekable();
+    let mut ret = <Array<Variant>>::new();
+    let mut it = format.iter().copied().enumerate().peekable();
     let mut n: Option<u64> = None;
     while let Some((i, c)) = it.next() {
         match c {
@@ -1259,57 +1255,61 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                 if it.peek().is_some() {
                     continue;
                 }
-                bail_with_site!("Quantity without type (at index {} {:?})", i, &format[i..]);
+                bail_with_site!(
+                    "Quantity without type (at index {} {:?})",
+                    i,
+                    format[i..].iter().collect::<String>()
+                );
             }
             'x' => {
                 p += n.take().unwrap_or(1) as usize;
                 continue;
             }
-            'b' => f::<1, _>(data, &mut p, &ret, &mut n, |v| v[0] as i8 as i64),
-            'B' => f::<1, _>(data, &mut p, &ret, &mut n, |v| v[0] as i64),
-            'h' => f::<2, _>(data, &mut p, &ret, &mut n, |v| {
+            'b' => f::<1, _>(data, &mut p, &mut ret, &mut n, |v| v[0] as i8 as i64),
+            'B' => f::<1, _>(data, &mut p, &mut ret, &mut n, |v| v[0] as i64),
+            'h' => f::<2, _>(data, &mut p, &mut ret, &mut n, |v| {
                 i16::from_le_bytes(*v) as i64
             }),
-            'H' => f::<2, _>(data, &mut p, &ret, &mut n, |v| {
+            'H' => f::<2, _>(data, &mut p, &mut ret, &mut n, |v| {
                 u16::from_le_bytes(*v) as i64
             }),
-            'i' => f::<4, _>(data, &mut p, &ret, &mut n, |v| {
+            'i' => f::<4, _>(data, &mut p, &mut ret, &mut n, |v| {
                 i32::from_le_bytes(*v) as i64
             }),
-            'I' => f::<4, _>(data, &mut p, &ret, &mut n, |v| {
+            'I' => f::<4, _>(data, &mut p, &mut ret, &mut n, |v| {
                 u32::from_le_bytes(*v) as i64
             }),
-            'l' => f::<8, _>(data, &mut p, &ret, &mut n, |v| i64::from_le_bytes(*v)),
-            'L' => f::<8, _>(data, &mut p, &ret, &mut n, |v| u64::from_le_bytes(*v)),
-            'f' => f::<4, _>(data, &mut p, &ret, &mut n, |v| f32::from_le_bytes(*v)),
-            'd' => f::<8, _>(data, &mut p, &ret, &mut n, |v| f64::from_le_bytes(*v)),
+            'l' => f::<8, _>(data, &mut p, &mut ret, &mut n, |v| i64::from_le_bytes(*v)),
+            'L' => f::<8, _>(data, &mut p, &mut ret, &mut n, |v| u64::from_le_bytes(*v)),
+            'f' => f::<4, _>(data, &mut p, &mut ret, &mut n, |v| f32::from_le_bytes(*v)),
+            'd' => f::<8, _>(data, &mut p, &mut ret, &mut n, |v| f64::from_le_bytes(*v)),
             'v' => {
                 match it.next() {
                     None => bail_with_site!("Vector without size (at index {i})"),
                     Some((_, '2')) => match it.next() {
                         Some((_, 'f')) => {
-                            f::<8, _>(data, &mut p, &ret, &mut n, |v| Vector2 {
+                            f::<8, _>(data, &mut p, &mut ret, &mut n, |v| Vector2 {
                                 x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                                 y: f32::from_le_bytes(v[4..].try_into().unwrap()),
                             })?;
                             continue;
                         }
                         Some((_, 'd')) => {
-                            f::<16, _>(data, &mut p, &ret, &mut n, |v| Vector2 {
+                            f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Vector2 {
                                 x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                                 y: f64::from_le_bytes(v[8..].try_into().unwrap()) as _,
                             })?;
                             continue;
                         }
                         Some((_, 'i')) => {
-                            f::<8, _>(data, &mut p, &ret, &mut n, |v| Vector2 {
-                                x: i32::from_le_bytes(v[..4].try_into().unwrap()) as _,
-                                y: i32::from_le_bytes(v[4..].try_into().unwrap()) as _,
+                            f::<8, _>(data, &mut p, &mut ret, &mut n, |v| Vector2i {
+                                x: i32::from_le_bytes(v[..4].try_into().unwrap()),
+                                y: i32::from_le_bytes(v[4..].try_into().unwrap()),
                             })?;
                             continue;
                         }
                         Some((_, 'l')) => {
-                            f::<16, _>(data, &mut p, &ret, &mut n, |v| Vector2 {
+                            f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Vector2i {
                                 x: i64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                                 y: i64::from_le_bytes(v[8..].try_into().unwrap()) as _,
                             })?;
@@ -1319,7 +1319,7 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                     },
                     Some((_, '3')) => match it.next() {
                         Some((_, 'f')) => {
-                            f::<12, _>(data, &mut p, &ret, &mut n, |v| Vector3 {
+                            f::<12, _>(data, &mut p, &mut ret, &mut n, |v| Vector3 {
                                 x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                                 y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
                                 z: f32::from_le_bytes(v[8..].try_into().unwrap()),
@@ -1327,7 +1327,7 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                             continue;
                         }
                         Some((_, 'd')) => {
-                            f::<24, _>(data, &mut p, &ret, &mut n, |v| Vector3 {
+                            f::<24, _>(data, &mut p, &mut ret, &mut n, |v| Vector3 {
                                 x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                                 y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
                                 z: f64::from_le_bytes(v[16..].try_into().unwrap()) as _,
@@ -1335,18 +1335,57 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                             continue;
                         }
                         Some((_, 'i')) => {
-                            f::<12, _>(data, &mut p, &ret, &mut n, |v| Vector3 {
-                                x: i32::from_le_bytes(v[..4].try_into().unwrap()) as _,
-                                y: i32::from_le_bytes(v[4..8].try_into().unwrap()) as _,
-                                z: i32::from_le_bytes(v[8..].try_into().unwrap()) as _,
+                            f::<12, _>(data, &mut p, &mut ret, &mut n, |v| Vector3i {
+                                x: i32::from_le_bytes(v[..4].try_into().unwrap()),
+                                y: i32::from_le_bytes(v[4..8].try_into().unwrap()),
+                                z: i32::from_le_bytes(v[8..].try_into().unwrap()),
                             })?;
                             continue;
                         }
                         Some((_, 'l')) => {
-                            f::<24, _>(data, &mut p, &ret, &mut n, |v| Vector3 {
+                            f::<24, _>(data, &mut p, &mut ret, &mut n, |v| Vector3i {
                                 x: i64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                                 y: i64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
                                 z: i64::from_le_bytes(v[16..].try_into().unwrap()) as _,
+                            })?;
+                            continue;
+                        }
+                        _ => (),
+                    },
+                    Some((_, '4')) => match it.next() {
+                        Some((_, 'f')) => {
+                            f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Vector4 {
+                                x: f32::from_le_bytes(v[..4].try_into().unwrap()),
+                                y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
+                                z: f32::from_le_bytes(v[8..12].try_into().unwrap()),
+                                w: f32::from_le_bytes(v[12..].try_into().unwrap()),
+                            })?;
+                            continue;
+                        }
+                        Some((_, 'd')) => {
+                            f::<32, _>(data, &mut p, &mut ret, &mut n, |v| Vector4 {
+                                x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
+                                y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
+                                z: f64::from_le_bytes(v[16..24].try_into().unwrap()) as _,
+                                w: f64::from_le_bytes(v[24..].try_into().unwrap()) as _,
+                            })?;
+                            continue;
+                        }
+                        Some((_, 'i')) => {
+                            f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Vector4i {
+                                x: i32::from_le_bytes(v[..4].try_into().unwrap()),
+                                y: i32::from_le_bytes(v[4..8].try_into().unwrap()),
+                                z: i32::from_le_bytes(v[8..12].try_into().unwrap()),
+                                w: i32::from_le_bytes(v[12..].try_into().unwrap()),
+                            })?;
+                            continue;
+                        }
+                        Some((_, 'l')) => {
+                            f::<32, _>(data, &mut p, &mut ret, &mut n, |v| Vector4i {
+                                x: i64::from_le_bytes(v[..8].try_into().unwrap()) as _,
+                                y: i64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
+                                z: i64::from_le_bytes(v[16..24].try_into().unwrap()) as _,
+                                w: i64::from_le_bytes(v[24..].try_into().unwrap()) as _,
                             })?;
                             continue;
                         }
@@ -1359,11 +1398,14 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                     Some(&(j, _)) => &format[i..j],
                     None => &format[i..],
                 };
-                bail_with_site!("Unknown type {s:?} (at index {i})");
+                bail_with_site!(
+                    "Unknown type {:?} (at index {i})",
+                    s.iter().collect::<String>()
+                );
             }
             'p' => match it.next() {
                 None => bail_with_site!("Plane without subtype (at index {i})"),
-                Some((_, 'f')) => f::<16, _>(data, &mut p, &ret, &mut n, |v| Plane {
+                Some((_, 'f')) => f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Plane {
                     normal: Vector3 {
                         x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
@@ -1371,7 +1413,7 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                     },
                     d: f32::from_le_bytes(v[12..].try_into().unwrap()),
                 }),
-                Some((_, 'd')) => f::<32, _>(data, &mut p, &ret, &mut n, |v| Plane {
+                Some((_, 'd')) => f::<32, _>(data, &mut p, &mut ret, &mut n, |v| Plane {
                     normal: Vector3 {
                         x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                         y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
@@ -1385,13 +1427,13 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
             },
             'q' => match it.next() {
                 None => bail_with_site!("Quat without subtype (at index {i})"),
-                Some((_, 'f')) => f::<16, _>(data, &mut p, &ret, &mut n, |v| Quat {
+                Some((_, 'f')) => f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Quaternion {
                     x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                     y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
                     z: f32::from_le_bytes(v[8..12].try_into().unwrap()),
                     w: f32::from_le_bytes(v[12..].try_into().unwrap()),
                 }),
-                Some((_, 'd')) => f::<32, _>(data, &mut p, &ret, &mut n, |v| Quat {
+                Some((_, 'd')) => f::<32, _>(data, &mut p, &mut ret, &mut n, |v| Quaternion {
                     x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                     y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
                     z: f64::from_le_bytes(v[16..24].try_into().unwrap()) as _,
@@ -1403,20 +1445,20 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
             },
             'C' => match it.next() {
                 None => bail_with_site!("Color without subtype (at index {i})"),
-                Some((_, 'f')) => f::<16, _>(data, &mut p, &ret, &mut n, |v| Color {
+                Some((_, 'f')) => f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Color {
                     r: f32::from_le_bytes(v[..4].try_into().unwrap()),
                     g: f32::from_le_bytes(v[4..8].try_into().unwrap()),
                     b: f32::from_le_bytes(v[8..12].try_into().unwrap()),
                     a: f32::from_le_bytes(v[12..].try_into().unwrap()),
                 }),
-                Some((_, 'd')) => f::<32, _>(data, &mut p, &ret, &mut n, |v| Color {
+                Some((_, 'd')) => f::<32, _>(data, &mut p, &mut ret, &mut n, |v| Color {
                     r: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                     g: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
                     b: f64::from_le_bytes(v[16..24].try_into().unwrap()) as _,
                     a: f64::from_le_bytes(v[24..].try_into().unwrap()) as _,
                 }),
-                Some((_, 'b')) => f::<4, _>(data, &mut p, &ret, &mut n, |&[r, g, b, a]| {
-                    Color::from_rgba_u8(r, g, b, a)
+                Some((_, 'b')) => f::<4, _>(data, &mut p, &mut ret, &mut n, |&[r, g, b, a]| {
+                    Color::from_rgba8(r, g, b, a)
                 }),
                 Some((_, c)) => {
                     bail_with_site!("Unknown Color subtype {c:?} (at index {i})")
@@ -1424,7 +1466,7 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
             },
             'r' => match it.next() {
                 None => bail_with_site!("Rect2 without subtype (at index {i})"),
-                Some((_, 'f')) => f::<16, _>(data, &mut p, &ret, &mut n, |v| Rect2 {
+                Some((_, 'f')) => f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Rect2 {
                     position: Vector2 {
                         x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
@@ -1434,7 +1476,7 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                         y: f32::from_le_bytes(v[12..].try_into().unwrap()),
                     },
                 }),
-                Some((_, 'd')) => f::<32, _>(data, &mut p, &ret, &mut n, |v| Rect2 {
+                Some((_, 'd')) => f::<32, _>(data, &mut p, &mut ret, &mut n, |v| Rect2 {
                     position: Vector2 {
                         x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                         y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
@@ -1444,22 +1486,22 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                         y: f64::from_le_bytes(v[24..].try_into().unwrap()) as _,
                     },
                 }),
-                Some((_, 'i')) => f::<16, _>(data, &mut p, &ret, &mut n, |v| Rect2 {
-                    position: Vector2 {
-                        x: i32::from_le_bytes(v[..4].try_into().unwrap()) as _,
-                        y: i32::from_le_bytes(v[4..8].try_into().unwrap()) as _,
+                Some((_, 'i')) => f::<16, _>(data, &mut p, &mut ret, &mut n, |v| Rect2i {
+                    position: Vector2i {
+                        x: i32::from_le_bytes(v[..4].try_into().unwrap()),
+                        y: i32::from_le_bytes(v[4..8].try_into().unwrap()),
                     },
-                    size: Vector2 {
+                    size: Vector2i {
                         x: i32::from_le_bytes(v[8..12].try_into().unwrap()) as _,
                         y: i32::from_le_bytes(v[12..].try_into().unwrap()) as _,
                     },
                 }),
-                Some((_, 'l')) => f::<32, _>(data, &mut p, &ret, &mut n, |v| Rect2 {
-                    position: Vector2 {
+                Some((_, 'l')) => f::<32, _>(data, &mut p, &mut ret, &mut n, |v| Rect2i {
+                    position: Vector2i {
                         x: i64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                         y: i64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
                     },
-                    size: Vector2 {
+                    size: Vector2i {
                         x: i64::from_le_bytes(v[16..24].try_into().unwrap()) as _,
                         y: i64::from_le_bytes(v[24..].try_into().unwrap()) as _,
                     },
@@ -1470,7 +1512,7 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
             },
             'a' => match it.next() {
                 None => bail_with_site!("Aabb without subtype (at index {i})"),
-                Some((_, 'f')) => f::<24, _>(data, &mut p, &ret, &mut n, |v| Aabb {
+                Some((_, 'f')) => f::<24, _>(data, &mut p, &mut ret, &mut n, |v| Aabb {
                     position: Vector3 {
                         x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
@@ -1482,7 +1524,7 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                         z: f32::from_le_bytes(v[20..].try_into().unwrap()),
                     },
                 }),
-                Some((_, 'd')) => f::<48, _>(data, &mut p, &ret, &mut n, |v| Aabb {
+                Some((_, 'd')) => f::<48, _>(data, &mut p, &mut ret, &mut n, |v| Aabb {
                     position: Vector3 {
                         x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                         y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
@@ -1500,8 +1542,8 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
             },
             'm' => match it.next() {
                 None => bail_with_site!("Basis without subtype (at index {i})"),
-                Some((_, 'f')) => f::<36, _>(data, &mut p, &ret, &mut n, |v| Basis {
-                    elements: [
+                Some((_, 'f')) => f::<36, _>(data, &mut p, &mut ret, &mut n, |v| Basis {
+                    rows: [
                         Vector3 {
                             x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                             y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
@@ -1519,8 +1561,8 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                         },
                     ],
                 }),
-                Some((_, 'd')) => f::<72, _>(data, &mut p, &ret, &mut n, |v| Basis {
-                    elements: [
+                Some((_, 'd')) => f::<72, _>(data, &mut p, &mut ret, &mut n, |v| Basis {
+                    rows: [
                         Vector3 {
                             x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                             y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
@@ -1542,9 +1584,71 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                     bail_with_site!("Unknown Basis subtype {c:?} (at index {i})")
                 }
             },
+            'M' => match it.next() {
+                None => bail_with_site!("Projection without subtype (at index {i})"),
+                Some((_, 'f')) => f::<64, _>(data, &mut p, &mut ret, &mut n, |v| Projection {
+                    cols: [
+                        Vector4 {
+                            x: f32::from_le_bytes(v[..4].try_into().unwrap()),
+                            y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
+                            z: f32::from_le_bytes(v[8..12].try_into().unwrap()),
+                            w: f32::from_le_bytes(v[12..16].try_into().unwrap()),
+                        },
+                        Vector4 {
+                            x: f32::from_le_bytes(v[16..20].try_into().unwrap()),
+                            y: f32::from_le_bytes(v[20..24].try_into().unwrap()),
+                            z: f32::from_le_bytes(v[24..28].try_into().unwrap()),
+                            w: f32::from_le_bytes(v[28..32].try_into().unwrap()),
+                        },
+                        Vector4 {
+                            x: f32::from_le_bytes(v[32..36].try_into().unwrap()),
+                            y: f32::from_le_bytes(v[36..40].try_into().unwrap()),
+                            z: f32::from_le_bytes(v[40..44].try_into().unwrap()),
+                            w: f32::from_le_bytes(v[44..48].try_into().unwrap()),
+                        },
+                        Vector4 {
+                            x: f32::from_le_bytes(v[48..52].try_into().unwrap()),
+                            y: f32::from_le_bytes(v[52..56].try_into().unwrap()),
+                            z: f32::from_le_bytes(v[56..60].try_into().unwrap()),
+                            w: f32::from_le_bytes(v[60..].try_into().unwrap()),
+                        },
+                    ],
+                }),
+                Some((_, 'd')) => f::<128, _>(data, &mut p, &mut ret, &mut n, |v| Projection {
+                    cols: [
+                        Vector4 {
+                            x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
+                            y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
+                            z: f64::from_le_bytes(v[16..24].try_into().unwrap()) as _,
+                            w: f64::from_le_bytes(v[24..32].try_into().unwrap()) as _,
+                        },
+                        Vector4 {
+                            x: f64::from_le_bytes(v[32..40].try_into().unwrap()) as _,
+                            y: f64::from_le_bytes(v[40..48].try_into().unwrap()) as _,
+                            z: f64::from_le_bytes(v[48..56].try_into().unwrap()) as _,
+                            w: f64::from_le_bytes(v[56..64].try_into().unwrap()) as _,
+                        },
+                        Vector4 {
+                            x: f64::from_le_bytes(v[64..72].try_into().unwrap()) as _,
+                            y: f64::from_le_bytes(v[72..80].try_into().unwrap()) as _,
+                            z: f64::from_le_bytes(v[80..88].try_into().unwrap()) as _,
+                            w: f64::from_le_bytes(v[88..96].try_into().unwrap()) as _,
+                        },
+                        Vector4 {
+                            x: f64::from_le_bytes(v[96..104].try_into().unwrap()) as _,
+                            y: f64::from_le_bytes(v[104..112].try_into().unwrap()) as _,
+                            z: f64::from_le_bytes(v[112..120].try_into().unwrap()) as _,
+                            w: f64::from_le_bytes(v[120..].try_into().unwrap()) as _,
+                        },
+                    ],
+                }),
+                Some((_, c)) => {
+                    bail_with_site!("Unknown Projection subtype {c:?} (at index {i})")
+                }
+            },
             't' => match it.next() {
                 None => bail_with_site!("Transform2D without subtype (at index {i})"),
-                Some((_, 'f')) => f::<24, _>(data, &mut p, &ret, &mut n, |v| Transform2D {
+                Some((_, 'f')) => f::<24, _>(data, &mut p, &mut ret, &mut n, |v| Transform2D {
                     a: Vector2 {
                         x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
@@ -1558,7 +1662,7 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                         y: f32::from_le_bytes(v[20..].try_into().unwrap()),
                     },
                 }),
-                Some((_, 'd')) => f::<48, _>(data, &mut p, &ret, &mut n, |v| Transform2D {
+                Some((_, 'd')) => f::<48, _>(data, &mut p, &mut ret, &mut n, |v| Transform2D {
                     a: Vector2 {
                         x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                         y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
@@ -1577,10 +1681,10 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                 }
             },
             'T' => match it.next() {
-                None => bail_with_site!("Transform without subtype (at index {i})"),
-                Some((_, 'f')) => f::<48, _>(data, &mut p, &ret, &mut n, |v| Transform {
+                None => bail_with_site!("Transform3D without subtype (at index {i})"),
+                Some((_, 'f')) => f::<48, _>(data, &mut p, &mut ret, &mut n, |v| Transform3D {
                     basis: Basis {
-                        elements: [
+                        rows: [
                             Vector3 {
                                 x: f32::from_le_bytes(v[..4].try_into().unwrap()),
                                 y: f32::from_le_bytes(v[4..8].try_into().unwrap()),
@@ -1604,9 +1708,9 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                         z: f32::from_le_bytes(v[44..].try_into().unwrap()),
                     },
                 }),
-                Some((_, 'd')) => f::<96, _>(data, &mut p, &ret, &mut n, |v| Transform {
+                Some((_, 'd')) => f::<96, _>(data, &mut p, &mut ret, &mut n, |v| Transform3D {
                     basis: Basis {
-                        elements: [
+                        rows: [
                             Vector3 {
                                 x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                                 y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
@@ -1631,23 +1735,23 @@ fn read_struct_(data: &[u8], mut p: usize, format: &str) -> Result<VariantArray,
                     },
                 }),
                 Some((_, c)) => {
-                    bail_with_site!("Unknown Transform subtype {c:?} (at index {i})")
+                    bail_with_site!("Unknown Transform3D subtype {c:?} (at index {i})")
                 }
             },
             _ => bail_with_site!("Unknown type {c:?} (at index {i})"),
         }?;
     }
 
-    Ok(ret.into_shared())
+    Ok(ret)
 }
 
 fn write_struct_(
     data: &mut [u8],
     mut p: usize,
-    format: &str,
-    arr: VariantArray,
+    format: &[char],
+    arr: Array<Variant>,
 ) -> Result<usize, Error> {
-    fn f<const N: usize, T: FromVariant>(
+    fn f<const N: usize, T: FromGodot>(
         data: &mut [u8],
         p: &mut usize,
         a: &mut impl Iterator<Item = Variant>,
@@ -1657,7 +1761,7 @@ fn write_struct_(
         for _ in 0..r.take().unwrap_or(1) {
             let Some(v) = a
                 .next()
-                .map(|v| site_context!(T::from_variant(&v)))
+                .map(|v| site_context!(T::try_from_variant(&v)))
                 .transpose()?
             else {
                 bail_with_site!("Input array too small")
@@ -1675,8 +1779,8 @@ fn write_struct_(
     }
 
     let s = p;
-    let mut arr = arr.into_iter();
-    let mut it = format.chars().enumerate().peekable();
+    let mut arr = arr.iter_shared();
+    let mut it = format.iter().copied().enumerate().peekable();
     let mut n: Option<u64> = None;
     while let Some((i, c)) = it.next() {
         match c {
@@ -1686,7 +1790,11 @@ fn write_struct_(
                 if it.peek().is_some() {
                     continue;
                 }
-                bail_with_site!("Quantity without type (at index {} {:?})", i, &format[i..]);
+                bail_with_site!(
+                    "Quantity without type (at index {} {:?})",
+                    i,
+                    format[i..].iter().collect::<String>()
+                );
             }
             'x' => {
                 p += n.take().unwrap_or(1) as usize;
@@ -1730,16 +1838,14 @@ fn write_struct_(
                             continue;
                         }
                         Some((_, 'i')) => {
-                            f::<8, Vector2>(data, &mut p, &mut arr, &mut n, |s, d| {
-                                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() =
-                                    (d.x as i32).to_le_bytes();
-                                *<&mut [u8; 4]>::try_from(&mut s[4..]).unwrap() =
-                                    (d.y as i32).to_le_bytes();
+                            f::<8, Vector2i>(data, &mut p, &mut arr, &mut n, |s, d| {
+                                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
+                                *<&mut [u8; 4]>::try_from(&mut s[4..]).unwrap() = d.y.to_le_bytes();
                             })?;
                             continue;
                         }
                         Some((_, 'l')) => {
-                            f::<16, Vector2>(data, &mut p, &mut arr, &mut n, |s, d| {
+                            f::<16, Vector2i>(data, &mut p, &mut arr, &mut n, |s, d| {
                                 *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
                                     (d.x as i64).to_le_bytes();
                                 *<&mut [u8; 8]>::try_from(&mut s[8..]).unwrap() =
@@ -1771,24 +1877,75 @@ fn write_struct_(
                             continue;
                         }
                         Some((_, 'i')) => {
-                            f::<12, Vector3>(data, &mut p, &mut arr, &mut n, |s, d| {
-                                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() =
-                                    (d.x as i32).to_le_bytes();
+                            f::<12, Vector3i>(data, &mut p, &mut arr, &mut n, |s, d| {
+                                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
                                 *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() =
-                                    (d.y as i32).to_le_bytes();
-                                *<&mut [u8; 4]>::try_from(&mut s[8..]).unwrap() =
-                                    (d.z as i32).to_le_bytes();
+                                    d.y.to_le_bytes();
+                                *<&mut [u8; 4]>::try_from(&mut s[8..]).unwrap() = d.z.to_le_bytes();
                             })?;
                             continue;
                         }
                         Some((_, 'l')) => {
-                            f::<24, Vector3>(data, &mut p, &mut arr, &mut n, |s, d| {
+                            f::<24, Vector3i>(data, &mut p, &mut arr, &mut n, |s, d| {
                                 *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
                                     (d.x as i64).to_le_bytes();
                                 *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
                                     (d.y as i64).to_le_bytes();
                                 *<&mut [u8; 8]>::try_from(&mut s[16..]).unwrap() =
                                     (d.z as i64).to_le_bytes();
+                            })?;
+                            continue;
+                        }
+                        _ => (),
+                    },
+                    Some((_, '4')) => match it.next() {
+                        Some((_, 'f')) => {
+                            f::<16, Vector4>(data, &mut p, &mut arr, &mut n, |s, d| {
+                                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
+                                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() =
+                                    d.y.to_le_bytes();
+                                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() =
+                                    d.z.to_le_bytes();
+                                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() =
+                                    d.w.to_le_bytes();
+                            })?;
+                            continue;
+                        }
+                        Some((_, 'd')) => {
+                            f::<32, Vector4>(data, &mut p, &mut arr, &mut n, |s, d| {
+                                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
+                                    (d.x as f64).to_le_bytes();
+                                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
+                                    (d.y as f64).to_le_bytes();
+                                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
+                                    (d.z as f64).to_le_bytes();
+                                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() =
+                                    (d.w as f64).to_le_bytes();
+                            })?;
+                            continue;
+                        }
+                        Some((_, 'i')) => {
+                            f::<16, Vector4i>(data, &mut p, &mut arr, &mut n, |s, d| {
+                                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
+                                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() =
+                                    d.y.to_le_bytes();
+                                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() =
+                                    d.z.to_le_bytes();
+                                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() =
+                                    d.w.to_le_bytes();
+                            })?;
+                            continue;
+                        }
+                        Some((_, 'l')) => {
+                            f::<32, Vector4i>(data, &mut p, &mut arr, &mut n, |s, d| {
+                                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
+                                    (d.x as i64).to_le_bytes();
+                                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
+                                    (d.y as i64).to_le_bytes();
+                                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
+                                    (d.z as i64).to_le_bytes();
+                                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() =
+                                    (d.w as i64).to_le_bytes();
                             })?;
                             continue;
                         }
@@ -1801,7 +1958,10 @@ fn write_struct_(
                     Some(&(j, _)) => &format[i..j],
                     None => &format[i..],
                 };
-                bail_with_site!("Unknown type {s:?} (at index {i})");
+                bail_with_site!(
+                    "Unknown type {:?} (at index {i})",
+                    s.iter().collect::<String>()
+                );
             }
             'p' => match it.next() {
                 None => bail_with_site!("Plane without subtype (at index {i})"),
@@ -1826,13 +1986,13 @@ fn write_struct_(
             },
             'q' => match it.next() {
                 None => bail_with_site!("Quat without subtype (at index {i})"),
-                Some((_, 'f')) => f::<16, Quat>(data, &mut p, &mut arr, &mut n, |s, d| {
+                Some((_, 'f')) => f::<16, Quaternion>(data, &mut p, &mut arr, &mut n, |s, d| {
                     *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.z.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = d.w.to_le_bytes();
                 }),
-                Some((_, 'd')) => f::<32, Quat>(data, &mut p, &mut arr, &mut n, |s, d| {
+                Some((_, 'd')) => f::<32, Quaternion>(data, &mut p, &mut arr, &mut n, |s, d| {
                     *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() = (d.y as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() = (d.z as f64).to_le_bytes();
@@ -1886,17 +2046,13 @@ fn write_struct_(
                     *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() =
                         (d.size.y as f64).to_le_bytes();
                 }),
-                Some((_, 'i')) => f::<16, Rect2>(data, &mut p, &mut arr, &mut n, |s, d| {
-                    *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() =
-                        (d.position.x as i32).to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() =
-                        (d.position.y as i32).to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() =
-                        (d.size.x as i32).to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() =
-                        (d.size.y as i32).to_le_bytes();
+                Some((_, 'i')) => f::<16, Rect2i>(data, &mut p, &mut arr, &mut n, |s, d| {
+                    *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.position.x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.position.y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.size.x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = d.size.y.to_le_bytes();
                 }),
-                Some((_, 'l')) => f::<32, Rect2>(data, &mut p, &mut arr, &mut n, |s, d| {
+                Some((_, 'l')) => f::<32, Rect2i>(data, &mut p, &mut arr, &mut n, |s, d| {
                     *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
                         (d.position.x as i64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
@@ -1941,46 +2097,96 @@ fn write_struct_(
             'm' => match it.next() {
                 None => bail_with_site!("Basis without subtype (at index {i})"),
                 Some((_, 'f')) => f::<36, Basis>(data, &mut p, &mut arr, &mut n, |s, d| {
-                    *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.elements[0].x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() =
-                        d.elements[0].y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() =
-                        d.elements[0].z.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() =
-                        d.elements[1].x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() =
-                        d.elements[1].y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[20..24]).unwrap() =
-                        d.elements[1].z.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[24..28]).unwrap() =
-                        d.elements[2].x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[28..32]).unwrap() =
-                        d.elements[2].y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[32..]).unwrap() =
-                        d.elements[2].z.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.rows[0].x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.rows[0].y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.rows[0].z.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() = d.rows[1].x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() = d.rows[1].y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[20..24]).unwrap() = d.rows[1].z.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[24..28]).unwrap() = d.rows[2].x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[28..32]).unwrap() = d.rows[2].y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[32..]).unwrap() = d.rows[2].z.to_le_bytes();
                 }),
                 Some((_, 'd')) => f::<72, Basis>(data, &mut p, &mut arr, &mut n, |s, d| {
                     *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
-                        (d.elements[0].x as f64).to_le_bytes();
+                        (d.rows[0].x as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
-                        (d.elements[0].y as f64).to_le_bytes();
+                        (d.rows[0].y as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
-                        (d.elements[0].z as f64).to_le_bytes();
+                        (d.rows[0].z as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[24..32]).unwrap() =
-                        (d.elements[1].x as f64).to_le_bytes();
+                        (d.rows[1].x as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[32..40]).unwrap() =
-                        (d.elements[1].y as f64).to_le_bytes();
+                        (d.rows[1].y as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[40..48]).unwrap() =
-                        (d.elements[1].z as f64).to_le_bytes();
+                        (d.rows[1].z as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[48..56]).unwrap() =
-                        (d.elements[2].x as f64).to_le_bytes();
+                        (d.rows[2].x as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[56..64]).unwrap() =
-                        (d.elements[2].y as f64).to_le_bytes();
+                        (d.rows[2].y as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[64..]).unwrap() =
-                        (d.elements[2].z as f64).to_le_bytes();
+                        (d.rows[2].z as f64).to_le_bytes();
                 }),
                 Some((_, c)) => {
                     bail_with_site!("Unknown Basis subtype {c:?} (at index {i})")
+                }
+            },
+            'M' => match it.next() {
+                None => bail_with_site!("Projection without subtype (at index {i})"),
+                Some((_, 'f')) => f::<64, Projection>(data, &mut p, &mut arr, &mut n, |s, d| {
+                    *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.cols[0].x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.cols[0].y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.cols[0].z.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() = d.cols[0].w.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() = d.cols[1].x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[20..24]).unwrap() = d.cols[1].y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[24..28]).unwrap() = d.cols[1].z.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[28..32]).unwrap() = d.cols[1].w.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[32..36]).unwrap() = d.cols[2].x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[36..40]).unwrap() = d.cols[2].y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[40..44]).unwrap() = d.cols[2].z.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[44..48]).unwrap() = d.cols[2].w.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[48..52]).unwrap() = d.cols[3].x.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[52..56]).unwrap() = d.cols[3].y.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[56..60]).unwrap() = d.cols[3].z.to_le_bytes();
+                    *<&mut [u8; 4]>::try_from(&mut s[60..]).unwrap() = d.cols[3].w.to_le_bytes();
+                }),
+                Some((_, 'd')) => f::<128, Projection>(data, &mut p, &mut arr, &mut n, |s, d| {
+                    *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
+                        (d.cols[0].x as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
+                        (d.cols[0].y as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
+                        (d.cols[0].z as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[24..32]).unwrap() =
+                        (d.cols[0].w as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[32..40]).unwrap() =
+                        (d.cols[1].x as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[40..48]).unwrap() =
+                        (d.cols[1].y as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[48..56]).unwrap() =
+                        (d.cols[1].z as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[56..64]).unwrap() =
+                        (d.cols[1].w as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[64..72]).unwrap() =
+                        (d.cols[2].x as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[72..80]).unwrap() =
+                        (d.cols[2].y as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[80..88]).unwrap() =
+                        (d.cols[2].z as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[88..96]).unwrap() =
+                        (d.cols[2].w as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[96..104]).unwrap() =
+                        (d.cols[3].x as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[104..112]).unwrap() =
+                        (d.cols[3].y as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[112..120]).unwrap() =
+                        (d.cols[3].z as f64).to_le_bytes();
+                    *<&mut [u8; 8]>::try_from(&mut s[120..]).unwrap() =
+                        (d.cols[3].w as f64).to_le_bytes();
+                }),
+                Some((_, c)) => {
+                    bail_with_site!("Unknown Projection subtype {c:?} (at index {i})")
                 }
             },
             't' => match it.next() {
@@ -2011,49 +2217,49 @@ fn write_struct_(
                 }
             },
             'T' => match it.next() {
-                None => bail_with_site!("Transform without subtype (at index {i})"),
-                Some((_, 'f')) => f::<48, Transform>(data, &mut p, &mut arr, &mut n, |s, d| {
+                None => bail_with_site!("Transform3D without subtype (at index {i})"),
+                Some((_, 'f')) => f::<48, Transform3D>(data, &mut p, &mut arr, &mut n, |s, d| {
                     *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() =
-                        d.basis.elements[0].x.to_le_bytes();
+                        d.basis.rows[0].x.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() =
-                        d.basis.elements[0].y.to_le_bytes();
+                        d.basis.rows[0].y.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() =
-                        d.basis.elements[0].z.to_le_bytes();
+                        d.basis.rows[0].z.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() =
-                        d.basis.elements[1].x.to_le_bytes();
+                        d.basis.rows[1].x.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() =
-                        d.basis.elements[1].y.to_le_bytes();
+                        d.basis.rows[1].y.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[20..24]).unwrap() =
-                        d.basis.elements[1].z.to_le_bytes();
+                        d.basis.rows[1].z.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[24..28]).unwrap() =
-                        d.basis.elements[2].x.to_le_bytes();
+                        d.basis.rows[2].x.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[28..32]).unwrap() =
-                        d.basis.elements[2].y.to_le_bytes();
+                        d.basis.rows[2].y.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[32..36]).unwrap() =
-                        d.basis.elements[2].z.to_le_bytes();
+                        d.basis.rows[2].z.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[36..40]).unwrap() = d.origin.x.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[40..44]).unwrap() = d.origin.y.to_le_bytes();
                     *<&mut [u8; 4]>::try_from(&mut s[44..]).unwrap() = d.origin.z.to_le_bytes();
                 }),
-                Some((_, 'd')) => f::<96, Transform>(data, &mut p, &mut arr, &mut n, |s, d| {
+                Some((_, 'd')) => f::<96, Transform3D>(data, &mut p, &mut arr, &mut n, |s, d| {
                     *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
-                        (d.basis.elements[0].x as f64).to_le_bytes();
+                        (d.basis.rows[0].x as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
-                        (d.basis.elements[0].y as f64).to_le_bytes();
+                        (d.basis.rows[0].y as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
-                        (d.basis.elements[0].z as f64).to_le_bytes();
+                        (d.basis.rows[0].z as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[24..32]).unwrap() =
-                        (d.basis.elements[1].x as f64).to_le_bytes();
+                        (d.basis.rows[1].x as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[32..40]).unwrap() =
-                        (d.basis.elements[1].y as f64).to_le_bytes();
+                        (d.basis.rows[1].y as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[40..48]).unwrap() =
-                        (d.basis.elements[1].z as f64).to_le_bytes();
+                        (d.basis.rows[1].z as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[48..56]).unwrap() =
-                        (d.basis.elements[2].x as f64).to_le_bytes();
+                        (d.basis.rows[2].x as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[56..64]).unwrap() =
-                        (d.basis.elements[2].y as f64).to_le_bytes();
+                        (d.basis.rows[2].y as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[64..72]).unwrap() =
-                        (d.basis.elements[2].z as f64).to_le_bytes();
+                        (d.basis.rows[2].z as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[72..80]).unwrap() =
                         (d.origin.x as f64).to_le_bytes();
                     *<&mut [u8; 8]>::try_from(&mut s[80..88]).unwrap() =
@@ -2062,7 +2268,7 @@ fn write_struct_(
                         (d.origin.z as f64).to_le_bytes();
                 }),
                 Some((_, c)) => {
-                    bail_with_site!("Unknown Transform subtype {c:?} (at index {i})")
+                    bail_with_site!("Unknown Transform3D subtype {c:?} (at index {i})")
                 }
             },
             _ => bail_with_site!("Unknown type {c:?} (at index {i})"),
