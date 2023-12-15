@@ -3,7 +3,8 @@ use std::iter::repeat;
 
 use glam::f32::*;
 
-use super::{Color, Renderable, State};
+use super::{MAX_REP, SIZE, SPEED_SCALE, TIME_SCALE};
+use crate::{Color, Renderable, State};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct WavePoint {
@@ -19,11 +20,6 @@ pub struct Wave {
 
     residue: f32,
 }
-
-const SIZE: usize = 64;
-const TIME_SCALE: f32 = 1.0 / 64.0;
-const SPEED_SCALE: f32 = TIME_SCALE * 16.0;
-const MAX_REP: usize = 16;
 
 impl Wave {
     fn xy_iter(&self) -> impl Iterator<Item = (usize, usize)> {
