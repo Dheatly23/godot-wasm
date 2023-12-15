@@ -77,11 +77,14 @@ func _process(delta):
 	if instance == null:
 		return
 
+	var start := Time.get_ticks_usec()
 	var ret = instance.call_wasm("process", [delta])
 	if ret == null:
 		emit_signal("message_emitted", "Failed to call process")
 		instance = null
 		return
+	var end := Time.get_ticks_usec()
+	__emit_log("WASM Time: %.3f ms" % ((end - start) / 1e3))
 
 	var p: int = ret[0]
 	if p == 0:

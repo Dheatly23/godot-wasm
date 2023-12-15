@@ -1,6 +1,6 @@
 [build]
 target = "wasm32-unknown-unknown"
-rustflags = ["-C", "target-feature=+multivalue,+mutable-globals,+reference-types"]
+rustflags = ["-C", "target-feature=+multivalue,+mutable-globals,+reference-types,+bulk-memory,+sign-ext"]
 
 [profile.release]
 lto = true
