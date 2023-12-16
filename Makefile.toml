@@ -1,11 +1,16 @@
 env_scripts = [
 '''
 #!@duckscript
-wasm_snip = which wasm-snip
-set_env WASM_SNIP ${wasm_snip}
 
-wasm_opt = which wasm-opt
-set_env WASM_OPT ${wasm_opt}
+if not get_env WASM_SNIP
+  wasm_snip = which wasm-snip
+  set_env WASM_SNIP ${wasm_snip}
+end
+
+if not get_env WASM_OPT
+  wasm_opt = which wasm-opt
+  set_env WASM_OPT ${wasm_opt}
+end
 '''
 ]
 
