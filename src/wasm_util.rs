@@ -11,6 +11,7 @@ use std::time;
 
 use anyhow::{anyhow, Error};
 use godot::builtin::meta::ConvertError;
+use godot::engine::WeakRef;
 use godot::prelude::*;
 use once_cell::sync::Lazy;
 #[cfg(feature = "object-registry-extern")]
@@ -384,22 +385,19 @@ where
             p.push(unsafe { from_raw(&mut ctx, t, args[ix])? });
         }
 
-        // XXX: Weakref is currently broken (i think it's upstream?)
-        //let obj = match <Gd<WeakRef>>::try_from_variant(&obj) {
-        //    Ok(obj) => obj.get_ref(),
-        //    Err(_) => obj.clone(),
-        //};
-        let r = match &*callable {
-            CallableEnum::ObjectMethod(obj, method) => {
-                ctx.data_mut().as_mut().release_store(|| {
-                    site_context!(catch_unwind(AssertUnwindSafe(|| obj
-                        .clone()
-                        .call(method.clone(), &p)))
-                    .map_err(|_| anyhow!("Error trying to call")))
-                })?
-            }
-            CallableEnum::Callable(c) => c.callv(p.into_iter().collect()),
-        };
+        let r = ctx.data_mut().as_mut().release_store(|| {
+            site_context!(catch_unwind(AssertUnwindSafe(|| match &*callable {
+                CallableEnum::ObjectMethod(obj, method) => {
+                    match obj.clone().try_cast::<WeakRef>() {
+                        Ok(obj) => <_>::from_variant(&obj.get_ref()),
+                        Err(obj) => obj,
+                    }
+                    .call(method.clone(), &p)
+                }
+                CallableEnum::Callable(c) => c.callv(p.into_iter().collect()),
+            }))
+            .map_err(|_| anyhow!("Error trying to call")))
+        })?;
 
         if let Some(msg) = ctx.data_mut().as_mut().error_signal.take() {
             return Err(Error::msg(msg));
