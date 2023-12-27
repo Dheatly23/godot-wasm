@@ -145,6 +145,7 @@ impl Default for StoreData {
 }
 
 impl StoreData {
+    #[allow(dead_code)]
     pub fn new(config: Config) -> Self {
         Self {
             mutex_raw: ptr::null(),

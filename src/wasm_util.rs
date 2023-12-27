@@ -52,14 +52,15 @@ pub const TYPE_F64: u32 = 4;
 #[cfg(feature = "object-registry-extern")]
 pub const TYPE_VARIANT: u32 = 6;
 
+#[cfg(not(feature = "new-host-import"))]
 pub const HOST_MODULE: &str = "host";
 #[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
 #[cfg(feature = "object-registry-extern")]
 pub const EXTERNREF_MODULE: &str = "godot_object_v2";
 
-#[cfg(not(feature = "new-host-import"))]
 pub const MODULE_INCLUDES: &[&str] = &[
+    #[cfg(not(feature = "new-host-import"))]
     HOST_MODULE,
     #[cfg(feature = "object-registry-compat")]
     OBJREGISTRY_MODULE,

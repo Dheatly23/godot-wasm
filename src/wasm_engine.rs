@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::{sync::Arc, thread, time};
 
 use anyhow::{bail, Error};
-#[cfg(not(feature = "new-host-import"))]
 use gdnative::export::user_data::Map;
 use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
@@ -19,8 +18,8 @@ use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
 #[cfg(not(feature = "new-host-import"))]
-use crate::wasm_util::MODULE_INCLUDES;
-use crate::wasm_util::{from_signature, HOST_MODULE};
+use crate::wasm_util::HOST_MODULE;
+use crate::wasm_util::{from_signature, MODULE_INCLUDES};
 use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
@@ -237,7 +236,6 @@ impl WasmModule {
                     deps_map.insert(k, v);
                 }
 
-                #[cfg(not(feature = "new-host-import"))]
                 Self::validate_module(_module, &deps_map)?;
             }
             #[cfg(feature = "wasi-preview2")]
@@ -261,7 +259,6 @@ impl WasmModule {
         }
     }
 
-    #[cfg(not(feature = "new-host-import"))]
     fn validate_module(
         module: &Module,
         deps_map: &HashMap<String, Instance<WasmModule, Shared>>,
@@ -271,7 +268,10 @@ impl WasmModule {
                 continue;
             }
 
+            let ti = i.ty();
             let j = match deps_map.get(i.module()) {
+                #[cfg(feature = "new-host-import")]
+                None if ti.func().is_some() => continue,
                 None => bail_with_site!("Unknown module {}", i.module()),
                 Some(m) => m
                     .script()
@@ -287,13 +287,14 @@ impl WasmModule {
                     .unwrap()?,
             };
             let j = match j {
+                #[cfg(feature = "new-host-import")]
+                None if ti.func().is_some() => continue,
                 Some(v) => v,
                 None => {
                     bail_with_site!("No import in module {} named {}", i.module(), i.name())
                 }
             };
-            let i = i.ty();
-            if !match (&i, &j) {
+            if !match (&ti, &j) {
                 (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
                 (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
                 (ExternType::Table(t1), ExternType::Table(t2)) => {
@@ -317,7 +318,7 @@ impl WasmModule {
                 }
                 (_, _) => false,
             } {
-                bail_with_site!("Import type mismatch ({:?} != {:?})", i, j)
+                bail_with_site!("Import type mismatch ({:?} != {:?})", ti, j)
             }
         }
 
@@ -415,6 +416,8 @@ impl WasmModule {
             let ret = Dictionary::new();
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
+
+            #[cfg(not(feature = "new-host-import"))]
             for i in site_context!(m.module.get_core())?.imports() {
                 if i.module() != HOST_MODULE {
                     continue;
@@ -430,6 +433,51 @@ impl WasmModule {
                     );
                 }
             }
+
+            #[cfg(feature = "new-host-import")]
+            for i in site_context!(m.module.get_core())?.imports() {
+                let ExternType::Func(f) = i.ty() else {
+                    continue;
+                };
+
+                if let Some(m) = m.imports.get(i.module()) {
+                    if m.script()
+                        .map(|m| -> Result<_, Error> {
+                            match &m.get_data()?.module {
+                                ModuleType::Core(m) => Ok(m.get_export(i.name())),
+                                #[cfg(feature = "wasi-preview2")]
+                                ModuleType::Component(_) => {
+                                    bail_with_site!("Import {} is a component", i.module())
+                                }
+                            }
+                        })
+                        .unwrap()?
+                        .is_some()
+                    {
+                        continue;
+                    }
+                }
+
+                let (p, r) = from_signature(&f)?;
+                let v = match ret.get(i.module()) {
+                    Some(v) => Dictionary::from_variant(&v).unwrap(),
+                    None => {
+                        let v = Dictionary::new_shared();
+                        ret.insert(i.module(), v.new_ref());
+                        v
+                    }
+                };
+                unsafe {
+                    v.assume_unique().insert(
+                        i.name(),
+                        Dictionary::from_iter(
+                            [(params_str.to_variant(), p), (results_str.to_variant(), r)]
+                                .into_iter(),
+                        ),
+                    )
+                };
+            }
+
             Ok(ret.into_shared())
         })
     }
