@@ -1171,7 +1171,7 @@ impl WasmInstance {
     fn read_struct(&self, format: GString, p: i64) -> Variant {
         option_to_variant(self.get_memory(|store, mem| {
             read_struct_(mem.data(store), p as _, unsafe {
-                &format.chars_unchecked()
+                format.chars_unchecked()
             })
         }))
     }
@@ -1182,7 +1182,7 @@ impl WasmInstance {
             write_struct_(
                 mem.data_mut(store),
                 p as _,
-                unsafe { &format.chars_unchecked() },
+                unsafe { format.chars_unchecked() },
                 arr,
             )
         })
