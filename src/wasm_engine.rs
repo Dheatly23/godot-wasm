@@ -17,8 +17,8 @@ use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
 #[cfg(not(feature = "new-host-import"))]
-use crate::wasm_util::MODULE_INCLUDES;
-use crate::wasm_util::{from_signature, variant_to_option, VariantDispatch, HOST_MODULE};
+use crate::wasm_util::HOST_MODULE;
+use crate::wasm_util::{from_signature, variant_to_option, VariantDispatch, MODULE_INCLUDES};
 use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
@@ -233,7 +233,6 @@ impl WasmModule {
                     deps_map.insert(k, v);
                 }
 
-                #[cfg(not(feature = "new-host-import"))]
                 Self::validate_module(_module, &deps_map)?;
             }
             #[cfg(feature = "wasi-preview2")]
@@ -257,7 +256,6 @@ impl WasmModule {
         }
     }
 
-    #[cfg(not(feature = "new-host-import"))]
     fn validate_module(
         module: &Module,
         deps_map: &HashMap<String, Gd<WasmModule>>,
@@ -267,8 +265,11 @@ impl WasmModule {
                 continue;
             }
 
+            let ti = i.ty();
             let j = match deps_map.get(i.module()) {
-                None => bail!("Unknown module {}", i.module()),
+                #[cfg(feature = "new-host-import")]
+                None if ti.func().is_some() => continue,
+                None => bail_with_site!("Unknown module {}", i.module()),
                 Some(m) => match &m.bind().get_data()?.module {
                     ModuleType::Core(m) => m.get_export(i.name()),
                     #[cfg(feature = "wasi-preview2")]
@@ -278,13 +279,14 @@ impl WasmModule {
                 },
             };
             let j = match j {
+                #[cfg(feature = "new-host-import")]
+                None if ti.func().is_some() => continue,
                 Some(v) => v,
                 None => {
                     bail_with_site!("No import in module {} named {}", i.module(), i.name())
                 }
             };
-            let i = i.ty();
-            if !match (&i, &j) {
+            if !match (&ti, &j) {
                 (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
                 (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
                 (ExternType::Table(t1), ExternType::Table(t2)) => {
@@ -308,7 +310,7 @@ impl WasmModule {
                 }
                 (_, _) => false,
             } {
-                bail_with_site!("Import type mismatch ({:?} != {:?})", i, j)
+                bail_with_site!("Import type mismatch ({:?} != {:?})", ti, j)
             }
         }
 
@@ -381,6 +383,8 @@ impl WasmModule {
             let mut ret = Dictionary::new();
             let params_str = StringName::from_latin1_with_nul(b"params\0");
             let results_str = StringName::from_latin1_with_nul(b"results\0");
+
+            #[cfg(not(feature = "new-host-import"))]
             for i in site_context!(m.module.get_core())?.imports() {
                 if i.module() != HOST_MODULE {
                     continue;
@@ -396,6 +400,41 @@ impl WasmModule {
                     );
                 }
             }
+
+            #[cfg(feature = "new-host-import")]
+            for i in site_context!(m.module.get_core())?.imports() {
+                let ExternType::Func(f) = i.ty() else {
+                    continue;
+                };
+
+                if let Some(m) = m.imports.get(i.module()) {
+                    match &m.bind().get_data()?.module {
+                        ModuleType::Core(m) if m.get_export(i.name()).is_some() => continue,
+                        #[cfg(feature = "wasi-preview2")]
+                        ModuleType::Component(_) => {
+                            bail_with_site!("Import {} is a component", i.module())
+                        }
+                        _ => (),
+                    }
+                }
+
+                let (p, r) = from_signature(&f)?;
+                let mut v = match ret.get(i.module()) {
+                    Some(v) => Dictionary::from_variant(&v),
+                    None => {
+                        let v = Dictionary::new();
+                        ret.insert(i.module(), v.clone());
+                        v
+                    }
+                };
+                v.insert(
+                    i.name(),
+                    Dictionary::from_iter(
+                        [(params_str.to_variant(), p), (results_str.to_variant(), r)].into_iter(),
+                    ),
+                );
+            }
+
             Ok(ret)
         })
         .unwrap_or_default()
