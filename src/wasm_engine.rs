@@ -179,7 +179,7 @@ impl WasmModule {
                     e.downcast_ref::<Site>()
                         .copied()
                         .unwrap_or_else(|| godot_site!()),
-                    &s,
+                    s,
                 );
                 None
             }
