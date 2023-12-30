@@ -245,6 +245,34 @@ skip-tree = [
     #{ name = "ansi_term", version = "=0.11.0", depth = 20 },
 ]
 
+# Ban wasmtime features that's not needed
+[[bans.features]]
+name = "wasmtime"
+deny = [
+    #"async", # Used by wasmtime-wasi/preview2
+    "cache",
+]
+
+# Ban wasmtime-wasi features that's not needed
+[[bans.features]]
+name = "wasmtime-wasi"
+deny = [
+    "tokio",
+]
+
+# Ban executables and scripts
+[bans.build]
+executables = "warn"
+interpreted = "warn"
+include-workspace = true
+
+[[bans.build.bypass]]
+name = "target-lexicon"
+allow = [
+    # Pretty sure it's safe
+    { path = "scripts/rust-targets.sh", checksum = "89564342916321c5bc35e772d374a7f0af22cc9ae6dcc0027eca48d2269f18cb" }
+]
+
 # This section is considered when running `cargo deny check sources`.
 # More documentation about the 'sources' section can be found here:
 # https://embarkstudios.github.io/cargo-deny/checks/sources/cfg.html
