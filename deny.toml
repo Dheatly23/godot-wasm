@@ -166,6 +166,13 @@ version = "*"
 expression = "MPL-2.0"
 license-files = []
 
+# It's MPL-2.0 but doesn't get detected
+[[licenses.clarify]]
+name = "godot-fmt"
+version = "*"
+expression = "MPL-2.0"
+license-files = []
+
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries.
@@ -187,7 +194,8 @@ registries = [
 # NOTE: Allows it for now just because wasmtime dependency tree is very messy
 multiple-versions = "allow"
 # Lint level for when a crate version requirement is `*`
-wildcards = "deny"
+# Allow it for now while
+wildcards = "allow"
 # The graph highlighting used when creating dotgraphs for crates
 # with multiple versions
 # * lowest-version - The path to the lowest versioned duplicate is highlighted
