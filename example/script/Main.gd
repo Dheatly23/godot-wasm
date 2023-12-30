@@ -52,7 +52,9 @@ func _ready():
 		box.add_child(button)
 
 func _process(_delta):
-	var shown: bool = detector.get_rect().merge(panel.get_rect()).has_point(get_local_mouse_position())
+	var shown: bool = detector.get_rect().merge(
+		panel.get_rect().intersection(sidebar.get_rect()),
+	).has_point(get_local_mouse_position())
 	if shown:
 		if not is_shown:
 			_show_menu()
