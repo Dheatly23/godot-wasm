@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(feature = "unsafe-module-serde")]
+use std::path::PathBuf;
 #[cfg(feature = "epoch-timeout")]
 use std::{sync::Arc, thread, time};
 
@@ -12,6 +14,8 @@ use parking_lot::Once;
 use parking_lot::{Condvar, Mutex};
 #[cfg(feature = "wasi-preview2")]
 use wasmtime::component::Component;
+#[cfg(feature = "unsafe-module-serde")]
+use wasmtime::Precompiled;
 use wasmtime::{Config, Engine, ExternType, Module, ResourcesRequired};
 
 use crate::wasm_instance::WasmInstance;
@@ -207,6 +211,32 @@ impl WasmModule {
         ))?))
     }
 
+    fn process_deps_map(
+        module: &ModuleType,
+        imports: Dictionary,
+    ) -> Result<HashMap<String, Instance<WasmModule, Shared>>, Error> {
+        let mut deps_map = HashMap::new();
+        #[allow(irrefutable_let_patterns)]
+        if let ModuleType::Core(_module) = &module {
+            deps_map = HashMap::with_capacity(imports.len() as _);
+            for (k, v) in imports.iter() {
+                let k = site_context!(String::from_variant(&k))?;
+                let v = site_context!(<Instance<WasmModule, Shared>>::from_variant(&v))?;
+                deps_map.insert(k, v);
+            }
+
+            Self::validate_module(_module, &deps_map)?;
+        }
+        #[cfg(feature = "wasi-preview2")]
+        if let ModuleType::Component(_) = module {
+            if !imports.is_empty() {
+                bail_with_site!("Imports not supported with component yet");
+            }
+        }
+
+        Ok(deps_map)
+    }
+
     fn _initialize(&self, name: GodotString, data: Variant, imports: Dictionary) -> bool {
         match self.data.get_or_try_init(move || -> Result<_, Error> {
             let module = match VariantDispatch::from(&data) {
@@ -226,29 +256,12 @@ impl WasmModule {
                 _ => bail_with_site!("Unknown module value {}", data),
             }?;
 
-            let mut deps_map = HashMap::new();
-            #[allow(irrefutable_let_patterns)]
-            if let ModuleType::Core(_module) = &module {
-                deps_map = HashMap::with_capacity(imports.len() as _);
-                for (k, v) in imports.iter() {
-                    let k = site_context!(String::from_variant(&k))?;
-                    let v = site_context!(<Instance<WasmModule, Shared>>::from_variant(&v))?;
-                    deps_map.insert(k, v);
-                }
-
-                Self::validate_module(_module, &deps_map)?;
-            }
-            #[cfg(feature = "wasi-preview2")]
-            if let ModuleType::Component(_) = module {
-                if !imports.is_empty() {
-                    bail_with_site!("Imports not supported with component yet");
-                }
-            }
+            let imports = Self::process_deps_map(&module, imports)?;
 
             Ok(ModuleData {
                 name,
                 module,
-                imports: deps_map,
+                imports,
             })
         }) {
             Ok(_) => true,
@@ -324,6 +337,74 @@ impl WasmModule {
 
         Ok(())
     }
+
+    #[cfg(feature = "unsafe-module-serde")]
+    fn _deserialize(&self, name: GodotString, data: PoolArray<u8>, imports: Dictionary) -> bool {
+        match self.data.get_or_try_init(move || -> Result<_, Error> {
+            let data = data.read();
+            // SAFETY: Assume the supplied data is safe to deserialize.
+            let module = unsafe {
+                match ENGINE.detect_precompiled(&data) {
+                    Some(Precompiled::Module) => {
+                        ModuleType::Core(site_context!(Module::deserialize(&ENGINE, &*data))?)
+                    }
+                    #[cfg(feature = "wasi-preview2")]
+                    Some(Precompiled::Component) => {
+                        ModuleType::Component(site_context!(Component::deserialize(&ENGINE, data))?)
+                    }
+                    _ => bail_with_site!("Unsupported data content"),
+                }
+            };
+
+            let imports = Self::process_deps_map(&module, imports)?;
+
+            Ok(ModuleData {
+                name,
+                module,
+                imports,
+            })
+        }) {
+            Ok(_) => true,
+            Err(e) => {
+                godot_error!("{:?}", e);
+                false
+            }
+        }
+    }
+
+    #[cfg(feature = "unsafe-module-serde")]
+    fn _deserialize_file(&self, name: GodotString, path: String, imports: Dictionary) -> bool {
+        match self.data.get_or_try_init(move || -> Result<_, Error> {
+            let path = PathBuf::from(path);
+            // SAFETY: Assume the supplied file is safe to deserialize.
+            let module = unsafe {
+                match site_context!(ENGINE.detect_precompiled_file(&path))? {
+                    Some(Precompiled::Module) => {
+                        ModuleType::Core(site_context!(Module::deserialize_file(&ENGINE, path))?)
+                    }
+                    #[cfg(feature = "wasi-preview2")]
+                    Some(Precompiled::Component) => ModuleType::Component(site_context!(
+                        Component::deserialize_file(&ENGINE, path)
+                    )?),
+                    _ => bail_with_site!("Unsupported data content"),
+                }
+            };
+
+            let imports = Self::process_deps_map(&module, imports)?;
+
+            Ok(ModuleData {
+                name,
+                module,
+                imports,
+            })
+        }) {
+            Ok(_) => true,
+            Err(e) => {
+                godot_error!("{:?}", e);
+                false
+            }
+        }
+    }
 }
 
 #[methods]
@@ -379,6 +460,59 @@ impl WasmModule {
         } else {
             None
         }
+    }
+
+    #[method]
+    fn deserialize(
+        &self,
+        #[base] _owner: TRef<Reference>,
+        _name: GodotString,
+        _data: PoolArray<u8>,
+        _imports: Dictionary,
+    ) -> Option<Ref<Reference>> {
+        #[cfg(feature = "unsafe-module-serde")]
+        if self._deserialize(_name, _data, _imports) {
+            Some(_owner.claim())
+        } else {
+            None
+        }
+
+        #[cfg(not(feature = "unsafe-module-serde"))]
+        panic!("Feature unsafe-module-serde is not enabled!");
+    }
+
+    #[method]
+    fn deserialize_file(
+        &self,
+        #[base] _owner: TRef<Reference>,
+        _name: GodotString,
+        _path: String,
+        _imports: Dictionary,
+    ) -> Option<Ref<Reference>> {
+        #[cfg(feature = "unsafe-module-serde")]
+        if self._deserialize_file(_name, _path, _imports) {
+            Some(_owner.claim())
+        } else {
+            None
+        }
+
+        #[cfg(not(feature = "unsafe-module-serde"))]
+        panic!("Feature unsafe-module-serde is not enabled!");
+    }
+
+    #[method]
+    fn serialize(&self) -> Option<PoolArray<u8>> {
+        #[cfg(feature = "unsafe-module-serde")]
+        return self.unwrap_data(|m| {
+            Ok(PoolArray::from_vec(match &m.module {
+                ModuleType::Core(m) => m.serialize(),
+                #[cfg(feature = "wasi-preview2")]
+                ModuleType::Component(m) => m.serialize(),
+            }?))
+        });
+
+        #[cfg(not(feature = "unsafe-module-serde"))]
+        panic!("Feature unsafe-module-serde is not enabled!");
     }
 
     #[method]

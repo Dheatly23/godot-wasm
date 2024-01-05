@@ -65,6 +65,7 @@ object-registry-extern = []
 object-registry = ["object-registry-compat", "object-registry-extern"]
 more-precise-timer = []
 deterministic-wasm = []
+unsafe-module-serde = []
 wasi = [
   "dep:wasmtime-wasi",
   "dep:wasi-common",
