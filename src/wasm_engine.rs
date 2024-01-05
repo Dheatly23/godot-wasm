@@ -330,7 +330,7 @@ impl WasmModule {
         imports: Dictionary,
     ) -> Option<Gd<WasmModule>> {
         if self._initialize(name, data, imports) {
-            <Gd<WasmModule>>::try_from_instance_id(self.base.instance_id()).ok()
+            Some(self.to_gd())
         } else {
             None
         }
@@ -566,10 +566,7 @@ impl WasmModule {
         let config = if config.is_nil() { None } else { Some(config) };
 
         let inst = WasmInstance::new_gd();
-        if inst
-            .bind()
-            .initialize_(Gd::from_instance_id(self.base.instance_id()), host, config)
-        {
+        if inst.bind().initialize_(self.to_gd(), host, config) {
             Some(inst)
         } else {
             godot_error!("Error instantiating");
