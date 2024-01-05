@@ -466,8 +466,8 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
-    #[method]
-    fn get_resources_required(&self) -> Option<Dictionary> {
+    #[func]
+    fn get_resources_required(&self) -> Variant {
         self.unwrap_data(|m| {
             let v = match &m.module {
                 ModuleType::Core(m) => Some(m.resources_required()),
@@ -481,32 +481,30 @@ impl WasmModule {
                 max_initial_table_size,
             }) = v
             else {
-                return Ok(None);
+                return Ok(Variant::nil());
             };
 
-            Ok(Some(
-                [
-                    ("num_memories", num_memories.to_variant()),
-                    ("num_tables", num_tables.to_variant()),
-                    (
-                        "max_initial_memory_size",
-                        max_initial_memory_size.unwrap_or_default().to_variant(),
-                    ),
-                    (
-                        "max_initial_table_size",
-                        max_initial_table_size.unwrap_or_default().to_variant(),
-                    ),
-                ]
-                .into_iter()
-                .collect::<Dictionary<_>>()
-                .into_shared(),
-            ))
+            Ok([
+                ("num_memories", num_memories.to_variant()),
+                ("num_tables", num_tables.to_variant()),
+                (
+                    "max_initial_memory_size",
+                    max_initial_memory_size.unwrap_or_default().to_variant(),
+                ),
+                (
+                    "max_initial_table_size",
+                    max_initial_table_size.unwrap_or_default().to_variant(),
+                ),
+            ]
+            .into_iter()
+            .collect::<Dictionary>()
+            .to_variant())
         })
-        .flatten()
+        .unwrap_or_default()
     }
 
-    #[method]
-    fn get_total_resources_required(&self) -> Option<Dictionary> {
+    #[func]
+    fn get_total_resources_required(&self) -> Variant {
         fn f(module: &ModuleData) -> Option<ResourcesRequired> {
             match &module.module {
                 ModuleType::Core(m) => Some(m.resources_required()),
@@ -514,12 +512,12 @@ impl WasmModule {
                 ModuleType::Component(m) => m.resources_required(),
             }
             .into_iter()
-            .chain(module.imports.values().flat_map(|m| {
-                m.script()
-                    .map(|m| m.unwrap_data(|m| Ok(f(m))))
-                    .unwrap()
-                    .flatten()
-            }))
+            .chain(
+                module
+                    .imports
+                    .values()
+                    .flat_map(|m| m.bind().unwrap_data(|m| Ok(f(m))).flatten()),
+            )
             .reduce(|a, b| ResourcesRequired {
                 num_memories: a.num_memories + b.num_memories,
                 num_tables: a.num_tables + b.num_tables,
@@ -536,28 +534,26 @@ impl WasmModule {
                 max_initial_table_size,
             }) = f(m)
             else {
-                return Ok(None);
+                return Ok(Variant::nil());
             };
 
-            Ok(Some(
-                [
-                    ("num_memories", num_memories.to_variant()),
-                    ("num_tables", num_tables.to_variant()),
-                    (
-                        "max_initial_memory_size",
-                        max_initial_memory_size.unwrap_or_default().to_variant(),
-                    ),
-                    (
-                        "max_initial_table_size",
-                        max_initial_table_size.unwrap_or_default().to_variant(),
-                    ),
-                ]
-                .into_iter()
-                .collect::<Dictionary<_>>()
-                .into_shared(),
-            ))
+            Ok([
+                ("num_memories", num_memories.to_variant()),
+                ("num_tables", num_tables.to_variant()),
+                (
+                    "max_initial_memory_size",
+                    max_initial_memory_size.unwrap_or_default().to_variant(),
+                ),
+                (
+                    "max_initial_table_size",
+                    max_initial_table_size.unwrap_or_default().to_variant(),
+                ),
+            ]
+            .into_iter()
+            .collect::<Dictionary>()
+            .to_variant())
         })
-        .flatten()
+        .unwrap_or_default()
     }
 
     // Instantiate module
