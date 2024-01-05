@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(feature = "unsafe-module-serde")]
+use std::path::PathBuf;
 #[cfg(feature = "epoch-timeout")]
 use std::{sync::Arc, thread, time};
 
@@ -11,6 +13,8 @@ use parking_lot::Once;
 use parking_lot::{Condvar, Mutex};
 #[cfg(feature = "wasi-preview2")]
 use wasmtime::component::Component;
+#[cfg(feature = "unsafe-module-serde")]
+use wasmtime::Precompiled;
 use wasmtime::{Config, Engine, ExternType, Module, ResourcesRequired};
 
 use crate::wasm_instance::WasmInstance;
@@ -207,6 +211,32 @@ impl WasmModule {
         ))?))
     }
 
+    fn process_deps_map(
+        module: &ModuleType,
+        imports: Dictionary,
+    ) -> Result<HashMap<String, Gd<WasmModule>>, Error> {
+        let mut deps_map = HashMap::new();
+        #[allow(irrefutable_let_patterns)]
+        if let ModuleType::Core(_module) = &module {
+            deps_map = HashMap::with_capacity(imports.len() as _);
+            for (k, v) in imports.iter_shared() {
+                let k = site_context!(String::try_from_variant(&k))?;
+                let v = site_context!(<Gd<WasmModule>>::try_from_variant(&v))?;
+                deps_map.insert(k, v);
+            }
+
+            Self::validate_module(_module, &deps_map)?;
+        }
+        #[cfg(feature = "wasi-preview2")]
+        if let ModuleType::Component(_) = module {
+            if !imports.is_empty() {
+                bail_with_site!("Imports not supported with component yet");
+            }
+        }
+
+        Ok(deps_map)
+    }
+
     fn _initialize(&self, name: GString, data: Variant, imports: Dictionary) -> bool {
         match self.data.get_or_try_init(move || -> Result<_, Error> {
             let module = match VariantDispatch::from(&data) {
@@ -223,29 +253,12 @@ impl WasmModule {
                 _ => bail_with_site!("Unknown module value {}", data),
             };
 
-            let mut deps_map = HashMap::new();
-            #[allow(irrefutable_let_patterns)]
-            if let ModuleType::Core(_module) = &module {
-                deps_map = HashMap::with_capacity(imports.len() as _);
-                for (k, v) in imports.iter_shared() {
-                    let k = site_context!(String::try_from_variant(&k))?;
-                    let v = site_context!(<Gd<WasmModule>>::try_from_variant(&v))?;
-                    deps_map.insert(k, v);
-                }
-
-                Self::validate_module(_module, &deps_map)?;
-            }
-            #[cfg(feature = "wasi-preview2")]
-            if let ModuleType::Component(_) = module {
-                if !imports.is_empty() {
-                    bail_with_site!("Imports not supported with component yet");
-                }
-            }
+            let imports = Self::process_deps_map(&module, imports)?;
 
             Ok(ModuleData {
                 name,
                 module,
-                imports: deps_map,
+                imports,
             })
         }) {
             Ok(_) => true,
@@ -316,6 +329,74 @@ impl WasmModule {
 
         Ok(())
     }
+
+    #[cfg(feature = "unsafe-module-serde")]
+    fn _deserialize(&self, name: GString, data: PackedByteArray, imports: Dictionary) -> bool {
+        match self.data.get_or_try_init(move || -> Result<_, Error> {
+            let data = data.as_slice();
+            // SAFETY: Assume the supplied data is safe to deserialize.
+            let module = unsafe {
+                match ENGINE.detect_precompiled(data) {
+                    Some(Precompiled::Module) => {
+                        ModuleType::Core(site_context!(Module::deserialize(&ENGINE, data))?)
+                    }
+                    #[cfg(feature = "wasi-preview2")]
+                    Some(Precompiled::Component) => {
+                        ModuleType::Component(site_context!(Component::deserialize(&ENGINE, data))?)
+                    }
+                    _ => bail_with_site!("Unsupported data content"),
+                }
+            };
+
+            let imports = Self::process_deps_map(&module, imports)?;
+
+            Ok(ModuleData {
+                name,
+                module,
+                imports,
+            })
+        }) {
+            Ok(_) => true,
+            Err(e) => {
+                godot_error!("{:?}", e);
+                false
+            }
+        }
+    }
+
+    #[cfg(feature = "unsafe-module-serde")]
+    fn _deserialize_file(&self, name: GString, path: String, imports: Dictionary) -> bool {
+        match self.data.get_or_try_init(move || -> Result<_, Error> {
+            let path = PathBuf::from(path);
+            // SAFETY: Assume the supplied file is safe to deserialize.
+            let module = unsafe {
+                match site_context!(ENGINE.detect_precompiled_file(&path))? {
+                    Some(Precompiled::Module) => {
+                        ModuleType::Core(site_context!(Module::deserialize_file(&ENGINE, path))?)
+                    }
+                    #[cfg(feature = "wasi-preview2")]
+                    Some(Precompiled::Component) => ModuleType::Component(site_context!(
+                        Component::deserialize_file(&ENGINE, path)
+                    )?),
+                    _ => bail_with_site!("Unsupported data content"),
+                }
+            };
+
+            let imports = Self::process_deps_map(&module, imports)?;
+
+            Ok(ModuleData {
+                name,
+                module,
+                imports,
+            })
+        }) {
+            Ok(_) => true,
+            Err(e) => {
+                godot_error!("{:?}", e);
+                false
+            }
+        }
+    }
 }
 
 #[godot_api]
@@ -350,6 +431,62 @@ impl WasmModule {
             ))
         })
         .unwrap_or_default()
+    }
+
+    #[func]
+    fn deserialize(
+        &self,
+        _name: GString,
+        _data: PackedByteArray,
+        _imports: Dictionary,
+    ) -> Option<Gd<WasmModule>> {
+        #[cfg(feature = "unsafe-module-serde")]
+        if self._deserialize(_name, _data, _imports) {
+            Some(self.to_gd())
+        } else {
+            None
+        }
+
+        #[cfg(not(feature = "unsafe-module-serde"))]
+        panic!("Feature unsafe-module-serde is not enabled!");
+    }
+
+    #[func]
+    fn deserialize_file(
+        &self,
+        _name: GString,
+        _path: GString,
+        _imports: Dictionary,
+    ) -> Option<Gd<WasmModule>> {
+        #[cfg(feature = "unsafe-module-serde")]
+        if self._deserialize_file(_name, _path.to_string(), _imports) {
+            Some(self.to_gd())
+        } else {
+            None
+        }
+
+        #[cfg(not(feature = "unsafe-module-serde"))]
+        panic!("Feature unsafe-module-serde is not enabled!");
+    }
+
+    #[func]
+    fn serialize(&self) -> Variant {
+        #[cfg(feature = "unsafe-module-serde")]
+        return self
+            .unwrap_data(|m| {
+                Ok(PackedByteArray::from(
+                    &match &m.module {
+                        ModuleType::Core(m) => m.serialize(),
+                        #[cfg(feature = "wasi-preview2")]
+                        ModuleType::Component(m) => m.serialize(),
+                    }?[..],
+                )
+                .to_variant())
+            })
+            .unwrap_or_default();
+
+        #[cfg(not(feature = "unsafe-module-serde"))]
+        panic!("Feature unsafe-module-serde is not enabled!");
     }
 
     /// Gets exported functions
