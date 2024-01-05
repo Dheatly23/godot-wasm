@@ -11,7 +11,7 @@ use parking_lot::Once;
 use parking_lot::{Condvar, Mutex};
 #[cfg(feature = "wasi-preview2")]
 use wasmtime::component::Component;
-use wasmtime::{Config, Engine, ExternType, Module};
+use wasmtime::{Config, Engine, ExternType, Module, ResourcesRequired};
 
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
@@ -177,7 +177,7 @@ impl WasmModule {
                     e.downcast_ref::<Site>()
                         .copied()
                         .unwrap_or_else(|| godot_site!()),
-                    &s,
+                    s,
                 );
                 */
                 godot_error!("{:?}", e);
@@ -464,6 +464,100 @@ impl WasmModule {
             }
         })
         .unwrap_or_default()
+    }
+
+    #[method]
+    fn get_resources_required(&self) -> Option<Dictionary> {
+        self.unwrap_data(|m| {
+            let v = match &m.module {
+                ModuleType::Core(m) => Some(m.resources_required()),
+                #[cfg(feature = "wasi-preview2")]
+                ModuleType::Component(m) => m.resources_required(),
+            };
+            let Some(ResourcesRequired {
+                num_memories,
+                max_initial_memory_size,
+                num_tables,
+                max_initial_table_size,
+            }) = v
+            else {
+                return Ok(None);
+            };
+
+            Ok(Some(
+                [
+                    ("num_memories", num_memories.to_variant()),
+                    ("num_tables", num_tables.to_variant()),
+                    (
+                        "max_initial_memory_size",
+                        max_initial_memory_size.unwrap_or_default().to_variant(),
+                    ),
+                    (
+                        "max_initial_table_size",
+                        max_initial_table_size.unwrap_or_default().to_variant(),
+                    ),
+                ]
+                .into_iter()
+                .collect::<Dictionary<_>>()
+                .into_shared(),
+            ))
+        })
+        .flatten()
+    }
+
+    #[method]
+    fn get_total_resources_required(&self) -> Option<Dictionary> {
+        fn f(module: &ModuleData) -> Option<ResourcesRequired> {
+            match &module.module {
+                ModuleType::Core(m) => Some(m.resources_required()),
+                #[cfg(feature = "wasi-preview2")]
+                ModuleType::Component(m) => m.resources_required(),
+            }
+            .into_iter()
+            .chain(module.imports.values().flat_map(|m| {
+                m.script()
+                    .map(|m| m.unwrap_data(|m| Ok(f(m))))
+                    .unwrap()
+                    .flatten()
+            }))
+            .reduce(|a, b| ResourcesRequired {
+                num_memories: a.num_memories + b.num_memories,
+                num_tables: a.num_tables + b.num_tables,
+                max_initial_memory_size: a.max_initial_memory_size.max(b.max_initial_memory_size),
+                max_initial_table_size: a.max_initial_table_size.max(b.max_initial_table_size),
+            })
+        }
+
+        self.unwrap_data(|m| {
+            let Some(ResourcesRequired {
+                num_memories,
+                max_initial_memory_size,
+                num_tables,
+                max_initial_table_size,
+            }) = f(m)
+            else {
+                return Ok(None);
+            };
+
+            Ok(Some(
+                [
+                    ("num_memories", num_memories.to_variant()),
+                    ("num_tables", num_tables.to_variant()),
+                    (
+                        "max_initial_memory_size",
+                        max_initial_memory_size.unwrap_or_default().to_variant(),
+                    ),
+                    (
+                        "max_initial_table_size",
+                        max_initial_table_size.unwrap_or_default().to_variant(),
+                    ),
+                ]
+                .into_iter()
+                .collect::<Dictionary<_>>()
+                .into_shared(),
+            ))
+        })
+        .flatten()
     }
 
     // Instantiate module
