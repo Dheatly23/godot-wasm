@@ -55,7 +55,6 @@ use crate::{bail_with_site, site_context};
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
 pub struct WasmInstance {
-    #[base]
     base: Base<RefCounted>,
     data: OnceCell<InstanceData<StoreData>>,
 

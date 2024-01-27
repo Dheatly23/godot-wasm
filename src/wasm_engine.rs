@@ -117,7 +117,6 @@ pub static EPOCH: Lazy<EpochThreadHandle> = Lazy::new(EpochThreadHandle::default
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
 pub struct WasmModule {
-    #[base]
     base: Base<RefCounted>,
     data: OnceCell<ModuleData>,
 
