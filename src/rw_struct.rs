@@ -118,7 +118,7 @@ fn parse_datatype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
             "quaternion element type",
             map(parse_float_subtype, DataType::Quat),
         )(i),
-        (i, 'c') => context(
+        (i, 'C') => context(
             "color element type",
             map(parse_color_subtype, DataType::Color),
         )(i),
