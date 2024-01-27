@@ -741,6 +741,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "parking_lot",
+ "rayon",
  "scopeguard",
  "slab",
  "wasi-common",

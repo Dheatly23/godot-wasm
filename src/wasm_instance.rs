@@ -11,6 +11,7 @@ use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
+use rayon::prelude::*;
 use scopeguard::guard;
 #[cfg(feature = "wasi-preview2")]
 use wasmtime::component::Instance as InstanceComp;
@@ -1073,22 +1074,20 @@ impl WasmInstance {
 
     #[method]
     fn put_array(&self, #[base] base: TRef<Reference>, i: usize, v: Variant) -> bool {
-        fn f<const N: usize, T>(
+        fn f<const N: usize, T: Sync>(
             d: &mut [u8],
             i: usize,
             s: &[T],
-            f: impl Fn(&T, &mut [u8; N]),
+            f: impl Fn(&T, &mut [u8; N]) + Send + Sync,
         ) -> Result<(), Error> {
-            let l = s.len() * N;
-            let e = i + l;
-
+            let e = i + s.len() * N;
             let Some(d) = d.get_mut(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
             };
 
-            for (s, d) in s.iter().zip(d.chunks_mut(N)) {
-                f(s, d.try_into().unwrap())
-            }
+            s.par_iter()
+                .zip(d.par_chunks_exact_mut(N))
+                .for_each(|(s, d)| f(s, d.try_into().unwrap()));
 
             Ok(())
         }
@@ -1141,19 +1140,22 @@ impl WasmInstance {
         n: usize,
         t: i64,
     ) -> Option<Variant> {
-        fn f<const N: usize, T: Copy + PoolElement>(
+        fn f<const N: usize, T: Send + Copy + PoolElement>(
             s: &[u8],
             i: usize,
             n: usize,
-            f: impl Fn(&[u8; N]) -> T,
+            f: impl Fn(&[u8; N]) -> T + Send + Sync,
         ) -> Result<PoolArray<T>, Error> {
-            let l = n * N;
-            let e = i + l;
+            let e = i + n * N;
             let Some(s) = s.get(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
             };
 
-            Ok(s.chunks(N).map(|s| f(s.try_into().unwrap())).collect())
+            Ok(PoolArray::from_vec(
+                s.par_chunks_exact(N)
+                    .map(|s| f(s.try_into().unwrap()))
+                    .collect(),
+            ))
         }
 
         self.get_memory(base, |store, mem| {
