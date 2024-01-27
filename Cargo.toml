@@ -20,10 +20,11 @@ overflow-checks = false
 [dependencies]
 scopeguard = "^1.2"
 parking_lot = "^0.12"
+rayon = "^1.8"
 anyhow = { version = "^1.0", features = ["backtrace"] }
 slab = { version = "^0.4", optional = true }
-wasi-common = { version = "^16.0", optional = true }
-wasmparser = { version = "^0.118", optional = true }
+wasi-common = { version = "^17.0", optional = true }
+wasmparser = { version = "^0.120", optional = true }
 bytes = { version = "^1.5", optional = true }
 wat = { version = "^1.0", optional = true }
 async-trait = { version = "^0.1", optional = true }
@@ -36,7 +37,7 @@ git = "https://github.com/godot-rust/gdext"
 rev = "0b93fe123eca8df13aaba31885fbc4b3ea1df42e"
 
 [dependencies.wasmtime]
-version = "^16.0"
+version = "^17.0"
 default-features = false
 features = [
   "cranelift",
@@ -45,7 +46,7 @@ features = [
 ]
 
 [dependencies.wasmtime-wasi]
-version = "^16.0"
+version = "^17.0"
 optional = true
 default-features = false
 features = [

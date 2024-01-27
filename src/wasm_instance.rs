@@ -8,6 +8,7 @@ use anyhow::{bail, Error};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
+use rayon::prelude::*;
 use scopeguard::guard;
 #[cfg(feature = "wasi-preview2")]
 use wasmtime::component::Instance as InstanceComp;
@@ -1005,22 +1006,20 @@ impl WasmInstance {
 
     #[func]
     fn put_array(&self, i: i64, v: Variant) -> bool {
-        fn f<const N: usize, T>(
+        fn f<const N: usize, T: Sync>(
             d: &mut [u8],
             i: usize,
             s: &[T],
-            f: impl Fn(&T, &mut [u8; N]),
+            f: impl Fn(&T, &mut [u8; N]) + Send + Sync,
         ) -> Result<(), Error> {
-            let l = s.len() * N;
-            let e = i + l;
-
+            let e = i + s.len() * N;
             let Some(d) = d.get_mut(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
             };
 
-            for (s, d) in s.iter().zip(d.chunks_mut(N)) {
-                f(s, d.try_into().unwrap())
-            }
+            s.par_iter()
+                .zip(d.par_chunks_exact_mut(N))
+                .for_each(|(s, d)| f(s, d.try_into().unwrap()));
 
             Ok(())
         }
@@ -1080,19 +1079,22 @@ impl WasmInstance {
 
     #[func]
     fn get_array(&self, i: i64, n: i64, t: i64) -> Variant {
-        fn f<const N: usize, T, R: FromIterator<T>>(
+        fn f<const N: usize, T: Send, R: for<'a> From<&'a [T]>>(
             s: &[u8],
             i: usize,
             n: usize,
-            f: impl Fn(&[u8; N]) -> T,
+            f: impl Fn(&[u8; N]) -> T + Send + Sync,
         ) -> Result<R, Error> {
-            let l = n * N;
-            let e = i + l;
+            let e = i + n * N;
             let Some(s) = s.get(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
             };
 
-            Ok(s.chunks(N).map(|s| f(s.try_into().unwrap())).collect())
+            Ok(R::from(
+                &s.par_chunks_exact(N)
+                    .map(|s| f(s.try_into().unwrap()))
+                    .collect::<Vec<_>>(),
+            ))
         }
 
         option_to_variant(self.get_memory(|store, mem| {
