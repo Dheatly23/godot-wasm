@@ -1,8 +1,11 @@
+use std::error;
+use std::fmt;
+
 use anyhow::Error;
 use gdnative::prelude::*;
 use nom::character::complete::{anychar, satisfy, u32 as u32_};
 use nom::combinator::{map, opt};
-use nom::error::{context, ContextError, ErrorKind, ParseError, VerboseError};
+use nom::error::{context, ContextError, ErrorKind, ParseError};
 use nom::sequence::pair;
 use nom::{Err as NomErr, IResult};
 
@@ -99,8 +102,8 @@ fn parse_datatype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
         (i, 'f') => Ok((i, DataType::Float)),
         (i, 'd') => Ok((i, DataType::Double)),
         (i, 'v') => {
-            let e = |e: NomErr<E>| e.map(|e| E::add_context(i, "should be a vector size", e));
-            let f = context("should be a vector element type", parse_vector_subtype);
+            let e = |e: NomErr<E>| e.map(|e| E::add_context(i, "vector size", e));
+            let f = context("vector element type", parse_vector_subtype);
             match anychar(i).map_err(e)? {
                 (i, '2') => map(f, DataType::Vector2)(i),
                 (i, '3') => map(f, DataType::Vector3)(i),
@@ -108,45 +111,95 @@ fn parse_datatype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
             }
         }
         (i, 'p') => context(
-            "should be a plane element type",
+            "plane element type",
             map(parse_float_subtype, DataType::Plane),
         )(i),
         (i, 'q') => context(
-            "should be a quaternion element type",
+            "quaternion element type",
             map(parse_float_subtype, DataType::Quat),
         )(i),
         (i, 'c') => context(
-            "should be a color element type",
+            "color element type",
             map(parse_color_subtype, DataType::Color),
         )(i),
         (i, 'r') => context(
-            "should be a rect2 element type",
+            "rect2 element type",
             map(parse_vector_subtype, DataType::Rect2),
         )(i),
         (i, 'a') => context(
-            "should be a aabb element type",
+            "aabb element type",
             map(parse_float_subtype, DataType::Aabb),
         )(i),
         (i, 'm') => context(
-            "should be a basis element type",
+            "basis element type",
             map(parse_float_subtype, DataType::Basis),
         )(i),
         (i, 't') => context(
-            "should be a transform2d element type",
+            "transform2d element type",
             map(parse_float_subtype, DataType::Transform2D),
         )(i),
         (i, 'T') => context(
-            "should be a transform element type",
+            "transform element type",
             map(parse_float_subtype, DataType::Transform),
         )(i),
         _ => Err(NomErr::Error(E::from_error_kind(i, ErrorKind::OneOf))),
     }
 }
 
-fn to_owned_verbose_error(e: VerboseError<&str>) -> VerboseError<String> {
-    let VerboseError { errors } = e;
-    VerboseError {
-        errors: errors.into_iter().map(|(i, e)| (i.to_owned(), e)).collect(),
+struct SingleError<I> {
+    input: I,
+    kind: ErrorKind,
+    context: Option<&'static str>,
+}
+
+impl<I: fmt::Display> fmt::Display for SingleError<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "error {:?} at: {}", self.kind, self.input)?;
+        if let Some(ctx) = self.context {
+            write!(f, "in section '{}', at: {}", ctx, self.input)?;
+        }
+        Ok(())
+    }
+}
+
+impl<I: fmt::Display> fmt::Debug for SingleError<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Display>::fmt(self, f)
+    }
+}
+
+impl<I: fmt::Display> error::Error for SingleError<I> {}
+
+impl<I: ToOwned + ?Sized> SingleError<&I> {
+    fn to_owned(self) -> SingleError<I::Owned> {
+        SingleError {
+            input: self.input.to_owned(),
+            kind: self.kind,
+            context: self.context,
+        }
+    }
+}
+
+impl<I> ParseError<I> for SingleError<I> {
+    fn from_error_kind(input: I, kind: ErrorKind) -> Self {
+        Self {
+            input,
+            kind,
+            context: None,
+        }
+    }
+
+    fn append(_: I, _: ErrorKind, other: Self) -> Self {
+        other
+    }
+}
+
+impl<I> ContextError<I> for SingleError<I> {
+    fn add_context(_: I, ctx: &'static str, other: Self) -> Self {
+        Self {
+            context: Some(ctx),
+            ..other
+        }
     }
 }
 
@@ -172,7 +225,7 @@ pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> Result<VariantArr
     let mut r = (data, p, VariantArray::new());
     let mut p_ = pair(opt(u32_), parse_datatype);
     while !format.is_empty() {
-        let (i, (n, t)) = p_(format).map_err(|e| e.map(to_owned_verbose_error))?;
+        let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::to_owned))?;
         format = i;
         let n = n.unwrap_or(1) as usize;
 
@@ -492,7 +545,7 @@ pub fn write_struct(
     let mut r = (data, p, arr.into_iter());
     let mut p_ = pair(opt(u32_), parse_datatype);
     while !format.is_empty() {
-        let (i, (n, t)) = p_(format).map_err(|e| e.map(to_owned_verbose_error))?;
+        let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::to_owned))?;
         format = i;
         let n = n.unwrap_or(1) as usize;
 
