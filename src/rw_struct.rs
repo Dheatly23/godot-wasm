@@ -259,11 +259,11 @@ pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> Result<Array<Vari
                 x: f64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                 y: f64::from_le_bytes(v[8..].try_into().unwrap()) as _,
             }),
-            DataType::Vector2(VectorSubtype::Int) => f::<8, _>(&mut r, n, |v| Vector2 {
-                x: i32::from_le_bytes(v[..4].try_into().unwrap()) as _,
-                y: i32::from_le_bytes(v[4..].try_into().unwrap()) as _,
+            DataType::Vector2(VectorSubtype::Int) => f::<8, _>(&mut r, n, |v| Vector2i {
+                x: i32::from_le_bytes(v[..4].try_into().unwrap()),
+                y: i32::from_le_bytes(v[4..].try_into().unwrap()),
             }),
-            DataType::Vector2(VectorSubtype::Long) => f::<16, _>(&mut r, n, |v| Vector2 {
+            DataType::Vector2(VectorSubtype::Long) => f::<16, _>(&mut r, n, |v| Vector2i {
                 x: i64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                 y: i64::from_le_bytes(v[8..].try_into().unwrap()) as _,
             }),
@@ -277,12 +277,12 @@ pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> Result<Array<Vari
                 y: f64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
                 z: f64::from_le_bytes(v[16..].try_into().unwrap()) as _,
             }),
-            DataType::Vector3(VectorSubtype::Int) => f::<12, _>(&mut r, n, |v| Vector3 {
-                x: i32::from_le_bytes(v[..4].try_into().unwrap()) as _,
-                y: i32::from_le_bytes(v[4..8].try_into().unwrap()) as _,
-                z: i32::from_le_bytes(v[8..].try_into().unwrap()) as _,
+            DataType::Vector3(VectorSubtype::Int) => f::<12, _>(&mut r, n, |v| Vector3i {
+                x: i32::from_le_bytes(v[..4].try_into().unwrap()),
+                y: i32::from_le_bytes(v[4..8].try_into().unwrap()),
+                z: i32::from_le_bytes(v[8..].try_into().unwrap()),
             }),
-            DataType::Vector3(VectorSubtype::Long) => f::<24, _>(&mut r, n, |v| Vector3 {
+            DataType::Vector3(VectorSubtype::Long) => f::<24, _>(&mut r, n, |v| Vector3i {
                 x: i64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                 y: i64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
                 z: i64::from_le_bytes(v[16..].try_into().unwrap()) as _,
@@ -374,22 +374,22 @@ pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> Result<Array<Vari
                     y: f64::from_le_bytes(v[24..].try_into().unwrap()) as _,
                 },
             }),
-            DataType::Rect2(VectorSubtype::Int) => f::<16, _>(&mut r, n, |v| Rect2 {
-                position: Vector2 {
-                    x: i32::from_le_bytes(v[..4].try_into().unwrap()) as _,
-                    y: i32::from_le_bytes(v[4..8].try_into().unwrap()) as _,
+            DataType::Rect2(VectorSubtype::Int) => f::<16, _>(&mut r, n, |v| Rect2i {
+                position: Vector2i {
+                    x: i32::from_le_bytes(v[..4].try_into().unwrap()),
+                    y: i32::from_le_bytes(v[4..8].try_into().unwrap()),
                 },
-                size: Vector2 {
-                    x: i32::from_le_bytes(v[8..12].try_into().unwrap()) as _,
-                    y: i32::from_le_bytes(v[12..].try_into().unwrap()) as _,
+                size: Vector2i {
+                    x: i32::from_le_bytes(v[8..12].try_into().unwrap()),
+                    y: i32::from_le_bytes(v[12..].try_into().unwrap()),
                 },
             }),
-            DataType::Rect2(VectorSubtype::Long) => f::<32, _>(&mut r, n, |v| Rect2 {
-                position: Vector2 {
+            DataType::Rect2(VectorSubtype::Long) => f::<32, _>(&mut r, n, |v| Rect2i {
+                position: Vector2i {
                     x: i64::from_le_bytes(v[..8].try_into().unwrap()) as _,
                     y: i64::from_le_bytes(v[8..16].try_into().unwrap()) as _,
                 },
-                size: Vector2 {
+                size: Vector2i {
                     x: i64::from_le_bytes(v[16..24].try_into().unwrap()) as _,
                     y: i64::from_le_bytes(v[24..].try_into().unwrap()) as _,
                 },
