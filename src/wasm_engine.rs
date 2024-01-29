@@ -115,15 +115,30 @@ pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
 #[cfg(feature = "epoch-timeout")]
 pub static EPOCH: Lazy<EpochThreadHandle> = Lazy::new(EpochThreadHandle::default);
 
-#[derive(GodotClass)]
-#[class(base=RefCounted, init, tool)]
-pub struct WasmModule {
-    base: Base<RefCounted>,
-    data: OnceCell<ModuleData>,
+cfg_if!{
+    if #[cfg(feature = "resource")] {
+        #[derive(GodotClass)]
+        #[class(base=Resource, init, tool)]
+        pub struct WasmModule {
+            base: Base<Resource>,
+            data: OnceCell<ModuleData>,
 
-    #[var(get = get_name)]
-    #[allow(dead_code)]
-    name: GString,
+            #[var(get = get_name)]
+            #[allow(dead_code)]
+            name: GString,
+        }
+    } else {
+        #[derive(GodotClass)]
+        #[class(base=RefCounted, init, tool)]
+        pub struct WasmModule {
+            base: Base<RefCounted>,
+            data: OnceCell<ModuleData>,
+
+            #[var(get = get_name)]
+            #[allow(dead_code)]
+            name: GString,
+        }
+    }
 }
 
 pub struct ModuleData {
