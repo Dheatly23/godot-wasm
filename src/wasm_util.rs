@@ -21,6 +21,7 @@ use wasmtime::Linker;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
+use cfg_if::cfg_if;
 
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_config::Config;
@@ -476,35 +477,35 @@ fn process_func(dict: Dictionary) -> Result<(FuncType, CallableEnum), Error> {
     Ok((to_signature(params, results)?, callable))
 }
 
-#[cfg(feature = "new-host-import")]
-pub struct HostModuleCache<T> {
-    cache: Linker<T>,
-    host: Dictionary,
-}
-
-#[cfg(not(feature = "new-host-import"))]
-pub struct HostModuleCache<T> {
-    cache: HashMap<String, Extern>,
-    host: Dictionary,
-    phantom: PhantomData<T>,
+cfg_if!{
+    if #[cfg(feature = "new-host-import")] {
+        pub struct HostModuleCache<T> {
+            cache: Linker<T>,
+            host: Dictionary,
+        }
+    } else {
+        pub struct HostModuleCache<T> {
+            cache: HashMap<String, Extern>,
+            host: Dictionary,
+            phantom: PhantomData<T>,
+        }
+    }
 }
 
 impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
     pub fn new(host: Dictionary) -> Self {
-        #[cfg(feature = "new-host-import")]
-        {
-            Self {
-                cache: Linker::new(&ENGINE),
-                host,
-            }
-        }
-
-        #[cfg(not(feature = "new-host-import"))]
-        {
-            Self {
-                cache: HashMap::new(),
-                host,
-                phantom: PhantomData,
+        cfg_if!{
+            if #[cfg(feature = "new-host-import")] {
+                Self {
+                    cache: Linker::new(&ENGINE),
+                    host,
+                }
+            } else {
+                Self {
+                    cache: HashMap::new(),
+                    host,
+                    phantom: PhantomData,
+                }
             }
         }
     }
@@ -515,40 +516,42 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
         module: &str,
         name: &str,
     ) -> Result<Option<Extern>, Error> {
-        #[cfg(feature = "new-host-import")]
-        if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
-            Ok(r)
-        } else if let Some(data) = self
-            .host
-            .get(module)
-            .map(|d| site_context!(Dictionary::try_from_variant(&d)))
-            .transpose()?
-            .and_then(|d| d.get(name))
-        {
-            let (sig, callable) =
-                process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
+        cfg_if!{
+            if #[cfg(feature = "new-host-import")] {
+                if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
+                    Ok(r)
+                } else if let Some(data) = self
+                    .host
+                    .get(module)
+                    .map(|d| site_context!(Dictionary::try_from_variant(&d)))
+                    .transpose()?
+                    .and_then(|d| d.get(name))
+                {
+                    let (sig, callable) =
+                        process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
 
-            let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
-            self.cache.define(store, module, name, v.clone())?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
+                    let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
+                    self.cache.define(store, module, name, v.clone())?;
+                    Ok(Some(v))
+                } else {
+                    Ok(None)
+                }
+            } else {
+                if module != HOST_MODULE {
+                    Ok(None)
+                } else if let r @ Some(_) = self.cache.get(name).cloned() {
+                    Ok(r)
+                } else if let Some(data) = self.host.get(name) {
+                    let (sig, callable) =
+                        process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
 
-        #[cfg(not(feature = "new-host-import"))]
-        if module != HOST_MODULE {
-            Ok(None)
-        } else if let r @ Some(_) = self.cache.get(name).cloned() {
-            Ok(r)
-        } else if let Some(data) = self.host.get(name) {
-            let (sig, callable) =
-                process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
-
-            let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
-            self.cache.insert(name.to_string(), v.clone());
-            Ok(Some(v))
-        } else {
-            Ok(None)
+                    let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
+                    self.cache.insert(name.to_string(), v.clone());
+                    Ok(Some(v))
+                } else {
+                    Ok(None)
+                }
+            }
         }
     }
 }

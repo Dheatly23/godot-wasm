@@ -16,6 +16,7 @@ use wasmtime::component::Component;
 #[cfg(feature = "unsafe-module-serde")]
 use wasmtime::Precompiled;
 use wasmtime::{Config, Engine, ExternType, Module, ResourcesRequired};
+use cfg_if::cfg_if;
 
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
@@ -190,24 +191,24 @@ impl WasmModule {
     }
 
     fn load_module(bytes: &[u8]) -> Result<ModuleType, Error> {
-        #[cfg(feature = "wasi-preview2")]
-        {
-            let bytes = site_context!(wat::parse_bytes(bytes))?;
-            if wasmparser::Parser::is_component(&bytes) {
-                Ok(ModuleType::Component(site_context!(
-                    Component::from_binary(&ENGINE, &bytes,)
-                )?))
+        cfg_if!{
+            if #[cfg(feature = "wasi-preview2")] {
+                let bytes = site_context!(wat::parse_bytes(bytes))?;
+                if wasmparser::Parser::is_component(&bytes) {
+                    Ok(ModuleType::Component(site_context!(
+                        Component::from_binary(&ENGINE, &bytes,)
+                    )?))
+                } else {
+                    Ok(ModuleType::Core(site_context!(Module::from_binary(
+                        &ENGINE, &bytes
+                    ))?))
+                }
             } else {
-                Ok(ModuleType::Core(site_context!(Module::from_binary(
-                    &ENGINE, &bytes
+                Ok(ModuleType::Core(site_context!(Module::new(
+                    &ENGINE, bytes
                 ))?))
             }
         }
-
-        #[cfg(not(feature = "wasi-preview2"))]
-        Ok(ModuleType::Core(site_context!(Module::new(
-            &ENGINE, bytes
-        ))?))
     }
 
     fn process_deps_map(
@@ -439,15 +440,17 @@ impl WasmModule {
         _data: PackedByteArray,
         _imports: Dictionary,
     ) -> Option<Gd<WasmModule>> {
-        #[cfg(feature = "unsafe-module-serde")]
-        if self._deserialize(_name, _data, _imports) {
-            Some(self.to_gd())
-        } else {
-            None
+        cfg_if!{
+            if #[cfg(feature = "unsafe-module-serde")] {
+                if self._deserialize(_name, _data, _imports) {
+                    Some(self.to_gd())
+                } else {
+                    None
+                }
+            } else {
+                panic!("Feature unsafe-module-serde is not enabled!");
+            }
         }
-
-        #[cfg(not(feature = "unsafe-module-serde"))]
-        panic!("Feature unsafe-module-serde is not enabled!");
     }
 
     #[func]
@@ -457,35 +460,39 @@ impl WasmModule {
         _path: GString,
         _imports: Dictionary,
     ) -> Option<Gd<WasmModule>> {
-        #[cfg(feature = "unsafe-module-serde")]
-        if self._deserialize_file(_name, _path.to_string(), _imports) {
-            Some(self.to_gd())
-        } else {
-            None
+        cfg_if!{
+            if #[cfg(feature = "unsafe-module-serde")] {
+                if self._deserialize_file(_name, _path.to_string(), _imports) {
+                    Some(self.to_gd())
+                } else {
+                    None
+                }
+            } else {
+                panic!("Feature unsafe-module-serde is not enabled!");
+            }
         }
-
-        #[cfg(not(feature = "unsafe-module-serde"))]
-        panic!("Feature unsafe-module-serde is not enabled!");
     }
 
     #[func]
     fn serialize(&self) -> Variant {
-        #[cfg(feature = "unsafe-module-serde")]
-        return self
-            .unwrap_data(|m| {
-                Ok(PackedByteArray::from(
-                    &match &m.module {
-                        ModuleType::Core(m) => m.serialize(),
-                        #[cfg(feature = "wasi-preview2")]
-                        ModuleType::Component(m) => m.serialize(),
-                    }?[..],
-                )
-                .to_variant())
-            })
-            .unwrap_or_default();
-
-        #[cfg(not(feature = "unsafe-module-serde"))]
-        panic!("Feature unsafe-module-serde is not enabled!");
+        cfg_if!{
+            if #[cfg(feature = "unsafe-module-serde")] {
+                self
+                    .unwrap_data(|m| {
+                        Ok(PackedByteArray::from(
+                            &match &m.module {
+                                ModuleType::Core(m) => m.serialize(),
+                                #[cfg(feature = "wasi-preview2")]
+                                ModuleType::Component(m) => m.serialize(),
+                            }?[..],
+                        )
+                        .to_variant())
+                    })
+                    .unwrap_or_default()
+            } else {
+                panic!("Feature unsafe-module-serde is not enabled!");
+            }
+        }
     }
 
     /// Gets exported functions
@@ -520,55 +527,55 @@ impl WasmModule {
             let params_str = StringName::from_latin1_with_nul(b"params\0");
             let results_str = StringName::from_latin1_with_nul(b"results\0");
 
-            #[cfg(not(feature = "new-host-import"))]
             for i in site_context!(m.module.get_core())?.imports() {
-                if i.module() != HOST_MODULE {
-                    continue;
-                }
-                if let ExternType::Func(f) = i.ty() {
-                    let (p, r) = from_signature(&f)?;
-                    ret.set(
-                        i.name(),
-                        Dictionary::from_iter([
-                            (params_str.to_variant(), p),
-                            (results_str.to_variant(), r),
-                        ]),
-                    );
-                }
-            }
+                cfg_if!{
+                    if #[cfg(feature = "new-host-import")] {
+                        let ExternType::Func(f) = i.ty() else {
+                            continue;
+                        };
 
-            #[cfg(feature = "new-host-import")]
-            for i in site_context!(m.module.get_core())?.imports() {
-                let ExternType::Func(f) = i.ty() else {
-                    continue;
-                };
-
-                if let Some(m) = m.imports.get(i.module()) {
-                    match &m.bind().get_data()?.module {
-                        ModuleType::Core(m) if m.get_export(i.name()).is_some() => continue,
-                        #[cfg(feature = "wasi-preview2")]
-                        ModuleType::Component(_) => {
-                            bail_with_site!("Import {} is a component", i.module())
+                        if let Some(m) = m.imports.get(i.module()) {
+                            match &m.bind().get_data()?.module {
+                                ModuleType::Core(m) if m.get_export(i.name()).is_some() => continue,
+                                #[cfg(feature = "wasi-preview2")]
+                                ModuleType::Component(_) => {
+                                    bail_with_site!("Import {} is a component", i.module())
+                                }
+                                _ => (),
+                            }
                         }
-                        _ => (),
+
+                        let (p, r) = from_signature(&f)?;
+                        let mut v = match ret.get(i.module()) {
+                            Some(v) => Dictionary::from_variant(&v),
+                            None => {
+                                let v = Dictionary::new();
+                                ret.insert(i.module(), v.clone());
+                                v
+                            }
+                        };
+                        v.insert(
+                            i.name(),
+                            Dictionary::from_iter(
+                                [(params_str.to_variant(), p), (results_str.to_variant(), r)].into_iter(),
+                            ),
+                        );
+                    } else {
+                        if i.module() != HOST_MODULE {
+                            continue;
+                        }
+                        if let ExternType::Func(f) = i.ty() {
+                            let (p, r) = from_signature(&f)?;
+                            ret.set(
+                                i.name(),
+                                Dictionary::from_iter([
+                                    (params_str.to_variant(), p),
+                                    (results_str.to_variant(), r),
+                                ]),
+                            );
+                        }
                     }
                 }
-
-                let (p, r) = from_signature(&f)?;
-                let mut v = match ret.get(i.module()) {
-                    Some(v) => Dictionary::from_variant(&v),
-                    None => {
-                        let v = Dictionary::new();
-                        ret.insert(i.module(), v.clone());
-                        v
-                    }
-                };
-                v.insert(
-                    i.name(),
-                    Dictionary::from_iter(
-                        [(params_str.to_variant(), p), (results_str.to_variant(), r)].into_iter(),
-                    ),
-                );
             }
 
             Ok(ret)

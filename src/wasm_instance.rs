@@ -24,6 +24,7 @@ use wasmtime_wasi::preview2::{Table as WasiTable, WasiCtx as WasiCtxPv2, WasiVie
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::WasiCtx;
+use cfg_if::cfg_if;
 
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
@@ -751,98 +752,100 @@ impl WasmInstance {
 
     #[func]
     fn reset_epoch(&self) {
-        #[cfg(feature = "epoch-timeout")]
-        self.unwrap_data(|m| {
-            m.acquire_store(|_, mut store| {
-                store.set_epoch_deadline(store.data().config.epoch_timeout);
-                Ok(())
-            })
-        });
-
-        #[cfg(not(feature = "epoch-timeout"))]
-        godot_error!("Feature epoch-timeout not enabled!");
+        cfg_if!{
+            if #[cfg(feature = "epoch-timeout")] {
+                self.unwrap_data(|m| {
+                    m.acquire_store(|_, mut store| {
+                        store.set_epoch_deadline(store.data().config.epoch_timeout);
+                        Ok(())
+                    })
+                });
+            } else {
+                godot_error!("Feature epoch-timeout not enabled!");
+            }
+        }
     }
 
     #[func]
     fn register_object(&self, _obj: Variant) -> Variant {
-        #[cfg(feature = "object-registry-compat")]
-        return option_to_variant(self.unwrap_data(|m| {
-            if _obj.is_nil() {
-                bail_with_site!("Value is null!");
+        cfg_if!{
+            if #[cfg(feature = "object-registry-compat")] {
+                option_to_variant(self.unwrap_data(|m| {
+                    if _obj.is_nil() {
+                        bail_with_site!("Value is null!");
+                    }
+                    m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj)))
+                }))
+            } else {
+                godot_error!("Feature object-registry-compat not enabled!");
+                Variant::nil()
             }
-            m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj)))
-        }));
-
-        #[cfg(not(feature = "object-registry-compat"))]
-        {
-            godot_error!("Feature object-registry-compat not enabled!");
-            Variant::nil()
         }
     }
 
     #[func]
     fn registry_get(&self, _ix: i64) -> Variant {
-        #[cfg(feature = "object-registry-compat")]
-        return option_to_variant(
-            self.unwrap_data(|m| {
-                m.acquire_store(|_, store| {
-                    Ok(store.data().get_registry()?.get(usize::try_from(_ix)?))
-                })
-            })
-            .flatten(),
-        );
-
-        #[cfg(not(feature = "object-registry-compat"))]
-        {
-            godot_error!("Feature object-registry-compat not enabled!");
-            Variant::nil()
+        cfg_if!{
+            if #[cfg(feature = "object-registry-compat")] {
+                option_to_variant(
+                    self.unwrap_data(|m| {
+                        m.acquire_store(|_, store| {
+                            Ok(store.data().get_registry()?.get(usize::try_from(_ix)?))
+                        })
+                    })
+                    .flatten(),
+                )
+            } else {
+                godot_error!("Feature object-registry-compat not enabled!");
+                Variant::nil()
+            }
         }
     }
 
     #[func]
     fn registry_set(&self, _ix: i64, _obj: Variant) -> Variant {
-        #[cfg(feature = "object-registry-compat")]
-        return option_to_variant(
-            self.unwrap_data(|m| {
-                m.acquire_store(|_, mut store| {
-                    let _ix = usize::try_from(_ix)?;
-                    let reg = store.data_mut().get_registry_mut()?;
-                    if _obj.is_nil() {
-                        Ok(reg.unregister(_ix))
-                    } else {
-                        Ok(reg.replace(_ix, _obj))
-                    }
-                })
-            })
-            .flatten(),
-        );
-
-        #[cfg(not(feature = "object-registry-compat"))]
-        {
-            godot_error!("Feature object-registry-compat not enabled!");
-            Variant::nil()
+        cfg_if!{
+            if #[cfg(feature = "object-registry-compat")] {
+                option_to_variant(
+                    self.unwrap_data(|m| {
+                        m.acquire_store(|_, mut store| {
+                            let _ix = usize::try_from(_ix)?;
+                            let reg = store.data_mut().get_registry_mut()?;
+                            if _obj.is_nil() {
+                                Ok(reg.unregister(_ix))
+                            } else {
+                                Ok(reg.replace(_ix, _obj))
+                            }
+                        })
+                    })
+                    .flatten(),
+                )
+            } else {
+                godot_error!("Feature object-registry-compat not enabled!");
+                Variant::nil()
+            }
         }
     }
 
     #[func]
     fn unregister_object(&self, _ix: i64) -> Variant {
-        #[cfg(feature = "object-registry-compat")]
-        return option_to_variant(
-            self.unwrap_data(|m| {
-                m.acquire_store(|_, mut store| {
-                    Ok(store
-                        .data_mut()
-                        .get_registry_mut()?
-                        .unregister(usize::try_from(_ix)?))
-                })
-            })
-            .flatten(),
-        );
-
-        #[cfg(not(feature = "object-registry-compat"))]
-        {
-            godot_error!("Feature object-registry-compat not enabled!");
-            Variant::nil()
+        cfg_if!{
+            if #[cfg(feature = "object-registry-compat")] {
+                option_to_variant(
+                    self.unwrap_data(|m| {
+                        m.acquire_store(|_, mut store| {
+                            Ok(store
+                                .data_mut()
+                                .get_registry_mut()?
+                                .unregister(usize::try_from(_ix)?))
+                        })
+                    })
+                    .flatten(),
+                )
+            } else {
+                godot_error!("Feature object-registry-compat not enabled!");
+                Variant::nil()
+            }
         }
     }
 
@@ -861,30 +864,34 @@ impl WasmInstance {
 
     #[func]
     fn stdin_add_line(&self, line: GString) {
-        #[cfg(feature = "wasi")]
-        self.unwrap_data(|m| {
-            if let Some(stdin) = &m.wasi_stdin {
-                stdin.add_line(line)?;
+        cfg_if!{
+            if #[cfg(feature = "wasi")] {
+                self.unwrap_data(|m| {
+                    if let Some(stdin) = &m.wasi_stdin {
+                        stdin.add_line(line)?;
+                    }
+                    Ok(())
+                });
+            } else {
+                godot_error!("Feature wasi not enabled!");
             }
-            Ok(())
-        });
-
-        #[cfg(not(feature = "wasi"))]
-        godot_error!("Feature wasi not enabled!");
+        }
     }
 
     #[func]
     fn stdin_close(&self) {
-        #[cfg(feature = "wasi")]
-        self.unwrap_data(|m| {
-            if let Some(stdin) = &m.wasi_stdin {
-                stdin.close_pipe();
+        cfg_if!{
+            if #[cfg(feature = "wasi")] {
+                self.unwrap_data(|m| {
+                    if let Some(stdin) = &m.wasi_stdin {
+                        stdin.close_pipe();
+                    }
+                    Ok(())
+                });
+            } else {
+                godot_error!("Feature wasi not enabled!");
             }
-            Ok(())
-        });
-
-        #[cfg(not(feature = "wasi"))]
-        godot_error!("Feature wasi not enabled!");
+        }
     }
 
     #[func]
