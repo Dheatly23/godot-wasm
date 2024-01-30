@@ -4,6 +4,7 @@ use std::ptr;
 use std::sync::Arc;
 
 use anyhow::{bail, Error};
+use cfg_if::cfg_if;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
@@ -24,7 +25,6 @@ use wasmtime_wasi::preview2::{Table as WasiTable, WasiCtx as WasiCtxPv2, WasiVie
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::WasiCtx;
-use cfg_if::cfg_if;
 
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
@@ -752,7 +752,7 @@ impl WasmInstance {
 
     #[func]
     fn reset_epoch(&self) {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "epoch-timeout")] {
                 self.unwrap_data(|m| {
                     m.acquire_store(|_, mut store| {
@@ -768,7 +768,7 @@ impl WasmInstance {
 
     #[func]
     fn register_object(&self, _obj: Variant) -> Variant {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
                 option_to_variant(self.unwrap_data(|m| {
                     if _obj.is_nil() {
@@ -785,7 +785,7 @@ impl WasmInstance {
 
     #[func]
     fn registry_get(&self, _ix: i64) -> Variant {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
                 option_to_variant(
                     self.unwrap_data(|m| {
@@ -804,7 +804,7 @@ impl WasmInstance {
 
     #[func]
     fn registry_set(&self, _ix: i64, _obj: Variant) -> Variant {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
                 option_to_variant(
                     self.unwrap_data(|m| {
@@ -829,7 +829,7 @@ impl WasmInstance {
 
     #[func]
     fn unregister_object(&self, _ix: i64) -> Variant {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
                 option_to_variant(
                     self.unwrap_data(|m| {
@@ -864,7 +864,7 @@ impl WasmInstance {
 
     #[func]
     fn stdin_add_line(&self, line: GString) {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "wasi")] {
                 self.unwrap_data(|m| {
                     if let Some(stdin) = &m.wasi_stdin {
@@ -880,7 +880,7 @@ impl WasmInstance {
 
     #[func]
     fn stdin_close(&self) {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "wasi")] {
                 self.unwrap_data(|m| {
                     if let Some(stdin) = &m.wasi_stdin {

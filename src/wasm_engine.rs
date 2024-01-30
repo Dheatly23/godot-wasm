@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::{sync::Arc, thread, time};
 
 use anyhow::{bail, Error};
+use cfg_if::cfg_if;
 use godot::engine::FileAccess;
 use godot::prelude::*;
 use once_cell::sync::{Lazy, OnceCell};
@@ -16,7 +17,6 @@ use wasmtime::component::Component;
 #[cfg(feature = "unsafe-module-serde")]
 use wasmtime::Precompiled;
 use wasmtime::{Config, Engine, ExternType, Module, ResourcesRequired};
-use cfg_if::cfg_if;
 
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
@@ -115,7 +115,7 @@ pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
 #[cfg(feature = "epoch-timeout")]
 pub static EPOCH: Lazy<EpochThreadHandle> = Lazy::new(EpochThreadHandle::default);
 
-cfg_if!{
+cfg_if! {
     if #[cfg(feature = "resource")] {
         #[derive(GodotClass)]
         #[class(base=Resource, init, tool)]
@@ -206,7 +206,7 @@ impl WasmModule {
     }
 
     fn load_module(bytes: &[u8]) -> Result<ModuleType, Error> {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "wasi-preview2")] {
                 let bytes = site_context!(wat::parse_bytes(bytes))?;
                 if wasmparser::Parser::is_component(&bytes) {
@@ -455,7 +455,7 @@ impl WasmModule {
         _data: PackedByteArray,
         _imports: Dictionary,
     ) -> Option<Gd<WasmModule>> {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "unsafe-module-serde")] {
                 if self._deserialize(_name, _data, _imports) {
                     Some(self.to_gd())
@@ -475,7 +475,7 @@ impl WasmModule {
         _path: GString,
         _imports: Dictionary,
     ) -> Option<Gd<WasmModule>> {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "unsafe-module-serde")] {
                 if self._deserialize_file(_name, _path.to_string(), _imports) {
                     Some(self.to_gd())
@@ -490,7 +490,7 @@ impl WasmModule {
 
     #[func]
     fn serialize(&self) -> Variant {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "unsafe-module-serde")] {
                 self
                     .unwrap_data(|m| {

@@ -10,6 +10,7 @@ use std::ptr;
 use std::time;
 
 use anyhow::{anyhow, Error};
+use cfg_if::cfg_if;
 use godot::builtin::meta::ConvertError;
 use godot::engine::WeakRef;
 use godot::prelude::*;
@@ -21,7 +22,6 @@ use wasmtime::Linker;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
-use cfg_if::cfg_if;
 
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_config::Config;
@@ -477,7 +477,7 @@ fn process_func(dict: Dictionary) -> Result<(FuncType, CallableEnum), Error> {
     Ok((to_signature(params, results)?, callable))
 }
 
-cfg_if!{
+cfg_if! {
     if #[cfg(feature = "new-host-import")] {
         pub struct HostModuleCache<T> {
             cache: Linker<T>,
@@ -494,7 +494,7 @@ cfg_if!{
 
 impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
     pub fn new(host: Dictionary) -> Self {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "new-host-import")] {
                 Self {
                     cache: Linker::new(&ENGINE),
@@ -516,7 +516,7 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
         module: &str,
         name: &str,
     ) -> Result<Option<Extern>, Error> {
-        cfg_if!{
+        cfg_if! {
             if #[cfg(feature = "new-host-import")] {
                 if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
                     Ok(r)
