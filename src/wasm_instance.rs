@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::collections::HashMap;
-use std::ptr;
 use std::sync::Arc;
+use std::{mem, ptr};
 
 use anyhow::{bail, Error};
 use gdnative::core_types::PoolElement;
@@ -55,6 +55,7 @@ use crate::{bail_with_site, site_context};
 #[user_data(gdnative::export::user_data::ArcData<WasmInstance>)]
 pub struct WasmInstance {
     data: OnceCell<InstanceData<StoreData>>,
+    memory: Option<Memory>,
 }
 
 pub struct InstanceData<T> {
@@ -578,6 +579,7 @@ impl WasmInstance {
     fn new(_owner: &Reference) -> Self {
         Self {
             data: OnceCell::new(),
+            memory: None,
         }
     }
 
@@ -616,8 +618,8 @@ impl WasmInstance {
         host: Option<Dictionary>,
         config: Option<Variant>,
     ) -> bool {
-        match self.data.get_or_try_init(move || {
-            InstanceData::instantiate(
+        match self.data.get_or_try_init(move || -> Result<_, Error> {
+            let mut ret = InstanceData::instantiate(
                 owner,
                 Store::new(
                     &ENGINE,
@@ -650,7 +652,18 @@ impl WasmInstance {
                 ),
                 module,
                 host,
-            )
+            )?;
+
+            // SAFETY: Nobody else can access memory
+            #[allow(mutable_transmutes)]
+            unsafe {
+                *mem::transmute::<_, &mut Option<Memory>>(&self.memory) = match &ret.instance {
+                    InstanceType::Core(inst) => inst.get_memory(ret.store.get_mut(), MEMORY_EXPORT),
+                    #[allow(unreachable_patterns)]
+                    _ => None,
+                };
+            }
+            Ok(ret)
         }) {
             Ok(_) => true,
             Err(e) => {
@@ -665,11 +678,9 @@ impl WasmInstance {
         for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> Result<R, Error>,
     {
         self.unwrap_data(base, |m| {
-            m.acquire_store(|m, mut store| {
-                match site_context!(m.instance.get_core())?.get_memory(&mut store, MEMORY_EXPORT) {
-                    Some(mem) => f(store, mem),
-                    None => bail_with_site!("No memory exported"),
-                }
+            m.acquire_store(|_, store| match self.memory {
+                Some(mem) => f(store, mem),
+                None => bail_with_site!("No memory exported"),
             })
         })
     }
@@ -941,12 +952,24 @@ impl WasmInstance {
 
     #[method]
     fn has_memory(&self, #[base] base: TRef<Reference>) -> bool {
+        self.unwrap_data(base, |m| m.acquire_store(|_, _| Ok(self.memory.is_some())))
+            .unwrap_or_default()
+    }
+
+    #[method]
+    fn memory_set_name(&self, #[base] base: TRef<Reference>, name: GodotString) -> bool {
         self.unwrap_data(base, |m| {
-            m.acquire_store(|m, mut store| {
-                Ok(matches!(
-                    site_context!(m.instance.get_core())?.get_export(&mut store, MEMORY_EXPORT),
-                    Some(Extern::Memory(_))
-                ))
+            m.acquire_store(|m, store| {
+                // SAFETY: Nobody else can access memory
+                #[allow(mutable_transmutes)]
+                unsafe {
+                    *mem::transmute::<_, &mut Option<Memory>>(&self.memory) = match &m.instance {
+                        InstanceType::Core(inst) => inst.get_memory(store, &name.to_string()),
+                        #[allow(unreachable_patterns)]
+                        _ => None,
+                    };
+                }
+                Ok(self.memory.is_some())
             })
         })
         .unwrap_or_default()
