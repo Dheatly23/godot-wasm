@@ -199,7 +199,7 @@ impl FromGodot for ExternBindingType {
                 Ok(Self::Registry)
             }
             #[cfg(feature = "object-registry-extern")]
-            ['e', 'x', 't', 'e', 'r', 'n'] | ['n', 'a', 't', 'i', 'v', 'e'] => Some(Self::Native),
+            ['e', 'x', 't', 'e', 'r', 'n'] | ['n', 'a', 't', 'i', 'v', 'e'] => Ok(Self::Native),
             _ => Err(ConvertError::with_value(via.clone())),
         }
     }

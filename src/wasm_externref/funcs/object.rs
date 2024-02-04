@@ -1,5 +1,8 @@
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
 use anyhow::Error;
-use gdnative::prelude::*;
+use godot::engine::global::Error as GError;
+use godot::prelude::*;
 use wasmtime::{Caller, ExternRef, Func, StoreContextMut, TypedFunc};
 
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
@@ -9,13 +12,16 @@ use crate::{bail_with_site, func_registry, site_context};
 func_registry! {
     "object.",
     has_method => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>| -> Result<u32, Error> {
-        let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
-        let obj = externref_to_variant(obj);
-        Ok(obj.has_method(name).into())
+        let obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
+        match catch_unwind(AssertUnwindSafe(|| obj.has_method(name))) {
+            Ok(v) => Ok(v as _),
+            Err(_) => bail_with_site!("Error binding object"),
+        }
     },
     call => |mut ctx: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, f: Option<Func>| -> Result<Option<ExternRef>, Error> {
-        let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
-        let mut obj = externref_to_variant(obj);
+        let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
 
         let mut v = Vec::new();
         if let Some(f) = f {
@@ -29,14 +35,14 @@ func_registry! {
             }
         }
 
-        // SAFETY: We want to call to Godot
-        Ok(variant_to_externref(unsafe {
-            site_context!(obj.call(name, &v))
-        }?))
+        match catch_unwind(AssertUnwindSafe(|| obj.call(name, &v))) {
+            Ok(v) => Ok(variant_to_externref(v)),
+            Err(_) => bail_with_site!("Error binding object"),
+        }
     },
     call_deferred => |mut ctx: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, f: Option<Func>| -> Result<Option<ExternRef>, Error> {
-        let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
-        let obj = externref_to_variant(obj);
+        let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
 
         let mut v = Vec::new();
         if let Some(f) = f {
@@ -50,145 +56,49 @@ func_registry! {
             }
         }
 
-        let r = if let Ok(o) = <Ref<Reference>>::from_variant(&obj) {
-            // SAFETY: This is a reference object, so should be safe.
-            unsafe { o.assume_safe().call_deferred(name, &v) }
-        } else {
-            let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
-            // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
-            unsafe {
-                match o.assume_safe_if_sane() {
-                    Some(o) => o.call_deferred(name, &v),
-                    None => Variant::nil(),
-                }
-            }
-        };
-
-        Ok(variant_to_externref(r))
+        match catch_unwind(AssertUnwindSafe(|| obj.call_deferred(name, &v))) {
+            Ok(v) => Ok(variant_to_externref(v)),
+            Err(_) => bail_with_site!("Error binding object"),
+        }
     },
     get => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
-        let obj = externref_to_variant(obj);
+        let obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
 
-        let r = if let Ok(o) = <Ref<Reference>>::from_variant(&obj) {
-            // SAFETY: This is a reference object, so should be safe.
-            unsafe { o.assume_safe().get(name) }
-        } else {
-            let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
-            // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
-            unsafe {
-                match o.assume_safe_if_sane() {
-                    Some(o) => o.get(name),
-                    None => Variant::nil(),
-                }
-            }
-        };
-
-        Ok(variant_to_externref(r))
+        match catch_unwind(AssertUnwindSafe(|| obj.get(name))) {
+            Ok(v) => Ok(variant_to_externref(v)),
+            Err(_) => bail_with_site!("Error binding object"),
+        }
     },
     set => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, value: Option<ExternRef>| -> Result<u32, Error> {
-        let name = site_context!(GodotString::from_variant(&externref_to_variant(name)))?;
-        let obj = externref_to_variant(obj);
+        let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
         let value = externref_to_variant(value);
 
-        if let Ok(o) = <Ref<Reference>>::from_variant(&obj) {
-            // SAFETY: This is a reference object, so should be safe.
-            unsafe { o.assume_safe().set(name, value) }
-        } else {
-            let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
-            // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
-            unsafe {
-                match o.assume_safe_if_sane() {
-                    Some(o) => o.set(name, value),
-                    None => return Ok(0),
-                }
-            }
+        match catch_unwind(AssertUnwindSafe(|| obj.set(name, value))) {
+            Ok(_) => Ok(1),
+            Err(_) => bail_with_site!("Error binding object"),
         }
-
-        Ok(1)
     },
-    connect => |_: Caller<_>, obj: Option<ExternRef>, signal: Option<ExternRef>, target: Option<ExternRef>, method: Option<ExternRef>, binds: Option<ExternRef>, flags: i64| -> Result<(), Error> {
-        let signal =
-            site_context!(GodotString::from_variant(&externref_to_variant(signal)))?;
-        let method =
-            site_context!(GodotString::from_variant(&externref_to_variant(method)))?;
-        let binds =
-            site_context!(VariantArray::from_variant(&externref_to_variant(binds)))?;
-        let obj = externref_to_variant(obj);
-        let target = externref_to_variant(target);
+    connect => |_: Caller<_>, obj: Option<ExternRef>, signal: Option<ExternRef>, target: Option<ExternRef>, flags: u32| -> Result<(), Error> {
+        let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let signal = site_context!(StringName::try_from_variant(&externref_to_variant(signal)))?;
+        let target = site_context!(Callable::try_from_variant(&externref_to_variant(target)))?;
 
-        if let Ok(o) = <Ref<Reference>>::from_variant(&obj) {
-            if let Ok(target) = <Ref<Reference>>::from_variant(&target) {
-                // SAFETY: This is a reference object, so should be safe.
-                unsafe {
-                    o.assume_safe()
-                        .connect(signal, target, method, binds, flags)?
-                }
-            } else {
-                let target = site_context!(<Ref<Object>>::from_variant(&target))?;
-                // SAFETY: This is a reference object, so should be safe.
-                unsafe {
-                    o.assume_safe()
-                        .connect(signal, target, method, binds, flags)?
-                }
-            }
-        } else {
-            let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
-            // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
-            unsafe {
-                match o.assume_safe_if_sane() {
-                    Some(o) => {
-                        if let Ok(target) = <Ref<Reference>>::from_variant(&target) {
-                            o.connect(signal, target, method, binds, flags)?
-                        } else {
-                            let target =
-                                site_context!(<Ref<Object>>::from_variant(&target))?;
-                            o.connect(signal, target, method, binds, flags)?
-                        }
-                    }
-                    None => bail_with_site!("Object is invalid!"),
-                }
-            }
+        match catch_unwind(AssertUnwindSafe(|| obj.connect_ex(signal, target).flags(flags).done())) {
+            Ok(GError::OK) => Ok(()),
+            Ok(e) => bail_with_site!("Error: {e:?}"),
+            Err(_) => bail_with_site!("Error binding object"),
         }
-
-        Ok(())
     },
-    disconnect => |_: Caller<_>, obj: Option<ExternRef>, signal: Option<ExternRef>, target: Option<ExternRef>, method: Option<ExternRef>| -> Result<(), Error> {
-        let signal =
-            site_context!(GodotString::from_variant(&externref_to_variant(signal)))?;
-        let method =
-            site_context!(GodotString::from_variant(&externref_to_variant(method)))?;
-        let obj = externref_to_variant(obj);
-        let target = externref_to_variant(target);
+    disconnect => |_: Caller<_>, obj: Option<ExternRef>, signal: Option<ExternRef>, target: Option<ExternRef>| -> Result<(), Error> {
+        let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let signal = site_context!(StringName::try_from_variant(&externref_to_variant(signal)))?;
+        let target = site_context!(Callable::try_from_variant(&externref_to_variant(target)))?;
 
-        if let Ok(o) = <Ref<Reference>>::from_variant(&obj) {
-            if let Ok(target) = <Ref<Reference>>::from_variant(&target) {
-                // SAFETY: This is a reference object, so should be safe.
-                unsafe { o.assume_safe().disconnect(signal, target, method) }
-            } else {
-                let target = site_context!(<Ref<Object>>::from_variant(&target))?;
-                // SAFETY: This is a reference object, so should be safe.
-                unsafe { o.assume_safe().disconnect(signal, target, method) }
-            }
-        } else {
-            let o = site_context!(<Ref<Object>>::from_variant(&obj))?;
-            // SAFETY: Use assume_safe_if_sane(), which at least prevent some of unsafety.
-            unsafe {
-                match o.assume_safe_if_sane() {
-                    Some(o) => {
-                        if let Ok(target) = <Ref<Reference>>::from_variant(&target) {
-                            o.disconnect(signal, target, method)
-                        } else {
-                            let target =
-                                site_context!(<Ref<Object>>::from_variant(&target))?;
-                            o.disconnect(signal, target, method)
-                        }
-                    }
-                    None => bail_with_site!("Object is invalid!"),
-                }
-            }
+        match catch_unwind(AssertUnwindSafe(|| obj.disconnect(signal, target))) {
+            Ok(_) => Ok(()),
+            Err(_) => bail_with_site!("Error binding object"),
         }
-
-        Ok(())
     },
 }

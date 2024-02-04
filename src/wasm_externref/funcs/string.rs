@@ -2,7 +2,7 @@ use std::io::Write;
 use std::str::from_utf8;
 
 use anyhow::Error;
-use gdnative::prelude::*;
+use godot::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Func, StoreContextMut};
 
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
@@ -12,13 +12,14 @@ use crate::{bail_with_site, func_registry, site_context};
 func_registry! {
     "string.",
     len => |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
-        let v = site_context!(GodotString::from_variant(&externref_to_variant(v)))?;
+        let v = site_context!(GString::try_from_variant(&externref_to_variant(v)))?;
 
-        // NOTE: Please fix this as soon as godot_rust opens up it's byte slice API.
-        Ok(v.to_string().as_bytes().len() as _)
+        // SAFETY: Externalize the safety of it
+        let v = unsafe { v.chars_unchecked() };
+        Ok(v.iter().map(|c| c.len_utf8()).sum::<usize>() as _)
     },
     read => |mut ctx: Caller<_>, v: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-        let v = site_context!(GodotString::from_variant(&externref_to_variant(v)))?;
+        let v = site_context!(GString::try_from_variant(&externref_to_variant(v)))?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -41,5 +42,11 @@ func_registry! {
             None => bail_with_site!("Invalid memory range ({}..{})", p, p + n),
         };
         Ok(variant_to_externref(v.to_variant()))
+    },
+    to_string_name => |_: Caller<T>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
+        Ok(variant_to_externref(StringName::from(site_context!(GString::try_from_variant(&externref_to_variant(v)))?).to_variant()))
+    },
+    from_string_name => |_: Caller<T>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
+        Ok(variant_to_externref(GString::from(site_context!(StringName::try_from_variant(&externref_to_variant(v)))?).to_variant()))
     },
 }

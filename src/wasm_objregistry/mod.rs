@@ -2,7 +2,7 @@ mod funcs;
 
 use std::mem;
 
-use gdnative::prelude::*;
+use godot::prelude::*;
 use slab::Slab;
 
 pub use funcs::Funcs;

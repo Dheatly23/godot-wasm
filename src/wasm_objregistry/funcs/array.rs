@@ -1,5 +1,5 @@
 use anyhow::Error;
-use gdnative::prelude::*;
+use godot::prelude::*;
 use wasmtime::{Caller, Extern, Func, StoreContextMut};
 
 use crate::wasm_instance::StoreData;
@@ -11,24 +11,24 @@ func_registry! {
         Ok(ctx
             .data_mut().as_mut()
             .get_registry_mut()?
-            .register(VariantArray::new().owned_to_variant()) as _)
+            .register(<Array<Variant>>::new().to_variant()) as _)
     },
-    len => |ctx: Caller<T>, i: u32| -> Result<i32, Error> {
-        Ok(site_context!(VariantArray::from_variant(
+    len => |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+        Ok(site_context!(<Array<Variant>>::try_from_variant(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?
-        .len())
+        .len() as _)
     },
-    get => |mut ctx: Caller<T>, v: u32, i: i32| -> Result<u32, Error> {
+    get => |mut ctx: Caller<T>, v: u32, i: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-        Ok(reg.register(v.get(i)) as _)
+        let v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        Ok(reg.register(v.get(i as _)) as _)
     },
-    set => |ctx: Caller<T>, v: u32, i: i32, x: u32| -> Result<(), Error> {
+    set => |ctx: Caller<T>, v: u32, i: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        v.set(i, x);
+        v.set(i as _, x);
         Ok(())
     },
     slice => |mut ctx: Caller<T>, v: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
@@ -39,7 +39,7 @@ func_registry! {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
         };
-        let v = site_context!(VariantArray::from_variant(
+        let v = site_context!(<Array<Variant>>::try_from_variant(
             &ctx.data().as_ref().get_registry()?.get_or_nil(v as _)
         ))?;
 
@@ -67,134 +67,125 @@ func_registry! {
 
         Ok(ret)
     },
-    count => |ctx: Caller<T>, v: u32, x: u32| -> Result<i32, Error> {
+    count => |ctx: Caller<T>, v: u32, x: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        Ok(v.count(x))
+        Ok(v.count(&x) as _)
     },
     contains => |ctx: Caller<T>, v: u32, x: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        Ok(v.contains(x) as _)
+        Ok(v.contains(&x) as _)
     },
-    find => |ctx: Caller<T>, v: u32, x: u32, from: i32| -> Result<i32, Error> {
+    find => |ctx: Caller<T>, v: u32, x: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        Ok(v.find(x, from))
+        Ok(match v.find(&x, None) {
+            Some(v) => v as _,
+            None => u32::MAX,
+        })
     },
-    rfind => |ctx: Caller<T>, v: u32, x: u32, from: i32| -> Result<i32, Error> {
+    find_from => |ctx: Caller<T>, v: u32, x: u32, from: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        Ok(v.rfind(x, from))
+        Ok(match v.find(&x, Some(from as _)) {
+            Some(v) => v as _,
+            None => u32::MAX,
+        })
     },
-    find_last => |ctx: Caller<T>, v: u32, x: u32| -> Result<i32, Error> {
+    rfind => |ctx: Caller<T>, v: u32, x: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        Ok(v.find_last(x))
+        Ok(match v.rfind(&x, None) {
+            Some(v) => v as _,
+            None => u32::MAX,
+        })
     },
-    invert => |ctx: Caller<T>, v: u32| -> Result<(), Error> {
+    rfind_from => |ctx: Caller<T>, v: u32, x: u32, from: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-        v.invert();
+        let v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        let x = reg.get_or_nil(x as _);
+        Ok(match v.rfind(&x, Some(from as _)) {
+            Some(v) => v as _,
+            None => u32::MAX,
+        })
+    },
+    reverse => |ctx: Caller<T>, v: u32| -> Result<(), Error> {
+        let reg = ctx.data().as_ref().get_registry()?;
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        v.reverse();
         Ok(())
     },
     sort => |ctx: Caller<T>, v: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-        v.sort();
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        v.sort_unstable();
         Ok(())
     },
     duplicate => |mut ctx: Caller<T>, v: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-        Ok(reg.register(v.duplicate().owned_to_variant()) as _)
+        let v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        Ok(reg.register(v.duplicate_shallow().to_variant()) as _)
     },
     clear => |ctx: Caller<T>, v: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         v.clear();
         Ok(())
     },
-    remove => |ctx: Caller<T>, v: u32, i: i32| -> Result<(), Error> {
+    remove => |ctx: Caller<T>, v: u32, i: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
-        v.remove(i);
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        v.remove(i as _);
         Ok(())
     },
     erase => |ctx: Caller<T>, v: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
-        v.erase(x);
+        v.erase(&x);
         Ok(())
     },
-    resize => |ctx: Caller<T>, v: u32, i: i32| -> Result<(), Error> {
+    resize => |ctx: Caller<T>, v: u32, i: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
-        v.resize(i);
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        v.resize(i as _);
         Ok(())
     },
     push => |ctx: Caller<T>, v: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
         v.push(x);
         Ok(())
     },
     pop => |mut ctx: Caller<T>, v: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
-        Ok(reg.register(v.pop()) as _)
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        Ok(reg.register(v.pop().unwrap_or_else(Variant::nil)) as _)
     },
     push_front => |ctx: Caller<T>, v: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
         v.push_front(x);
         Ok(())
     },
     pop_front => |mut ctx: Caller<T>, v: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
-        Ok(reg.register(v.pop_front()) as _)
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
+        Ok(reg.register(v.pop_front().unwrap_or_else(Variant::nil)) as _)
     },
-    insert => |ctx: Caller<T>, v: u32, i: i32, x: u32| -> Result<(), Error> {
+    insert => |ctx: Caller<T>, v: u32, i: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(VariantArray::from_variant(&reg.get_or_nil(v as _)))?;
+        let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-
-        // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
-        let v = unsafe { v.assume_unique() };
-        v.insert(i, x);
+        v.insert(i as _, x);
         Ok(())
     },
 }

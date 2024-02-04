@@ -61,7 +61,7 @@ features = [
 ]
 
 [features]
-default = ["epoch-timeout", "memory-limiter", "wasi"]
+default = ["epoch-timeout", "memory-limiter", "wasi", "object-registry"]
 new-host-import = []
 resource = ["new-host-import"]
 memory-limiter = []

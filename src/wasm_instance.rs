@@ -784,7 +784,7 @@ impl WasmInstance {
                     if _obj.is_nil() {
                         bail_with_site!("Value is null!");
                     }
-                    m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj)))
+                    m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj) as u64))
                 }))
             } else {
                 godot_error!("Feature object-registry-compat not enabled!");
