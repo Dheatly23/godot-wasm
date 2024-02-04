@@ -27,9 +27,6 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
 * [X] Easily run any WASM module.
 * [X] Supports WAT compilation.
 * [X] Imports any (custom) Godot methods into WASM.
-
-  **NOTE:** Not supports `Callable` convention, only legacy (Godot 3) way.
-
 * [X] Easy access to linear memory, per-element basis or bulk array operation.
 * [ ] Catch and throw runtime error/traps with signal.
 
@@ -37,8 +34,8 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
 
 * [X] Epoch-based limiter to stop bad-behaving module.
 * [X] Memory limiter to prevent exhaustion.
-* [ ] Experimental API for direct Godot object manipulation.
-* [ ] WASI common API with in-memory filesystem.
+* [X] Experimental API for direct Godot object manipulation.
+* [X] WASI common API with in-memory filesystem.
 
 ## Building
 To build the addon:
