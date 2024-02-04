@@ -18,18 +18,31 @@ func _get_resource_type(path: String) -> String:
 	return ""
 
 func _load(path: String, original_path: String, use_sub_threads: bool, cache_mode: CacheMode):
-	if not original_path.is_empty():
+	if cache_mode == CACHE_MODE_IGNORE and not original_path.is_empty():
 		path = original_path
 
 	var module: WasmModule
 	if path.ends_with(".cwasm"):
-		module = WasmModule.new().deserialize_file("", path, {})
-	else:
-		var data := FileAccess.get_file_as_bytes(path)
-		var err := FileAccess.get_open_error()
-		if err != OK:
-			return err
-		module = WasmModule.new().initialize("", data, {})
+		var p := ProjectSettings.globalize_path(path)
+		if p != "":
+			module = WasmModule.new().deserialize_file("", p, {})
+		else:
+			var data := FileAccess.get_file_as_bytes(path)
+			var err := FileAccess.get_open_error()
+			if err != OK:
+				return err
+			module = WasmModule.new().deserialize("", data, {})
+
+		if module != null:
+			return module
+		if not original_path.is_empty():
+			path = original_path
+
+	var data := FileAccess.get_file_as_bytes(path)
+	var err := FileAccess.get_open_error()
+	if err != OK:
+		return err
+	module = WasmModule.new().initialize("", data, {})
 
 	if module == null:
 		return FAILED
