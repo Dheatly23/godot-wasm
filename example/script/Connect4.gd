@@ -17,7 +17,7 @@ const WIDTH = 7
 const HEIGHT = 5
 const TILE_SIZE = 32
 
-@export_file("*.wasm","*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
 @onready var tiles: TileMap = $Tiles
 @onready var selector: Node2D = $Tiles/Selector
@@ -38,13 +38,6 @@ func init_game() -> void:
 			state.append(TileState.EMPTY)
 			tiles.set_cell(0, Vector2i(x, y), 0, ATLAS_MAPPING[TileState.EMPTY])
 
-	var f: WasmFile = load(wasm_file)
-
-	var module = f.get_module()
-	if module == null:
-		__log("Cannot compile module " + wasm_file)
-		return
-
 #	robot_instance = InstanceHandle.new()
 #	robot_instance.instantiate(
 #		module,
@@ -62,7 +55,7 @@ func init_game() -> void:
 #	)
 
 	robot_instance = WasmInstance.new().initialize(
-		module,
+		wasm_file,
 		{},
 		{
 			"engine.use_epoch": true,

@@ -4,7 +4,7 @@ signal message_emitted(msg)
 
 const SCALE := 64.0
 
-@export_file("*.wasm","*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
 @export_range(0.001, 10) var mass1 := 1.0
 @export_range(0.001, 10) var length1 := 1.0
@@ -134,9 +134,7 @@ func _update_pendulum() -> void:
 
 # Non threadpool version
 func _ready():
-	var f: WasmFile = load(wasm_file)
-
-	instance = f.instantiate()
+	instance = wasm_file.instantiate({}, {})
 
 	call_deferred("__setup")
 

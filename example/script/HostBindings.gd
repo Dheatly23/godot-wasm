@@ -2,7 +2,7 @@ extends Node
 
 signal message_emitted(msg)
 
-@export_file("*.wasm","*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
 var instance: WasmInstance = null
 
@@ -50,19 +50,19 @@ var instance: WasmInstance = null
 
 # Non threadpool version
 func _ready():
-	var f: WasmFile = load(wasm_file)
-
-	instance = f.instantiate({
-		"write": {
-			params = [
-				WasmHelper.TYPE_I32,
-				WasmHelper.TYPE_I32,
-			],
-			results = [],
-			object = self,
-			method = "__write",
+	instance = wasm_file.instantiate({
+		"host": {
+			"write": {
+				params = [
+					WasmHelper.TYPE_I32,
+					WasmHelper.TYPE_I32,
+				],
+				results = [],
+				object = self,
+				method = "__write",
+			},
 		},
-	})
+	}, {})
 
 	call_deferred("__cb")
 

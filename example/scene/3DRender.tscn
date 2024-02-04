@@ -1,7 +1,8 @@
-[gd_scene load_steps=6 format=3 uid="uid://drrbuolr657o5"]
+[gd_scene load_steps=7 format=3 uid="uid://drrbuolr657o5"]
 
 [ext_resource type="Environment" uid="uid://cwmtgvxfifmvu" path="res://3DEnv.tres" id="1"]
 [ext_resource type="Script" path="res://script/3DRender.gd" id="2"]
+[ext_resource type="WasmModule" path="res://wasm/three_d_render.wasm" id="2_rj2ds"]
 [ext_resource type="Texture2D" uid="uid://bsem86lb4btpi" path="res://img/Texture.png" id="4"]
 
 [sub_resource type="StandardMaterial3D" id="3"]
@@ -15,7 +16,7 @@ size = Vector2(5, 5)
 
 [node name="Root" type="Node3D"]
 script = ExtResource("2")
-wasm_file = "res://wasm/three_d_render.wasm"
+wasm_file = ExtResource("2_rj2ds")
 
 [node name="Camera" type="Camera3D" parent="."]
 transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 5.774, 5.774, 5.774)

@@ -2,7 +2,7 @@ extends Node3D
 
 signal message_emitted(msg)
 
-@export_file("*.wasm","*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
 @onready var wasi_ctx: WasiContext = WasiContext.new()
 
@@ -49,17 +49,8 @@ func _ready():
 #	wasi_ctx.connect("stdout_emit", self, "__emit_log")
 #	wasi_ctx.connect("stderr_emit", self, "__emit_log")
 
-	var file: WasmFile = load(wasm_file)
-	if file == null:
-		message_emitted.emit("Failed to load module")
-		return
-	var module: WasmModule = file.get_module()
-	if module == null:
-		message_emitted.emit("Failed to load module")
-		return
-
 	instance = WasmInstance.new().initialize(
-		module,
+		wasm_file,
 		{},
 		{
 			"engine.use_epoch": true,
