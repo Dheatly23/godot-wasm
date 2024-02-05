@@ -61,6 +61,16 @@ func_registry! {
             Err(_) => bail_with_site!("Error binding object"),
         }
     },
+    callv => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, args: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
+        let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
+        let args = site_context!(<Array<Variant>>::try_from_variant(&externref_to_variant(args)))?;
+
+        match catch_unwind(AssertUnwindSafe(|| obj.callv(name, args))) {
+            Ok(v) => Ok(variant_to_externref(v)),
+            Err(_) => bail_with_site!("Error binding object"),
+        }
+    },
     get => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
         let obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
         let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
@@ -98,6 +108,28 @@ func_registry! {
 
         match catch_unwind(AssertUnwindSafe(|| obj.disconnect(signal, target))) {
             Ok(_) => Ok(()),
+            Err(_) => bail_with_site!("Error binding object"),
+        }
+    },
+    emit_signal => |mut ctx: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, f: Option<Func>| -> Result<(), Error> {
+        let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
+        let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
+
+        let mut v = Vec::new();
+        if let Some(f) = f {
+            let f: TypedFunc<u32, (Option<ExternRef>, u32)> = site_context!(f.typed(&ctx))?;
+            loop {
+                let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
+                v.push(externref_to_variant(e));
+                if n == 0 {
+                    break;
+                }
+            }
+        }
+
+        match catch_unwind(AssertUnwindSafe(|| obj.emit_signal(name, &v))) {
+            Ok(GError::OK) => Ok(()),
+            Ok(e) => bail_with_site!("Error: {e:?}"),
             Err(_) => bail_with_site!("Error binding object"),
         }
     },
