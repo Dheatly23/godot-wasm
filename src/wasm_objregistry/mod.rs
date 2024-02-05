@@ -53,6 +53,7 @@ impl ObjectRegistry {
             .and_then(|ix| self.slab.get_mut(ix).as_mut().map(|p| mem::replace(*p, v)))
     }
 
+    #[inline]
     pub fn get_or_nil(&self, ix: usize) -> Variant {
         self.get(ix).unwrap_or_else(Variant::nil)
     }
