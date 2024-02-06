@@ -116,9 +116,13 @@ pub struct WasmModule {
     base: Base<Resource>,
     data: OnceCell<ModuleData>,
 
-    #[var(get = get_name)]
+    #[var(get = get_name, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     name: GString,
+    #[var(get = serialize, set = deserialize_bytes, usage_flags = [STORAGE, INTERNAL])]
+    #[allow(dead_code)]
+    bytes_data: PackedByteArray,
+    _bytes_data: OnceCell<PackedByteArray>,
 }
 
 pub struct ModuleData {
@@ -453,17 +457,24 @@ impl WasmModule {
     }
 
     #[func]
-    fn serialize(&self) -> Variant {
+    fn deserialize_bytes(&self, _data: PackedByteArray) {
+        self._deserialize(GString::new(), _data, Dictionary::new());
+    }
+
+    #[func]
+    fn serialize(&self) -> PackedByteArray {
         self.unwrap_data(|m| {
-            Ok(PackedByteArray::from(
-                &match &m.module {
-                    ModuleType::Core(m) => m.serialize(),
-                    #[cfg(feature = "wasi-preview2")]
-                    ModuleType::Component(m) => m.serialize(),
-                }?[..],
-            )
-            .to_variant())
+            self._bytes_data.get_or_try_init(|| {
+                Ok(PackedByteArray::from(
+                    &match &m.module {
+                        ModuleType::Core(m) => m.serialize(),
+                        #[cfg(feature = "wasi-preview2")]
+                        ModuleType::Component(m) => m.serialize(),
+                    }?[..],
+                ))
+            })
         })
+        .cloned()
         .unwrap_or_default()
     }
 
