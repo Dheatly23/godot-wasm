@@ -61,9 +61,7 @@ features = [
 ]
 
 [features]
-default = ["epoch-timeout", "memory-limiter", "wasi", "unsafe-module-serde", "resource"]
-new-host-import = []
-resource = ["new-host-import"]
+default = ["epoch-timeout", "memory-limiter", "wasi"]
 memory-limiter = []
 epoch-timeout = []
 object-registry-compat = ["dep:slab"]
@@ -71,7 +69,6 @@ object-registry-extern = []
 object-registry = ["object-registry-compat", "object-registry-extern"]
 more-precise-timer = []
 deterministic-wasm = []
-unsafe-module-serde = []
 wasi = [
   "dep:wasmtime-wasi",
   "dep:wasi-common",
