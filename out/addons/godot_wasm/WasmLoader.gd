@@ -24,7 +24,7 @@ func _load(path: String, original_path: String, use_sub_threads: bool, cache_mod
 	var module: WasmModule
 	if path.ends_with(".cwasm"):
 		var p := ProjectSettings.globalize_path(path)
-		if p != "":
+		if p != "" and not Engine.is_editor_hint():
 			module = WasmModule.new().deserialize_file("", p, {})
 		else:
 			var data := FileAccess.get_file_as_bytes(path)
