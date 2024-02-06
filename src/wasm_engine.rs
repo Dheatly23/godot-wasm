@@ -18,7 +18,9 @@ use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequire
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
-use crate::wasm_util::{from_signature, variant_to_option, VariantDispatch, MODULE_INCLUDES};
+use crate::wasm_util::{
+    from_signature, variant_to_option, PhantomProperty, VariantDispatch, MODULE_INCLUDES,
+};
 use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
@@ -118,10 +120,10 @@ pub struct WasmModule {
 
     #[var(get = get_name, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
-    name: GString,
+    name: PhantomProperty<GString>,
     #[var(get = serialize, set = deserialize_bytes, usage_flags = [STORAGE, INTERNAL])]
     #[allow(dead_code)]
-    bytes_data: PackedByteArray,
+    bytes_data: PhantomProperty<PackedByteArray>,
     _bytes_data: OnceCell<PackedByteArray>,
 }
 

@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg(feature = "object-registry-extern")]
@@ -9,6 +10,7 @@ use anyhow::{anyhow, Error};
 use godot::builtin::meta::ConvertError;
 use godot::engine::WeakRef;
 use godot::prelude::*;
+use godot::register::property::PropertyHintInfo;
 use once_cell::sync::Lazy;
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
@@ -135,6 +137,32 @@ pub fn variant_to_option<T: FromGodot>(v: Variant) -> Result<Option<T>, ConvertE
         Ok(None)
     } else {
         Some(T::try_from_variant(&v)).transpose()
+    }
+}
+
+pub struct PhantomProperty<T>(PhantomData<T>);
+
+impl<T: Default> Default for PhantomProperty<T> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<T> Var for PhantomProperty<T>
+where
+    T: Var,
+    T::Intermediate: Default,
+{
+    type Intermediate = T::Intermediate;
+
+    fn get_property(&self) -> Self::Intermediate {
+        Self::Intermediate::default()
+    }
+
+    fn set_property(&mut self, _: Self::Intermediate) {}
+
+    fn property_hint() -> PropertyHintInfo {
+        T::property_hint()
     }
 }
 
