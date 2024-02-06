@@ -49,7 +49,7 @@ use crate::wasm_util::EXTERNREF_MODULE;
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{
     config_store_common, from_raw, option_to_variant, to_raw, variant_to_option, HostModuleCache,
-    VariantDispatch, MEMORY_EXPORT,
+    PhantomProperty, VariantDispatch, MEMORY_EXPORT,
 };
 use crate::{bail_with_site, site_context};
 
@@ -62,7 +62,7 @@ pub struct WasmInstance {
 
     #[var(get = get_module)]
     #[allow(dead_code)]
-    module: Option<Gd<WasmModule>>,
+    module: PhantomProperty<Option<Gd<WasmModule>>>,
 }
 
 pub struct InstanceData<T> {

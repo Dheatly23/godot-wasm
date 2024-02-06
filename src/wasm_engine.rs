@@ -23,7 +23,9 @@ use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::EPOCH_INTERVAL;
 #[cfg(not(feature = "new-host-import"))]
 use crate::wasm_util::HOST_MODULE;
-use crate::wasm_util::{from_signature, variant_to_option, VariantDispatch, MODULE_INCLUDES};
+use crate::wasm_util::{
+    from_signature, variant_to_option, PhantomProperty, VariantDispatch, MODULE_INCLUDES,
+};
 use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
@@ -125,7 +127,7 @@ cfg_if! {
 
             #[var(get = get_name)]
             #[allow(dead_code)]
-            name: GString,
+            name: PhantomProperty<GString>,
         }
     } else {
         #[derive(GodotClass)]
@@ -136,7 +138,7 @@ cfg_if! {
 
             #[var(get = get_name)]
             #[allow(dead_code)]
-            name: GString,
+            name: PhantomProperty<GString>,
         }
     }
 }
