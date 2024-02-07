@@ -25,13 +25,13 @@ func _load(path: String, original_path: String, use_sub_threads: bool, cache_mod
 	if path.ends_with(".cwasm"):
 		var p := ProjectSettings.globalize_path(path)
 		if p != "" and not Engine.is_editor_hint():
-			module = WasmModule.new().deserialize_file("", p, {})
+			module = WasmModule.new().deserialize_file(p, {})
 		else:
 			var data := FileAccess.get_file_as_bytes(path)
 			var err := FileAccess.get_open_error()
 			if err != OK:
 				return err
-			module = WasmModule.new().deserialize("", data, {})
+			module = WasmModule.new().deserialize(data, {})
 
 		if module != null:
 			return module
@@ -42,7 +42,7 @@ func _load(path: String, original_path: String, use_sub_threads: bool, cache_mod
 	var err := FileAccess.get_open_error()
 	if err != OK:
 		return err
-	module = WasmModule.new().initialize("", data, {})
+	module = WasmModule.new().initialize(data, {})
 
 	if module == null:
 		return FAILED

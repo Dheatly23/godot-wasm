@@ -214,9 +214,12 @@ impl WasmModule {
 
     fn process_deps_map(
         module: &ModuleType,
-        imports: Dictionary,
+        imports: Option<Dictionary>,
     ) -> Result<HashMap<String, Gd<WasmModule>>, Error> {
         let mut deps_map = HashMap::new();
+        let Some(imports) = imports else {
+            return Ok(deps_map);
+        };
         #[allow(irrefutable_let_patterns)]
         if let ModuleType::Core(_module) = &module {
             deps_map = HashMap::with_capacity(imports.len() as _);
@@ -238,7 +241,17 @@ impl WasmModule {
         Ok(deps_map)
     }
 
-    fn _initialize(&self, name: GString, data: Variant, imports: Dictionary) -> bool {
+    fn name_from_module(module: &ModuleType) -> GString {
+        #[allow(unreachable_patterns)]
+        match module {
+            ModuleType::Core(m) => Some(m),
+            _ => None,
+        }
+        .and_then(|m| m.name())
+        .map_or_else(GString::new, GString::from)
+    }
+
+    fn _initialize(&self, data: Variant, imports: Option<Dictionary>) -> bool {
         match self.data.get_or_try_init(move || -> Result<_, Error> {
             let module = match VariantDispatch::from(&data) {
                 VariantDispatch::PackedByteArray(v) => Self::load_module(v.as_slice())?,
@@ -257,7 +270,7 @@ impl WasmModule {
             let imports = Self::process_deps_map(&module, imports)?;
 
             Ok(ModuleData {
-                name,
+                name: Self::name_from_module(&module),
                 module,
                 imports,
             })
@@ -329,7 +342,7 @@ impl WasmModule {
         Ok(())
     }
 
-    fn _deserialize(&self, name: GString, data: PackedByteArray, imports: Dictionary) -> bool {
+    fn _deserialize(&self, data: PackedByteArray, imports: Option<Dictionary>) -> bool {
         match self.data.get_or_try_init(move || -> Result<_, Error> {
             let data = data.as_slice();
             // SAFETY: Assume the supplied data is safe to deserialize.
@@ -349,7 +362,7 @@ impl WasmModule {
             let imports = Self::process_deps_map(&module, imports)?;
 
             Ok(ModuleData {
-                name,
+                name: Self::name_from_module(&module),
                 module,
                 imports,
             })
@@ -362,7 +375,7 @@ impl WasmModule {
         }
     }
 
-    fn _deserialize_file(&self, name: GString, path: String, imports: Dictionary) -> bool {
+    fn _deserialize_file(&self, path: String, imports: Option<Dictionary>) -> bool {
         match self.data.get_or_try_init(move || -> Result<_, Error> {
             let path = PathBuf::from(path);
             // SAFETY: Assume the supplied file is safe to deserialize.
@@ -382,7 +395,7 @@ impl WasmModule {
             let imports = Self::process_deps_map(&module, imports)?;
 
             Ok(ModuleData {
-                name,
+                name: Self::name_from_module(&module),
                 module,
                 imports,
             })
@@ -401,13 +414,8 @@ impl WasmModule {
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
     #[func]
-    fn initialize(
-        &self,
-        name: GString,
-        data: Variant,
-        imports: Dictionary,
-    ) -> Option<Gd<WasmModule>> {
-        if self._initialize(name, data, imports) {
+    fn initialize(&self, data: Variant, imports: Dictionary) -> Option<Gd<WasmModule>> {
+        if self._initialize(data, Some(imports)) {
             Some(self.to_gd())
         } else {
             None
@@ -415,9 +423,8 @@ impl WasmModule {
     }
 
     #[func]
-    fn get_name(&self) -> StringName {
-        self.unwrap_data(|m| Ok(StringName::from(&m.name)))
-            .unwrap_or_default()
+    fn get_name(&self) -> GString {
+        self.unwrap_data(|m| Ok(m.name.clone())).unwrap_or_default()
     }
 
     #[func]
@@ -431,13 +438,8 @@ impl WasmModule {
     }
 
     #[func]
-    fn deserialize(
-        &self,
-        _name: GString,
-        _data: PackedByteArray,
-        _imports: Dictionary,
-    ) -> Option<Gd<WasmModule>> {
-        if self._deserialize(_name, _data, _imports) {
+    fn deserialize(&self, data: PackedByteArray, imports: Dictionary) -> Option<Gd<WasmModule>> {
+        if self._deserialize(data, Some(imports)) {
             Some(self.to_gd())
         } else {
             None
@@ -445,13 +447,8 @@ impl WasmModule {
     }
 
     #[func]
-    fn deserialize_file(
-        &self,
-        _name: GString,
-        _path: GString,
-        _imports: Dictionary,
-    ) -> Option<Gd<WasmModule>> {
-        if self._deserialize_file(_name, _path.to_string(), _imports) {
+    fn deserialize_file(&self, path: GString, imports: Dictionary) -> Option<Gd<WasmModule>> {
+        if self._deserialize_file(path.to_string(), Some(imports)) {
             Some(self.to_gd())
         } else {
             None
@@ -459,8 +456,8 @@ impl WasmModule {
     }
 
     #[func]
-    fn deserialize_bytes(&self, _data: PackedByteArray) {
-        self._deserialize(GString::new(), _data, Dictionary::new());
+    fn deserialize_bytes(&self, data: PackedByteArray) {
+        self._deserialize(data, None);
     }
 
     #[func]

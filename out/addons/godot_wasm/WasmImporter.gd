@@ -53,7 +53,7 @@ func _import(
 	if err != OK:
 		return err
 
-	var r: WasmModule = WasmModule.new().initialize("", data, {})
+	var r: WasmModule = WasmModule.new().initialize(data, {})
 	if r == null:
 		return FAILED
 
