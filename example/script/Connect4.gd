@@ -45,8 +45,8 @@ func init_game() -> void:
 		module,
 		{},
 		{
-			"engine.use_epoch": true,
-			"engine.epoch_timeout": 60,
+			"epoch.enable": true,
+			"epoch.timeout": 60,
 		},
 		self, "__log"
 	)

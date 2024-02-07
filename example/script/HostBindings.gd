@@ -30,7 +30,7 @@ func _ready():
 			},
 		},
 		{
-			"engine.use_epoch": true,
+			"epoch.enable": true,
 		},
 		self, "__log"
 	)
