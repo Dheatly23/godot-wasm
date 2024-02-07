@@ -62,10 +62,10 @@ func _ready():
 		module,
 		{},
 		{
-			"engine.use_epoch": true,
-			"engine.epoch_timeout": 1.0,
-			"engine.use_wasi": true,
-			"wasi.wasi_context": wasi_ctx,
+			"epoch.enable": true,
+			"epoch.timeout": 1.0,
+			"wasi.enable": true,
+			"wasi.context": wasi_ctx,
 		}
 	)
 	if instance == null:

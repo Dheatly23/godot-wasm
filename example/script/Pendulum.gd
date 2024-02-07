@@ -80,8 +80,8 @@ func _update_pendulum() -> void:
 #		module,
 #		{},
 #		{
-#			"engine.use_epoch": true,
-#			"engine.epoch_timeout": 1,
+#			"epoch.enable": true,
+#			"epoch.timeout": 1,
 #		},
 #		self, "__log"
 #	)

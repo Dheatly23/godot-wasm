@@ -30,7 +30,7 @@ var instance: WasmInstance = null
 #			},
 #		},
 #		{
-#			"engine.use_epoch": true,
+#			"epoch.enable": true,
 #		},
 #		self, "__log"
 #	)

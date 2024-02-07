@@ -9,7 +9,7 @@ Configuration value is a dictionary with key is configuration name.
 
 ## Configs
 
-### engine.use_epoch
+### epoch.enable
 
 * Feature gate: `epoch-timeout`
 * Type: `bool`
@@ -17,7 +17,7 @@ Configuration value is a dictionary with key is configuration name.
 
 Enables epoch-based timeout.
 
-### engine.epoch_timeout
+### epoch.timeout
 
 * Feature gate: `epoch-timeout`
 * Type: `null|int|float`
@@ -26,7 +26,7 @@ Enables epoch-based timeout.
 Sets how many second the instance can run.
 If not set or `null`, it defaults to 5 seconds.
 
-### engine.epoch_autoreset
+### epoch.useAutoreset
 
 * Feature gate: `epoch-timeout`
 * Type: `bool`
@@ -34,21 +34,21 @@ If not set or `null`, it defaults to 5 seconds.
 
 If enabled, automatically resets epoch timer whenever it returns from host.
 
-### engine.max_memory
+### memory.maxGrowBytes
 
 * Feature gate: `memory-limiter`
 * Type: `int`
 
-If set, it limits the amount of memories Webassembly can allocate in bytes.
+If set, it limits the amount of **extra** bytes all Webassembly memories can allocate.
 
-### engine.max_entries
+### table.maxGrowEntries
 
 * Feature gate: `memory-limiter`
 * Type: `int`
 
-If set, it limits the size of tables Webassembly can allocate.
+If set, it limits the amount of **extra** entries all Webassembly tables can allocate.
 
-### engine.use_wasi
+### wasi.enable
 
 * Feature gate: `wasi`
 * Type: `bool`
@@ -56,7 +56,7 @@ If set, it limits the size of tables Webassembly can allocate.
 
 Enables usage of WASI.
 
-### wasi.wasi_context
+### wasi.context
 
 * Feature gate: `wasi`
 * Type: `WasiContext`
@@ -78,7 +78,7 @@ NOTE: First argument is the "executable name".
 
 Sets additional environment variables for the instance.
 
-### wasi.fs_readonly
+### wasi.fsReadonly
 
 * Feature gate: `wasi`
 * Type: `bool`
@@ -87,7 +87,7 @@ Sets additional environment variables for the instance.
 If enabled, it prevents Webassembly from writing to filesystem.
 Only useful with context set, as by default it can't access anything.
 
-### wasi.stdin
+### wasi.stdin.bindMode
 
 * Feature gate: `wasi`
 * Type: `String`
@@ -97,14 +97,14 @@ Must be one of these value:
 * `"unbound"` : Do not connect standard input.
 * `"instance"` : Connect standard input to instance object.
 
-### wasi.stdin_data
+### wasi.stdin.inputData
 
 * Feature gate: `wasi`
 * Type: `PackedByteArray`
 
 Prefill standard input with data.
 
-### wasi.stdin_file
+### wasi.stdin.inputFile
 
 * Feature gate: `wasi`
 * Type: `string`
@@ -112,7 +112,7 @@ Prefill standard input with data.
 Prefill standard input with in-memory file.
 Useful only with context set.
 
-### wasi.stdout
+### wasi.stdout.bindMode
 
 * Feature gate: `wasi`
 * Type: `String`
@@ -122,7 +122,7 @@ Must be one of these value:
 * `"unbound"` : Do not connect standard output.
 * `"instance"` : Connect standard output to instance object.
 
-### wasi.stdout_buffer
+### wasi.stdout.bufferMode
 
 * Feature gate: `wasi`
 * Type: `String`
@@ -132,7 +132,7 @@ Must be one of these value:
 * `"block"` : Buffers by block. Emits as PackedByteArray.
 * `"unbuffered"` : Disable buffering. Emits as PackedByteArray.
 
-### wasi.stderr
+### wasi.stderr.bindMode
 
 * Feature gate: `wasi`
 * Type: `String`
@@ -142,7 +142,7 @@ Must be one of these value:
 * `"unbound"` : Do not connect standard error.
 * `"instance"` : Connect standard error to instance object.
 
-### wasi.stderr_buffer
+### wasi.stderr.bufferMode
 
 * Feature gate: `wasi`
 * Type: `String`
@@ -152,7 +152,7 @@ Must be one of these value:
 * `"block"` : Buffers by block. Emits as PackedByteArray.
 * `"unbuffered"` : Disable buffering. Emits as PackedByteArray.
 
-### godot.extern_binding
+### extern.bindMode
 
 * Type: `String`
 

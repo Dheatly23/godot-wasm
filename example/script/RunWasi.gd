@@ -369,8 +369,8 @@ func __execute():
 		wasm_module,
 		{},
 		{
-			"engine.use_wasi": true,
-			"wasi.wasi_context": wasi_ctx,
+			"wasi.enable": true,
+			"wasi.context": wasi_ctx,
 			"wasi.args": args,
 		}
 	)
