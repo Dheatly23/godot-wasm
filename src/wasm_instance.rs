@@ -1,7 +1,8 @@
 use std::any::Any;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
-use std::{mem, ptr};
+use std::{fmt, mem, ptr};
 
 use anyhow::{bail, Error};
 use cfg_if::cfg_if;
@@ -17,7 +18,8 @@ use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
 use wasmtime::ResourceLimiter;
 use wasmtime::{
-    AsContextMut, Extern, Instance as InstanceWasm, Memory, Store, StoreContextMut, ValRaw,
+    AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, Store, StoreContextMut,
+    ValRaw,
 };
 #[cfg(feature = "wasi-preview2")]
 use wasmtime_wasi::preview2::{Table as WasiTable, WasiCtx as WasiCtxPv2, WasiView};
@@ -49,7 +51,7 @@ use crate::wasm_util::EXTERNREF_MODULE;
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{
     config_store_common, from_raw, option_to_variant, to_raw, variant_to_option, HostModuleCache,
-    PhantomProperty, VariantDispatch, MEMORY_EXPORT,
+    PhantomProperty, SendSyncWrapper, VariantDispatch, MEMORY_EXPORT,
 };
 use crate::{bail_with_site, site_context};
 
@@ -661,6 +663,115 @@ impl WasmInstance {
     }
 }
 
+struct WasmCallable {
+    name: StringName,
+    ty: FuncType,
+    f: Func,
+    this: SendSyncWrapper<Gd<WasmInstance>>,
+}
+
+impl PartialEq for WasmCallable {
+    fn eq(&self, other: &Self) -> bool {
+        (self.name == other.name) && (*self.this == *other.this) && (self.ty == other.ty)
+    }
+}
+
+impl Eq for WasmCallable {}
+
+impl Hash for WasmCallable {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        <StringName as Hash>::hash(&self.name, state);
+        self.ty.hash(state);
+        self.this.hash(state);
+    }
+}
+
+impl fmt::Debug for WasmCallable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "WasmCallable {{ object: {:?}, name: {:?}, type: {:?}, func: {:?} }}",
+            *self.this, self.name, self.ty, self.f,
+        )
+    }
+}
+
+impl fmt::Display for WasmCallable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "WasmCallable({:?}.{}<(", *self.this, self.name)?;
+
+        let mut start = true;
+        for v in self.ty.params() {
+            let s = if start {
+                start = false;
+                ", "
+            } else {
+                ""
+            };
+            write!(f, "{s}{v}")?;
+        }
+
+        write!(f, "), (")?;
+        start = false;
+        for v in self.ty.results() {
+            let s = if start {
+                start = false;
+                ", "
+            } else {
+                ""
+            };
+            write!(f, "{s}{v}")?;
+        }
+
+        write!(f, ")>)")
+    }
+}
+
+impl RustCallable for WasmCallable {
+    fn invoke(&mut self, args: &[&Variant]) -> Result<Variant, ()> {
+        let ty = &self.ty;
+        let f = &self.f;
+        let f = move |_: &'_ _, mut store: StoreContextMut<'_, StoreData>| {
+            let pi = ty.params();
+            let ri = ty.results();
+            let mut arr = Vec::with_capacity(pi.len().max(ri.len()));
+
+            store.gc();
+
+            let pl = pi.len();
+            for (t, v) in pi.zip(args) {
+                arr.push(unsafe { to_raw(&mut store, t, (**v).clone())? });
+            }
+            if args.len() != pl {
+                bail_with_site!("Too few parameter (expected {}, got {})", pl, args.len());
+            }
+            while arr.len() < ri.len() {
+                arr.push(ValRaw::i32(0));
+            }
+
+            #[cfg(feature = "epoch-timeout")]
+            store.set_epoch_deadline(store.data().config.epoch_timeout);
+
+            // SAFETY: Array length is maximum of params and returns and initialized
+            unsafe {
+                site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr(), arr.len()))?;
+            }
+
+            let mut ret = Array::new();
+            for (t, v) in ri.zip(arr) {
+                ret.push(unsafe { from_raw(&mut store, t, v)? });
+            }
+
+            Ok(ret.to_variant())
+        };
+
+        self.this
+            .bind()
+            .unwrap_data(move |m| m.acquire_store(f))
+            .ok_or(())
+    }
+}
+
 #[godot_api]
 impl WasmInstance {
     #[signal]
@@ -741,6 +852,27 @@ impl WasmInstance {
             })
         })
         .unwrap_or_default()
+    }
+
+    #[func]
+    fn bind_wasm_callable(&self, name: StringName) -> Callable {
+        self.unwrap_data(|m| {
+            m.acquire_store(|m, mut store| {
+                let n = name.to_string();
+                let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &n) {
+                    Some(f) => match f {
+                        Extern::Func(f) => f,
+                        _ => bail_with_site!("Export {} is not a function", &n),
+                    },
+                    None => bail_with_site!("Export {} does not exists", &n),
+                };
+                let ty = f.ty(&store);
+
+                let this = SendSyncWrapper::new(self.to_gd());
+                Ok(Callable::from_custom(WasmCallable { name, ty, f, this }))
+            })
+        })
+        .unwrap_or_else(Callable::invalid)
     }
 
     /// Emit trap when returning from host. Only used for host binding.
