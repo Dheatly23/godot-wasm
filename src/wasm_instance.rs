@@ -219,9 +219,11 @@ impl ResourceLimiter for MemoryLimit {
         &mut self,
         current: usize,
         desired: usize,
-        _: Option<usize>,
+        max: Option<usize>,
     ) -> Result<bool, Error> {
-        if self.max_memory == u64::MAX {
+        if max.map_or(false, |max| desired > max) {
+            return Ok(false);
+        } else if self.max_memory == u64::MAX {
             return Ok(true);
         }
 
@@ -234,8 +236,15 @@ impl ResourceLimiter for MemoryLimit {
         }
     }
 
-    fn table_growing(&mut self, current: u32, desired: u32, _: Option<u32>) -> Result<bool, Error> {
-        if self.max_table_entries == u64::MAX {
+    fn table_growing(
+        &mut self,
+        current: u32,
+        desired: u32,
+        max: Option<u32>,
+    ) -> Result<bool, Error> {
+        if max.map_or(false, |max| desired > max) {
+            return Ok(false);
+        } else if self.max_table_entries == u64::MAX {
             return Ok(true);
         }
 
