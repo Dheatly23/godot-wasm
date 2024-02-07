@@ -7,7 +7,7 @@ use std::ptr;
 use std::time;
 
 use anyhow::{anyhow, Error};
-use godot::builtin::meta::ConvertError;
+use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::engine::WeakRef;
 use godot::prelude::*;
 use godot::register::property::PropertyHintInfo;
@@ -148,18 +148,24 @@ impl<T: Default> Default for PhantomProperty<T> {
     }
 }
 
+impl<T> GodotConvert for PhantomProperty<T>
+where
+    T: GodotConvert,
+    T::Via: Default,
+{
+    type Via = T::Via;
+}
+
 impl<T> Var for PhantomProperty<T>
 where
     T: Var,
-    T::Intermediate: Default,
+    T::Via: Default,
 {
-    type Intermediate = T::Intermediate;
-
-    fn get_property(&self) -> Self::Intermediate {
-        Self::Intermediate::default()
+    fn get_property(&self) -> Self::Via {
+        Self::Via::default()
     }
 
-    fn set_property(&mut self, _: Self::Intermediate) {}
+    fn set_property(&mut self, _: Self::Via) {}
 
     fn property_hint() -> PropertyHintInfo {
         T::property_hint()
