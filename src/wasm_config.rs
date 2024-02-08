@@ -51,18 +51,21 @@ pub struct Config {
 
 fn get_field<T: FromVariant>(
     d: &Dictionary,
-    name: &'static str,
+    names: impl IntoIterator<Item = &'static str>,
 ) -> Result<Option<T>, FromVariantError> {
-    match d.get(name) {
-        Some(v) => match T::from_variant(&v) {
-            Ok(v) => Ok(Some(v)),
-            Err(e) => Err(FromVariantError::InvalidField {
-                field_name: name,
-                error: Box::new(e),
-            }),
-        },
-        None => Ok(None),
+    for name in names {
+        if let Some(v) = d.get(name) {
+            return match T::from_variant(&v) {
+                Ok(v) => Ok(Some(v)),
+                Err(e) => Err(FromVariantError::InvalidField {
+                    field_name: name,
+                    error: Box::new(e),
+                }),
+            };
+        }
     }
+
+    Ok(None)
 }
 
 #[cfg(feature = "epoch-timeout")]
@@ -96,43 +99,54 @@ impl FromVariant for Config {
 
         Ok(Self {
             #[cfg(feature = "epoch-timeout")]
-            with_epoch: get_field(&dict, "epoch.enable")?.unwrap_or_default(),
+            with_epoch: get_field(&dict, ["epoch.enable", "engine.use_epoch"])?.unwrap_or_default(),
             #[cfg(feature = "epoch-timeout")]
-            epoch_autoreset: get_field(&dict, "epoch.useAutoreset")?.unwrap_or_default(),
+            epoch_autoreset: get_field(&dict, ["epoch.useAutoreset", "engine.epoch_autoreset"])?
+                .unwrap_or_default(),
             #[cfg(feature = "epoch-timeout")]
-            epoch_timeout: compute_epoch(dict.get("epoch.timeout"))?,
+            epoch_timeout: compute_epoch(
+                dict.get("epoch.timeout")
+                    .or_else(|| dict.get("engine.epoch_timeout")),
+            )?,
 
             #[cfg(feature = "memory-limiter")]
-            max_memory: get_field(&dict, "memory.maxGrowBytes")?,
+            max_memory: get_field(&dict, ["memory.maxGrowBytes", "engine.max_memory"])?,
             #[cfg(feature = "memory-limiter")]
-            max_entries: get_field(&dict, "table.maxGrowEntries")?,
+            max_entries: get_field(&dict, ["table.maxGrowEntries", "engine.max_entries"])?,
 
             #[cfg(feature = "wasi")]
-            with_wasi: get_field(&dict, "wasi.enable")?.unwrap_or_default(),
+            with_wasi: get_field(&dict, ["wasi.enable", "engine.use_wasi"])?.unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_context: get_field(&dict, "wasi.context")?,
+            wasi_context: get_field(&dict, ["wasi.context", "wasi.wasi_context"])?,
             #[cfg(feature = "wasi")]
-            wasi_args: get_field(&dict, "wasi.args")?.unwrap_or_default(),
+            wasi_args: get_field(&dict, ["wasi.args"])?.unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_envs: get_field(&dict, "wasi.envs")?.unwrap_or_default(),
+            wasi_envs: get_field(&dict, ["wasi.envs"])?.unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_fs_readonly: get_field(&dict, "wasi.fsReadonly")?.unwrap_or_default(),
+            wasi_fs_readonly: get_field(&dict, ["wasi.fsReadonly", "wasi.fs_readonly"])?
+                .unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_stdin: get_field(&dict, "wasi.stdin.bindMode")?.unwrap_or_default(),
+            wasi_stdin: get_field(&dict, ["wasi.stdin.bindMode", "wasi.stdin"])?
+                .unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_stdout: get_field(&dict, "wasi.stdout.bindMode")?.unwrap_or_default(),
+            wasi_stdout: get_field(&dict, ["wasi.stdout.bindMode", "wasi.stdout"])?
+                .unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_stderr: get_field(&dict, "wasi.stderr.bindMode")?.unwrap_or_default(),
+            wasi_stderr: get_field(&dict, ["wasi.stderr.bindMode", "wasi.stderr"])?
+                .unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_stdout_buffer: get_field(&dict, "wasi.stdout.bufferMode")?.unwrap_or_default(),
+            wasi_stdout_buffer: get_field(&dict, ["wasi.stdout.bufferMode", "wasi.stdout_buffer"])?
+                .unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_stderr_buffer: get_field(&dict, "wasi.stderr.bufferMode")?.unwrap_or_default(),
+            wasi_stderr_buffer: get_field(&dict, ["wasi.stderr.bufferMode", "wasi.stderr_buffer"])?
+                .unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_stdin_data: get_field(&dict, "wasi.stdin.inputData")?,
+            wasi_stdin_data: get_field(&dict, ["wasi.stdin.inputData", "wasi.stdin_data"])?,
             #[cfg(feature = "wasi")]
-            wasi_stdin_file: get_field(&dict, "wasi.stdin.inputFile")?,
+            wasi_stdin_file: get_field(&dict, ["wasi.stdin.inputFile", "wasi.stdin_file"])?,
 
-            extern_bind: get_field(&dict, "extern.bindMode")?.unwrap_or_default(),
+            extern_bind: get_field(&dict, ["extern.bindMode", "godot.extern_binding"])?
+                .unwrap_or_default(),
         })
     }
 }
