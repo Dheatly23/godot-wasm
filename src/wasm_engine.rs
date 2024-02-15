@@ -18,9 +18,7 @@ use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequire
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
-use crate::wasm_util::{
-    from_signature, variant_to_option, PhantomProperty, VariantDispatch, MODULE_INCLUDES,
-};
+use crate::wasm_util::{from_signature, variant_to_option, PhantomProperty, VariantDispatch};
 use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
@@ -222,14 +220,15 @@ impl WasmModule {
         };
         #[allow(irrefutable_let_patterns)]
         if let ModuleType::Core(_module) = &module {
-            deps_map = HashMap::with_capacity(imports.len() as _);
-            for (k, v) in imports.iter_shared() {
-                let k = site_context!(String::try_from_variant(&k))?;
-                let v = site_context!(<Gd<WasmModule>>::try_from_variant(&v))?;
-                deps_map.insert(k, v);
-            }
-
-            Self::validate_module(_module, &deps_map)?;
+            deps_map = imports
+                .iter_shared()
+                .map(|(k, v)| -> Result<_, Error> {
+                    Ok((
+                        site_context!(String::try_from_variant(&k))?,
+                        site_context!(<Gd<WasmModule>>::try_from_variant(&v))?,
+                    ))
+                })
+                .collect::<Result<HashMap<_, _>, Error>>()?;
         }
         #[cfg(feature = "wasi-preview2")]
         if let ModuleType::Component(_) = module {
@@ -281,65 +280,6 @@ impl WasmModule {
                 false
             }
         }
-    }
-
-    fn validate_module(
-        module: &Module,
-        deps_map: &HashMap<String, Gd<WasmModule>>,
-    ) -> Result<(), Error> {
-        for i in module.imports() {
-            if MODULE_INCLUDES.iter().any(|j| *j == i.module()) {
-                continue;
-            }
-
-            let ti = i.ty();
-            let j = match deps_map.get(i.module()) {
-                None if ti.func().is_some() => continue,
-                None => bail_with_site!("Unknown module {}", i.module()),
-                Some(m) => match &m.bind().get_data()?.module {
-                    ModuleType::Core(m) => m.get_export(i.name()),
-                    #[cfg(feature = "wasi-preview2")]
-                    ModuleType::Component(_) => {
-                        bail_with_site!("Import {} is a component", i.module())
-                    }
-                },
-            };
-            let j = match j {
-                None if ti.func().is_some() => continue,
-                Some(v) => v,
-                None => {
-                    bail_with_site!("No import in module {} named {}", i.module(), i.name())
-                }
-            };
-            if !match (&ti, &j) {
-                (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
-                (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
-                (ExternType::Table(t1), ExternType::Table(t2)) => {
-                    t1.element() == t2.element()
-                        && t1.minimum() <= t2.minimum()
-                        && match (t1.maximum(), t2.maximum()) {
-                            (None, _) => true,
-                            (_, None) => false,
-                            (Some(a), Some(b)) => a >= b,
-                        }
-                }
-                (ExternType::Memory(m1), ExternType::Memory(m2)) => {
-                    m1.is_64() == m2.is_64()
-                        && m1.is_shared() == m2.is_shared()
-                        && m1.minimum() <= m2.minimum()
-                        && match (m1.maximum(), m2.maximum()) {
-                            (None, _) => true,
-                            (_, None) => false,
-                            (Some(a), Some(b)) => a >= b,
-                        }
-                }
-                (_, _) => false,
-            } {
-                bail_with_site!("Import type mismatch ({:?} != {:?})", ti, j)
-            }
-        }
-
-        Ok(())
     }
 
     fn _deserialize(&self, data: PackedByteArray, imports: Option<Dictionary>) -> bool {

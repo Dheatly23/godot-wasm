@@ -56,19 +56,6 @@ pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
 #[cfg(feature = "object-registry-extern")]
 pub const EXTERNREF_MODULE: &str = "godot_object_v2";
 
-pub const MODULE_INCLUDES: &[&str] = &[
-    #[cfg(feature = "object-registry-compat")]
-    OBJREGISTRY_MODULE,
-    #[cfg(feature = "object-registry-extern")]
-    EXTERNREF_MODULE,
-    #[cfg(feature = "wasi")]
-    "wasi_unstable",
-    #[cfg(feature = "wasi")]
-    "wasi_snapshot_preview0",
-    #[cfg(feature = "wasi")]
-    "wasi_snapshot_preview1",
-];
-
 pub const MEMORY_EXPORT: &str = "memory";
 
 #[macro_export]
