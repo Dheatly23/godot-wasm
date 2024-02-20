@@ -18,13 +18,13 @@ func _get_resource_type(path: String) -> String:
 	return ""
 
 func _load(path: String, original_path: String, use_sub_threads: bool, cache_mode: CacheMode):
-	if cache_mode == CACHE_MODE_IGNORE and not original_path.is_empty():
+	if cache_mode != CACHE_MODE_REUSE and not original_path.is_empty():
 		path = original_path
 
 	var module: WasmModule
 	if path.ends_with(".cwasm"):
 		var p := ProjectSettings.globalize_path(path)
-		if p != "" and not Engine.is_editor_hint():
+		if FileAccess.file_exists(p) and not Engine.is_editor_hint():
 			module = WasmModule.new().deserialize_file(p, {})
 		else:
 			var data := FileAccess.get_file_as_bytes(path)
