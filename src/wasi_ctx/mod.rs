@@ -11,12 +11,13 @@ use camino::{Utf8Path, Utf8PathBuf};
 use godot::prelude::*;
 use wasi_common::dir::OpenResult;
 use wasi_common::file::{FdFlags, FileType, OFlags};
+use wasi_common::WasiCtx;
 use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
 #[cfg(feature = "wasi-preview2")]
 use wasmtime_wasi::preview2::{
     DirPerms, FilePerms, WasiCtx as WasiCtxPv2, WasiCtxBuilder as WasiCtxBuilderPv2,
 };
-use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtxBuilder};
 
 use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
 #[cfg(feature = "wasi-preview2")]
