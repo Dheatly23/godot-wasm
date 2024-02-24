@@ -12,6 +12,8 @@ use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
+#[cfg(feature = "wasi")]
+use wasi_common::WasiCtx;
 #[cfg(feature = "wasi-preview2")]
 use wasmtime::component::Instance as InstanceComp;
 #[cfg(feature = "wasi")]
@@ -24,8 +26,6 @@ use wasmtime::{
 use wasmtime_wasi::preview2::{Table as WasiTable, WasiCtx as WasiCtxPv2, WasiView};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
-#[cfg(feature = "wasi")]
-use wasmtime_wasi::WasiCtx;
 
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
