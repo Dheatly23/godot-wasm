@@ -98,7 +98,7 @@ func_registry! {
     },
     resize => |_: Caller<_>, v: Option<ExternRef>, i: u32| -> Result<(), Error> {
         let mut v = site_context!(<Array<Variant>>::try_from_variant(&externref_to_variant(v)))?;
-        v.resize(i as _);
+        v.resize(i as _, &Variant::nil());
         Ok(())
     },
     push => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {

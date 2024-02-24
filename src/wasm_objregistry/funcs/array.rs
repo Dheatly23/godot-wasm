@@ -154,7 +154,7 @@ func_registry! {
     resize => |ctx: Caller<T>, v: u32, i: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(<Array<Variant>>::try_from_variant(&reg.get_or_nil(v as _)))?;
-        v.resize(i as _);
+        v.resize(i as _, &Variant::nil());
         Ok(())
     },
     push => |ctx: Caller<T>, v: u32, x: u32| -> Result<(), Error> {
