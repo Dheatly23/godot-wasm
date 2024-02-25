@@ -68,10 +68,10 @@ pub extern "C" fn setup(
     }
 }
 
-// Exploits multivalue feature flag to return multiple value as tuple.
-#[allow(improper_ctypes_definitions)]
+static mut OUTPUT: [f64; 4] = [0.0; 4];
+
 #[no_mangle]
-pub extern "C" fn process(mut delta: f64) -> (f64, f64, f64, f64) {
+pub extern "C" fn process(mut delta: f64) -> *const f64 {
     let (mut s, mut t) = unsafe { (STATE, T) };
     let dt = s.config.delta;
 
@@ -84,9 +84,9 @@ pub extern "C" fn process(mut delta: f64) -> (f64, f64, f64, f64) {
     unsafe {
         STATE = s;
         T = t;
+        OUTPUT = [s.theta1, s.w1, s.theta2, s.w2];
+        &OUTPUT as _
     }
-
-    (s.theta1, s.w1, s.theta2, s.w2)
 }
 
 #[derive(Default, Clone, Copy)]
