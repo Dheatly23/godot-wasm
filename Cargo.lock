@@ -285,6 +285,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "colorous"
+version = "1.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7eb0838c7c2f4548ff2218bfdcc6ce3d34ffabd0128bfb9eb44cf27de1ec38b3"
+
+[[package]]
 name = "connect-4"
 version = "0.1.0"
 
@@ -1518,6 +1524,8 @@ dependencies = [
 name = "three-d-render"
 version = "0.1.0"
 dependencies = [
+ "cfg-if",
+ "colorous",
  "glam 0.24.2",
 ]
 

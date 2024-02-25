@@ -4,8 +4,8 @@ use std::iter::repeat;
 
 use glam::f32::*;
 
-use super::{MAX_REP, SIZE, SPEED_SCALE, TIME_SCALE};
-use crate::{Color, Renderable, State};
+use super::{map_color, MAX_REP, SIZE, SPACE_SCALE, SPEED_SCALE, TIME_SCALE};
+use crate::{Renderable, State};
 
 #[derive(Debug, Default)]
 pub struct Wave {
@@ -31,8 +31,8 @@ impl Renderable for Wave {
 
         let (ox, oy) = (f32x4_splat(ret.width as f32 * 0.5), ret.height as f32 * 0.5);
         let (dx, dy) = (
-            f32x4_splat(5.0 / (ret.width - 1) as f32),
-            5.0 / (ret.height - 1) as f32,
+            f32x4_splat(SPACE_SCALE / (ret.width - 1) as f32),
+            SPACE_SCALE / (ret.height - 1) as f32,
         );
         for (y, a) in ret
             .position
@@ -51,7 +51,7 @@ impl Renderable for Wave {
                     f32x4_extract_lane::<2>(pos).exp(),
                     f32x4_extract_lane::<3>(pos).exp(),
                 );
-                *p = v128_and(f32x4_mul(pos, f32x4_splat(5.0)), mask);
+                *p = v128_and(f32x4_mul(pos, f32x4_splat(SPACE_SCALE)), mask);
             }
         }
 
@@ -175,7 +175,7 @@ impl Renderable for Wave {
             1.0 / (self.width - 1) as f32,
             1.0 / (self.height - 1) as f32,
         );
-        let (dx_, dy_) = (dx * 5.0, dy * 5.0);
+        let (dx_, dy_) = (dx * SPACE_SCALE, dy * SPACE_SCALE);
 
         let stride = (self.width + 3) >> 2;
         let mut prev: &[_] = &[];
@@ -206,16 +206,21 @@ impl Renderable for Wave {
 
                 let (tx, ty) = f(
                     cur,
-                    u32x4_shuffle::<3, 4, 5, 6>(if i > 0 { a[i - 1] } else { u32x4_splat(0) }, cur),
+                    if i > 0 {
+                        u32x4_shuffle::<3, 4, 5, 6>(a[i - 1], cur)
+                    } else {
+                        u32x4_shuffle::<0, 0, 1, 2>(cur, cur)
+                    },
                 );
                 v.z_axis += tx;
                 v.w_axis += ty;
 
                 let (tx, ty) = f(
-                    u32x4_shuffle::<1, 2, 3, 4>(
-                        cur,
-                        a.get(i + 1).copied().unwrap_or(u32x4_splat(0)),
-                    ),
+                    if i + 1 < a.len() {
+                        u32x4_shuffle::<1, 2, 3, 4>(cur, a[i + 1])
+                    } else {
+                        u32x4_shuffle::<1, 2, 3, 3>(cur, cur)
+                    },
                     cur,
                 );
                 v.z_axis += tx;
@@ -257,12 +262,7 @@ impl Renderable for Wave {
                     state.normal.push(q * Vec3::Y);
                     state.tangent.push((q * Vec3A::X).extend(1.0));
                     state.uv.push(Vec2::new(x * dx, v_));
-                    state.color.push(Color {
-                        r: 1.0,
-                        g: 1.0,
-                        b: 1.0,
-                        a: 1.0,
-                    });
+                    state.color.push(map_color(d));
                 };
 
                 let x = i << 2;
@@ -281,12 +281,9 @@ impl Renderable for Wave {
             prev = a;
         }
 
-        let mut prev: &[_] = &[];
-        for (y, a) in self.position.chunks_exact(stride).enumerate() {
-            if y == 0 {
-                prev = a;
-                continue;
-            }
+        let mut it = self.position.chunks_exact(stride).enumerate();
+        (_, prev) = it.next().unwrap();
+        for (y, a) in it {
             let mut y = (y as f32) - 0.5;
             let v_ = y * dy;
             y *= dy_;
@@ -297,17 +294,14 @@ impl Renderable for Wave {
                 }
                 let p1 = u32x4_shuffle::<1, 2, 3, 4>(
                     p0,
-                    a.get(i + 1).copied().unwrap_or(u32x4_splat(0)),
+                    prev.get(i + 1).copied().unwrap_or(u32x4_splat(0)),
                 );
                 let p3 = u32x4_shuffle::<1, 2, 3, 4>(
                     p2,
-                    prev.get(i + 1).copied().unwrap_or(u32x4_splat(0)),
+                    a.get(i + 1).copied().unwrap_or(u32x4_splat(0)),
                 );
                 let p4 = f32x4_mul(
-                    [p0, p1, p2, p3]
-                        .into_iter()
-                        .reduce(|a, b| f32x4_add(a, b))
-                        .unwrap(),
+                    f32x4_add(f32x4_add(p0, p1), f32x4_add(p2, p3)),
                     f32x4_splat(0.25),
                 );
 
@@ -331,13 +325,13 @@ impl Renderable for Wave {
                 v.w_axis += ty;
 
                 let (tx, ty) = f(p1);
-                v.x_axis += tx;
-                v.z_axis += tx;
+                v.x_axis -= tx;
+                v.z_axis -= tx;
                 v.w_axis += ty;
 
                 let (tx, ty) = f(p2);
-                v.x_axis -= tx;
-                v.z_axis -= tx;
+                v.x_axis += tx;
+                v.z_axis += tx;
                 v.w_axis += ty;
 
                 let (tx, ty) = f(p3);
@@ -365,12 +359,7 @@ impl Renderable for Wave {
                     state.normal.push(q * Vec3::Y);
                     state.tangent.push((q * Vec3A::X).extend(1.0));
                     state.uv.push(Vec2::new(x * dx, v_));
-                    state.color.push(Color {
-                        r: 1.0,
-                        g: 1.0,
-                        b: 1.0,
-                        a: 1.0,
-                    });
+                    state.color.push(map_color(d));
                 };
 
                 f(x, f32x4_extract_lane::<0>(p4), v.x_axis);
