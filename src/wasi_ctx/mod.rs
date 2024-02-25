@@ -3,8 +3,8 @@ pub mod stdio;
 pub mod timestamp;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::SystemTime;
 
 use anyhow::Error;
