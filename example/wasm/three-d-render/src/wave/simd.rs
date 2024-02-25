@@ -176,6 +176,7 @@ impl Renderable for Wave {
             1.0 / (self.height - 1) as f32,
         );
         let (dx_, dy_) = (dx * SPACE_SCALE, dy * SPACE_SCALE);
+        const OFF: f32 = SPACE_SCALE / 2.0;
 
         let stride = (self.width + 3) >> 2;
         let mut prev: &[_] = &[];
@@ -183,7 +184,7 @@ impl Renderable for Wave {
         while let Some((y, a)) = it.next() {
             let mut y = y as f32;
             let v_ = y * dy;
-            y *= dy_;
+            y = y * dy_ - OFF;
             let next: &[_] = match it.peek() {
                 Some(&(_, a)) => a,
                 None => &[],
@@ -258,7 +259,7 @@ impl Renderable for Wave {
                 let mut f = |x, d, q| {
                     let x = x as f32;
                     let q = Quat::from_vec4(q);
-                    state.vertex.push(Vec3::new(x * dx_, d, y));
+                    state.vertex.push(Vec3::new(x * dx_ - OFF, d, y));
                     state.normal.push(q * Vec3::Y);
                     state.tangent.push((q * Vec3A::X).extend(1.0));
                     state.uv.push(Vec2::new(x * dx, v_));
@@ -286,7 +287,7 @@ impl Renderable for Wave {
         for (y, a) in it {
             let mut y = (y as f32) - 0.5;
             let v_ = y * dy;
-            y *= dy_;
+            y = y * dy_ - OFF;
             for (i, (&p0, &p2)) in prev.iter().zip(a).enumerate() {
                 let x = i << 2;
                 if x + 1 == self.width {
@@ -355,7 +356,7 @@ impl Renderable for Wave {
                 let mut f = |x, d, q| {
                     let x = (x as f32) + 0.5;
                     let q = Quat::from_vec4(q);
-                    state.vertex.push(Vec3::new(x * dx_, d, y));
+                    state.vertex.push(Vec3::new(x * dx_ - OFF, d, y));
                     state.normal.push(q * Vec3::Y);
                     state.tangent.push((q * Vec3A::X).extend(1.0));
                     state.uv.push(Vec2::new(x * dx, v_));

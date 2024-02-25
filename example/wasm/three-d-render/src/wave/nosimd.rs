@@ -113,12 +113,15 @@ impl Renderable for Wave {
             1.0 / (self.height - 1) as f32,
         );
         let (dx_, dy_) = (dx * SPACE_SCALE, dy * SPACE_SCALE);
+        const OFF: f32 = SPACE_SCALE / 2.0;
 
         for ((x, y), (i, p)) in self.xy_iter().zip(self.arr.iter().enumerate()) {
             let p = p.position;
             let x_ = x as f32;
             let y_ = y as f32;
-            state.vertex.push(Vec3::new(x_ * dx_, p, y_ * dy_));
+            state
+                .vertex
+                .push(Vec3::new(x_ * dx_ - OFF, p, y_ * dy_ - OFF));
 
             let mut q = Quat::from_array([0.0; 4]);
             q = q + if x > 0 {
@@ -165,7 +168,9 @@ impl Renderable for Wave {
 
             let x_ = x as f32 + 0.5;
             let y_ = y as f32 + 0.5;
-            state.vertex.push(Vec3::new(x_ * dx_, p4, y_ * dy_));
+            state
+                .vertex
+                .push(Vec3::new(x_ * dx_ - OFF, p4, y_ * dy_ - OFF));
 
             let mut q = Quat::from_array([0.0; 4]);
             let mut v;
