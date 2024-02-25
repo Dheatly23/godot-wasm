@@ -4,6 +4,7 @@ pub mod timestamp;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
 use anyhow::Error;
@@ -28,6 +29,14 @@ use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::wasm_util::{FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST};
 use crate::{bail_with_site, site_context};
+
+fn warn_vfs_deprecated() {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+
+    if !WARNED.swap(true, Ordering::SeqCst) {
+        godot_warn!("Due to wasi-common deprecation, virtual FS methods is going to be removed");
+    }
+}
 
 #[derive(NativeClass, Debug)]
 #[inherit(Reference)]
@@ -97,6 +106,8 @@ impl WasiContext {
             if let (PipeBindingType::Context, Some(file)) =
                 (&config.wasi_stdin, &config.wasi_stdin_file)
             {
+                warn_vfs_deprecated();
+
                 let root = Some(o.memfs_root.clone());
                 let node = if let FileEntry::Occupied(v) = site_context!(open(
                     file,
@@ -411,6 +422,8 @@ impl WasiContext {
 
     #[method]
     fn file_is_exist(&self, path: String, #[opt] follow_symlink: Option<bool>) -> u32 {
+        warn_vfs_deprecated();
+
         match open(
             &path,
             self.memfs_root.clone(),
@@ -435,6 +448,8 @@ impl WasiContext {
         name: GodotString,
         #[opt] follow_symlink: Option<bool>,
     ) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let Ok(FileEntry::Occupied(f)) = open(
                 &path,
@@ -469,6 +484,8 @@ impl WasiContext {
         name: GodotString,
         #[opt] follow_symlink: Option<bool>,
     ) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let Ok(FileEntry::Occupied(f)) = open(
                 &path,
@@ -504,6 +521,8 @@ impl WasiContext {
         link: GodotString,
         #[opt] follow_symlink: Option<bool>,
     ) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let Ok(FileEntry::Occupied(f)) = open(
                 &path,
@@ -538,6 +557,8 @@ impl WasiContext {
         name: GodotString,
         #[opt] follow_symlink: Option<bool>,
     ) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let Ok(FileEntry::Occupied(f)) = open(
                 &path,
@@ -567,6 +588,8 @@ impl WasiContext {
         path: String,
         #[opt] follow_symlink: Option<bool>,
     ) -> Option<PoolArray<GodotString>> {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let Ok(FileEntry::Occupied(f)) = open(
                 &path,
@@ -593,6 +616,8 @@ impl WasiContext {
 
     #[method]
     fn file_stat(&self, path: String, #[opt] follow_symlink: Option<bool>) -> Option<Dictionary> {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let Ok(FileEntry::Occupied(f)) = open(
                 &path,
@@ -641,6 +666,8 @@ impl WasiContext {
         time: Dictionary,
         #[opt] follow_symlink: Option<bool>,
     ) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let mtime = time
                 .get("mtime")
@@ -692,6 +719,8 @@ impl WasiContext {
         path: String,
         #[opt] follow_symlink: Option<bool>,
     ) -> Option<GodotString> {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let Ok(FileEntry::Occupied(f)) = open(
                 &path,
@@ -718,6 +747,8 @@ impl WasiContext {
         #[opt] offset: Option<usize>,
         #[opt] follow_symlink: Option<bool>,
     ) -> Option<PoolArray<u8>> {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let offset = offset.unwrap_or(0);
             let end = if length > 0 {
@@ -778,6 +809,8 @@ impl WasiContext {
         #[opt] truncate: Option<bool>,
         #[opt] follow_symlink: Option<bool>,
     ) -> bool {
+        warn_vfs_deprecated();
+
         fn f<R>(
             root: Arc<Dir>,
             path: String,
