@@ -1,4 +1,4 @@
-use colorous::TURBO;
+use colorgrad::{turbo, Gradient};
 
 use crate::Color;
 
@@ -18,15 +18,17 @@ const SPEED_SCALE: f32 = TIME_SCALE * 16.0;
 const SPACE_SCALE: f32 = 5.0;
 const MAX_REP: usize = 256;
 
-fn map_color(mut v: f32) -> Color {
-    v = (v / SPACE_SCALE).clamp(-1.0, 1.0);
+static mut CMAP: Option<Gradient> = None;
+
+fn map_color(v: f32) -> Color {
+    let mut v = v as f64;
+    v /= SPACE_SCALE as f64;
     v = v * 0.5 + 0.5;
-    //v = (3.0 - v * v) * v * 0.25 + 0.5;
-    let c = TURBO.eval_continuous(v as _);
+    let c = unsafe { CMAP.get_or_insert_with(turbo).at(v) };
     Color {
-        r: (c.r as f32) / 255.0,
-        g: (c.g as f32) / 255.0,
-        b: (c.b as f32) / 255.0,
+        r: c.r as _,
+        g: c.g as _,
+        b: c.b as _,
         a: 1.0,
     }
 }

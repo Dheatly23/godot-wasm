@@ -2,12 +2,12 @@
 
 [ext_resource path="res://3DEnv.tres" type="Environment" id=1]
 [ext_resource path="res://script/3DRender.gd" type="Script" id=2]
-[ext_resource path="res://img/Texture.png" type="Texture" id=4]
+[ext_resource path="res://theme/default.tres" type="Theme" id=3]
 
 [sub_resource type="SpatialMaterial" id=3]
 vertex_color_use_as_albedo = true
+vertex_color_is_srgb = true
 params_diffuse_mode = 1
-albedo_texture = ExtResource( 4 )
 
 [sub_resource type="PlaneMesh" id=4]
 size = Vector2( 5, 5 )
@@ -30,3 +30,23 @@ transform = Transform( -0.5, -0.433013, 0.75, 0, 0.866026, 0.5, -0.866025, 0.25,
 material_override = SubResource( 3 )
 mesh = SubResource( 4 )
 skeleton = NodePath("")
+
+[node name="UI" type="CanvasLayer" parent="."]
+layer = 2
+
+[node name="Root" type="Control" parent="UI"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+theme = ExtResource( 3 )
+
+[node name="TypeLst" type="ItemList" parent="UI/Root"]
+anchor_bottom = 1.0
+margin_left = 20.0
+margin_top = 20.0
+margin_bottom = -20.0
+rect_min_size = Vector2( 100, 0 )
+items = [ "Wave", null, false, "Double Joint", null, false ]
+allow_reselect = true
+
+[connection signal="item_selected" from="UI/Root/TypeLst" to="." method="__selected"]

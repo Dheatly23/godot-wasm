@@ -285,10 +285,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "colorous"
-version = "1.0.12"
+name = "colorgrad"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7eb0838c7c2f4548ff2218bfdcc6ce3d34ffabd0128bfb9eb44cf27de1ec38b3"
+checksum = "6a5f405d474b9d05e0a093d3120e77e9bf26461b57a84b40aa2a221ac5617fb6"
+dependencies = [
+ "csscolorparser",
+]
 
 [[package]]
 name = "connect-4"
@@ -442,6 +445,12 @@ name = "crossbeam-utils"
 version = "0.8.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "248e3bacc7dc6baa3b21e405ee045c3047101a49145e7e9eca583ab4c2ca5345"
+
+[[package]]
+name = "csscolorparser"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb2a7d3066da2de787b7f032c736763eb7ae5d355f81a68bab2675a96008b0bf"
 
 [[package]]
 name = "dirs"
@@ -1525,7 +1534,7 @@ name = "three-d-render"
 version = "0.1.0"
 dependencies = [
  "cfg-if",
- "colorous",
+ "colorgrad",
  "glam 0.24.2",
 ]
 

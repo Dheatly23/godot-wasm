@@ -1,3 +1,4 @@
+mod double_joint;
 mod wave;
 
 use std::ptr::null;
@@ -45,7 +46,26 @@ pub struct ExportState {
     pub index_cnt: usize,
 }
 
-type RenderData = wave::Wave;
+enum RenderData {
+    Wave(wave::Wave),
+    DoubleJoint(double_joint::DoubleJoint),
+}
+
+impl RenderData {
+    fn render(&self, state: &mut State) {
+        match self {
+            Self::Wave(v) => v.render(state),
+            Self::DoubleJoint(v) => v.render(state),
+        }
+    }
+
+    fn step(&mut self, time: f32, delta: f32) {
+        match self {
+            Self::Wave(v) => v.step(time, delta),
+            Self::DoubleJoint(v) => v.step(time, delta),
+        }
+    }
+}
 
 static mut RENDER: Option<RenderData> = None;
 static mut STATE: State = State {
@@ -73,10 +93,14 @@ static mut STATE_EXPORT: ExportState = ExportState {
 static mut T: f64 = 0.0;
 
 #[no_mangle]
-pub extern "C" fn init() {
+pub extern "C" fn init(index: u64) {
     unsafe {
         STATE = State::default();
-        RENDER = Some(RenderData::new());
+        RENDER = match index {
+            0 => Some(RenderData::Wave(<_>::new())),
+            1 => Some(RenderData::DoubleJoint(<_>::new())),
+            _ => None,
+        };
     }
 }
 
@@ -84,9 +108,10 @@ pub extern "C" fn init() {
 pub extern "C" fn process(delta: f64) -> *const ExportState {
     unsafe {
         T += delta;
-        let rp = RENDER.as_mut().unwrap();
-        rp.step(T as _, delta as _);
-        rp.render(&mut STATE);
+        if let Some(rp) = &mut RENDER {
+            rp.step(T as _, delta as _);
+            rp.render(&mut STATE);
+        };
         STATE_EXPORT = ExportState {
             vertex_ptr: STATE.vertex.as_ptr(),
             vertex_cnt: STATE.vertex.len(),

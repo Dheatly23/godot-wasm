@@ -12,4 +12,4 @@ crate-type = ["cdylib"]
 [dependencies]
 cfg-if = "1"
 glam = "^0.24"
-colorous = "1"
+colorgrad = { version = "^0.6", default-features = false }
