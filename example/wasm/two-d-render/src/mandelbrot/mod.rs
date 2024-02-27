@@ -2,9 +2,6 @@ use colorgrad::{rd_yl_bu, Gradient};
 
 use crate::Color;
 
-mod nosimd;
-pub use nosimd::Mandelbrot;
-/*
 cfg_if::cfg_if! {
     if #[cfg(all(target_family = "wasm", target_feature = "simd128"))] {
         mod simd;
@@ -14,7 +11,6 @@ cfg_if::cfg_if! {
         pub use nosimd::Mandelbrot;
     }
 }
-*/
 
 const SIZE: usize = 2048;
 const STEPS: usize = 256;

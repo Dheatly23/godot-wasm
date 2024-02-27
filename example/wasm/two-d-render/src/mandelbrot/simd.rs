@@ -1,14 +1,13 @@
+use std::arch::wasm32::*;
 use std::iter::repeat;
 
 use super::{map_color, SIZE, STEPS, XMAX, XMIN, YMAX, YMIN};
 use crate::{Color, Renderable, State};
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 struct Point {
-    cr: f64,
-    ci: f64,
-    zr: f64,
-    zi: f64,
+    cv: v128,
+    zv: v128,
     n_iter: usize,
     c: Color,
 }
@@ -22,31 +21,35 @@ pub struct Mandelbrot {
 
 impl Renderable for Mandelbrot {
     fn new() -> Self {
-        let mut points = vec![Point::default(); SIZE * SIZE];
+        let p = Point {
+            cv: f64x2_splat(0.),
+            zv: f64x2_splat(0.),
+            n_iter: 0,
+            c: Color::default(),
+        };
+        let mut points = vec![p; SIZE * SIZE];
 
         for (x, p) in points[..SIZE].iter_mut().enumerate() {
-            let v = (x as f64) / (SIZE as f64);
-            p.cr = XMIN + v * (XMAX - XMIN);
+            let v = XMIN + ((x as f64) / (SIZE as f64)) * (XMAX - XMIN);
+            p.cv = f64x2(v, YMIN);
         }
 
         for (y, p) in points.chunks_exact_mut(SIZE).enumerate() {
-            let v = (y as f64) / (SIZE as f64);
-            p[0].ci = YMIN + v * (YMAX - YMIN);
+            let v = YMIN + ((y as f64) / (SIZE as f64)) * (YMAX - YMIN);
+            let cv = &mut p[0].cv;
+            *cv = f64x2_replace_lane::<1>(*cv, v);
         }
         let mut p: &mut [Point] = &mut [];
         for a in points.chunks_exact_mut(SIZE) {
+            let v = f64x2_extract_lane::<1>(a[0].cv);
             for (i, j) in a.iter_mut().zip(p) {
-                i.cr = j.cr;
-            }
-            let v = a[0].ci;
-            for i in &mut a[1..] {
-                i.ci = v;
+                i.cv = f64x2_replace_lane::<1>(j.cv, v);
             }
             p = a;
         }
 
         for p in &mut points {
-            (p.zr, p.zi) = (p.cr, p.ci);
+            p.zv = p.cv;
         }
 
         Self {
@@ -68,17 +71,19 @@ impl Renderable for Mandelbrot {
 
             const HORIZON: f64 = (1u64 << 40) as f64;
 
-            let r2 = p.zr.powi(2);
-            let i2 = p.zi.powi(2);
-            let v = r2 + i2;
+            let v2 = f64x2_mul(p.zv, p.zv);
+            let r2 = u64x2_shuffle::<0, 0>(v2, v2);
+            let i2 = v128_xor(u64x2_shuffle::<1, 1>(v2, v2), u64x2(1u64 << 63, 0));
+            let sd = f64x2_add(r2, i2);
+            let v = f64x2_extract_lane::<1>(sd);
             if v >= HORIZON {
                 let n = ((p.n_iter + 2) as f64) - v.ln().log2() + HORIZON.ln().log2();
                 p.c = map_color(n);
                 continue;
             }
 
-            p.zi = (p.zr + p.zr) * p.zi + p.ci;
-            p.zr = r2 - i2 + p.cr;
+            let i = f64x2_extract_lane::<0>(p.zv) * f64x2_extract_lane::<1>(p.zv);
+            p.zv = f64x2_add(f64x2_replace_lane::<1>(sd, i + i), p.cv);
 
             p.n_iter += 1;
         }
