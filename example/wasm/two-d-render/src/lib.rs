@@ -6,7 +6,7 @@ trait Renderable {
     fn new() -> Self;
     fn render(&self, state: &mut State);
     fn step(&mut self, time: f32, delta: f32);
-    fn click(&mut self, x: f32, y: f32);
+    fn click(&mut self, x: f32, y: f32, right_click: bool);
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -74,9 +74,9 @@ impl RenderData {
         }
     }
 
-    fn click(&mut self, x: f32, y: f32) {
+    fn click(&mut self, x: f32, y: f32, right_click: bool) {
         match self {
-            Self::Mandelbrot(v) => v.click(x, y),
+            Self::Mandelbrot(v) => v.click(x, y, right_click),
         }
     }
 }
@@ -125,10 +125,10 @@ pub extern "C" fn process(delta: f64) -> *const ExportState {
 }
 
 #[no_mangle]
-pub extern "C" fn click(x: f64, y: f64) {
+pub extern "C" fn click(x: f64, y: f64, right_click: u32) {
     unsafe {
         if let Some(rp) = &mut RENDER {
-            rp.click(x as _, y as _);
+            rp.click(x as _, y as _, right_click != 0);
         };
     }
 }

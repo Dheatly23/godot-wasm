@@ -86,7 +86,7 @@ impl Renderable for Mandelbrot {
         self.steps += 1;
     }
 
-    fn click(&mut self, _: f32, _: f32) {}
+    fn click(&mut self, _: f32, _: f32, _: bool) {}
 
     fn render(&self, state: &mut State) {
         if self.steps >= STEPS {
