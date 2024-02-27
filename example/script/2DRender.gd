@@ -87,5 +87,14 @@ func _process(delta):
 		else:
 			_tex.create_from_image(_img, Texture.FLAG_FILTER | Texture.FLAG_REPEAT)
 
+func _input(event: InputEvent):
+	if instance == null:
+		return
+
+	if (event is InputEventMouseButton) and (not event.is_pressed()):
+		var p := get_global_mouse_position()
+		p -= $Sprite.get_rect().position
+		instance.call_wasm("click", [p.x, p.y, int(event.button_index == BUTTON_RIGHT)])
+
 func __emit_log(msg):
 	emit_signal("message_emitted", msg.strip_edges())
