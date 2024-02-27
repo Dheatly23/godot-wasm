@@ -1,0 +1,15 @@
+[remap]
+
+importer="godot_wasm.wasm"
+type="PackedDataContainer"
+path="res://.import/two_d_render.wasm-f1bcb9159b7ac1e627308f6bb9661276.res"
+
+[deps]
+
+source_file="res://wasm/two_d_render.wasm"
+dest_files=[ "res://.import/two_d_render.wasm-f1bcb9159b7ac1e627308f6bb9661276.res" ]
+
+[params]
+
+name=""
+imports=[  ]

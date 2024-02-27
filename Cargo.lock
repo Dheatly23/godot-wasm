@@ -1619,6 +1619,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "two-d-render"
+version = "0.1.0"
+dependencies = [
+ "cfg-if",
+ "colorgrad",
+]
+
+[[package]]
 name = "unicode-bidi"
 version = "0.3.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
