@@ -1,7 +1,7 @@
 extends Camera
 
 const PI_2 := PI / 2
-const SPEED := PI / 4
+const SPEED := PI / 16
 
 export var dist := 10.0
 
@@ -15,7 +15,10 @@ func _process(delta: float):
 	var down_pressed := Input.get_action_strength("camera_down") >= 0.1
 	var left_pressed := Input.get_action_strength("camera_left") >= 0.1
 	var right_pressed := Input.get_action_strength("camera_right") >= 0.1
+	var sprint_pressed := Input.get_action_strength("camera_sprint") >= 0.1
 
+	if sprint_pressed:
+		delta *= 4
 	if up_pressed and not down_pressed:
 		ry = clamp(ry - delta, -PI_2, PI_2)
 	elif not up_pressed and down_pressed:
