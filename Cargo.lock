@@ -304,6 +304,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06ea2b9bc92be3c2baa9334a323ebca2d6f074ff852cd1d7b11064035cd3868f"
 
 [[package]]
+name = "cpp_demangle"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eeaa953eaad386a53111e47172c2fedba671e5684c8dd601a5f474f4f118710f"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "cranelift-bforest"
 version = "0.105.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1813,6 +1822,7 @@ version = "18.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b06f80b13fdeba0ea5267813d0f06af822309f7125fc8db6094bcd485f0a4ae7"
 dependencies = [
+ "addr2line",
  "anyhow",
  "async-trait",
  "bincode",
@@ -1924,11 +1934,13 @@ checksum = "e8da991421528c2767053cb0cfa70b5d28279100dbcf70ed7f74b51abe1656ef"
 dependencies = [
  "anyhow",
  "bincode",
+ "cpp_demangle",
  "cranelift-entity",
  "gimli",
  "indexmap 2.2.3",
  "log",
  "object",
+ "rustc-demangle",
  "serde",
  "serde_derive",
  "target-lexicon",
