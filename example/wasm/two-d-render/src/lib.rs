@@ -1,6 +1,38 @@
+mod game_of_life;
 mod mandelbrot;
 
+use std::cell::RefCell;
+use std::fmt::{Arguments, Write as _};
 use std::ptr::null;
+
+#[link(wasm_import_module = "host")]
+extern "C" {
+    #[link_name = "log"]
+    fn _log(p: *const u8, n: usize);
+}
+
+pub(crate) fn log(s: &str) {
+    // SAFETY: Wraps extern call
+    unsafe { _log(s.as_ptr(), s.len()) }
+}
+
+static mut TEMP_STR: RefCell<String> = RefCell::new(String::new());
+
+pub(crate) fn print_log(args: Arguments) {
+    // SAFETY: Wraps static mut
+    let mut guard = unsafe { TEMP_STR.borrow_mut() };
+    guard.clear();
+    guard.write_fmt(args).unwrap();
+    log(&guard);
+}
+
+macro_rules! log {
+    ($($t:tt)*) => {
+        if cfg!(debug_assertions) {
+            print_log(format_args!($($t)*));
+        }
+    };
+}
 
 trait Renderable {
     fn new() -> Self;
@@ -59,24 +91,28 @@ pub struct ExportState {
 
 enum RenderData {
     Mandelbrot(mandelbrot::Mandelbrot),
+    GameOfLife(game_of_life::GameOfLife),
 }
 
 impl RenderData {
     fn render(&self, state: &mut State) {
         match self {
             Self::Mandelbrot(v) => v.render(state),
+            Self::GameOfLife(v) => v.render(state),
         }
     }
 
     fn step(&mut self, time: f32, delta: f32) {
         match self {
             Self::Mandelbrot(v) => v.step(time, delta),
+            Self::GameOfLife(v) => v.step(time, delta),
         }
     }
 
     fn click(&mut self, x: f32, y: f32, right_click: bool) {
         match self {
             Self::Mandelbrot(v) => v.click(x, y, right_click),
+            Self::GameOfLife(v) => v.click(x, y, right_click),
         }
     }
 }
@@ -101,6 +137,7 @@ pub extern "C" fn init(index: u64) {
         STATE = State::default();
         RENDER = match index {
             0 => Some(RenderData::Mandelbrot(<_>::new())),
+            1 => Some(RenderData::GameOfLife(<_>::new())),
             _ => None,
         };
     }
