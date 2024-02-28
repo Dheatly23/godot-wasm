@@ -15,7 +15,14 @@ var instance: WasmInstance = null
 func __selected(index):
 	instance = WasmInstance.new().initialize(
 		module,
-		{},
+		{
+			"log": {
+				params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
+				results = [],
+				object = self,
+				method = "__log",
+			},
+		},
 		{
 			"epoch.enable": true,
 			"epoch.timeout": 1.0,
@@ -31,6 +38,8 @@ func __selected(index):
 func _ready():
 	$Sprite.texture = _tex
 
+	$UI/Root/TypeLst.select(1)
+
 	wasi_ctx.connect("stdout_emit", self, "__emit_log")
 	wasi_ctx.connect("stderr_emit", self, "__emit_log")
 
@@ -43,20 +52,7 @@ func _ready():
 		emit_signal("message_emitted", "Failed to load module")
 		return
 
-	instance = WasmInstance.new().initialize(
-		module,
-		{},
-		{
-			"epoch.enable": true,
-			"epoch.timeout": 1.0,
-			"wasi.enable": true,
-			"wasi.context": wasi_ctx,
-		}
-	)
-	if instance == null:
-		emit_signal("message_emitted", "Failed to instantiate module")
-	if instance.call_wasm("init", [0]) == null:
-		emit_signal("message_emitted", "Failed to call init")
+	__selected(1)
 
 func _process(delta):
 	if instance == null:
@@ -69,7 +65,7 @@ func _process(delta):
 		instance = null
 		return
 	var end := Time.get_ticks_usec()
-	__emit_log("WASM Time: %.3f ms" % ((end - start) / 1e3))
+	#__emit_log("WASM Time: %.3f ms" % ((end - start) / 1e3))
 
 	var p: int = ret[0]
 	if p == 0:
@@ -98,3 +94,8 @@ func _input(event: InputEvent):
 
 func __emit_log(msg):
 	emit_signal("message_emitted", msg.strip_edges())
+
+func __log(p: int, n: int):
+	var s = instance.memory_read(p, n).get_string_from_utf8()
+	print(s)
+	emit_signal("message_emitted", s)
