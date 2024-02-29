@@ -1,7 +1,7 @@
 use std::iter::repeat;
 
 use super::SIZE;
-use crate::{Color, Renderable, State, log};
+use crate::{log, Color, Renderable, State};
 
 #[derive(Debug, Default)]
 pub struct GameOfLife {
@@ -17,8 +17,7 @@ fn to_vec(v: u16) -> u64 {
 
 fn from_vec(mut v: u64) -> u16 {
     v &= 0x1111_1111_1111_1111;
-    v = (v | v >> 15) & 0x3333_3333;
-    (v | v >> 14) as u16
+    (v | v >> 15 | v >> 30 | v >> 45) as u16
 }
 
 fn apply_rule(v: u64, r: u64) -> u64 {
@@ -27,10 +26,10 @@ fn apply_rule(v: u64, r: u64) -> u64 {
         s *= 4;
         ret |= match r >> s & 15 {
             0..=1 => 0,
-            2 => v >> s & 1,
-            3 => 1,
-            4..=> 0,
-        } << s;
+            2 => v & 1 << s,
+            3 => 1 << s,
+            4.. => 0,
+        };
     }
     ret
 }
@@ -96,16 +95,11 @@ impl Renderable for GameOfLife {
 
                 let v = to_vec(self.data[ix].0);
                 let vl = v >> 4 & 0x0111_0111_0111_0111;
-                let vh = v << 4 & 0x1110_1110_1110_1110;
-                let mut r = vl + vh;
-                r += [
-                    r << 16,
-                    r >> 16,
-                    v << 16,
-                    v >> 16,
-                ]
-                .into_iter()
-                .sum();
+                let vr = v << 4 & 0x1110_1110_1110_1110;
+                let mut r = vl + vr;
+                r += [r << 16, r >> 16, v << 16, v >> 16]
+                    .into_iter()
+                    .sum::<u64>();
                 log!("v: {v:016X} r: {r:016X}");
 
                 let o = if j == 0 {
@@ -115,26 +109,14 @@ impl Renderable for GameOfLife {
                     log!("ix: {}", ix - 1);
                     self.data[ix - 1].0
                 };
-                let o = to_vec(o & 0xf000);
-                r += [
-                    o,
-                    o << 4 & 0x0111_0111_0111_0111,
-                    o >> 4 & 0x1110_1110_1110_1110,
-                ]
-                .into_iter()
-                .sum();
+                let o = to_vec(o >> 12);
+                r += [o, o << 16, o >> 16].into_iter().sum::<u64>();
                 log!("o: {o:016X} r: {r:016X}");
 
                 if !endx || lx == 0 {
                     let ix_ = if endx { i } else { ix + 1 };
                     let o = to_vec(self.data[ix_].0 << 12);
-                    r += [
-                        o,
-                        o << 4 & 0x0111_0111_0111_0111,
-                        o >> 4 & 0x1110_1110_1110_1110,
-                    ]
-                    .into_iter()
-                    .sum();
+                    r += [o, o << 16, o >> 16].into_iter().sum::<u64>();
                     log!("ix: {ix_} o: {o:016X} r: {r:016X}");
 
                     let o = if i == 0 {
@@ -148,7 +130,7 @@ impl Renderable for GameOfLife {
                     };
                     log!("o: {o:04X}");
                     if o & 8 != 0 {
-                        r += 0x0001_0000_0000_0000;
+                        r += 0x1000;
                     }
                 }
 
@@ -160,17 +142,25 @@ impl Renderable for GameOfLife {
                     self.data[ix - sx].0
                 };
                 let o = to_vec(o >> 3 & 0x1111);
-                r += [o, o << 16, o >> 16]
-                    .into_iter()
-                    .sum();
+                r += [
+                    o,
+                    o << 4 & 0x1110_1110_1110_1110,
+                    o >> 4 & 0x0111_0111_0111_0111,
+                ]
+                .into_iter()
+                .sum::<u64>();
                 log!("o: {o:016X} r: {r:016X}");
 
                 if !endy || lx == 0 {
                     let ix_ = if endy { j } else { ix + sx };
                     let o = to_vec(self.data[ix_].0 << 3 & 0x8888);
-                    r = [o, o << 16, o >> 16]
-                        .into_iter()
-                        .sum();
+                    r += [
+                        o,
+                        o << 4 & 0x1110_1110_1110_1110,
+                        o >> 4 & 0x0111_0111_0111_0111,
+                    ]
+                    .into_iter()
+                    .sum::<u64>();
                     log!("ix: {ix_} o: {o:016X} r: {r:016X}");
 
                     let o = if j == 0 {
@@ -184,7 +174,7 @@ impl Renderable for GameOfLife {
                     };
                     log!("o: {o:04X}");
                     if o & 0x1000 != 0 {
-                        r += 0x1000;
+                        r += 0x1_0000_0000_0000;
                     }
                 }
 
@@ -218,7 +208,10 @@ impl Renderable for GameOfLife {
                     }
                 }
 
-                self.data[ix].1 = from_vec(apply_rule(v, r));
+                let o = apply_rule(v, r);
+                log!("v: {v:016X} r: {r:016X} o: {o:016X}");
+                self.data[ix].1 = from_vec(o);
+                log!("output: {:04X}", self.data[ix].1);
             }
         }
 

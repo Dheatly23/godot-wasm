@@ -8,4 +8,4 @@ cfg_if::cfg_if! {
     }
 }
 
-const SIZE: usize = 256;
+const SIZE: usize = 512;

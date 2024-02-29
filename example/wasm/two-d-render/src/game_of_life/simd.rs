@@ -143,11 +143,7 @@ impl Renderable for GameOfLife {
                 ]
                 .into_iter()
                 .fold(r, _u8x16_add);
-                log!(
-                    "o: {:032X} r: {:032X}",
-                    print_v128(o),
-                    print_v128(r)
-                );
+                log!("o: {:032X} r: {:032X}", print_v128(o), print_v128(r));
 
                 if !endx || lx == 0 {
                     let ix_ = if endx { i } else { ix + 1 };
