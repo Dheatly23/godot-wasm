@@ -20,6 +20,7 @@ layer = 2
 [node name="Root" type="Control" parent="UI"]
 anchor_right = 1.0
 anchor_bottom = 1.0
+mouse_filter = 2
 theme = ExtResource( 3 )
 
 [node name="Panel" type="PanelContainer" parent="UI/Root"]
