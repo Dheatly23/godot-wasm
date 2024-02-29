@@ -8,6 +8,7 @@ onready var wasi_ctx: WasiContext = WasiContext.new()
 
 onready var _tex := ImageTexture.new()
 onready var _img := Image.new()
+onready var _lbl: Label = $UI/Root/Panel/VBox/Label
 
 var module: WasmModule = null
 var instance: WasmInstance = null
@@ -38,7 +39,7 @@ func __selected(index):
 func _ready():
 	$Sprite.texture = _tex
 
-	$UI/Root/TypeLst.select(1)
+	$UI/Root/Panel/VBox/TypeLst.select(1)
 
 	wasi_ctx.connect("stdout_emit", self, "__emit_log")
 	wasi_ctx.connect("stderr_emit", self, "__emit_log")
@@ -65,7 +66,7 @@ func _process(delta):
 		instance = null
 		return
 	var end := Time.get_ticks_usec()
-	#__emit_log("WASM Time: %.3f ms" % ((end - start) / 1e3))
+	_lbl.text = "WASM Time: %.3f ms" % ((end - start) / 1e3)
 
 	var p: int = ret[0]
 	if p == 0:

@@ -22,13 +22,29 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 theme = ExtResource( 3 )
 
-[node name="TypeLst" type="ItemList" parent="UI/Root"]
+[node name="Panel" type="PanelContainer" parent="UI/Root"]
 anchor_bottom = 1.0
 margin_left = 20.0
 margin_top = 20.0
 margin_bottom = -20.0
-rect_min_size = Vector2( 100, 0 )
+
+[node name="VBox" type="VBoxContainer" parent="UI/Root/Panel"]
+margin_left = 3.0
+margin_top = 3.0
+margin_right = 123.0
+margin_bottom = 557.0
+
+[node name="Label" type="Label" parent="UI/Root/Panel/VBox"]
+margin_right = 120.0
+margin_bottom = 8.0
+rect_min_size = Vector2( 120, 0 )
+
+[node name="TypeLst" type="ItemList" parent="UI/Root/Panel/VBox"]
+margin_top = 12.0
+margin_right = 120.0
+margin_bottom = 554.0
+size_flags_vertical = 3
 items = [ "Mandelbrot", null, false, "Game of Life", null, false ]
 allow_reselect = true
 
-[connection signal="item_selected" from="UI/Root/TypeLst" to="." method="__selected"]
+[connection signal="item_selected" from="UI/Root/Panel/VBox/TypeLst" to="." method="__selected"]
