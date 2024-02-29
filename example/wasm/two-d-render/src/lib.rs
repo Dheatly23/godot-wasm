@@ -26,10 +26,11 @@ pub(crate) fn print_log(args: Arguments) {
     log(&guard);
 }
 
+#[macro_export]
 macro_rules! log {
     ($($t:tt)*) => {
         if cfg!(debug_assertions) {
-            print_log(format_args!($($t)*));
+            $crate::print_log(format_args!($($t)*));
         }
     };
 }
