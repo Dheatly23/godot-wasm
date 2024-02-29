@@ -81,9 +81,9 @@ impl Renderable for GameOfLife {
             let mut m = (255u8 << lx) as u32;
             m = m | m << 8 | m << 16 | m << 24;
             let mi = !m;
-            let off = sx * (sy - 1);
-            for i in 0..sx {
-                let j = off + i;
+            for mut i in 0..sy {
+                i *= sx;
+                let j = sx - 1 + i;
                 let v = self.data[j].0;
                 let o = self.data[i].0;
                 log!("i: {i} j: {j} v: {v:08X} o: {o:08X}");
@@ -94,7 +94,7 @@ impl Renderable for GameOfLife {
             let s = ly * 8;
             let m = u32::MAX << s;
             let mi = !m;
-            for i in 0..sy {
+            for i in 0..sx {
                 let j = endrow + i;
                 let v = self.data[j].0;
                 let o = self.data[i].0;
