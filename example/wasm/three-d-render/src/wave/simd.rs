@@ -194,10 +194,9 @@ impl Renderable for Wave {
                 let mut v = Mat4::ZERO;
                 let f = |a, b| {
                     let mut tx;
-                    let ty;
 
                     tx = f32x4_mul(f32x4_sub(a, b), f32x4_splat(0.5));
-                    ty = f32x4_div(
+                    let ty = f32x4_div(
                         f32x4_splat(1.0),
                         f32x4_sqrt(f32x4_add(f32x4_mul(tx, tx), f32x4_splat(1.0))),
                     );
@@ -244,11 +243,7 @@ impl Renderable for Wave {
                 }
 
                 let t = Vec4::from(f32x4_sqrt(
-                    (0..4)
-                        .into_iter()
-                        .map(|i| v.col(i) * v.col(i))
-                        .sum::<Vec4>()
-                        .into(),
+                    (0..4).map(|i| v.col(i) * v.col(i)).sum::<Vec4>().into(),
                 ));
                 v.x_axis /= t;
                 v.y_axis /= t;
@@ -309,10 +304,9 @@ impl Renderable for Wave {
                 let mut v = Mat4::ZERO;
                 let f = |p: v128| {
                     let mut tx;
-                    let ty;
 
                     tx = f32x4_mul(f32x4_sub(p4, p), f32x4_splat(FRAC_1_SQRT_2));
-                    ty = f32x4_div(
+                    let ty = f32x4_div(
                         f32x4_splat(1.0),
                         f32x4_sqrt(f32x4_add(f32x4_mul(tx, tx), f32x4_splat(1.0))),
                     );
@@ -341,11 +335,7 @@ impl Renderable for Wave {
                 v.w_axis += ty;
 
                 let t = Vec4::from(f32x4_sqrt(
-                    (0..4)
-                        .into_iter()
-                        .map(|i| v.col(i) * v.col(i))
-                        .sum::<Vec4>()
-                        .into(),
+                    (0..4).map(|i| v.col(i) * v.col(i)).sum::<Vec4>().into(),
                 ));
                 v.x_axis /= t;
                 v.y_axis /= t;

@@ -1,5 +1,3 @@
-use std::iter::repeat;
-
 use super::{map_color, SIZE, STEPS, XMAX, XMIN, YMAX, YMIN};
 use crate::{Color, Renderable, State};
 

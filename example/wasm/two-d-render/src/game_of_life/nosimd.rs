@@ -36,7 +36,7 @@ fn apply_rule(v: u64, r: u64) -> u64 {
 
 impl Renderable for GameOfLife {
     fn new() -> Self {
-        let data = vec![(0, 0); (SIZE + 3 >> 2) * (SIZE + 3 >> 2)];
+        let data = vec![(0, 0); ((SIZE + 3) >> 2) * ((SIZE + 3) >> 2)];
 
         Self {
             size: SIZE,
@@ -50,7 +50,7 @@ impl Renderable for GameOfLife {
             return;
         }
 
-        let sx = self.size + 3 >> 2;
+        let sx = (self.size + 3) >> 2;
         let endrow = sx * (sx - 1);
         debug_assert_eq!(self.data.len(), sx * sx);
 
@@ -83,13 +83,11 @@ impl Renderable for GameOfLife {
         }
 
         for i in 0..sx {
-            let y = i << 2;
             let endy = i == sx - 1;
             let i = i * sx;
 
             for j in 0..sx {
                 let ix = i + j;
-                let x = j << 2;
                 let endx = j == sx - 1;
                 log!("i: {i} j: {j}");
 
@@ -196,7 +194,7 @@ impl Renderable for GameOfLife {
                     r += 1;
                 }
 
-                if (!endx || lx == 0) && (!endy || lx == 0) {
+                if lx == 0 || !endx && !endy {
                     let ix = match (endx, endy) {
                         (false, false) => ix + sx + 1,
                         (false, true) => j + 1,
@@ -233,7 +231,7 @@ impl Renderable for GameOfLife {
         }
 
         let (x, y) = (x as usize, y as usize);
-        let i = (x >> 2) + (y >> 2) * (self.size + 3 >> 2);
+        let i = (x >> 2) + (y >> 2) * ((self.size + 3) >> 2);
         let b = y & 3 | (x & 3) << 2;
         self.data[i].0 ^= 1 << b;
     }
@@ -262,7 +260,7 @@ impl Renderable for GameOfLife {
 
         for (c, (a, &(o, h))) in state.colors_mut().chunks_exact_mut(self.size * 4).zip(
             self.data
-                .chunks_exact(self.size + 3 >> 2)
+                .chunks_exact((self.size + 3) >> 2)
                 .flat_map(|a| repeat(a).zip(PATTERN)),
         ) {
             for (c, (mut v, _)) in c.chunks_mut(16).zip(a) {

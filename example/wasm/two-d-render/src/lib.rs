@@ -58,6 +58,7 @@ pub(crate) struct State {
     colors: Vec<Color>,
 }
 
+#[allow(dead_code)]
 impl State {
     pub(crate) fn width(&self) -> usize {
         self.width
@@ -73,11 +74,11 @@ impl State {
         self.colors.resize_with(width * height, Color::default);
     }
 
-    pub fn colors(&self) -> &[Color] {
+    pub(crate) fn colors(&self) -> &[Color] {
         &self.colors
     }
 
-    pub fn colors_mut(&mut self) -> &mut [Color] {
+    pub(crate) fn colors_mut(&mut self) -> &mut [Color] {
         &mut self.colors
     }
 }

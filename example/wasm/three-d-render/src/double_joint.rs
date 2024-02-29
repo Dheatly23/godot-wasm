@@ -22,7 +22,7 @@ impl Renderable for DoubleJoint {
         }
     }
 
-    fn step(&mut self, time: f32, delta: f32) {
+    fn step(&mut self, _: f32, delta: f32) {
         self.rx = (self.rx + delta * TIME_SCALE).rem_euclid(TAU);
     }
 

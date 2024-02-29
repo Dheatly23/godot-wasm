@@ -52,7 +52,7 @@ fn _u8x16_add(a: v128, b: v128) -> v128 {
 
 impl Renderable for GameOfLife {
     fn new() -> Self {
-        let data = vec![(0, 0); (SIZE + 7 >> 3) * (SIZE + 3 >> 2)];
+        let data = vec![(0, 0); ((SIZE + 7) >> 3) * ((SIZE + 3) >> 2)];
 
         Self {
             size: SIZE,
@@ -66,8 +66,8 @@ impl Renderable for GameOfLife {
             return;
         }
 
-        let sx = self.size + 7 >> 3;
-        let sy = self.size + 3 >> 2;
+        let sx = (self.size + 7) >> 3;
+        let sy = (self.size + 3) >> 2;
         let endrow = sx * (sy - 1);
         debug_assert_eq!(self.data.len(), sx * sy);
 
@@ -104,13 +104,11 @@ impl Renderable for GameOfLife {
         }
 
         for i in 0..sy {
-            let y = i << 2;
             let endy = i == sy - 1;
             let i = i * sx;
 
             for j in 0..sx {
                 let ix = i + j;
-                let x = j << 3;
                 let endx = j == sx - 1;
                 log!("i: {i} j: {j}");
 
@@ -268,7 +266,7 @@ impl Renderable for GameOfLife {
         }
 
         let (x, y) = (x as usize, y as usize);
-        let i = (x >> 3) + (y >> 2) * (self.size + 7 >> 3);
+        let i = (x >> 3) + (y >> 2) * ((self.size + 7) >> 3);
         let b = x & 7 | (y & 3) << 3;
         self.data[i].0 ^= 1 << b;
     }
@@ -297,7 +295,7 @@ impl Renderable for GameOfLife {
 
         for (c, (a, &(o, h))) in state.colors_mut().chunks_exact_mut(self.size * 4).zip(
             self.data
-                .chunks_exact(self.size + 7 >> 3)
+                .chunks_exact((self.size + 7) >> 3)
                 .flat_map(|a| repeat(a).zip(PATTERN)),
         ) {
             for (c, (mut v, _)) in c.chunks_mut(32).zip(a) {
