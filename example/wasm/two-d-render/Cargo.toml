@@ -1,5 +1,5 @@
 [package]
-name = "three-d-render"
+name = "two-d-render"
 version = "0.1.0"
 edition = "2021"
 authors = ["Dheatly23 <71598333+Dheatly23@users.noreply.github.com>"]
@@ -11,5 +11,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 cfg-if = "1"
-glam = "^0.24"
 colorgrad = { version = "^0.6", default-features = false }

@@ -123,10 +123,11 @@ func _update_pendulum() -> void:
 #	emit_signal("message_emitted", msg)
 #
 #func __update(ret: Array) -> void:
-#	_angle1 = ret[0]
-#	velocity1 = ret[1]
-#	_angle2 = ret[2]
-#	velocity2 = ret[3]
+#	var p = ret[0]
+#	angle1 = instance.inst.get_double(p)
+#	velocity1 = instance.inst.get_double(p + 8)
+#	angle2 = instance.inst.get_double(p + 16)
+#	velocity2 = instance.inst.get_double(p + 24)
 #
 #	_update_pendulum()
 #
@@ -145,10 +146,11 @@ func _process(delta):
 		return
 
 	var ret: Array = instance.call_wasm("process", [delta])
-	_angle1 = ret[0]
-	velocity1 = ret[1]
-	_angle2 = ret[2]
-	velocity2 = ret[3]
+	var p = ret[0]
+	angle1 = instance.get_double(p)
+	velocity1 = instance.get_double(p + 8)
+	angle2 = instance.get_double(p + 16)
+	velocity2 = instance.get_double(p + 24)
 
 	_update_pendulum()
 

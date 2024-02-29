@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://qlix1kvnk7jl"]
+[gd_scene load_steps=12 format=3 uid="uid://qlix1kvnk7jl"]
 
 [ext_resource type="Script" path="res://script/SidebarMenu.gd" id="1"]
 [ext_resource type="Theme" uid="uid://cia5aaiffmela" path="res://theme/default.tres" id="2"]
@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" uid="uid://drrbuolr657o5" path="res://scene/3DRender.tscn" id="7_o8e6r"]
 [ext_resource type="PackedScene" uid="uid://cv463osoyyr5k" path="res://scene/Connect4.tscn" id="8"]
 [ext_resource type="PackedScene" uid="uid://dq6gab2nu3kvo" path="res://scene/RunWasi.tscn" id="8_hy7s2"]
+[ext_resource type="PackedScene" uid="uid://cic1fq6ug00ur" path="res://scene/2DRender.tscn" id="10"]
 
 [node name="Main" type="Control"]
 texture_filter = 1
@@ -23,8 +24,8 @@ grow_vertical = 2
 mouse_filter = 1
 theme = ExtResource("2")
 script = ExtResource("3")
-scenes = Array[PackedScene]([ExtResource("4"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("7_o8e6r"), ExtResource("8_hy7s2")])
-names = Array[String](["Hello World", "Host Bindings", "Double Pendulum", "Connect 4", "3D Render", "Run WASI"])
+scenes = Array[PackedScene]([ExtResource("4"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("10"), ExtResource("7_o8e6r"), ExtResource("8_hy7s2")])
+names = Array[String](["Hello World", "Host Bindings", "Double Pendulum", "Connect 4", "2D Render", "3D Render", "Run WASI"])
 
 [node name="BGLayer" type="CanvasLayer" parent="."]
 layer = -1

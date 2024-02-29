@@ -3,8 +3,8 @@ use std::iter::repeat;
 
 use glam::f32::*;
 
-use super::{MAX_REP, SIZE, SPEED_SCALE, TIME_SCALE};
-use crate::{Color, Renderable, State};
+use super::{map_color, MAX_REP, SIZE, SPACE_SCALE, SPEED_SCALE, TIME_SCALE};
+use crate::{Renderable, State};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct WavePoint {
@@ -39,11 +39,14 @@ impl Renderable for Wave {
         };
 
         let (ox, oy) = (ret.width as f32 * 0.5, ret.height as f32 * 0.5);
-        let (dx, dy) = (5.0 / (ret.width - 1) as f32, 5.0 / (ret.height - 1) as f32);
+        let (dx, dy) = (
+            SPACE_SCALE / (ret.width - 1) as f32,
+            SPACE_SCALE / (ret.height - 1) as f32,
+        );
         for ((x, y), p) in ret.xy_iter().zip(ret.arr.iter_mut()) {
             let x = (x as f32 - ox) * dx;
             let y = (y as f32 - oy) * dy;
-            p.position = (-(x * x + y * y)).exp() * 5.0;
+            p.position = (-(x * x + y * y)).exp() * SPACE_SCALE;
         }
 
         ret
@@ -109,13 +112,16 @@ impl Renderable for Wave {
             1.0 / (self.width - 1) as f32,
             1.0 / (self.height - 1) as f32,
         );
-        let (dx_, dy_) = (dx * 5.0, dy * 5.0);
+        let (dx_, dy_) = (dx * SPACE_SCALE, dy * SPACE_SCALE);
+        const OFF: f32 = SPACE_SCALE / 2.0;
 
         for ((x, y), (i, p)) in self.xy_iter().zip(self.arr.iter().enumerate()) {
             let p = p.position;
             let x_ = x as f32;
             let y_ = y as f32;
-            state.vertex.push(Vec3::new(x_ * dx_, p, y_ * dy_));
+            state
+                .vertex
+                .push(Vec3::new(x_ * dx_ - OFF, p, y_ * dy_ - OFF));
 
             let mut q = Quat::from_array([0.0; 4]);
             q = q + if x > 0 {
@@ -149,12 +155,7 @@ impl Renderable for Wave {
             state.normal.push(n);
             state.tangent.push(Vec4::new(t.x, t.y, t.z, 1.0));
             state.uv.push(Vec2::new(x_ * dx, y_ * dy));
-            state.color.push(Color {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            });
+            state.color.push(map_color(p));
         }
 
         for (x, y) in (0..self.height - 1).flat_map(|y| (0..self.width - 1).zip(repeat(y))) {
@@ -167,7 +168,9 @@ impl Renderable for Wave {
 
             let x_ = x as f32 + 0.5;
             let y_ = y as f32 + 0.5;
-            state.vertex.push(Vec3::new(x_ * dx_, p4, y_ * dy_));
+            state
+                .vertex
+                .push(Vec3::new(x_ * dx_ - OFF, p4, y_ * dy_ - OFF));
 
             let mut q = Quat::from_array([0.0; 4]);
             let mut v;
@@ -190,12 +193,7 @@ impl Renderable for Wave {
             state.normal.push(n);
             state.tangent.push(Vec4::new(t.x, t.y, t.z, 1.0));
             state.uv.push(Vec2::new(x_ * dx, y_ * dy));
-            state.color.push(Color {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            });
+            state.color.push(map_color(p4));
         }
 
         let e = self.width * self.height;

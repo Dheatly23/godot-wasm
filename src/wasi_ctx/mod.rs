@@ -3,6 +3,7 @@ pub mod stdio;
 pub mod timestamp;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::SystemTime;
 
@@ -30,6 +31,14 @@ use crate::wasm_util::{
     FILE_NOTEXIST,
 };
 use crate::{bail_with_site, site_context};
+
+fn warn_vfs_deprecated() {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+
+    if !WARNED.swap(true, Ordering::SeqCst) {
+        godot_warn!("Due to wasi-common deprecation, virtual FS methods is going to be removed");
+    }
+}
 
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
@@ -71,6 +80,8 @@ impl WasiContext {
         if let (PipeBindingType::Context, Some(file)) =
             (&config.wasi_stdin, &config.wasi_stdin_file)
         {
+            warn_vfs_deprecated();
+
             let root = Some(o.memfs_root.clone());
             let node = if let FileEntry::Occupied(v) = site_context!(open(
                 file,
@@ -349,6 +360,8 @@ impl WasiContext {
 
     #[func]
     fn file_is_exist(&self, path: GString, follow_symlink: Variant) -> u32 {
+        warn_vfs_deprecated();
+
         let Ok(follow_symlink) = variant_to_option(follow_symlink) else {
             return FILE_NOTEXIST;
         };
@@ -371,6 +384,8 @@ impl WasiContext {
 
     #[func]
     fn file_make_dir(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -401,6 +416,8 @@ impl WasiContext {
 
     #[func]
     fn file_make_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -437,6 +454,8 @@ impl WasiContext {
         link: GString,
         follow_symlink: Variant,
     ) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -467,6 +486,8 @@ impl WasiContext {
 
     #[func]
     fn file_delete_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -493,6 +514,8 @@ impl WasiContext {
 
     #[func]
     fn file_dir_list(&self, path: GString, follow_symlink: Variant) -> PackedStringArray {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -516,6 +539,8 @@ impl WasiContext {
 
     #[func]
     fn file_stat(&self, path: GString, follow_symlink: Variant) -> Variant {
+        warn_vfs_deprecated();
+
         option_to_variant(Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -560,6 +585,8 @@ impl WasiContext {
 
     #[func]
     fn file_set_time(&self, path: GString, time: Dictionary, follow_symlink: Variant) -> bool {
+        warn_vfs_deprecated();
+
         Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let mtime = time
@@ -608,6 +635,8 @@ impl WasiContext {
 
     #[func]
     fn file_link_target(&self, path: GString, follow_symlink: Variant) -> Variant {
+        warn_vfs_deprecated();
+
         option_to_variant(Self::wrap_result(move || {
             let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
@@ -635,6 +664,8 @@ impl WasiContext {
         offset: Variant,
         follow_symlink: Variant,
     ) -> Variant {
+        warn_vfs_deprecated();
+
         option_to_variant(Self::wrap_result(move || {
             let length = length as usize;
             let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
@@ -698,6 +729,8 @@ impl WasiContext {
         truncate: Variant,
         follow_symlink: Variant,
     ) -> bool {
+        warn_vfs_deprecated();
+
         fn f<R>(
             root: Arc<Dir>,
             path: GString,

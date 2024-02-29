@@ -8,10 +8,29 @@ signal message_emitted(msg)
 
 @onready var _mesh := ArrayMesh.new()
 
+var module: WasmModule = null
 var instance: WasmInstance = null
+
+func __selected(index):
+	instance = WasmInstance.new().initialize(
+		module,
+		{},
+		{
+			"epoch.enable": true,
+			"epoch.timeout": 1.0,
+			"wasi.enable": true,
+			"wasi.context": wasi_ctx,
+		}
+	)
+	if instance == null:
+		emit_signal("message_emitted", "Failed to instantiate module")
+	if instance.call_wasm("init", [index]) == null:
+		emit_signal("message_emitted", "Failed to call init")
 
 func _ready():
 	$Mesh.mesh = _mesh
+
+	$UI/Root/TypeLst.select(0)
 
 #	var data := []
 #	data.resize(Mesh.ARRAY_MAX)
@@ -53,7 +72,7 @@ func _ready():
 	if file == null:
 		message_emitted.emit("Failed to load module")
 		return
-	var module: WasmModule = file.get_module()
+	module = file.get_module()
 	if module == null:
 		message_emitted.emit("Failed to load module")
 		return
@@ -70,7 +89,7 @@ func _ready():
 	)
 	if instance == null:
 		message_emitted.emit("Failed to instantiate module")
-	if instance.call_wasm("init", []) == null:
+	if instance.call_wasm("init", [0]) == null:
 		message_emitted.emit("Failed to call init")
 
 func _process(delta):
@@ -123,7 +142,8 @@ func _process(delta):
 	)
 
 	_mesh.clear_surfaces()
-	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
+	if len(data[Mesh.ARRAY_INDEX]) != 0:
+		_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
 
 func __emit_log(msg):
 	message_emitted.emit(msg.strip_edges())

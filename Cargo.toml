@@ -45,6 +45,8 @@ features = [
   "cranelift",
   "wat",
   "parallel-compilation",
+  "demangle",
+  "addr2line",
 ]
 
 [dependencies.wasmtime-wasi]
