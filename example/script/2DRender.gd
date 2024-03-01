@@ -32,9 +32,9 @@ func __selected(index):
 		}
 	)
 	if instance == null:
-		emit_signal("message_emitted", "Failed to instantiate module")
+		message_emitted.emit("Failed to instantiate module")
 	if instance.call_wasm("init", [index]) == null:
-		emit_signal("message_emitted", "Failed to call init")
+		message_emitted.emit("Failed to call init")
 
 func _ready():
 	$Sprite.texture = _tex
@@ -46,11 +46,11 @@ func _ready():
 
 	var file: WasmFile = load(wasm_file)
 	if file == null:
-		emit_signal("message_emitted", "Failed to load module")
+		message_emitted.emit("Failed to load module")
 		return
 	module = file.get_module()
 	if module == null:
-		emit_signal("message_emitted", "Failed to load module")
+		message_emitted.emit("Failed to load module")
 		return
 
 	__selected(1)
@@ -62,7 +62,7 @@ func _process(delta):
 	var start := Time.get_ticks_usec()
 	var ret = instance.call_wasm("process", [delta])
 	if ret == null:
-		emit_signal("message_emitted", "Failed to call process")
+		message_emitted.emit("Failed to call process")
 		instance = null
 		return
 	var end := Time.get_ticks_usec()
@@ -94,9 +94,9 @@ func _input(event: InputEvent):
 		instance.call_wasm("click", [p.x, p.y, int(event.button_index == MOUSE_BUTTON_RIGHT)])
 
 func __emit_log(msg):
-	emit_signal("message_emitted", msg.strip_edges())
+	message_emitted.emit(msg.strip_edges())
 
 func __log(p: int, n: int):
 	var s = instance.memory_read(p, n).get_string_from_utf8()
 	print(s)
-	emit_signal("message_emitted", s)
+	message_emitted.emit(s)

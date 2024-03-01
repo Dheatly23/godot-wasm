@@ -23,9 +23,9 @@ func __selected(index):
 		}
 	)
 	if instance == null:
-		emit_signal("message_emitted", "Failed to instantiate module")
+		message_emitted.emit("Failed to instantiate module")
 	if instance.call_wasm("init", [index]) == null:
-		emit_signal("message_emitted", "Failed to call init")
+		message_emitted.emit("Failed to call init")
 
 func _ready():
 	$Mesh.mesh = _mesh
@@ -77,20 +77,7 @@ func _ready():
 		message_emitted.emit("Failed to load module")
 		return
 
-	instance = WasmInstance.new().initialize(
-		module,
-		{},
-		{
-			"epoch.enable": true,
-			"epoch.timeout": 1.0,
-			"wasi.enable": true,
-			"wasi.context": wasi_ctx,
-		}
-	)
-	if instance == null:
-		message_emitted.emit("Failed to instantiate module")
-	if instance.call_wasm("init", [0]) == null:
-		message_emitted.emit("Failed to call init")
+	__selected(0)
 
 func _process(delta):
 	if instance == null:
