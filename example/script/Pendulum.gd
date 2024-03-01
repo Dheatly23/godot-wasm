@@ -147,9 +147,9 @@ func _process(delta):
 
 	var ret: Array = instance.call_wasm("process", [delta])
 	var p = ret[0]
-	angle1 = instance.get_double(p)
+	_angle1 = instance.get_double(p)
 	velocity1 = instance.get_double(p + 8)
-	angle2 = instance.get_double(p + 16)
+	_angle2 = instance.get_double(p + 16)
 	velocity2 = instance.get_double(p + 24)
 
 	_update_pendulum()
