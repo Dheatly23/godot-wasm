@@ -8,12 +8,11 @@ signal message_emitted(msg)
 
 @onready var _mesh := ArrayMesh.new()
 
-var module: WasmModule = null
 var instance: WasmInstance = null
 
 func __selected(index):
 	instance = WasmInstance.new().initialize(
-		module,
+		wasm_file,
 		{},
 		{
 			"epoch.enable": true,
@@ -67,15 +66,6 @@ func _ready():
 
 #	wasi_ctx.connect("stdout_emit", self, "__emit_log")
 #	wasi_ctx.connect("stderr_emit", self, "__emit_log")
-
-	var file: WasmFile = load(wasm_file)
-	if file == null:
-		message_emitted.emit("Failed to load module")
-		return
-	module = file.get_module()
-	if module == null:
-		message_emitted.emit("Failed to load module")
-		return
 
 	__selected(0)
 

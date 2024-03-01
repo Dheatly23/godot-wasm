@@ -2,7 +2,7 @@ extends Node2D
 
 signal message_emitted(msg)
 
-@export_file("*.wasm","*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
 @onready var wasi_ctx: WasiContext = WasiContext.new()
 
@@ -10,12 +10,11 @@ signal message_emitted(msg)
 @onready var _img := Image.new()
 @onready var _lbl: Label = $UI/Root/Panel/VBox/Label
 
-var module: WasmModule = null
 var instance: WasmInstance = null
 
 func __selected(index):
 	instance = WasmInstance.new().initialize(
-		module,
+		wasm_file,
 		{
 			"log": {
 				params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
@@ -43,15 +42,6 @@ func _ready():
 
 #	wasi_ctx.connect("stdout_emit", self, "__emit_log")
 #	wasi_ctx.connect("stderr_emit", self, "__emit_log")
-
-	var file: WasmFile = load(wasm_file)
-	if file == null:
-		message_emitted.emit("Failed to load module")
-		return
-	module = file.get_module()
-	if module == null:
-		message_emitted.emit("Failed to load module")
-		return
 
 	__selected(1)
 

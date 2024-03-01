@@ -1,12 +1,13 @@
-[gd_scene load_steps=4 format=3 uid="uid://cic1fq6ug00ur"]
+[gd_scene load_steps=5 format=3 uid="uid://cic1fq6ug00ur"]
 
 [ext_resource type="Script" path="res://script/2DRender.gd" id="1"]
 [ext_resource type="Script" path="res://script/2DCamera.gd" id="2"]
+[ext_resource type="WasmModule" uid="uid://c0t6myf3ei6af" path="res://wasm/two_d_render.wasm" id="2_g5h2y"]
 [ext_resource type="Theme" uid="uid://cia5aaiffmela" path="res://theme/default.tres" id="3"]
 
 [node name="Root" type="Node2D"]
 script = ExtResource("1")
-wasm_file = "res://wasm/two_d_render.wasm"
+wasm_file = ExtResource("2_g5h2y")
 
 [node name="Camera" type="Camera2D" parent="."]
 script = ExtResource("2")
