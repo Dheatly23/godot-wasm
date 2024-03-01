@@ -1,6 +1,3 @@
-#[cfg(not(feature = "new-host-import"))]
-use std::collections::HashMap;
-#[cfg(not(feature = "new-host-import"))]
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -10,7 +7,6 @@ use std::ptr;
 use std::time;
 
 use anyhow::{anyhow, Error};
-use cfg_if::cfg_if;
 use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::engine::WeakRef;
 use godot::prelude::*;
@@ -18,11 +14,9 @@ use godot::register::property::PropertyHintInfo;
 use once_cell::sync::Lazy;
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::ExternRef;
-#[cfg(feature = "new-host-import")]
-use wasmtime::Linker;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
-use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
+use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Linker, Store, ValRaw, ValType};
 
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_config::Config;
@@ -57,27 +51,10 @@ pub const TYPE_F64: u32 = 4;
 #[cfg(feature = "object-registry-extern")]
 pub const TYPE_VARIANT: u32 = 6;
 
-#[cfg(not(feature = "new-host-import"))]
-pub const HOST_MODULE: &str = "host";
 #[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
 #[cfg(feature = "object-registry-extern")]
 pub const EXTERNREF_MODULE: &str = "godot_object_v2";
-
-pub const MODULE_INCLUDES: &[&str] = &[
-    #[cfg(not(feature = "new-host-import"))]
-    HOST_MODULE,
-    #[cfg(feature = "object-registry-compat")]
-    OBJREGISTRY_MODULE,
-    #[cfg(feature = "object-registry-extern")]
-    EXTERNREF_MODULE,
-    #[cfg(feature = "wasi")]
-    "wasi_unstable",
-    #[cfg(feature = "wasi")]
-    "wasi_snapshot_preview0",
-    #[cfg(feature = "wasi")]
-    "wasi_snapshot_preview1",
-];
 
 pub const MEMORY_EXPORT: &str = "memory";
 
@@ -510,36 +487,16 @@ fn process_func(dict: Dictionary) -> Result<(FuncType, CallableEnum), Error> {
     Ok((to_signature(params, results)?, callable))
 }
 
-cfg_if! {
-    if #[cfg(feature = "new-host-import")] {
-        pub struct HostModuleCache<T> {
-            cache: Linker<T>,
-            host: Dictionary,
-        }
-    } else {
-        pub struct HostModuleCache<T> {
-            cache: HashMap<String, Extern>,
-            host: Dictionary,
-            phantom: PhantomData<T>,
-        }
-    }
+pub struct HostModuleCache<T> {
+    cache: Linker<T>,
+    host: Dictionary,
 }
 
 impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
     pub fn new(host: Dictionary) -> Self {
-        cfg_if! {
-            if #[cfg(feature = "new-host-import")] {
-                Self {
-                    cache: Linker::new(&ENGINE),
-                    host,
-                }
-            } else {
-                Self {
-                    cache: HashMap::new(),
-                    host,
-                    phantom: PhantomData,
-                }
-            }
+        Self {
+            cache: Linker::new(&ENGINE),
+            host,
         }
     }
 
@@ -549,42 +506,23 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
         module: &str,
         name: &str,
     ) -> Result<Option<Extern>, Error> {
-        cfg_if! {
-            if #[cfg(feature = "new-host-import")] {
-                if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
-                    Ok(r)
-                } else if let Some(data) = self
-                    .host
-                    .get(module)
-                    .map(|d| site_context!(Dictionary::try_from_variant(&d)))
-                    .transpose()?
-                    .and_then(|d| d.get(name))
-                {
-                    let (sig, callable) =
-                        process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
+        if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
+            Ok(r)
+        } else if let Some(data) = self
+            .host
+            .get(module)
+            .map(|d| site_context!(Dictionary::try_from_variant(&d)))
+            .transpose()?
+            .and_then(|d| d.get(name))
+        {
+            let (sig, callable) =
+                process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
 
-                    let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
-                    self.cache.define(store, module, name, v.clone())?;
-                    Ok(Some(v))
-                } else {
-                    Ok(None)
-                }
-            } else {
-                if module != HOST_MODULE {
-                    Ok(None)
-                } else if let r @ Some(_) = self.cache.get(name).cloned() {
-                    Ok(r)
-                } else if let Some(data) = self.host.get(name) {
-                    let (sig, callable) =
-                        process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
-
-                    let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
-                    self.cache.insert(name.to_string(), v.clone());
-                    Ok(Some(v))
-                } else {
-                    Ok(None)
-                }
-            }
+            let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
+            self.cache.define(store, module, name, v.clone())?;
+            Ok(Some(v))
+        } else {
+            Ok(None)
         }
     }
 }

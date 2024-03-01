@@ -8,25 +8,22 @@ const TYPE_F64 = 4
 const TYPE_VARIANT = 6
 
 static func load_wasm(
-	name: String,
 	data,
 	imports: Dictionary = {}
 ) -> WasmModule:
 	return WasmModule.new().initialize(
-		name,
 		data,
 		imports
 	)
 
 static func load_wasm_file(
-	name: String,
 	path: String,
 	imports: Dictionary = {}
 ) -> WasmModule:
 	var file := FileAccess.open(path, FileAccess.READ)
 	var buf = file.get_buffer(file.get_length())
 	file.close()
-	return load_wasm(name, buf, imports)
+	return load_wasm(buf, imports)
 
 static func __leb128_u64(buf: PackedByteArray, start: int) -> Dictionary:
 	var ret := 0

@@ -1,16 +1,13 @@
 [remap]
 
 importer="godot_wasm.wasm"
-type="PackedDataContainer"
-uid="uid://of5c4jkk6vov"
-path="res://.godot/imported/three_d_render.wasm-2375d374f8c88d3e8c4bc7bf504d7946.res"
+type="WasmModule"
+uid="uid://dcjpvynxac6wb"
+path="res://.godot/imported/three_d_render.wasm-2375d374f8c88d3e8c4bc7bf504d7946.cwasm"
 
 [deps]
 
 source_file="res://wasm/three_d_render.wasm"
-dest_files=["res://.godot/imported/three_d_render.wasm-2375d374f8c88d3e8c4bc7bf504d7946.res"]
+dest_files=["res://.godot/imported/three_d_render.wasm-2375d374f8c88d3e8c4bc7bf504d7946.cwasm"]
 
 [params]
-
-name=""
-imports=[]

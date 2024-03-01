@@ -2,7 +2,7 @@ extends Node
 
 signal message_emitted(msg)
 
-@export_file("*.wasm", "*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
 var instance: WasmInstance = null
 
@@ -34,9 +34,7 @@ var instance: WasmInstance = null
 
 # Non threadpool version
 func _ready():
-	var f: WasmFile = load(wasm_file)
-
-	instance = f.instantiate()
+	instance = wasm_file.instantiate({}, {})
 
 	call_deferred("__cb")
 

@@ -2,7 +2,7 @@ extends Node3D
 
 signal message_emitted(msg)
 
-@export_file("*.wasm","*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
 @onready var wasi_ctx: WasiContext = WasiContext.new()
 

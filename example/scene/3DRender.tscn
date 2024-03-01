@@ -15,7 +15,7 @@ size = Vector2(5, 5)
 
 [node name="Root" type="Node3D"]
 script = ExtResource("2")
-wasm_file = "res://wasm/three_d_render.wasm"
+wasm_file = ExtResource("2_rj2ds")
 
 [node name="Camera" type="Camera3D" parent="."]
 transform = Transform3D(0.707107, -0.5, 0.5, 0, 0.707107, 0.707107, -0.707107, -0.5, 0.5, 5.774, 5.774, 5.774)

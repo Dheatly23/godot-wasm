@@ -1,12 +1,13 @@
-[gd_scene load_steps=4 format=3 uid="uid://cv463osoyyr5k"]
+[gd_scene load_steps=5 format=3 uid="uid://cv463osoyyr5k"]
 
 [ext_resource type="Texture2D" uid="uid://cjg4g6d43017p" path="res://img/Selector.png" id="1"]
 [ext_resource type="TileSet" uid="uid://djo14d5vl1f1i" path="res://img/chip_tileset.tres" id="2"]
+[ext_resource type="WasmModule" path="res://wasm/connect_4.wasm" id="2_vewd2"]
 [ext_resource type="Script" path="res://script/Connect4.gd" id="3"]
 
 [node name="Root" type="Node2D"]
 script = ExtResource("3")
-wasm_file = "res://wasm/connect_4.wasm"
+wasm_file = ExtResource("2_vewd2")
 
 [node name="Camera2D" type="Camera2D" parent="."]
 

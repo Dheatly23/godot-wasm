@@ -355,7 +355,7 @@ func __select_mount_file(dir):
 func __execute():
 	if wasm_module == null or last_file_path != exec_file_box.text:
 		last_file_path = exec_file_box.text
-		wasm_module = WasmHelper.load_wasm_file("wasm_file", last_file_path)
+		wasm_module = WasmHelper.load_wasm_file(last_file_path)
 	if wasm_module == null:
 		message_emitted.emit("Cannot open executable!")
 		return
