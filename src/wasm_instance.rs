@@ -570,7 +570,7 @@ impl WasmInstance {
         host: Option<Dictionary>,
         config: Option<Variant>,
     ) -> bool {
-        match self.data.get_or_try_init(move || -> Result<_, Error> {
+        let r = self.data.get_or_try_init(move || -> Result<_, Error> {
             let mut ret = InstanceData::instantiate(
                 Store::new(
                     &ENGINE,
@@ -615,12 +615,12 @@ impl WasmInstance {
                 };
             }
             Ok(ret)
-        }) {
-            Ok(_) => true,
-            Err(e) => {
-                godot_error!("{}", e);
-                false
-            }
+        });
+        if let Err(e) = r {
+            godot_error!("{:?}", e);
+            false
+        } else {
+            true
         }
     }
 

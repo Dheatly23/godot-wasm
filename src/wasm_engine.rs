@@ -251,7 +251,7 @@ impl WasmModule {
     }
 
     fn _initialize(&self, data: Variant, imports: Option<Dictionary>) -> bool {
-        match self.data.get_or_try_init(move || -> Result<_, Error> {
+        let r = self.data.get_or_try_init(move || -> Result<_, Error> {
             let module = match VariantDispatch::from(&data) {
                 VariantDispatch::PackedByteArray(v) => Self::load_module(v.as_slice())?,
                 VariantDispatch::String(v) => Self::load_module(v.to_string().as_bytes())?,
@@ -273,17 +273,17 @@ impl WasmModule {
                 module,
                 imports,
             })
-        }) {
-            Ok(_) => true,
-            Err(e) => {
-                godot_error!("{:?}", e);
-                false
-            }
+        });
+        if let Err(e) = r {
+            godot_error!("{:?}", e);
+            false
+        } else {
+            true
         }
     }
 
     fn _deserialize(&self, data: PackedByteArray, imports: Option<Dictionary>) -> bool {
-        match self.data.get_or_try_init(move || -> Result<_, Error> {
+        let r = self.data.get_or_try_init(move || -> Result<_, Error> {
             let data = data.as_slice();
             // SAFETY: Assume the supplied data is safe to deserialize.
             let module = unsafe {
@@ -306,17 +306,17 @@ impl WasmModule {
                 module,
                 imports,
             })
-        }) {
-            Ok(_) => true,
-            Err(e) => {
-                godot_error!("{:?}", e);
-                false
-            }
+        });
+        if let Err(e) = r {
+            godot_error!("{:?}", e);
+            false
+        } else {
+            true
         }
     }
 
     fn _deserialize_file(&self, path: String, imports: Option<Dictionary>) -> bool {
-        match self.data.get_or_try_init(move || -> Result<_, Error> {
+        let r = self.data.get_or_try_init(move || -> Result<_, Error> {
             let path = PathBuf::from(path);
             // SAFETY: Assume the supplied file is safe to deserialize.
             let module = unsafe {
@@ -339,12 +339,12 @@ impl WasmModule {
                 module,
                 imports,
             })
-        }) {
-            Ok(_) => true,
-            Err(e) => {
-                godot_error!("{:?}", e);
-                false
-            }
+        });
+        if let Err(e) = r {
+            godot_error!("{:?}", e);
+            false
+        } else {
+            true
         }
     }
 }

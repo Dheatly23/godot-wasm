@@ -178,7 +178,7 @@ impl<I: fmt::Display> fmt::Debug for SingleError<I> {
 impl<I: fmt::Display> error::Error for SingleError<I> {}
 
 impl<I: ToOwned + ?Sized> SingleError<&I> {
-    fn to_owned(self) -> SingleError<I::Owned> {
+    fn into_owned(self) -> SingleError<I::Owned> {
         SingleError {
             input: self.input.to_owned(),
             kind: self.kind,
@@ -232,7 +232,7 @@ pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> Result<Array<Vari
     let mut r = (data, p, Array::new());
     let mut p_ = pair(opt(u32_), parse_datatype);
     while !format.is_empty() {
-        let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::to_owned))?;
+        let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::into_owned))?;
         format = i;
         let n = n.unwrap_or(1) as usize;
 
@@ -632,7 +632,7 @@ pub fn write_struct(
     let mut r = (data, p, arr.iter_shared());
     let mut p_ = pair(opt(u32_), parse_datatype);
     while !format.is_empty() {
-        let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::to_owned))?;
+        let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::into_owned))?;
         format = i;
         let n = n.unwrap_or(1) as usize;
 
