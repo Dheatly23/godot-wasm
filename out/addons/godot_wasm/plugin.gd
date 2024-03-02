@@ -1,12 +1,23 @@
 @tool
 extends EditorPlugin
 
-var wasm_file_import_plugin: EditorImportPlugin = null
+var import_plugins: Array[EditorImportPlugin] = []
 
 func _enter_tree():
-	wasm_file_import_plugin = preload("WasmImporter.gd").new()
-	add_import_plugin(wasm_file_import_plugin)
+	var v := preload("WasmImporter.gd").new()
+	v.priority = 2.0
+	import_plugins.push_back(v)
+
+	v = preload("WasmImporter.gd").new()
+	v.as_orig = true
+	v.priority = 1.0
+	import_plugins.push_back(v)
+
+	for i in import_plugins:
+		add_import_plugin(i)
 
 func _exit_tree():
-	remove_import_plugin(wasm_file_import_plugin)
-	wasm_file_import_plugin = null
+	for v in import_plugins:
+		remove_import_plugin(v)
+
+	import_plugins.clear()

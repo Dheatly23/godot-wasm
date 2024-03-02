@@ -11,3 +11,5 @@ source_file="res://wasm/double_pendulum.wasm"
 dest_files=["res://.godot/imported/double_pendulum.wasm-3fb3ef68c523435c601bdf7941742bc3.cwasm"]
 
 [params]
+
+include_original_file=false

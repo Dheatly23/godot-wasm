@@ -1,6 +1,6 @@
 @tool
-class_name WasmLoader
 extends ResourceFormatLoader
+class_name WasmLoader
 
 func _get_recognized_extensions() -> PackedStringArray:
 	return PackedStringArray([

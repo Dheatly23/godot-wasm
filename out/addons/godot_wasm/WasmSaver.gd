@@ -1,6 +1,6 @@
 @tool
-class_name WasmSaver
 extends ResourceFormatSaver
+class_name WasmSaver
 
 func _recognize(resource: Resource) -> bool:
 	return resource is WasmModule

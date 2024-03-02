@@ -11,3 +11,5 @@ source_file="res://wasm/three_d_render.wasm"
 dest_files=["res://.godot/imported/three_d_render.wasm-2375d374f8c88d3e8c4bc7bf504d7946.cwasm"]
 
 [params]
+
+include_original_file=false

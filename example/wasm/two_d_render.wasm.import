@@ -11,3 +11,5 @@ source_file="res://wasm/two_d_render.wasm"
 dest_files=["res://.godot/imported/two_d_render.wasm-f1bcb9159b7ac1e627308f6bb9661276.cwasm"]
 
 [params]
+
+include_original_file=false

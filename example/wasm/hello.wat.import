@@ -11,3 +11,5 @@ source_file="res://wasm/hello.wat"
 dest_files=["res://.godot/imported/hello.wat-b81c0b3fd2c4a6edb32ade5e4cd96bec.cwasm"]
 
 [params]
+
+include_original_file=false

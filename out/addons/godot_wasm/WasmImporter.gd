@@ -5,19 +5,32 @@ enum Presets {
 	DEFAULT
 }
 
-const SAVE_EXT := "cwasm"
+var as_orig := false
+var priority := 1.0
 
 func _get_importer_name() -> String:
-	return "godot_wasm.wasm"
+	if as_orig:
+		return "godot_wasm.orig.wasm"
+	else:
+		return "godot_wasm.wasm"
 
 func _get_visible_name() -> String:
-	return "WASM Importer"
+	if as_orig:
+		return "WASM File"
+	else:
+		return "Compiled WASM File"
 
 func _get_recognized_extensions() -> PackedStringArray:
-	return PackedStringArray(["wasm", "wat"])
+	if as_orig:
+		return PackedStringArray(["wasm"])
+	else:
+		return PackedStringArray(["wasm", "wat"])
 
 func _get_save_extension() -> String:
-	return SAVE_EXT
+	if as_orig:
+		return "wasm"
+	else:
+		return "cwasm"
 
 func _get_resource_type() -> String:
 	return "WasmModule"
@@ -25,8 +38,8 @@ func _get_resource_type() -> String:
 func _get_import_order() -> int:
 	return 0
 
-func _get_priority():
-	return 1
+func _get_priority() -> float:
+	return priority
 
 func _get_preset_count() -> int:
 	return Presets.size()
@@ -39,7 +52,15 @@ func _get_preset_name(preset: int) -> String:
 			return "Unknown"
 
 func _get_import_options(path: String, preset: int) -> Array[Dictionary]:
-	return []
+	return [
+		{
+			name = "include_original_file",
+			default_value = false,
+		},
+	]
+
+func _get_option_visibility(path: String, option_name: StringName, options: Dictionary) -> bool:
+	return true
 
 func _import(
 	source_file: String,
@@ -57,4 +78,20 @@ func _import(
 	if r == null:
 		return FAILED
 
-	return ResourceSaver.save(r, "%s.%s" % [save_path, SAVE_EXT])
+	if options.include_original_file:
+		var p := save_path + (".wasm" if source_file.ends_with(".wasm") else ".wat")
+		var f := FileAccess.open(p, FileAccess.WRITE)
+		err = FileAccess.get_open_error()
+		if err != OK:
+			return err
+
+		f.store_buffer(data)
+		gen_files.push_back(p)
+
+	if as_orig:
+		var f := FileAccess.open(save_path + ".wasm", FileAccess.WRITE)
+		if f != null:
+			f.store_buffer(data)
+		return FileAccess.get_open_error()
+	else:
+		return ResourceSaver.save(r, save_path + ".cwasm")
