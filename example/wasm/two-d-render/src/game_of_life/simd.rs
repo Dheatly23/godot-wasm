@@ -46,10 +46,6 @@ fn apply_rule(mut v: v128, r: v128) -> v128 {
     )
 }
 
-fn _u8x16_add(a: v128, b: v128) -> v128 {
-    u8x16_add(a, b)
-}
-
 impl Renderable for GameOfLife {
     fn new() -> Self {
         let data = vec![(0, 0); ((SIZE + 7) >> 3) * ((SIZE + 3) >> 2)];
@@ -116,14 +112,8 @@ impl Renderable for GameOfLife {
                 let vl = u32x4_shuffle::<4, 0, 1, 2>(v, u32x4_splat(0));
                 let vh = u32x4_shuffle::<1, 2, 3, 4>(v, u32x4_splat(0));
                 let mut r = u8x16_add(vl, vh);
-                r = [
-                    u32x4_shl(r, 4),
-                    u32x4_shr(r, 4),
-                    u32x4_shl(v, 4),
-                    u32x4_shr(v, 4),
-                ]
-                .into_iter()
-                .fold(r, _u8x16_add);
+                r = u8x16_add(u8x16_add(u32x4_shl(r, 4), u32x4_shr(r, 4)), r);
+                r = u8x16_add(u8x16_add(u32x4_shl(v, 4), u32x4_shr(v, 4)), r);
                 log!("v: {:032X} r: {:032X}", print_v128(v), print_v128(r));
 
                 let o = if j == 0 {
@@ -134,25 +124,17 @@ impl Renderable for GameOfLife {
                     self.data[ix - 1].0
                 };
                 let o = to_vec(o >> 7 & 0x01010101);
-                r = [
-                    o,
-                    u32x4_shuffle::<4, 0, 1, 2>(o, u32x4_splat(0)),
-                    u32x4_shuffle::<1, 2, 3, 4>(o, u32x4_splat(0)),
-                ]
-                .into_iter()
-                .fold(r, _u8x16_add);
+                r = u8x16_add(o, r);
+                r = u8x16_add(u32x4_shuffle::<4, 0, 1, 2>(o, u32x4_splat(0)), r);
+                r = u8x16_add(u32x4_shuffle::<1, 2, 3, 4>(o, u32x4_splat(0)), r);
                 log!("o: {:032X} r: {:032X}", print_v128(o), print_v128(r));
 
                 if !endx || lx == 0 {
                     let ix_ = if endx { i } else { ix + 1 };
                     let o = to_vec(self.data[ix_].0 << 7 & 0x80808080);
-                    r = [
-                        o,
-                        u32x4_shuffle::<4, 0, 1, 2>(o, u32x4_splat(0)),
-                        u32x4_shuffle::<1, 2, 3, 4>(o, u32x4_splat(0)),
-                    ]
-                    .into_iter()
-                    .fold(r, _u8x16_add);
+                    r = u8x16_add(o, r);
+                    r = u8x16_add(u32x4_shuffle::<4, 0, 1, 2>(o, u32x4_splat(0)), r);
+                    r = u8x16_add(u32x4_shuffle::<1, 2, 3, 4>(o, u32x4_splat(0)), r);
                     log!(
                         "ix: {ix_} o: {:032X} r: {:032X}",
                         print_v128(o),
@@ -182,17 +164,17 @@ impl Renderable for GameOfLife {
                     self.data[ix - sx].0
                 };
                 let o = to_vec(o >> 24);
-                r = [o, u32x4_shl(o, 4), u32x4_shr(o, 4)]
-                    .into_iter()
-                    .fold(r, _u8x16_add);
+                r = u8x16_add(o, r);
+                r = u8x16_add(u32x4_shl(o, 4), r);
+                r = u8x16_add(u32x4_shr(o, 4), r);
                 log!("o: {:032X} r: {:032X}", print_v128(o), print_v128(r));
 
                 if !endy || ly == 0 {
                     let ix_ = if endy { j } else { ix + sx };
                     let o = to_vec(self.data[ix_].0 << 24);
-                    r = [o, u32x4_shl(o, 4), u32x4_shr(o, 4)]
-                        .into_iter()
-                        .fold(r, _u8x16_add);
+                    r = u8x16_add(o, r);
+                    r = u8x16_add(u32x4_shl(o, 4), r);
+                    r = u8x16_add(u32x4_shr(o, 4), r);
                     log!(
                         "ix: {ix_} o: {:032X} r: {:032X}",
                         print_v128(o),
