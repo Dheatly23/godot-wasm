@@ -58,8 +58,7 @@ func _ready():
 					WasmHelper.TYPE_I32,
 				],
 				results = [],
-				object = self,
-				method = "__write",
+				callable = __write,
 			},
 		},
 	}, {})

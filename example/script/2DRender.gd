@@ -16,11 +16,12 @@ func __selected(index):
 	instance = WasmInstance.new().initialize(
 		wasm_file,
 		{
-			"log": {
-				params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
-				results = [],
-				object = self,
-				method = "__log",
+			"host": {
+				"log": {
+					params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
+					results = [],
+					callable = __log,
+				},
 			},
 		},
 		{
@@ -28,7 +29,7 @@ func __selected(index):
 			"epoch.timeout": 1.0,
 			"wasi.enable": true,
 			"wasi.context": wasi_ctx,
-		}
+		},
 	)
 	if instance == null:
 		message_emitted.emit("Failed to instantiate module")
