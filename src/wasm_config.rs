@@ -74,7 +74,10 @@ fn compute_epoch(v: Option<Variant>) -> Result<u64, ConvertError> {
             .unwrap_or(0u64)
             .saturating_mul(EPOCH_MULTIPLIER)),
         Some(VariantDispatch::Float(v)) => Ok((v * (EPOCH_MULTIPLIER as f64)).trunc() as _),
-        _ => Err(v.map_or_else(ConvertError::new, ConvertError::with_value)),
+        _ => Err(match v {
+            Some(v) => ConvertError::with_cause_value("Unknown value", v),
+            None => ConvertError::with_cause("Empty value"),
+        }),
     }
     .map(|i| i.max(1))
 }
@@ -219,7 +222,10 @@ impl FromGodot for ExternBindingType {
             }
             #[cfg(feature = "object-registry-extern")]
             ['e', 'x', 't', 'e', 'r', 'n'] | ['n', 'a', 't', 'i', 'v', 'e'] => Ok(Self::Native),
-            _ => Err(ConvertError::with_value(via.clone())),
+            _ => Err(ConvertError::with_cause_value(
+                "Unknown variant",
+                via.clone(),
+            )),
         }
     }
 }
@@ -265,7 +271,10 @@ impl FromGodot for PipeBindingType {
             [] | ['u', 'n', 'b', 'o', 'u', 'n', 'd'] => Ok(Self::Unbound),
             ['i', 'n', 's', 't', 'a', 'n', 'c', 'e'] => Ok(Self::Instance),
             ['c', 'o', 'n', 't', 'e', 'x', 't'] => Ok(Self::Context),
-            _ => Err(ConvertError::with_value(via.clone())),
+            _ => Err(ConvertError::with_cause_value(
+                "Unknown variant",
+                via.clone(),
+            )),
         }
     }
 }
@@ -309,7 +318,10 @@ impl FromGodot for PipeBufferType {
             [] | ['u', 'n', 'b', 'u', 'f', 'f', 'e', 'r', 'e', 'd'] => Ok(Self::Unbuffered),
             ['l', 'i', 'n', 'e'] => Ok(Self::LineBuffer),
             ['b', 'l', 'o', 'c', 'k'] => Ok(Self::BlockBuffer),
-            _ => Err(ConvertError::with_value(via.clone())),
+            _ => Err(ConvertError::with_cause_value(
+                "Unknown variant",
+                via.clone(),
+            )),
         }
     }
 }
