@@ -5,7 +5,7 @@ mod typeis;
 
 use std::borrow::Cow;
 
-use anyhow::Result as AnyResult;
+use anyhow::{bail, Result as AnyResult};
 use godot::prelude::*;
 use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
@@ -17,28 +17,33 @@ pub struct GodotCtx {
 }
 
 impl GodotCtx {
-    pub fn get_var_borrow(&mut self, res: WasmResource<Variant>) -> Cow<Variant> {
+    pub fn get_var_borrow(&mut self, res: WasmResource<Variant>) -> AnyResult<Cow<Variant>> {
         if res.owned() {
-            Cow::Owned(self.table.remove(res.rep() as _).into_inner())
+            Ok(Cow::Owned(self.table.remove(res.rep() as _).into_inner()))
+        } else if let Some(v) = self.table.get(res.rep() as _) {
+            Ok(Cow::Borrowed(&**v))
         } else {
-            Cow::Borrowed(&**self.table.get(res.rep() as _).expect("index must be valid"))
+            bail!("index is not valid")
         }
     }
 
-    pub fn get_var(&mut self, res: WasmResource<Variant>) -> Variant {
-        self.get_var_borrow(res).into_owned()
+    pub fn get_var(&mut self, res: WasmResource<Variant>) -> AnyResult<Variant> {
+        self.get_var_borrow(res).map(|v| v.into_owned())
     }
 
-    pub fn maybe_get_var_borrow(&mut self, res: Option<WasmResource<Variant>>) -> Cow<Variant> {
+    pub fn maybe_get_var_borrow(
+        &mut self,
+        res: Option<WasmResource<Variant>>,
+    ) -> AnyResult<Cow<Variant>> {
         match res {
-            None => Cow::Owned(Variant::nil()),
+            None => Ok(Cow::Owned(Variant::nil())),
             Some(res) => self.get_var_borrow(res),
         }
     }
 
-    pub fn maybe_get_var(&mut self, res: Option<WasmResource<Variant>>) -> Variant {
+    pub fn maybe_get_var(&mut self, res: Option<WasmResource<Variant>>) -> AnyResult<Variant> {
         match res {
-            None => Variant::nil(),
+            None => Ok(Variant::nil()),
             Some(res) => self.get_var(res),
         }
     }
@@ -80,7 +85,7 @@ pub mod bindgen {
 
 impl bindgen::godot::core::core::HostGodotVar for GodotCtx {
     fn drop(&mut self, rep: WasmResource<Variant>) -> AnyResult<()> {
-        self.get_var(rep);
+        self.get_var(rep)?;
         Ok(())
     }
 }
@@ -91,15 +96,15 @@ impl bindgen::godot::core::core::Host for GodotCtx {
         a: WasmResource<Variant>,
         b: WasmResource<Variant>,
     ) -> AnyResult<bool> {
-        Ok(self.get_var(a) == self.get_var(b))
+        Ok(self.get_var(a)? == self.get_var(b)?)
     }
 
     fn var_hash(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
-        Ok(self.get_var(var).hash())
+        Ok(self.get_var(var)?.hash())
     }
 
     fn var_stringify(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        Ok(self.get_var(var).to_string())
+        Ok(self.get_var(var)?.to_string())
     }
 }
 
