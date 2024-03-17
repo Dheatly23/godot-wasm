@@ -355,10 +355,14 @@ pub(crate) struct SendSyncWrapper<T>(T);
 unsafe impl<T> Send for SendSyncWrapper<T> {}
 unsafe impl<T> Sync for SendSyncWrapper<T> {}
 
+#[allow(dead_code)]
 impl<T> SendSyncWrapper<T> {
-    #[allow(dead_code)]
     pub(crate) fn new(v: T) -> Self {
         Self(v)
+    }
+
+    pub(crate) fn into_inner(self) -> T {
+        self.0
     }
 }
 

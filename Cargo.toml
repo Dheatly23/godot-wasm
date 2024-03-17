@@ -90,6 +90,7 @@ wasi-preview2 = [
 ]
 godot-component = [
   "wasmtime/component-model",
+  "dep:slab",
 ]
 
 [workspace]

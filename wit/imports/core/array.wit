@@ -10,7 +10,7 @@ interface array {
 
     len: func(var: borrow<godot-var>) -> u32;
     is-empty: func(var: borrow<godot-var>) -> bool;
-    resize: func(var: borrow<godot-var>, n: u32);
+    resize: func(var: borrow<godot-var>, n: u32, i: option<borrow<godot-var>>);
     shrink: func(var: borrow<godot-var>, n: u32) -> bool;
     clear: func(var: borrow<godot-var>);
     reverse: func(var: borrow<godot-var>);
@@ -28,7 +28,7 @@ interface array {
     pop-back: func(var: borrow<godot-var>) -> option<godot-var>;
     pop-front: func(var: borrow<godot-var>) -> option<godot-var>;
 
-    insert: func(var: borrow<godot-var>, i: u32, item: borrow<godot-var>);
+    insert: func(var: borrow<godot-var>, i: u32, item: option<borrow<godot-var>>);
     remove: func(var: borrow<godot-var>, i: u32) -> option<godot-var>;
     erase: func(var: borrow<godot-var>, item: option<borrow<godot-var>>);
     fill: func(var: borrow<godot-var>, item: option<borrow<godot-var>>);

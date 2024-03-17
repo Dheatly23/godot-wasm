@@ -1,3 +1,5 @@
+#[cfg(feature = "godot-component")]
+mod godot_component;
 #[cfg(feature = "wasi-preview2")]
 mod preview2;
 mod rw_struct;
@@ -11,8 +13,6 @@ mod wasm_instance;
 #[cfg(feature = "object-registry-compat")]
 mod wasm_objregistry;
 mod wasm_util;
-#[cfg(feature = "godot-component")]
-mod godot_component;
 
 use godot::prelude::*;
 
