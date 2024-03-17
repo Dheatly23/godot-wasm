@@ -1,0 +1,40 @@
+package godot:core@0.1.0;
+
+interface array {
+    use core.{godot-var};
+
+    empty: func() -> godot-var;
+
+    from-list: func(val: list<option<borrow<godot-var>>>) -> godot-var;
+    to-list: func(var: borrow<godot-var>) -> list<option<godot-var>>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
+    resize: func(var: borrow<godot-var>, n: u32);
+    shrink: func(var: borrow<godot-var>, n: u32) -> bool;
+    clear: func(var: borrow<godot-var>);
+    reverse: func(var: borrow<godot-var>);
+
+    duplicate: func(var: borrow<godot-var>) -> godot-var;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32, step: option<u32>) -> godot-var;
+
+    get: func(var: borrow<godot-var>, ix: u32) -> option<godot-var>;
+    set: func(var: borrow<godot-var>, ix: u32, item: option<borrow<godot-var>>);
+
+    extend: func(var: borrow<godot-var>, other: borrow<godot-var>);
+
+    push-back: func(var: borrow<godot-var>, item: option<borrow<godot-var>>);
+    push-front: func(var: borrow<godot-var>, item: option<borrow<godot-var>>);
+    pop-back: func(var: borrow<godot-var>) -> option<godot-var>;
+    pop-front: func(var: borrow<godot-var>) -> option<godot-var>;
+
+    insert: func(var: borrow<godot-var>, i: u32, item: borrow<godot-var>);
+    remove: func(var: borrow<godot-var>, i: u32) -> option<godot-var>;
+    erase: func(var: borrow<godot-var>, item: option<borrow<godot-var>>);
+    fill: func(var: borrow<godot-var>, item: option<borrow<godot-var>>);
+
+    contains: func(var: borrow<godot-var>, item: option<borrow<godot-var>>) -> bool;
+    count: func(var: borrow<godot-var>, item: option<borrow<godot-var>>) -> u32;
+    find: func(var: borrow<godot-var>, item: option<borrow<godot-var>>, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, item: option<borrow<godot-var>>, %from: option<u32>) -> option<u32>;
+}

@@ -88,6 +88,9 @@ wasi-preview2 = [
   "wasmtime-wasi/preview2",
   "wasmtime-wasi/preview1-on-preview2",
 ]
+godot-component = [
+  "wasmtime/component-model",
+]
 
 [workspace]
 members = [

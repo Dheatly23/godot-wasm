@@ -1,0 +1,184 @@
+package godot:core@0.1.0;
+
+interface byte-array {
+    use core.{godot-var};
+
+    type elem = u8;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}
+
+interface int32-array {
+    use core.{godot-var};
+
+    type elem = s32;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}
+
+interface int64-array {
+    use core.{godot-var};
+
+    type elem = s64;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}
+
+interface float32-array {
+    use core.{godot-var};
+
+    type elem = float32;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}
+
+interface float64-array {
+    use core.{godot-var};
+
+    type elem = float64;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}
+
+interface vector2-array {
+    use core.{godot-var};
+    use primitive.{vector2};
+
+    type elem = vector2;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}
+
+interface vector3-array {
+    use core.{godot-var};
+    use primitive.{vector3};
+
+    type elem = vector3;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}
+
+interface color-array {
+    use core.{godot-var};
+    use primitive.{color};
+
+    type elem = color;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}
+
+interface string-array {
+    use core.{godot-var};
+
+    type elem = string;
+
+    %from: func(val: list<elem>) -> godot-var;
+    to: func(var: borrow<godot-var>) -> list<elem>;
+    slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> u32;
+
+    get: func(var: borrow<godot-var>, i: u32) -> elem;
+    contains: func(var: borrow<godot-var>, val: elem) -> bool;
+    count: func(var: borrow<godot-var>, val: elem) -> u32;
+    find: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    rfind: func(var: borrow<godot-var>, val: elem, %from: option<u32>) -> option<u32>;
+    subarray: func(var: borrow<godot-var>, begin: u32, end: u32) -> godot-var;
+}

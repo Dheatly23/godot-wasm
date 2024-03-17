@@ -11,6 +11,8 @@ mod wasm_instance;
 #[cfg(feature = "object-registry-compat")]
 mod wasm_objregistry;
 mod wasm_util;
+#[cfg(feature = "godot-component")]
+mod godot_component;
 
 use godot::prelude::*;
 
