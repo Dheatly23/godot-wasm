@@ -8,7 +8,7 @@ use std::borrow::Cow;
 use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use slab::Slab;
-use wasmtime::component::Resource as WasmResource;
+use wasmtime::component::{Linker, Resource as WasmResource};
 
 use crate::wasm_util::SendSyncWrapper;
 
@@ -101,4 +101,23 @@ impl bindgen::godot::core::core::Host for GodotCtx {
     fn var_stringify(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
         Ok(self.get_var(var).to_string())
     }
+}
+
+pub fn add_to_linker<T, U>(
+    linker: &mut Linker<T>,
+    get: impl Fn(&mut T) -> &mut GodotCtx + Send + Sync + Copy + 'static,
+) -> AnyResult<()> {
+    bindgen::godot::core::core::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::typeis::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::primitive::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::byte_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::int32_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::int64_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::float32_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::float64_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::vector2_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::color_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::string_array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::array::add_to_linker(&mut *linker, get)
 }
