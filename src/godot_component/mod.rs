@@ -68,7 +68,7 @@ pub mod bindgen {
 
     bindgen!({
         path: "wit/imports/core",
-        world: "godot:core/godot-core",
+        world: "godot:core/imports",
         ownership: Borrowing {
             duplicate_if_necessary: true
         },

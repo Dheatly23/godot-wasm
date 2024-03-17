@@ -11,7 +11,7 @@ interface core {
     var-stringify: func(var: borrow<godot-var>) -> string;
 }
 
-world godot-core {
+world imports {
     import core;
     import typeis;
     import primitive;
