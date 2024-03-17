@@ -1,4 +1,5 @@
 mod array;
+mod packed_array;
 mod primitive;
 mod typeis;
 

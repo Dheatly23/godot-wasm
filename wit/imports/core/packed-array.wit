@@ -10,7 +10,7 @@ interface byte-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
@@ -30,7 +30,7 @@ interface int32-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
@@ -50,7 +50,7 @@ interface int64-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
@@ -70,7 +70,7 @@ interface float32-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
@@ -90,7 +90,7 @@ interface float64-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
@@ -111,7 +111,7 @@ interface vector2-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
@@ -132,7 +132,7 @@ interface vector3-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
@@ -153,7 +153,7 @@ interface color-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
@@ -173,7 +173,7 @@ interface string-array {
     slice: func(var: borrow<godot-var>, begin: u32, end: u32) -> list<elem>;
 
     len: func(var: borrow<godot-var>) -> u32;
-    is-empty: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
 
     get: func(var: borrow<godot-var>, i: u32) -> elem;
     contains: func(var: borrow<godot-var>, val: elem) -> bool;
