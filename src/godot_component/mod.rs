@@ -1,4 +1,6 @@
 mod array;
+mod dictionary;
+mod object;
 mod packed_array;
 mod primitive;
 mod typeis;
@@ -124,5 +126,7 @@ pub fn add_to_linker<T, U>(
     bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, get)?;
     bindgen::godot::core::color_array::add_to_linker(&mut *linker, get)?;
     bindgen::godot::core::string_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::array::add_to_linker(&mut *linker, get)
+    bindgen::godot::core::array::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::dictionary::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::object::add_to_linker(&mut *linker, get)
 }

@@ -1,0 +1,20 @@
+package godot:core@0.1.0;
+
+interface object {
+    use core.{godot-var};
+
+    has-method: func(var: borrow<godot-var>, name: borrow<godot-var>) -> bool;
+    has-signal: func(var: borrow<godot-var>, name: borrow<godot-var>) -> bool;
+
+    call: func(var: borrow<godot-var>, name: borrow<godot-var>, args: list<option<borrow<godot-var>>>) -> option<godot-var>;
+    callv: func(var: borrow<godot-var>, name: borrow<godot-var>, args: borrow<godot-var>) -> option<godot-var>;
+    call-deferred: func(var: borrow<godot-var>, name: borrow<godot-var>, args: list<option<borrow<godot-var>>>) -> option<godot-var>;
+
+    connect: func(var: borrow<godot-var>, name: borrow<godot-var>, callable: borrow<godot-var>, %flags: u32);
+    disconnect: func(var: borrow<godot-var>, name: borrow<godot-var>, callable: borrow<godot-var>);
+    is-connected: func(var: borrow<godot-var>, name: borrow<godot-var>, callable: borrow<godot-var>) -> bool;
+    emit-signal: func(var: borrow<godot-var>, name: borrow<godot-var>, args: list<option<borrow<godot-var>>>);
+
+    get: func(var: borrow<godot-var>, name: borrow<godot-var>) -> option<godot-var>;
+    set: func(var: borrow<godot-var>, name: borrow<godot-var>, val: option<borrow<godot-var>>);
+}

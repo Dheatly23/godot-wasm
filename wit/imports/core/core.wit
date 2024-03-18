@@ -16,6 +16,7 @@ world imports {
     import typeis;
     import primitive;
     import array;
+    import dictionary;
     import byte-array;
     import int32-array;
     import int64-array;
@@ -25,4 +26,5 @@ world imports {
     import vector2-array;
     import vector3-array;
     import string-array;
+    import object;
 }
