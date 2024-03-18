@@ -101,6 +101,13 @@ impl bindgen::godot::core::core::HostGodotVar for GodotCtx {
         self.get_var(rep)?;
         Ok(())
     }
+
+    fn clone(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
+        let v = self.get_var(var)?;
+        Ok(WasmResource::new_own(
+            self.table.insert(SendSyncWrapper::new(v)) as _,
+        ))
+    }
 }
 
 impl bindgen::godot::core::core::Host for GodotCtx {
@@ -121,7 +128,7 @@ impl bindgen::godot::core::core::Host for GodotCtx {
     }
 }
 
-pub fn add_to_linker<T, U>(
+pub fn add_to_linker<T>(
     linker: &mut Linker<T>,
     get: impl Fn(&mut T) -> &mut GodotCtx + Send + Sync + Copy + 'static,
 ) -> AnyResult<()> {

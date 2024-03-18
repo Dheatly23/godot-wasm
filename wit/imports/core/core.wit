@@ -4,7 +4,9 @@ interface core {
     type real = float32;
     type int = s32;
 
-    resource godot-var;
+    resource godot-var {
+        clone: func() -> godot-var;
+    }
 
     var-equals: func(a: borrow<godot-var>, b: borrow<godot-var>) -> bool;
     var-hash: func(var: borrow<godot-var>) -> s64;
