@@ -1,18 +1,29 @@
 mod array;
+mod callable;
 mod dictionary;
 mod object;
 mod packed_array;
 mod primitive;
+mod signal;
 mod typeis;
 
 use std::borrow::Cow;
 
 use anyhow::{bail, Result as AnyResult};
+use godot::engine::global::Error;
 use godot::prelude::*;
 use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
 
 use crate::wasm_util::SendSyncWrapper;
+
+fn wrap_error(e: Error) -> AnyResult<()> {
+    if e == Error::OK {
+        Ok(())
+    } else {
+        bail!("{e:?}")
+    }
+}
 
 pub struct GodotCtx {
     table: Slab<SendSyncWrapper<Variant>>,
@@ -128,5 +139,7 @@ pub fn add_to_linker<T, U>(
     bindgen::godot::core::string_array::add_to_linker(&mut *linker, get)?;
     bindgen::godot::core::array::add_to_linker(&mut *linker, get)?;
     bindgen::godot::core::dictionary::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::object::add_to_linker(&mut *linker, get)
+    bindgen::godot::core::object::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::callable::add_to_linker(&mut *linker, get)?;
+    bindgen::godot::core::signal::add_to_linker(&mut *linker, get)
 }

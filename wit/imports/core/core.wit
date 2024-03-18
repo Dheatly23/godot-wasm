@@ -27,4 +27,6 @@ world imports {
     import vector3-array;
     import string-array;
     import object;
+    import callable;
+    import signal;
 }

@@ -1,15 +1,8 @@
-use anyhow::{bail, Result as AnyResult};
-use godot::engine::global::Error;
+use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-fn wrap_error(e: Error) -> AnyResult<()> {
-    if e == Error::OK {
-        Ok(())
-    } else {
-        bail!("{e:?}")
-    }
-}
+use super::wrap_error;
 
 impl crate::godot_component::bindgen::godot::core::object::Host
     for crate::godot_component::GodotCtx

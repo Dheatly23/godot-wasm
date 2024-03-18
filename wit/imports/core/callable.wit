@@ -1,0 +1,16 @@
+package godot:core@0.1.0;
+
+interface callable {
+    use core.{godot-var};
+
+    from-object-method: func(obj: borrow<godot-var>, method: borrow<godot-var>) -> godot-var;
+
+    is-custom: func(var: borrow<godot-var>) -> bool;
+    is-valid: func(var: borrow<godot-var>) -> bool;
+
+    object: func(var: borrow<godot-var>) -> option<godot-var>;
+    method-name: func(var: borrow<godot-var>) -> option<godot-var>;
+
+    call: func(var: borrow<godot-var>, args: list<option<borrow<godot-var>>>) -> option<godot-var>;
+    callv: func(var: borrow<godot-var>, args: borrow<godot-var>) -> option<godot-var>;
+}
