@@ -404,11 +404,12 @@ where
                         Ok(obj) => <_>::from_variant(&obj.get_ref()),
                         Err(obj) => obj,
                     }
-                    .call(method.clone(), &p)
+                    .try_call(method.clone(), &p)
                 }
-                CallableEnum::Callable(c) => c.callv(p.into_iter().collect()),
+                CallableEnum::Callable(c) => Ok(c.callv(p.into_iter().collect())),
             }))
             .map_err(|_| anyhow!("Error trying to call")))
+            .and_then(|v| Ok(v?))
         })?;
 
         if let Some(msg) = ctx.data_mut().as_mut().error_signal.take() {
