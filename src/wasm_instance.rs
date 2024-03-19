@@ -15,7 +15,7 @@ use scopeguard::guard;
 #[cfg(feature = "wasi")]
 use wasi_common::WasiCtx;
 #[cfg(feature = "wasi-preview2")]
-use wasmtime::component::Instance as InstanceComp;
+use wasmtime::component::{Instance as InstanceComp, ResourceTable};
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 use wasmtime::{
@@ -23,7 +23,7 @@ use wasmtime::{
     StoreContextMut, ValRaw,
 };
 #[cfg(feature = "wasi-preview2")]
-use wasmtime_wasi::preview2::{Table as WasiTable, WasiCtx as WasiCtxPv2, WasiView};
+use wasmtime_wasi::preview2::{WasiCtx as WasiCtxPv2, WasiView};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
 
@@ -173,33 +173,19 @@ pub enum MaybeWasi {
     NoCtx,
     Preview1(WasiCtx),
     #[cfg(feature = "wasi-preview2")]
-    Preview2(WasiCtxPv2, WasiTable),
+    Preview2(WasiCtxPv2, ResourceTable),
 }
 
 #[cfg(feature = "wasi-preview2")]
 impl WasiView for StoreData {
-    fn table(&self) -> &WasiTable {
-        match &self.wasi_ctx {
-            MaybeWasi::Preview2(_, tbl) => tbl,
-            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
-        }
-    }
-
-    fn table_mut(&mut self) -> &mut WasiTable {
+    fn table(&mut self) -> &mut ResourceTable {
         match &mut self.wasi_ctx {
             MaybeWasi::Preview2(_, tbl) => tbl,
             _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
         }
     }
 
-    fn ctx(&self) -> &WasiCtxPv2 {
-        match &self.wasi_ctx {
-            MaybeWasi::Preview2(ctx, _) => ctx,
-            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
-        }
-    }
-
-    fn ctx_mut(&mut self) -> &mut WasiCtxPv2 {
+    fn ctx(&mut self) -> &mut WasiCtxPv2 {
         match &mut self.wasi_ctx {
             MaybeWasi::Preview2(ctx, _) => ctx,
             _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
