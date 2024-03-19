@@ -2,10 +2,10 @@ use anyhow::Error;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use wasmtime::component::Linker;
+use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Store;
 use wasmtime_wasi::preview2::command::sync::{add_to_linker, Command};
-use wasmtime_wasi::preview2::{Table, WasiCtxBuilder};
+use wasmtime_wasi::preview2::WasiCtxBuilder;
 
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
@@ -17,7 +17,6 @@ use crate::{bail_with_site, site_context};
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
 pub struct WasiCommand {
-    #[base]
     base: Base<RefCounted>,
     data: OnceCell<CommandData>,
 
@@ -50,7 +49,7 @@ fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Er
         WasiContext::init_ctx_no_context_preview_2(ctx.inherit_stdout().inherit_stderr(), config)?;
         ctx.build()
     };
-    store.data_mut().wasi_ctx = MaybeWasi::Preview2(ctx, Table::new());
+    store.data_mut().wasi_ctx = MaybeWasi::Preview2(ctx, ResourceTable::new());
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;
@@ -143,7 +142,7 @@ impl WasiCommand {
         let config = if config.is_nil() { None } else { Some(config) };
 
         if self.initialize_(module, config) {
-            <Gd<WasiCommand>>::try_from_instance_id(self.base.instance_id()).ok()
+            Some(self.to_gd())
         } else {
             None
         }

@@ -1,5 +1,3 @@
-use std::panic::{catch_unwind, AssertUnwindSafe};
-
 use anyhow::Error;
 use godot::engine::global::Error as GError;
 use godot::prelude::*;
@@ -14,10 +12,7 @@ func_registry! {
     has_method => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>| -> Result<u32, Error> {
         let obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
         let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
-        match catch_unwind(AssertUnwindSafe(|| obj.has_method(name))) {
-            Ok(v) => Ok(v as _),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        Ok(obj.has_method(name) as _)
     },
     call => |mut ctx: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, f: Option<Func>| -> Result<Option<ExternRef>, Error> {
         let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
@@ -35,10 +30,7 @@ func_registry! {
             }
         }
 
-        match catch_unwind(AssertUnwindSafe(|| obj.call(name, &v))) {
-            Ok(v) => Ok(variant_to_externref(v)),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        site_context!(obj.try_call(name, &v).map(variant_to_externref))
     },
     call_deferred => |mut ctx: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, f: Option<Func>| -> Result<Option<ExternRef>, Error> {
         let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
@@ -56,49 +48,37 @@ func_registry! {
             }
         }
 
-        match catch_unwind(AssertUnwindSafe(|| obj.call_deferred(name, &v))) {
-            Ok(v) => Ok(variant_to_externref(v)),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        site_context!(obj.try_call_deferred(name, &v).map(variant_to_externref))
     },
     callv => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, args: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
         let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
         let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
         let args = site_context!(<Array<Variant>>::try_from_variant(&externref_to_variant(args)))?;
 
-        match catch_unwind(AssertUnwindSafe(|| obj.callv(name, args))) {
-            Ok(v) => Ok(variant_to_externref(v)),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        Ok(variant_to_externref(obj.callv(name, args)))
     },
     get => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
         let obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
         let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
 
-        match catch_unwind(AssertUnwindSafe(|| obj.get(name))) {
-            Ok(v) => Ok(variant_to_externref(v)),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        Ok(variant_to_externref(obj.get(name)))
     },
     set => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, value: Option<ExternRef>| -> Result<u32, Error> {
         let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
         let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
         let value = externref_to_variant(value);
 
-        match catch_unwind(AssertUnwindSafe(|| obj.set(name, value))) {
-            Ok(_) => Ok(1),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        obj.set(name, value);
+        Ok(1)
     },
     connect => |_: Caller<_>, obj: Option<ExternRef>, signal: Option<ExternRef>, target: Option<ExternRef>, flags: u32| -> Result<(), Error> {
         let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
         let signal = site_context!(StringName::try_from_variant(&externref_to_variant(signal)))?;
         let target = site_context!(Callable::try_from_variant(&externref_to_variant(target)))?;
 
-        match catch_unwind(AssertUnwindSafe(|| obj.connect_ex(signal, target).flags(flags).done())) {
-            Ok(GError::OK) => Ok(()),
-            Ok(e) => bail_with_site!("Error: {e:?}"),
-            Err(_) => bail_with_site!("Error binding object"),
+        match obj.connect_ex(signal, target).flags(flags).done() {
+            GError::OK => Ok(()),
+            e => bail_with_site!("Error: {e:?}"),
         }
     },
     disconnect => |_: Caller<_>, obj: Option<ExternRef>, signal: Option<ExternRef>, target: Option<ExternRef>| -> Result<(), Error> {
@@ -106,10 +86,8 @@ func_registry! {
         let signal = site_context!(StringName::try_from_variant(&externref_to_variant(signal)))?;
         let target = site_context!(Callable::try_from_variant(&externref_to_variant(target)))?;
 
-        match catch_unwind(AssertUnwindSafe(|| obj.disconnect(signal, target))) {
-            Ok(_) => Ok(()),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        obj.disconnect(signal, target);
+        Ok(())
     },
     emit_signal => |mut ctx: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>, f: Option<Func>| -> Result<(), Error> {
         let mut obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
@@ -127,10 +105,7 @@ func_registry! {
             }
         }
 
-        match catch_unwind(AssertUnwindSafe(|| obj.emit_signal(name, &v))) {
-            Ok(GError::OK) => Ok(()),
-            Ok(e) => bail_with_site!("Error: {e:?}"),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        site_context!(obj.try_emit_signal(name, &v))?;
+        Ok(())
     },
 }
