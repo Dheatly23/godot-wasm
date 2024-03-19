@@ -12,8 +12,11 @@ use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
 use crate::wasm_engine::{WasmModule, ENGINE};
-use crate::wasm_instance::{InstanceData, InstanceType, MaybeWasi, StoreData as OrigStoreData};
-use crate::wasm_util::config_store_common;
+#[cfg(feature = "memory-limiter")]
+use crate::wasm_instance::MemoryLimit;
+use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_util::config_store_epoch;
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
@@ -33,39 +36,45 @@ pub struct CommandData {
 }
 
 pub struct StoreData {
-    orig: OrigStoreData,
+    inner_lock: InnerLock,
+
+    #[cfg(feature = "epoch-timeout")]
+    epoch_timeout: u64,
+
+    #[cfg(feature = "memory-limiter")]
+    memory_limits: MemoryLimit,
+
+    table: ResourceTable,
+    wasi_ctx: WasiCtx,
     godot_ctx: GodotCtx,
 }
 
-impl AsRef<OrigStoreData> for StoreData {
-    fn as_ref(&self) -> &OrigStoreData {
-        &self.orig
+impl AsRef<InnerLock> for StoreData {
+    fn as_ref(&self) -> &InnerLock {
+        &self.inner_lock
     }
 }
 
-impl AsMut<OrigStoreData> for StoreData {
-    fn as_mut(&mut self) -> &mut OrigStoreData {
-        &mut self.orig
+impl AsMut<InnerLock> for StoreData {
+    fn as_mut(&mut self) -> &mut InnerLock {
+        &mut self.inner_lock
     }
 }
 
 impl WasiView for StoreData {
     fn table(&mut self) -> &mut ResourceTable {
-        self.orig.table()
+        &mut self.table
     }
 
     fn ctx(&mut self) -> &mut WasiCtx {
-        self.orig.ctx()
+        &mut self.wasi_ctx
     }
 }
 
 fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Error> {
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
-    let mut store = Store::new(&ENGINE, StoreData::default());
-    config_store_common(&mut store, &config)?;
-
-    let ctx = if let Config {
+    let wasi_ctx = if let Config {
         with_wasi: true,
         wasi_context: Some(ctx),
         ..
@@ -77,7 +86,31 @@ fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Er
         WasiContext::init_ctx_no_context_preview_2(ctx.inherit_stdout().inherit_stderr(), &config)?;
         ctx.build()
     };
-    store.data_mut().orig.wasi_ctx = MaybeWasi::Preview2(ctx, ResourceTable::new());
+
+    let mut store = Store::new(
+        &ENGINE,
+        StoreData {
+            inner_lock: InnerLock::default(),
+
+            #[cfg(feature = "epoch-timeout")]
+            epoch_timeout: if config.with_epoch {
+                config.epoch_timeout
+            } else {
+                0
+            },
+
+            #[cfg(feature = "memory-limiter")]
+            memory_limits: MemoryLimit::from_config(&config),
+
+            table: ResourceTable::new(),
+            wasi_ctx,
+            godot_ctx: GodotCtx::default(),
+        },
+    );
+    #[cfg(feature = "epoch-timeout")]
+    config_store_epoch(&mut store, &config);
+    #[cfg(feature = "memory-limiter")]
+    store.limiter(|data| &mut data.memory_limits);
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;

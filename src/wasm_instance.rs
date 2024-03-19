@@ -106,6 +106,10 @@ pub struct InnerLock {
     mutex_raw: *const RawMutex,
 }
 
+// SAFETY: Store data is safely contained within instance data?
+unsafe impl Send for InnerLock {}
+unsafe impl Sync for InnerLock {}
+
 impl Default for InnerLock {
     fn default() -> Self {
         Self {
