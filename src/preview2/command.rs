@@ -17,7 +17,6 @@ use crate::{bail_with_site, site_context};
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
 pub struct WasiCommand {
-    #[base]
     base: Base<RefCounted>,
     data: OnceCell<CommandData>,
 
@@ -143,7 +142,7 @@ impl WasiCommand {
         let config = if config.is_nil() { None } else { Some(config) };
 
         if self.initialize_(module, config) {
-            <Gd<WasiCommand>>::try_from_instance_id(self.base.instance_id()).ok()
+            Some(self.to_gd())
         } else {
             None
         }
