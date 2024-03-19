@@ -5,12 +5,14 @@ use parking_lot::Mutex;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Store;
 use wasmtime_wasi::preview2::command::sync::{add_to_linker, Command};
-use wasmtime_wasi::preview2::WasiCtxBuilder;
+use wasmtime_wasi::preview2::{WasiCtx, WasiCtxBuilder, WasiView};
 
+#[cfg(feature = "godot-component")]
+use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
 use crate::wasm_engine::{WasmModule, ENGINE};
-use crate::wasm_instance::{InstanceData, InstanceType, MaybeWasi, StoreData};
+use crate::wasm_instance::{InstanceData, InstanceType, MaybeWasi, StoreData as OrigStoreData};
 use crate::wasm_util::config_store_common;
 use crate::{bail_with_site, site_context};
 
@@ -30,13 +32,46 @@ pub struct CommandData {
     bindings: Command,
 }
 
+pub struct StoreData {
+    orig: OrigStoreData,
+    godot_ctx: GodotCtx,
+}
+
+impl AsRef<OrigStoreData> for StoreData {
+    fn as_ref(&self) -> &OrigStoreData {
+        &self.orig
+    }
+}
+
+impl AsMut<OrigStoreData> for StoreData {
+    fn as_mut(&mut self) -> &mut OrigStoreData {
+        &mut self.orig
+    }
+}
+
+impl WasiView for StoreData {
+    fn table(&mut self) -> &mut ResourceTable {
+        self.orig.table()
+    }
+
+    fn ctx(&mut self) -> &mut WasiCtx {
+        self.orig.ctx()
+    }
+}
+
 fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Error> {
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
-    let mut store = Store::new(&ENGINE, StoreData::new(config));
+    let mut store = Store::new(
+        &ENGINE,
+        StoreData {
+            orig: OrigStoreData::new(config),
+            godot_ctx: GodotCtx::default(),
+        },
+    );
     config_store_common(&mut store)?;
 
-    let config = &store.data().config;
+    let config = &store.data().orig.config;
     let ctx = if let Config {
         with_wasi: true,
         wasi_context: Some(ctx),
@@ -49,10 +84,11 @@ fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Er
         WasiContext::init_ctx_no_context_preview_2(ctx.inherit_stdout().inherit_stderr(), config)?;
         ctx.build()
     };
-    store.data_mut().wasi_ctx = MaybeWasi::Preview2(ctx, ResourceTable::new());
+    store.data_mut().orig.wasi_ctx = MaybeWasi::Preview2(ctx, ResourceTable::new());
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;
+    godot_add_to_linker(&mut linker, |v| &mut v.godot_ctx)?;
 
     let (bindings, instance) = Command::instantiate(&mut store, &comp, &linker)?;
 

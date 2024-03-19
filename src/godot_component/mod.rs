@@ -25,6 +25,7 @@ fn wrap_error(e: Error) -> AnyResult<()> {
     }
 }
 
+#[derive(Default)]
 pub struct GodotCtx {
     table: Slab<SendSyncWrapper<Variant>>,
 }
