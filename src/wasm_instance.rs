@@ -102,10 +102,26 @@ impl InstanceType {
     }
 }
 
-pub struct StoreData {
+pub struct InnerLock {
     mutex_raw: *const RawMutex,
-    pub config: Config,
+}
+
+impl Default for InnerLock {
+    fn default() -> Self {
+        Self {
+            mutex_raw: ptr::null(),
+        }
+    }
+}
+
+pub struct StoreData {
+    inner_lock: InnerLock,
     pub error_signal: Option<String>,
+
+    #[cfg(feature = "epoch-timeout")]
+    pub epoch_timeout: u64,
+    #[cfg(feature = "epoch-timeout")]
+    pub epoch_autoreset: bool,
 
     #[cfg(feature = "memory-limiter")]
     pub memory_limits: MemoryLimit,
@@ -133,41 +149,31 @@ impl AsMut<Self> for StoreData {
     }
 }
 
-impl Default for StoreData {
-    fn default() -> Self {
-        Self {
-            mutex_raw: ptr::null(),
-            config: Config::default(),
-            error_signal: None,
-
-            #[cfg(feature = "memory-limiter")]
-            memory_limits: MemoryLimit {
-                max_memory: u64::MAX,
-                max_table_entries: u64::MAX,
-            },
-
-            #[cfg(feature = "object-registry-compat")]
-            object_registry: None,
-
-            #[cfg(feature = "wasi")]
-            wasi_ctx: MaybeWasi::NoCtx,
-        }
+impl AsRef<InnerLock> for StoreData {
+    fn as_ref(&self) -> &InnerLock {
+        &self.inner_lock
     }
 }
 
-impl StoreData {
-    #[allow(dead_code)]
-    pub fn new(config: Config) -> Self {
+impl AsMut<InnerLock> for StoreData {
+    fn as_mut(&mut self) -> &mut InnerLock {
+        &mut self.inner_lock
+    }
+}
+
+impl Default for StoreData {
+    fn default() -> Self {
         Self {
-            mutex_raw: ptr::null(),
-            config,
+            inner_lock: InnerLock::default(),
             error_signal: None,
 
+            #[cfg(feature = "epoch-timeout")]
+            epoch_timeout: 0,
+            #[cfg(feature = "epoch-timeout")]
+            epoch_autoreset: false,
+
             #[cfg(feature = "memory-limiter")]
-            memory_limits: MemoryLimit {
-                max_memory: u64::MAX,
-                max_table_entries: u64::MAX,
-            },
+            memory_limits: MemoryLimit::default(),
 
             #[cfg(feature = "object-registry-compat")]
             object_registry: None,
@@ -206,6 +212,30 @@ impl WasiView for StoreData {
 pub struct MemoryLimit {
     pub max_memory: u64,
     pub max_table_entries: u64,
+}
+
+#[cfg(feature = "memory-limiter")]
+impl Default for MemoryLimit {
+    fn default() -> Self {
+        Self {
+            max_memory: u64::MAX,
+            max_table_entries: u64::MAX,
+        }
+    }
+}
+
+#[cfg(feature = "memory-limiter")]
+impl MemoryLimit {
+    pub fn from_config(config: &Config) -> Self {
+        let mut ret = Self::default();
+        if let Some(v) = config.max_memory {
+            ret.max_memory = v;
+        }
+        if let Some(v) = config.max_entries {
+            ret.max_table_entries = v;
+        }
+        ret
+    }
 }
 
 #[cfg(feature = "memory-limiter")]
@@ -259,21 +289,20 @@ where
 {
     pub fn instantiate(
         mut store: Store<T>,
+        config: &Config,
         module: Gd<WasmModule>,
         host: Option<Dictionary>,
     ) -> Result<Self, Error> {
-        config_store_common(&mut store)?;
+        config_store_common(&mut store, config)?;
 
         #[cfg(feature = "wasi")]
         let mut wasi_stdin = None;
 
         #[cfg(feature = "wasi")]
-        let wasi_linker = if store.data().as_ref().config.with_wasi {
+        let wasi_linker = if config.with_wasi {
             let mut builder = WasiCtxBuilder::new();
 
-            let StoreData {
-                wasi_ctx, config, ..
-            } = store.data_mut().as_mut();
+            let StoreData { wasi_ctx, .. } = store.data_mut().as_mut();
 
             if config.wasi_stdin == PipeBindingType::Instance {
                 if let Some(data) = config.wasi_stdin_data.clone() {
@@ -310,11 +339,11 @@ where
 
             *wasi_ctx = match &config.wasi_context {
                 Some(ctx) => {
-                    MaybeWasi::Preview1(WasiContext::build_ctx(ctx.clone(), builder, &*config)?)
+                    MaybeWasi::Preview1(WasiContext::build_ctx(ctx.clone(), builder, config)?)
                 }
                 None => MaybeWasi::Preview1(WasiContext::init_ctx_no_context(
                     builder.inherit_stdout().inherit_stderr().build(),
-                    &*config,
+                    config,
                 )?),
             };
             let mut r = <Linker<T>>::new(&ENGINE);
@@ -328,13 +357,14 @@ where
         };
 
         #[cfg(feature = "object-registry-compat")]
-        if store.data().as_ref().config.extern_bind == ExternBindingType::Registry {
+        if config.extern_bind == ExternBindingType::Registry {
             store.data_mut().as_mut().object_registry = Some(ObjectRegistry::default());
         }
 
         let sp = &mut store;
         let instance = Self::instantiate_wasm(
             sp,
+            config,
             module.bind().get_data()?,
             &mut HashMap::new(),
             &mut host.map(HostModuleCache::new),
@@ -357,6 +387,7 @@ where
 
     fn instantiate_wasm(
         store: &mut Store<T>,
+        config: &Config,
         module: &ModuleData,
         insts: &mut HashMap<InstanceId, InstanceWasm>,
         host: &mut Option<HostModuleCache<T>>,
@@ -382,7 +413,7 @@ where
                 continue;
             }
 
-            match (i.module(), &store.data().as_ref().config) {
+            match (i.module(), config) {
                 #[cfg(feature = "object-registry-compat")]
                 (
                     OBJREGISTRY_MODULE,
@@ -430,6 +461,7 @@ where
                         None => {
                             let t = Self::instantiate_wasm(
                                 &mut *store,
+                                config,
                                 v.bind().get_data()?,
                                 &mut *insts,
                                 &mut *host,
@@ -454,11 +486,14 @@ where
             bail_with_site!("Unknown import {:?}.{:?}", i.module(), i.name());
         }
 
-        #[cfg(feature = "epoch-timeout")]
-        store.set_epoch_deadline(store.data().as_ref().config.epoch_timeout);
         InstanceWasm::new(store, module_, &imports)
     }
+}
 
+impl<T> InstanceData<T>
+where
+    T: AsRef<InnerLock> + AsMut<InnerLock>,
+{
     pub fn acquire_store<F, R>(&self, f: F) -> R
     where
         for<'a> F: FnOnce(&Self, StoreContextMut<'a, T>) -> R,
@@ -480,8 +515,8 @@ where
     }
 }
 
-impl StoreData {
-    pub(crate) fn release_store<F, R>(&mut self, f: F) -> R
+impl InnerLock {
+    pub fn release_store<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce() -> R,
     {
@@ -495,6 +530,16 @@ impl StoreData {
         }
 
         f()
+    }
+}
+
+impl StoreData {
+    #[inline]
+    pub(crate) fn release_store<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        self.inner_lock.release_store(f)
     }
 
     #[cfg(feature = "object-registry-compat")]
@@ -558,35 +603,17 @@ impl WasmInstance {
     ) -> bool {
         let r = self.data.get_or_try_init(move || -> Result<_, Error> {
             let mut ret = InstanceData::instantiate(
-                Store::new(
-                    &ENGINE,
-                    StoreData {
-                        mutex_raw: ptr::null(),
-                        config: match config {
-                            Some(v) => match Config::try_from_variant(&v) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    godot_error!("{:?}", e);
-                                    Config::default()
-                                }
-                            },
-                            None => Config::default(),
-                        },
-                        error_signal: None,
-
-                        #[cfg(feature = "memory-limiter")]
-                        memory_limits: MemoryLimit {
-                            max_memory: u64::MAX,
-                            max_table_entries: u64::MAX,
-                        },
-
-                        #[cfg(feature = "object-registry-compat")]
-                        object_registry: None,
-
-                        #[cfg(feature = "wasi")]
-                        wasi_ctx: MaybeWasi::NoCtx,
+                Store::new(&ENGINE, StoreData::default()),
+                &match config {
+                    Some(v) => match Config::try_from_variant(&v) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            godot_error!("{:?}", e);
+                            Config::default()
+                        }
                     },
-                ),
+                    None => Config::default(),
+                },
                 module,
                 host,
             )?;
@@ -736,7 +763,9 @@ impl RustCallable for WasmCallable {
             }
 
             #[cfg(feature = "epoch-timeout")]
-            store.set_epoch_deadline(store.data().config.epoch_timeout);
+            if let v @ 1.. = store.data().epoch_timeout {
+                store.set_epoch_deadline(v);
+            }
 
             // SAFETY: Array length is maximum of params and returns and initialized
             unsafe {
@@ -822,7 +851,9 @@ impl WasmInstance {
                 }
 
                 #[cfg(feature = "epoch-timeout")]
-                store.set_epoch_deadline(store.data().config.epoch_timeout);
+                if let v @ 1.. = store.data().epoch_timeout {
+                    store.set_epoch_deadline(v);
+                }
 
                 // SAFETY: Array length is maximum of params and returns and initialized
                 unsafe {
@@ -893,7 +924,9 @@ impl WasmInstance {
             if #[cfg(feature = "epoch-timeout")] {
                 self.unwrap_data(|m| {
                     m.acquire_store(|_, mut store| {
-                        store.set_epoch_deadline(store.data().config.epoch_timeout);
+                        if let v @ 1.. = store.data().epoch_timeout {
+                            store.set_epoch_deadline(v);
+                        }
                         Ok(())
                     })
                 });
