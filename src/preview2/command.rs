@@ -62,26 +62,19 @@ impl WasiView for StoreData {
 fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Error> {
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
-    let mut store = Store::new(
-        &ENGINE,
-        StoreData {
-            orig: OrigStoreData::new(config),
-            godot_ctx: GodotCtx::default(),
-        },
-    );
-    config_store_common(&mut store)?;
+    let mut store = Store::new(&ENGINE, StoreData::default());
+    config_store_common(&mut store, &config)?;
 
-    let config = &store.data().orig.config;
     let ctx = if let Config {
         with_wasi: true,
         wasi_context: Some(ctx),
         ..
-    } = config
+    } = &config
     {
-        WasiContext::build_ctx_preview_2(ctx.clone(), WasiCtxBuilder::new(), config)?
+        WasiContext::build_ctx_preview_2(ctx.clone(), WasiCtxBuilder::new(), &config)?
     } else {
         let mut ctx = WasiCtxBuilder::new();
-        WasiContext::init_ctx_no_context_preview_2(ctx.inherit_stdout().inherit_stderr(), config)?;
+        WasiContext::init_ctx_no_context_preview_2(ctx.inherit_stdout().inherit_stderr(), &config)?;
         ctx.build()
     };
     store.data_mut().orig.wasi_ctx = MaybeWasi::Preview2(ctx, ResourceTable::new());
@@ -193,6 +186,11 @@ impl WasiCommand {
     fn run(&self) -> bool {
         self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
+                #[cfg(feature = "epoch-timeout")]
+                if let v @ 1.. = store.data().epoch_timeout {
+                    store.set_epoch_deadline(v);
+                }
+
                 Ok(m.bindings.wasi_cli_run().call_run(&mut store)?.is_ok())
             })
         })

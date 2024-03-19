@@ -24,6 +24,8 @@ use crate::wasm_config::Config;
 use crate::wasm_engine::{ENGINE, EPOCH};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
+#[cfg(feature = "memory-limiter")]
+use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::StoreData;
 
 #[cfg(all(feature = "epoch-timeout", not(feature = "more-precise-timer")))]
@@ -434,14 +436,13 @@ where
         }
 
         #[cfg(feature = "epoch-timeout")]
-        if let Config {
-            with_epoch: true,
+        if let StoreData {
             epoch_autoreset: true,
-            epoch_timeout,
+            epoch_timeout: v @ 1..,
             ..
-        } = ctx.data().as_ref().config
+        } = *ctx.data().as_ref()
         {
-            ctx.as_context_mut().set_epoch_deadline(epoch_timeout);
+            ctx.as_context_mut().set_epoch_deadline(v);
         }
 
         Ok(())
@@ -532,27 +533,41 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
     }
 }
 
-pub fn config_store_common<T>(store: &mut Store<T>) -> Result<(), Error>
+#[cfg(feature = "epoch-timeout")]
+fn increment_epoch() {
+    ENGINE.increment_epoch()
+}
+
+#[cfg(feature = "epoch-timeout")]
+pub fn config_store_epoch<T>(store: &mut Store<T>, config: &Config) {
+    if config.with_epoch {
+        store.epoch_deadline_trap();
+        EPOCH.spawn_thread(increment_epoch);
+    } else {
+        store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
+    }
+    store.set_epoch_deadline(config.epoch_timeout);
+}
+
+pub fn config_store_common<T>(store: &mut Store<T>, config: &Config) -> Result<(), Error>
 where
     T: AsRef<StoreData> + AsMut<StoreData>,
 {
     #[cfg(feature = "epoch-timeout")]
-    if store.data().as_ref().config.with_epoch {
-        store.epoch_deadline_trap();
-        EPOCH.spawn_thread(|| ENGINE.increment_epoch());
-    } else {
-        store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
+    {
+        config_store_epoch(&mut *store, config);
+        let data = store.data_mut().as_mut();
+        data.epoch_timeout = if config.with_epoch {
+            config.epoch_timeout
+        } else {
+            0
+        };
+        data.epoch_autoreset = config.epoch_autoreset;
     }
 
     #[cfg(feature = "memory-limiter")]
     {
-        let data = store.data_mut().as_mut();
-        if let Some(v) = data.config.max_memory {
-            data.memory_limits.max_memory = v;
-        }
-        if let Some(v) = data.config.max_entries {
-            data.memory_limits.max_table_entries = v;
-        }
+        store.data_mut().as_mut().memory_limits = MemoryLimit::from_config(config);
         store.limiter(|data| &mut data.as_mut().memory_limits);
     }
 
