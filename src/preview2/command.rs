@@ -2,10 +2,10 @@ use anyhow::Error;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use wasmtime::component::Linker;
+use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Store;
 use wasmtime_wasi::preview2::command::sync::{add_to_linker, Command};
-use wasmtime_wasi::preview2::{Table, WasiCtxBuilder};
+use wasmtime_wasi::preview2::WasiCtxBuilder;
 
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
@@ -50,7 +50,7 @@ fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Er
         WasiContext::init_ctx_no_context_preview_2(ctx.inherit_stdout().inherit_stderr(), config)?;
         ctx.build()
     };
-    store.data_mut().wasi_ctx = MaybeWasi::Preview2(ctx, Table::new());
+    store.data_mut().wasi_ctx = MaybeWasi::Preview2(ctx, ResourceTable::new());
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;
