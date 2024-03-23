@@ -43,6 +43,13 @@ pub struct GodotCtx {
 }
 
 impl GodotCtx {
+    pub fn new(inst_id: InstanceId) -> Self {
+        Self {
+            inst_id: Some(inst_id),
+            ..Self::default()
+        }
+    }
+
     pub fn get_var_borrow(&mut self, res: WasmResource<Variant>) -> AnyResult<Cow<Variant>> {
         if res.owned() {
             Ok(Cow::Owned(self.table.remove(res.rep() as _).into_inner()))
@@ -217,7 +224,11 @@ impl AsMut<InnerLock> for WasmScriptLikeStore {
 }
 
 impl WasmScriptLike {
-    fn instantiate(config: Config, module: Gd<WasmModule>) -> AnyResult<WasmScriptLikeData> {
+    fn instantiate(
+        inst_id: InstanceId,
+        config: Config,
+        module: Gd<WasmModule>,
+    ) -> AnyResult<WasmScriptLikeData> {
         let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
         let mut store = Store::new(
@@ -235,7 +246,7 @@ impl WasmScriptLike {
                 #[cfg(feature = "memory-limiter")]
                 memory_limits: MemoryLimit::from_config(&config),
 
-                godot_ctx: GodotCtx::default(),
+                godot_ctx: GodotCtx::new(inst_id),
             },
         );
         #[cfg(feature = "epoch-timeout")]
@@ -300,6 +311,7 @@ impl WasmScriptLike {
     pub fn initialize_(&self, module: Gd<WasmModule>, config: Option<Variant>) -> bool {
         match self.data.get_or_try_init(move || {
             Self::instantiate(
+                self.base().instance_id(),
                 match config {
                     Some(v) => match Config::try_from_variant(&v) {
                         Ok(v) => v,

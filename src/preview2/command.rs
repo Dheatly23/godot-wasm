@@ -71,7 +71,11 @@ impl WasiView for StoreData {
     }
 }
 
-fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Error> {
+fn instantiate(
+    inst_id: InstanceId,
+    config: Config,
+    module: Gd<WasmModule>,
+) -> Result<CommandData, Error> {
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
     let wasi_ctx = if let Config {
@@ -104,7 +108,7 @@ fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Er
 
             table: ResourceTable::new(),
             wasi_ctx,
-            godot_ctx: GodotCtx::default(),
+            godot_ctx: GodotCtx::new(inst_id),
         },
     );
     #[cfg(feature = "epoch-timeout")]
@@ -170,6 +174,7 @@ impl WasiCommand {
     pub fn initialize_(&self, module: Gd<WasmModule>, config: Option<Variant>) -> bool {
         match self.data.get_or_try_init(move || {
             instantiate(
+                self.base().instance_id(),
                 match config {
                     Some(v) => match Config::try_from_variant(&v) {
                         Ok(v) => v,
