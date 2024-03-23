@@ -76,6 +76,7 @@ impl WasiContext {
         mut ctx: WasiCtxBuilder,
         config: &Config,
     ) -> Result<WasiCtx, Error> {
+        let inst_id = this.instance_id();
         let o = this.bind();
         if let (PipeBindingType::Context, Some(file)) =
             (&config.wasi_stdin, &config.wasi_stdin_file)
@@ -116,13 +117,24 @@ impl WasiContext {
                 ctx.inherit_stdout();
             } else {
                 ctx.stdout(match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => {
-                        Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
-                    }
-                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
-                    PipeBufferType::BlockBuffer => {
-                        Box::new(BlockWritePipe::new(move |_buf| {})) as _
-                    }
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stdout_emit".into(),
+                            &[PackedByteArray::from(buf).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stdout_emit".into(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stdout_emit".into(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
                 });
             }
         }
@@ -131,13 +143,24 @@ impl WasiContext {
                 ctx.inherit_stderr();
             } else {
                 ctx.stderr(match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => {
-                        Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
-                    }
-                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
-                    PipeBufferType::BlockBuffer => {
-                        Box::new(BlockWritePipe::new(move |_buf| {})) as _
-                    }
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stderr_emit".into(),
+                            &[PackedByteArray::from(buf).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stderr_emit".into(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stderr_emit".into(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
                 });
             }
         }
@@ -310,6 +333,11 @@ impl WasiContext {
 
 #[godot_api]
 impl WasiContext {
+    #[signal]
+    fn stdout_emit(message: Variant);
+    #[signal]
+    fn stderr_emit(message: Variant);
+
     #[func]
     fn add_env_variable(&mut self, key: GString, value: GString) {
         self.envs.insert(key.to_string(), value.to_string());

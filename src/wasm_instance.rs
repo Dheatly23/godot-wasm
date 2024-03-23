@@ -288,6 +288,7 @@ where
     T: AsRef<StoreData> + AsMut<StoreData>,
 {
     pub fn instantiate(
+        inst_id: InstanceId,
         mut store: Store<T>,
         config: &Config,
         module: Gd<WasmModule>,
@@ -308,32 +309,56 @@ where
                 if let Some(data) = config.wasi_stdin_data.clone() {
                     builder.stdin(Box::new(ByteBufferReadPipe::new(data)));
                 } else {
-                    // TODO: Emit signal
-                    let (outer, inner) = OuterStdin::new(move || {});
+                    let (outer, inner) = OuterStdin::new(move || {
+                        <Gd<RefCounted>>::from_instance_id(inst_id)
+                            .emit_signal(SIGNAL_NAME[3].clone(), &[]);
+                    });
                     builder.stdin(Box::new(outer));
                     wasi_stdin = Some(inner as _);
                 }
             }
             if config.wasi_stdout == PipeBindingType::Instance {
                 builder.stdout(match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => {
-                        Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
-                    }
-                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
-                    PipeBufferType::BlockBuffer => {
-                        Box::new(BlockWritePipe::new(move |_buf| {})) as _
-                    }
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            SIGNAL_NAME[1].clone(),
+                            &[PackedByteArray::from(buf).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            SIGNAL_NAME[1].clone(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            SIGNAL_NAME[1].clone(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
                 });
             }
             if config.wasi_stderr == PipeBindingType::Instance {
                 builder.stderr(match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => {
-                        Box::new(UnbufferedWritePipe::new(move |_buf| {})) as _
-                    }
-                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |_buf| {})) as _,
-                    PipeBufferType::BlockBuffer => {
-                        Box::new(BlockWritePipe::new(move |_buf| {})) as _
-                    }
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            SIGNAL_NAME[2].clone(),
+                            &[PackedByteArray::from(buf).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            SIGNAL_NAME[2].clone(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            SIGNAL_NAME[2].clone(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
                 });
             }
 
@@ -560,16 +585,22 @@ impl StoreData {
     }
 }
 
+static SIGNAL_NAME: Lazy<[StringName; 4]> = Lazy::new(|| {
+    [
+        StringName::from_latin1_with_nul(b"error_happened\0"),
+        StringName::from_latin1_with_nul(b"stdout_emit\0"),
+        StringName::from_latin1_with_nul(b"stderr_emit\0"),
+        StringName::from_latin1_with_nul(b"stdin_request\0"),
+    ]
+});
+
 impl WasmInstance {
     fn emit_error_wrapper(&self, msg: String) {
-        static SIGNAL_NAME: Lazy<StringName> =
-            Lazy::new(|| StringName::from_latin1_with_nul(b"error_happened\0"));
-
         let args = [GString::from(msg).to_variant()];
 
         self.base()
             .clone()
-            .emit_signal((*SIGNAL_NAME).clone(), &args);
+            .emit_signal(SIGNAL_NAME[0].clone(), &args);
     }
 
     pub fn get_data(&self) -> Result<&InstanceData<StoreData>, Error> {
@@ -611,6 +642,7 @@ impl WasmInstance {
     ) -> bool {
         let r = self.data.get_or_try_init(move || -> Result<_, Error> {
             let mut ret = InstanceData::instantiate(
+                self.base().instance_id(),
                 Store::new(&ENGINE, StoreData::default()),
                 &match config {
                     Some(v) => match Config::try_from_variant(&v) {
@@ -801,6 +833,12 @@ impl RustCallable for WasmCallable {
 impl WasmInstance {
     #[signal]
     fn error_happened(message: GString);
+    #[signal]
+    fn stdout_emit(message: Variant);
+    #[signal]
+    fn stderr_emit(message: Variant);
+    #[signal]
+    fn stdin_request();
 
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.

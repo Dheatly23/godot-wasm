@@ -132,7 +132,7 @@ impl WasiCommand {
 #[godot_api]
 impl WasiCommand {
     #[signal]
-    fn error_happened();
+    fn error_happened(message: GString);
 
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
