@@ -292,9 +292,9 @@ impl WasmModule {
                         ModuleType::Core(site_context!(Module::deserialize(&ENGINE, data))?)
                     }
                     #[cfg(feature = "wasi-preview2")]
-                    Some(Precompiled::Component) => ModuleType::Component(site_context!(
-                        Component::deserialize(&ENGINE, &*data)
-                    )?),
+                    Some(Precompiled::Component) => {
+                        ModuleType::Component(site_context!(Component::deserialize(&ENGINE, data))?)
+                    }
                     _ => bail_with_site!("Unsupported data content"),
                 }
             };

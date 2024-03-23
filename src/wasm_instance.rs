@@ -385,6 +385,7 @@ where
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn instantiate_wasm(
         store: &mut Store<T>,
         config: &Config,
