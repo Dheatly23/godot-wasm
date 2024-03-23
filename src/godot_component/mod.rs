@@ -39,6 +39,7 @@ fn wrap_error(e: Error) -> AnyResult<()> {
 #[derive(Default)]
 pub struct GodotCtx {
     table: Slab<SendSyncWrapper<Variant>>,
+    inst_id: Option<InstanceId>,
 }
 
 impl GodotCtx {
@@ -140,6 +141,16 @@ impl bindgen::godot::core::core::Host for GodotCtx {
     }
 }
 
+impl bindgen::godot::reflection::this::Host for GodotCtx {
+    fn get_this(&mut self) -> AnyResult<WasmResource<Variant>> {
+        let Some(id) = self.inst_id else {
+            bail_with_site!("Self instance ID is not set")
+        };
+
+        Ok(self.set_into_var(&<Gd<Object>>::try_from_instance_id(id)?))
+    }
+}
+
 pub fn add_to_linker<T>(
     linker: &mut Linker<T>,
     get: impl Fn(&mut T) -> &mut GodotCtx + Send + Sync + Copy + 'static,
@@ -160,7 +171,9 @@ pub fn add_to_linker<T>(
     bindgen::godot::core::dictionary::add_to_linker(&mut *linker, get)?;
     bindgen::godot::core::object::add_to_linker(&mut *linker, get)?;
     bindgen::godot::core::callable::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::signal::add_to_linker(&mut *linker, get)
+    bindgen::godot::core::signal::add_to_linker(&mut *linker, get)?;
+
+    bindgen::godot::reflection::this::add_to_linker(&mut *linker, get)
 }
 
 #[derive(GodotClass)]

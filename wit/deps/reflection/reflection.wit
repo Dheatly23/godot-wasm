@@ -1,0 +1,11 @@
+package godot:reflection@0.1.0;
+
+interface this {
+    use godot:core/core@0.1.0.{godot-var};
+
+    get-this: func() -> godot-var;
+}
+
+world imports {
+    import this;
+}
