@@ -15,6 +15,9 @@ func_registry! {
         let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
         Ok(variant_to_externref(Callable::from_object_method(&obj, name).to_variant()))
     },
+    invalid => |_: Caller<_>| -> Result<Option<ExternRef>, Error> {
+        Ok(variant_to_externref(Callable::invalid().to_variant()))
+    },
     is_custom => |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
         Ok(site_context!(Callable::try_from_variant(&externref_to_variant(v)))?.is_custom() as _)
     },
@@ -63,5 +66,11 @@ func_registry! {
             Ok(v) => Ok(variant_to_externref(v)),
             Err(_) => bail_with_site!("Error binding object"),
         }
+    },
+    bindv => |_: Caller<_>, v: Option<ExternRef>, args: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
+        let v = site_context!(Callable::try_from_variant(&externref_to_variant(v)))?;
+        let a = site_context!(<Array<Variant>>::try_from_variant(&externref_to_variant(args)))?;
+
+        Ok(variant_to_externref(v.bindv(a).to_variant()))
     },
 }
