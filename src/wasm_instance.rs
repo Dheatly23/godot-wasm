@@ -7,7 +7,7 @@ use std::{fmt, mem, ptr};
 use anyhow::{bail, Error};
 use cfg_if::cfg_if;
 use godot::prelude::*;
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
@@ -560,6 +560,17 @@ impl StoreData {
 }
 
 impl WasmInstance {
+    fn emit_error_wrapper(&self, msg: String) {
+        static SIGNAL_NAME: Lazy<StringName> =
+            Lazy::new(|| StringName::from_latin1_with_nul(b"error_happened\0"));
+
+        let args = [GString::from(msg).to_variant()];
+
+        self.base()
+            .clone()
+            .emit_signal((*SIGNAL_NAME).clone(), &args);
+    }
+
     pub fn get_data(&self) -> Result<&InstanceData<StoreData>, Error> {
         if let Some(data) = self.data.get() {
             Ok(data)
@@ -575,6 +586,7 @@ impl WasmInstance {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
+                let s = format!("{e:?}");
                 /*
                 error(
                     e.downcast_ref::<Site>()
@@ -583,13 +595,8 @@ impl WasmInstance {
                     &s,
                 );
                 */
-                godot_error!("{:?}", e);
-                /*
-                self.base.emit_signal(
-                    StringName::from("error_happened"),
-                    &[format!("{}", e).to_variant()],
-                );
-                */
+                godot_error!("{s}");
+                self.emit_error_wrapper(s);
                 None
             }
         }
@@ -630,7 +637,9 @@ impl WasmInstance {
             Ok(ret)
         });
         if let Err(e) = r {
-            godot_error!("{:?}", e);
+            let s = format!("{e:?}");
+            godot_error!("{s}");
+            self.emit_error_wrapper(s);
             false
         } else {
             true
@@ -790,7 +799,7 @@ impl RustCallable for WasmCallable {
 #[godot_api]
 impl WasmInstance {
     #[signal]
-    fn error_happened();
+    fn error_happened(message: GString);
 
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
