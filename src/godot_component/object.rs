@@ -1,4 +1,4 @@
-use anyhow::Result as AnyResult;
+use anyhow::{bail, Result as AnyResult};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
@@ -7,6 +7,40 @@ use super::wrap_error;
 impl crate::godot_component::bindgen::godot::core::object::Host
     for crate::godot_component::GodotCtx
 {
+    fn from_instance_id(&mut self, id: i64) -> AnyResult<WasmResource<Variant>> {
+        let Some(id) = InstanceId::try_from_i64(id) else {
+            bail!("Instance ID is 0")
+        };
+
+        Ok(self.set_into_var(&<Gd<Object>>::try_from_instance_id(id)?))
+    }
+
+    fn instance_id(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
+        Ok(self
+            .get_var_borrow(var)?
+            .try_to::<Gd<Object>>()?
+            .instance_id()
+            .to_i64())
+    }
+
+    fn get_property_list(
+        &mut self,
+        var: WasmResource<Variant>,
+    ) -> AnyResult<WasmResource<Variant>> {
+        let o: Gd<Object> = self.get_var_borrow(var)?.try_to()?;
+        Ok(self.set_into_var(&o.get_property_list()))
+    }
+
+    fn get_method_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
+        let o: Gd<Object> = self.get_var_borrow(var)?.try_to()?;
+        Ok(self.set_into_var(&o.get_method_list()))
+    }
+
+    fn get_signal_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
+        let o: Gd<Object> = self.get_var_borrow(var)?.try_to()?;
+        Ok(self.set_into_var(&o.get_signal_list()))
+    }
+
     fn has_method(
         &mut self,
         var: WasmResource<Variant>,
@@ -145,6 +179,44 @@ impl crate::godot_component::bindgen::godot::core::object::Host
     ) -> AnyResult<()> {
         let mut o: Gd<Object> = self.get_var_borrow(var)?.try_to()?;
         o.set(
+            self.get_var_borrow(name)?.try_to()?,
+            self.maybe_get_var(val)?,
+        );
+        Ok(())
+    }
+
+    fn set_deferred(
+        &mut self,
+        var: WasmResource<Variant>,
+        name: WasmResource<Variant>,
+        val: Option<WasmResource<Variant>>,
+    ) -> AnyResult<()> {
+        let mut o: Gd<Object> = self.get_var_borrow(var)?.try_to()?;
+        o.set_deferred(
+            self.get_var_borrow(name)?.try_to()?,
+            self.maybe_get_var(val)?,
+        );
+        Ok(())
+    }
+
+    fn get_indexed(
+        &mut self,
+        var: WasmResource<Variant>,
+        name: WasmResource<Variant>,
+    ) -> AnyResult<Option<WasmResource<Variant>>> {
+        let o: Gd<Object> = self.get_var_borrow(var)?.try_to()?;
+        let name: NodePath = self.get_var_borrow(name)?.try_to()?;
+        Ok(self.set_var(o.get_indexed(name)))
+    }
+
+    fn set_indexed(
+        &mut self,
+        var: WasmResource<Variant>,
+        name: WasmResource<Variant>,
+        val: Option<WasmResource<Variant>>,
+    ) -> AnyResult<()> {
+        let mut o: Gd<Object> = self.get_var_borrow(var)?.try_to()?;
+        o.set_indexed(
             self.get_var_borrow(name)?.try_to()?,
             self.maybe_get_var(val)?,
         );
