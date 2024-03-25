@@ -11,7 +11,9 @@ signal message_emitted(msg)
 var instance: WasmInstance = null
 
 func __selected(index):
-	instance = WasmInstance.new().initialize(
+	instance = WasmInstance.new()
+	instance.error_happened.connect(__emit_log)
+	instance = instance.initialize(
 		wasm_file,
 		{},
 		{
@@ -23,6 +25,8 @@ func __selected(index):
 	)
 	if instance == null:
 		message_emitted.emit("Failed to instantiate module")
+		return
+
 	if instance.call_wasm("init", [index]) == null:
 		message_emitted.emit("Failed to call init")
 
@@ -64,8 +68,8 @@ func _ready():
 #	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
 #	return
 
-#	wasi_ctx.connect("stdout_emit", self, "__emit_log")
-#	wasi_ctx.connect("stderr_emit", self, "__emit_log")
+	wasi_ctx.stdout_emit.connect(__emit_log)
+	wasi_ctx.stderr_emit.connect(__emit_log)
 
 	__selected(0)
 

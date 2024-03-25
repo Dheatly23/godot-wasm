@@ -26,9 +26,6 @@ var instance: WasmInstance = null
 #				Callable(self, "__log"),
 #			)
 #
-#func __log(msg: String) -> void:
-#	emit_signal("message_emitted", msg)
-#
 #func __on_result(ret: Array, i: int, j: int) -> void:
 #	__log("%s + %s = %s" % [i, j, ret[0]])
 
@@ -42,7 +39,14 @@ func __cb():
 	if instance == null:
 		return
 
+	instance.error_happened.connect(__log)
 	for i in range(1, 4):
 		for j in range(1, 4):
 			var ret: Array = instance.call_wasm("add", [i, j])
 			message_emitted.emit("%s + %s = %s" % [i, j, ret[0]])
+
+	# This will always error
+	#instance.call_wasm("test", [3, 4, 1])
+
+func __log(msg: String) -> void:
+	emit_signal("message_emitted", msg)

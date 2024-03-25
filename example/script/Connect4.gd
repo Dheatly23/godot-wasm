@@ -62,6 +62,7 @@ func init_game() -> void:
 			"epoch.timeout": 60,
 		},
 	)
+	robot_instance.error_happened.connect(__log)
 	robot_instance.call_wasm("init", [WIDTH, HEIGHT])
 
 func get_state(x: int, y: int) -> int:

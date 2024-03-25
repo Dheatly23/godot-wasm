@@ -34,8 +34,8 @@ var wasm_module: WasmModule = null
 var last_file_path: String = ""
 
 func _ready():
-#	wasi_ctx.connect("stdout_emit", self, "__emit_log")
-#	wasi_ctx.connect("stderr_emit", self, "__emit_log")
+	wasi_ctx.stdout_emit.connect(__emit_log)
+	wasi_ctx.stderr_emit.connect(__emit_log)
 
 	wasi_ctx.file_make_dir(".", "python", null)
 	wasi_ctx.file_make_file("python", "hello_world.py", null)
@@ -365,7 +365,9 @@ func __execute():
 	for i in range(0, arg_list.get_item_count()):
 		args.append(arg_list.get_item_text(i))
 
-	var instance := WasmInstance.new().initialize(
+	var instance := WasmInstance.new()
+	instance.error_happened.connect(__emit_log)
+	instance = instance.initialize(
 		wasm_module,
 		{},
 		{
@@ -374,6 +376,8 @@ func __execute():
 			"wasi.args": args,
 		}
 	)
+	if instance == null:
+		return
 
 	instance.call_wasm(&"_start", [])
 	__refresh_files()

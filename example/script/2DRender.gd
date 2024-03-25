@@ -13,7 +13,9 @@ signal message_emitted(msg)
 var instance: WasmInstance = null
 
 func __selected(index):
-	instance = WasmInstance.new().initialize(
+	instance = WasmInstance.new()
+	instance.error_happened.connect(__emit_log)
+	instance = instance.initialize(
 		wasm_file,
 		{
 			"host": {
@@ -33,6 +35,8 @@ func __selected(index):
 	)
 	if instance == null:
 		message_emitted.emit("Failed to instantiate module")
+		return
+
 	if instance.call_wasm("init", [index]) == null:
 		message_emitted.emit("Failed to call init")
 

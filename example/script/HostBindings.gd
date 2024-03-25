@@ -44,9 +44,9 @@ var instance: WasmInstance = null
 #		"__log",
 #		[buf.get_string_from_utf8()]
 #	)
-#
-#func __log(msg: String) -> void:
-#	emit_signal("message_emitted", msg)
+
+func __log(msg: String) -> void:
+	emit_signal("message_emitted", msg)
 
 # Non threadpool version
 func _ready():
@@ -69,6 +69,7 @@ func __cb():
 	if instance == null:
 		return
 
+	instance.error_happened.connect(__log)
 	instance.call_wasm("main", [])
 
 func __write(ptr: int, sz: int) -> void:
