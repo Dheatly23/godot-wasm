@@ -3,25 +3,30 @@ extends Node2D
 signal message_emitted(msg)
 
 enum TileState {
-	EMPTY = 0
-	YELLOW = 1
-	RED = 2
+	EMPTY = 0,
+	YELLOW = 1,
+	RED = 2,
+}
+const ATLAS_MAPPING: Dictionary = {
+	TileState.EMPTY: Vector2i(0, 1),
+	TileState.YELLOW: Vector2i(0, 0),
+	TileState.RED: Vector2i(1, 0),
 }
 
 const WIDTH = 7
 const HEIGHT = 5
 const TILE_SIZE = 32
 
-export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
-onready var tiles: TileMap = $Tiles
-onready var selector: Node2D = $Tiles/Selector
+@onready var tiles: TileMap = $Tiles
+@onready var selector: Node2D = $Tiles/Selector
 
 var state: Array
 var turn: int = TileState.YELLOW
 var game_end: bool = false
 
-var robot_instance: InstanceHandle = null
+var robot_instance: WasmInstance = null
 
 func init_game() -> void:
 	state = []
@@ -31,37 +36,41 @@ func init_game() -> void:
 	for x in range(WIDTH):
 		for y in range(HEIGHT):
 			state.append(TileState.EMPTY)
-			tiles.set_cell(x, y, TileState.EMPTY)
+			tiles.set_cell(0, Vector2i(x, y), 0, ATLAS_MAPPING[TileState.EMPTY])
 
-	var f: WasmFile = load(wasm_file)
+#	robot_instance = InstanceHandle.new()
+#	robot_instance.instantiate(
+#		module,
+#		{},
+#		{
+#			"epoch.enable": true,
+#			"epoch.timeout": 60,
+#		},
+#		self, "__log"
+#	)
+#	robot_instance.call_queue(
+#		"init", [WIDTH, HEIGHT],
+#		null, "",
+#		self, "__log"
+#	)
 
-	var module = f.get_module()
-	if module == null:
-		__log("Cannot compile module " + wasm_file)
-		return
-
-	robot_instance = InstanceHandle.new()
-	robot_instance.instantiate(
-		module,
+	robot_instance = WasmInstance.new().initialize(
+		wasm_file,
 		{},
 		{
 			"epoch.enable": true,
 			"epoch.timeout": 60,
 		},
-		self, "__log"
 	)
-	robot_instance.call_queue(
-		"init", [WIDTH, HEIGHT],
-		null, "",
-		self, "__log"
-	)
+	robot_instance.error_happened.connect(__log)
+	robot_instance.call_wasm("init", [WIDTH, HEIGHT])
 
 func get_state(x: int, y: int) -> int:
 	return state[x * HEIGHT + y]
 
 func set_state(x: int, y: int, v: int) -> void:
 	state[x * HEIGHT + y] = v
-	tiles.set_cell(x, HEIGHT - 1 - y, v)
+	tiles.set_cell(0, Vector2i(x, HEIGHT - 1 - y), 0, ATLAS_MAPPING[v])
 
 func do_move(x: int) -> void:
 	if game_end:
@@ -177,12 +186,15 @@ func robot_think(move: int):
 	if game_end:
 		return
 
-	robot_instance.call_queue(
-		"make_move", [move],
-		self, "__robot_move",
-		self, "__log"
-	)
+#	robot_instance.call_queue(
+#		"make_move", [move],
+#		self, "__robot_move",
+#		self, "__log"
+#	)
+
 	__log("Robot is thinking")
+
+	__robot_move(robot_instance.call_wasm("make_move", [move]))
 
 func _ready():
 	tiles.position = -Vector2(TILE_SIZE * WIDTH, TILE_SIZE * HEIGHT) / 2
@@ -197,17 +209,17 @@ func _input(event):
 			selector.position = pos.floor() * TILE_SIZE
 		else:
 			selector.visible = false
-	elif event is InputEventMouseButton and not event.pressed and event.button_index == BUTTON_LEFT:
+	elif event is InputEventMouseButton and not event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var pos: Vector2 = (get_viewport_transform().inverse() * event.position - tiles.position) / TILE_SIZE
 		if Rect2(Vector2.ZERO, Vector2(WIDTH, HEIGHT)).has_point(pos):
-			get_tree().set_input_as_handled()
+			get_viewport().set_input_as_handled()
 			var x: int = int(pos.x)
 			if not game_end and turn == TileState.YELLOW:
 				do_move(x)
 				robot_think(x)
 
 func __log(msg: String) -> void:
-	emit_signal("message_emitted", msg)
+	message_emitted.emit(msg)
 
 func __robot_move(res: Array) -> void:
 	if turn == TileState.RED and len(res) >= 1:

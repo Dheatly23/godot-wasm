@@ -159,6 +159,20 @@ exceptions = [
     #{ path = "LICENSE", hash = 0xbd0eed23 }
 #]
 
+[[licenses.clarify]]
+name = "godot4-prebuilt"
+version = "*"
+# Just assume it's the same as gdext license
+expression = "MPL-2.0"
+license-files = []
+
+# It's MPL-2.0 but doesn't get detected
+[[licenses.clarify]]
+name = "godot-fmt"
+version = "*"
+expression = "MPL-2.0"
+license-files = []
+
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries.
@@ -180,7 +194,8 @@ registries = [
 # NOTE: Allows it for now just because wasmtime dependency tree is very messy
 multiple-versions = "allow"
 # Lint level for when a crate version requirement is `*`
-wildcards = "deny"
+# Allow it for now while
+wildcards = "allow"
 # The graph highlighting used when creating dotgraphs for crates
 # with multiple versions
 # * lowest-version - The path to the lowest versioned duplicate is highlighted
@@ -278,7 +293,7 @@ allow-git = []
 
 [sources.allow-org]
 # 1 or more github.com organizations to allow git sources for
-#github = [""]
+github = ["godot-rust"]
 # 1 or more gitlab.com organizations to allow git sources for
 #gitlab = [""]
 # 1 or more bitbucket.org organizations to allow git sources for

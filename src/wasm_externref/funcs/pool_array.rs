@@ -1,5 +1,5 @@
 use anyhow::Error;
-use gdnative::prelude::*;
+use godot::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Func, StoreContextMut, TypedFunc};
 
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
@@ -14,19 +14,19 @@ macro_rules! readwrite_array {
     ),* $(,)?) => {$(
         func_registry!{
             $head,
-            len => |_: Caller<_>, a: Option<ExternRef>| -> Result<i32, Error> {
-                let a = site_context!(<$t>::from_variant(&externref_to_variant(a)))?;
-                Ok(a.len())
+            len => |_: Caller<_>, a: Option<ExternRef>| -> Result<u32, Error> {
+                let a = site_context!(<$t>::try_from_variant(&externref_to_variant(a)))?;
+                Ok(a.len() as _)
             },
             read => |mut ctx: Caller<_>, a: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-                let a = site_context!(<$t>::from_variant(&externref_to_variant(a)))?;
+                let a = site_context!(<$t>::try_from_variant(&externref_to_variant(a)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
                 };
 
                 let mut p = p as usize;
-                for $v in a.read().iter().copied() {
+                for $v in a.as_slice().iter().copied() {
                     $(
                         site_context!(mem.write(
                             &mut ctx,
@@ -45,15 +45,14 @@ macro_rules! readwrite_array {
                     return Ok(0);
                 }
 
-                let a = site_context!(<$t>::from_variant(&externref_to_variant(a)))?;
+                let a = site_context!(<$t>::try_from_variant(&externref_to_variant(a)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
                 };
 
                 let mut p = p as usize;
-                let s = a.read();
-                let s = match s.get(from as usize..to as usize) {
+                let s = match a.as_slice().get(from as usize..to as usize) {
                     Some(v) => v,
                     None => bail_with_site!("Invalid array index ({}..{})", from as usize, to as usize),
                 };
@@ -90,7 +89,9 @@ macro_rules! readwrite_array {
                     v.push($v);
                 }
 
-                Ok(variant_to_externref(<$t>::from_vec(v).owned_to_variant()))
+                let r = <$t>::from(&*v).to_variant();
+                drop(v);
+                Ok(variant_to_externref(r))
             },
         }
     )*};
@@ -99,8 +100,10 @@ macro_rules! readwrite_array {
 #[derive(Default)]
 pub struct Funcs {
     byte_array: ByteArrayFuncs,
-    int_array: IntArrayFuncs,
-    float_array: FloatArrayFuncs,
+    int32_array: Int32ArrayFuncs,
+    int64_array: Int64ArrayFuncs,
+    float32_array: Float32ArrayFuncs,
+    float64_array: Float64ArrayFuncs,
     vector2_array: Vector2ArrayFuncs,
     vector3_array: Vector3ArrayFuncs,
     color_array: ColorArrayFuncs,
@@ -114,9 +117,13 @@ impl Funcs {
     {
         if let r @ Some(_) = self.byte_array.get_func(&mut *store, name) {
             r
-        } else if let r @ Some(_) = self.int_array.get_func(&mut *store, name) {
+        } else if let r @ Some(_) = self.int32_array.get_func(&mut *store, name) {
             r
-        } else if let r @ Some(_) = self.float_array.get_func(&mut *store, name) {
+        } else if let r @ Some(_) = self.int64_array.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.float32_array.get_func(&mut *store, name) {
+            r
+        } else if let r @ Some(_) = self.float64_array.get_func(&mut *store, name) {
             r
         } else if let r @ Some(_) = self.vector2_array.get_func(&mut *store, name) {
             r
@@ -125,25 +132,25 @@ impl Funcs {
         } else if let r @ Some(_) = self.color_array.get_func(&mut *store, name) {
             r
         } else {
-            self.string_array.get_func(&mut *store, name)
+            self.string_array.get_func(store, name)
         }
     }
 }
 
 func_registry! {
     (ByteArrayFuncs, "byte_array."),
-    len => |_: Caller<_>, a: Option<ExternRef>| -> Result<i32, Error> {
-        let a = site_context!(<PoolArray<u8>>::from_variant(&externref_to_variant(a)))?;
-        Ok(a.len())
+    len => |_: Caller<_>, a: Option<ExternRef>| -> Result<u32, Error> {
+        let a = site_context!(PackedByteArray::try_from_variant(&externref_to_variant(a)))?;
+        Ok(a.len() as _)
     },
     read => |mut ctx: Caller<_>, a: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-        let a = site_context!(<PoolArray<u8>>::from_variant(&externref_to_variant(a)))?;
+        let a = site_context!(PackedByteArray::try_from_variant(&externref_to_variant(a)))?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
         };
 
-        site_context!(mem.write(&mut ctx, p as _, &a.read()))?;
+        site_context!(mem.write(&mut ctx, p as _, a.as_slice()))?;
         Ok(1)
     },
     write => |mut ctx: Caller<_>, p: u32, n: u32| -> Result<Option<ExternRef>, Error> {
@@ -153,23 +160,25 @@ func_registry! {
         };
 
         let a = match mem.data(&ctx).get(p as usize..(p + n) as usize) {
-            Some(v) => <PoolArray<u8>>::from_slice(v),
+            Some(v) => PackedByteArray::from(v),
             None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n),
         };
-        Ok(variant_to_externref(a.owned_to_variant()))
+        Ok(variant_to_externref(a.to_variant()))
     },
 }
 
 readwrite_array! {
-    (IntArrayFuncs, "int_array.") => v: PoolArray<i32> [0i32] [4 | v: i32],
-    (FloatArrayFuncs, "float_array.") => v: PoolArray<f32> [0f32] [4 | v: f32],
-    (Vector2ArrayFuncs, "vector2_array.") => v: PoolArray<Vector2> [Vector2::ZERO] [4 | v.x: f32; 4 | v.y: f32],
-    (Vector3ArrayFuncs, "vector3_array.") => v: PoolArray<Vector3> [Vector3::ZERO] [
+    (Int32ArrayFuncs, "int32_array") => v: PackedInt32Array [0i32] [4 | v: i32],
+    (Int64ArrayFuncs, "int64_array") => v: PackedInt64Array [0i64] [8 | v: i64],
+    (Float32ArrayFuncs, "float32_array") => v: PackedFloat32Array [0f32] [4 | v: f32],
+    (Float64ArrayFuncs, "float64_array") => v: PackedFloat64Array [0f64] [8 | v: f64],
+    (Vector2ArrayFuncs, "vector2_array.") => v: PackedVector2Array [Vector2::ZERO] [4 | v.x: f32; 4 | v.y: f32],
+    (Vector3ArrayFuncs, "vector3_array.") => v: PackedVector3Array [Vector3::ZERO] [
         4 | v.x: f32;
         4 | v.y: f32;
         4 | v.z: f32;
     ],
-    (ColorArrayFuncs, "color_array.") => v: PoolArray<Color> [Color {r: 0.0, g: 0.0, b: 0.0, a: 0.0}] [
+    (ColorArrayFuncs, "color_array.") => v: PackedColorArray [Color {r: 0.0, g: 0.0, b: 0.0, a: 0.0}] [
         4 | v.r: f32;
         4 | v.g: f32;
         4 | v.b: f32;
@@ -179,29 +188,32 @@ readwrite_array! {
 
 func_registry! {
     (StringArrayFuncs, "string_array."),
-    len => |_: Caller<_>, a: Option<ExternRef>| -> Result<i32, Error> {
-        let a = site_context!(<PoolArray<GodotString>>::from_variant(
+    len => |_: Caller<_>, a: Option<ExternRef>| -> Result<u32, Error> {
+        let a = site_context!(PackedStringArray::try_from_variant(
             &externref_to_variant(a)
         ))?;
-        Ok(a.len())
+        Ok(a.len() as _)
     },
-    get => |_: Caller<_>, a: Option<ExternRef>, i: i32| -> Result<Option<ExternRef>, Error> {
-        let a = site_context!(<PoolArray<GodotString>>::from_variant(
+    get => |_: Caller<_>, a: Option<ExternRef>, i: u32| -> Result<Option<ExternRef>, Error> {
+        let a = site_context!(PackedStringArray::try_from_variant(
             &externref_to_variant(a)
         ))?;
-        Ok(variant_to_externref(a.get(i).owned_to_variant()))
+        Ok(variant_to_externref(a.get(i as _).to_variant()))
     },
-    get_many => |mut ctx: Caller<_>, a: Option<ExternRef>, i: i32, f: Option<Func>| -> Result<u32, Error> {
+    get_many => |mut ctx: Caller<_>, a: Option<ExternRef>, i: u32, f: Option<Func>| -> Result<u32, Error> {
         let f: TypedFunc<Option<ExternRef>, u32> = match f {
             Some(f) => site_context!(f.typed(&ctx))?,
             None => return Ok(0),
         };
-        let a = site_context!(<PoolArray<GodotString>>::from_variant(
+        let a = site_context!(PackedStringArray::try_from_variant(
             &externref_to_variant(a)
         ))?;
 
         let mut n = 0;
-        let mut s = &a.read()[i as _..];
+        let mut s = match a.as_slice().get(i as usize..) {
+            Some(v) => v,
+            None => bail_with_site!("Invalid array index ({}..)", i as usize),
+        };
         while let Some((v, rest)) = s.split_first() {
             n += 1;
             if site_context!(f.call(&mut ctx, variant_to_externref(v.to_variant())))? == 0 {
@@ -221,7 +233,7 @@ func_registry! {
         let mut v = Vec::new();
         loop {
             let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
-            v.push(site_context!(GodotString::from_variant(
+            v.push(site_context!(GString::try_from_variant(
                 &externref_to_variant(e)
             ))?);
             if n == 0 {
@@ -229,8 +241,8 @@ func_registry! {
             }
         }
 
-        Ok(variant_to_externref(
-            <PoolArray<GodotString>>::from_vec(v).owned_to_variant(),
-        ))
+        let r = PackedStringArray::from(&*v).to_variant();
+        drop(v);
+        Ok(variant_to_externref(r))
     },
 }

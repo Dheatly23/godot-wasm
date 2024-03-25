@@ -1,7 +1,8 @@
-[gd_scene load_steps=2 format=2]
+[gd_scene load_steps=3 format=3 uid="uid://bmmwjemxsc0ch"]
 
-[ext_resource path="res://script/HostBindings.gd" type="Script" id=1]
+[ext_resource type="Script" path="res://script/HostBindings.gd" id="1"]
+[ext_resource type="WasmModule" path="res://wasm/host_bindings.wasm" id="2_p7107"]
 
 [node name="Root" type="Node"]
-script = ExtResource( 1 )
-wasm_file = "res://wasm/host_bindings.wasm"
+script = ExtResource("1")
+wasm_file = ExtResource("2_p7107")

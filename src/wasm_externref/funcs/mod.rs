@@ -1,10 +1,12 @@
 mod array;
+mod callable;
 #[cfg(feature = "object-registry-compat")]
 mod compat;
 mod dict;
 mod object;
 mod pool_array;
 mod primitive;
+mod signal;
 mod string;
 mod typeis;
 
@@ -35,7 +37,7 @@ macro_rules! register{
     };
 }
 
-register![array, compat, dict, pool_array, primitive, string, typeis, object];
+register![array, callable, compat, dict, object, pool_array, primitive, signal, string, typeis];
 
 #[cfg(not(feature = "object-registry-compat"))]
 mod compat {

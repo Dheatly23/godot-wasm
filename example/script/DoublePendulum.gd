@@ -1,9 +1,11 @@
 extends Node2D
 
+const Pendulum = preload("res://script/Pendulum.gd")
+
 signal message_emitted(msg)
 
 func _ready():
-	emit_signal("message_emitted", """
+	message_emitted.emit("""
 		Starting double pendulum problem.
 		This example shows how a chaotic system will behave.
 		The pendulums are 0.01 degrees different.
@@ -11,11 +13,11 @@ func _ready():
 
 
 func _on_Timer_timeout():
-	emit_signal("message_emitted", "")
+	message_emitted.emit("")
 
 	for p in $Pendulums.get_children():
-		if p is preload("res://script/Pendulum.gd"):
-			emit_signal("message_emitted", "%s: [%6.1f %6.1f %6.1f %6.1f]" % [
+		if p is Pendulum:
+			message_emitted.emit("%s: [%6.1f %6.1f %6.1f %6.1f]" % [
 				p.name,
 				p.angle1,
 				p.velocity1,
@@ -24,4 +26,4 @@ func _on_Timer_timeout():
 			])
 
 func __log(msg: String):
-	emit_signal("message_emitted", msg)
+	message_emitted.emit(msg)

@@ -1,9 +1,9 @@
-extends Camera
+extends Camera3D
 
 const PI_2 := PI / 2
 const SPEED := PI / 16
 
-export var dist := 10.0
+@export var dist := 10.0
 
 var rx := PI / 4
 var ry := PI / -4
@@ -28,6 +28,7 @@ func _process(delta: float):
 	elif not left_pressed and right_pressed:
 		rx = wrapf(rx + delta, -PI, PI)
 
-	var q := Quat(Vector3(ry, rx, 0))
+	var q := Quaternion.from_euler(Vector3(ry, rx, 0))
 	var v := q * (Vector3.BACK * dist)
-	transform = Transform(Basis(q), v)
+	quaternion = q
+	position = v
