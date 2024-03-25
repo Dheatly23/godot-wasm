@@ -12,11 +12,11 @@ use godot::engine::WeakRef;
 use godot::prelude::*;
 use godot::register::property::PropertyHintInfo;
 use once_cell::sync::Lazy;
-#[cfg(feature = "object-registry-extern")]
-use wasmtime::ExternRef;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Linker, Store, ValRaw, ValType};
+#[cfg(feature = "object-registry-extern")]
+use wasmtime::{ExternRef, RefType};
 
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_config::Config;
@@ -37,6 +37,7 @@ pub const EPOCH_DEADLINE: u64 = 5u64.saturating_mul(EPOCH_MULTIPLIER);
 #[cfg(feature = "epoch-timeout")]
 pub const EPOCH_INTERVAL: time::Duration = time::Duration::from_millis(1000 / EPOCH_MULTIPLIER);
 
+/*
 #[cfg(feature = "wasi")]
 pub const FILE_NOTEXIST: u32 = 0;
 #[cfg(feature = "wasi")]
@@ -45,6 +46,7 @@ pub const FILE_FILE: u32 = 1;
 pub const FILE_DIR: u32 = 2;
 #[cfg(feature = "wasi")]
 pub const FILE_LINK: u32 = 3;
+*/
 
 pub const TYPE_I32: u32 = 1;
 pub const TYPE_I64: u32 = 2;
@@ -266,7 +268,7 @@ pub fn from_signature(sig: &FuncType) -> Result<(PackedByteArray, PackedByteArra
             ValType::F32 => TYPE_F32,
             ValType::F64 => TYPE_F64,
             #[cfg(feature = "object-registry-extern")]
-            ValType::ExternRef => TYPE_VARIANT,
+            ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => TYPE_VARIANT,
             _ => bail_with_site!("Unconvertible signture"),
         } as _;
     }
@@ -291,7 +293,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
                 TYPE_F32 => ValType::F32,
                 TYPE_F64 => ValType::F64,
                 #[cfg(feature = "object-registry-extern")]
-                TYPE_VARIANT => ValType::ExternRef,
+                TYPE_VARIANT => ValType::Ref(RefType::EXTERNREF),
                 v => bail_with_site!("Unknown enumeration value {}", v),
             });
         }
@@ -317,7 +319,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
         _ => bail_with_site!("Unconvertible value {}", results),
     };
 
-    Ok(FuncType::new(p, r))
+    Ok(FuncType::new(&ENGINE, p, r))
 }
 
 // Mark this unsafe for future proofing
@@ -328,10 +330,12 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Resul
         ValType::F32 => ValRaw::f32(site_context!(f32::try_from_variant(&v))?.to_bits()),
         ValType::F64 => ValRaw::f64(site_context!(f64::try_from_variant(&v))?.to_bits()),
         #[cfg(feature = "object-registry-extern")]
-        ValType::ExternRef => ValRaw::externref(match variant_to_externref(v) {
-            Some(v) => v.to_raw(_store),
-            None => ptr::null_mut(),
-        }),
+        ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
+            ValRaw::externref(match variant_to_externref(v) {
+                Some(v) => v.to_raw(_store),
+                None => ptr::null_mut(),
+            })
+        }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })
 }
@@ -344,7 +348,9 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
         ValType::F32 => f32::from_bits(v.get_f32()).to_variant(),
         ValType::F64 => f64::from_bits(v.get_f64()).to_variant(),
         #[cfg(feature = "object-registry-extern")]
-        ValType::ExternRef => externref_to_variant(ExternRef::from_raw(v.get_externref())),
+        ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
+            externref_to_variant(ExternRef::from_raw(v.get_externref()))
+        }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })
 }
@@ -352,6 +358,7 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
 /// WARNING: Incredibly unsafe.
 /// It's just used as workaround to pass Godot objects across closure.
 /// (At least until it supports multi-threading)
+#[derive(Clone)]
 pub(crate) struct SendSyncWrapper<T>(T);
 
 unsafe impl<T> Send for SendSyncWrapper<T> {}

@@ -1,37 +1,26 @@
-pub mod memfs;
+//pub mod memfs;
 pub mod stdio;
-pub mod timestamp;
+//pub mod timestamp;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
-use std::time::SystemTime;
 
 use anyhow::Error;
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
 use godot::prelude::*;
-use wasi_common::dir::OpenResult;
-use wasi_common::file::{FdFlags, FileType, OFlags};
-use wasi_common::WasiCtx;
-use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
-#[cfg(feature = "wasi-preview2")]
-use wasmtime_wasi::preview2::{
-    DirPerms, FilePerms, WasiCtx as WasiCtxPv2, WasiCtxBuilder as WasiCtxBuilderPv2,
-};
-use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtxBuilder};
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
-use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
-#[cfg(feature = "wasi-preview2")]
+//use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
 use crate::wasi_ctx::stdio::StreamWrapper;
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
-use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
+//use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
+use crate::site_context;
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
-use crate::wasm_util::{
-    option_to_variant, variant_to_option, VariantDispatch, FILE_DIR, FILE_FILE, FILE_LINK,
-    FILE_NOTEXIST,
-};
-use crate::{bail_with_site, site_context};
+use crate::wasm_util::{option_to_variant, variant_to_option, SendSyncWrapper};
 
+#[allow(dead_code)]
 fn warn_vfs_deprecated() {
     static WARNED: AtomicBool = AtomicBool::new(false);
 
@@ -43,6 +32,7 @@ fn warn_vfs_deprecated() {
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
 pub struct WasiContext {
+    base: Base<RefCounted>,
     #[init(default = false)]
     #[export]
     bypass_stdio: bool,
@@ -50,8 +40,8 @@ pub struct WasiContext {
     #[export]
     fs_readonly: bool,
 
-    #[init(default = Arc::new(Dir::new(<Weak<Dir>>::new())))]
-    memfs_root: Arc<Dir>,
+    //#[init(default = Arc::new(Dir::new(<Weak<Dir>>::new())))]
+    //memfs_root: Arc<Dir>,
     #[init(default = HashMap::new())]
     physical_mount: HashMap<Utf8PathBuf, Utf8PathBuf>,
     #[init(default = HashMap::new())]
@@ -59,6 +49,35 @@ pub struct WasiContext {
 }
 
 impl WasiContext {
+    fn emit_binary(
+        base: Gd<RefCounted>,
+        signal_name: &'static str,
+    ) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
+        let base = SendSyncWrapper::new(base);
+        let signal_name = SendSyncWrapper::new(StringName::from(signal_name));
+        move |buf| {
+            base.clone().emit_signal(
+                (*signal_name).clone(),
+                &[PackedByteArray::from(buf).to_variant()],
+            );
+        }
+    }
+
+    fn emit_string(
+        base: Gd<RefCounted>,
+        signal_name: &'static str,
+    ) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
+        let base = SendSyncWrapper::new(base);
+        let signal_name = SendSyncWrapper::new(StringName::from(signal_name));
+        move |buf| {
+            base.clone().emit_signal(
+                (*signal_name).clone(),
+                &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+            );
+        }
+    }
+
+    /*
     pub fn init_ctx_no_context(mut ctx: WasiCtx, config: &Config) -> Result<WasiCtx, Error> {
         for (k, v) in &config.wasi_envs {
             ctx.push_env(k, v)?;
@@ -212,12 +231,9 @@ impl WasiContext {
 
         Ok(ctx)
     }
+    */
 
-    #[cfg(feature = "wasi-preview2")]
-    pub fn init_ctx_no_context_preview_2(
-        ctx: &mut WasiCtxBuilderPv2,
-        config: &Config,
-    ) -> Result<(), Error> {
+    pub fn init_ctx_no_context(ctx: &mut WasiCtxBuilder, config: &Config) -> Result<(), Error> {
         for (k, v) in &config.wasi_envs {
             ctx.env(k, v);
         }
@@ -227,29 +243,28 @@ impl WasiContext {
         Ok(())
     }
 
-    #[cfg(feature = "wasi-preview2")]
-    pub fn build_ctx_preview_2(
+    pub fn build_ctx(
         this: Gd<Self>,
-        mut ctx: WasiCtxBuilderPv2,
+        mut ctx: WasiCtxBuilder,
         config: &Config,
-    ) -> Result<WasiCtxPv2, Error> {
+    ) -> Result<WasiCtx, Error> {
         let o = this.bind();
 
-        // TODO: Emit signal
         if config.wasi_stdout == PipeBindingType::Context {
             if o.bypass_stdio {
                 ctx.inherit_stdout();
             } else {
+                let base = (*o.base()).clone();
                 match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => {
-                        ctx.stdout(UnbufferedWritePipe::new(move |_buf| {}))
-                    }
-                    PipeBufferType::LineBuffer => {
-                        ctx.stdout(StreamWrapper::from(LineWritePipe::new(move |_buf| {})))
-                    }
-                    PipeBufferType::BlockBuffer => {
-                        ctx.stdout(StreamWrapper::from(BlockWritePipe::new(move |_buf| {})))
-                    }
+                    PipeBufferType::Unbuffered => ctx.stdout(UnbufferedWritePipe::new(
+                        Self::emit_binary(base, "stdout_emit"),
+                    )),
+                    PipeBufferType::LineBuffer => ctx.stdout(StreamWrapper::from(
+                        LineWritePipe::new(Self::emit_string(base, "stdout_emit")),
+                    )),
+                    PipeBufferType::BlockBuffer => ctx.stdout(StreamWrapper::from(
+                        BlockWritePipe::new(Self::emit_binary(base, "stdout_emit")),
+                    )),
                 };
             }
         }
@@ -257,21 +272,22 @@ impl WasiContext {
             if o.bypass_stdio {
                 ctx.inherit_stderr();
             } else {
+                let base = (*o.base()).clone();
                 match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => {
-                        ctx.stderr(UnbufferedWritePipe::new(move |_buf| {}))
-                    }
-                    PipeBufferType::LineBuffer => {
-                        ctx.stderr(StreamWrapper::from(LineWritePipe::new(move |_buf| {})))
-                    }
-                    PipeBufferType::BlockBuffer => {
-                        ctx.stderr(StreamWrapper::from(BlockWritePipe::new(move |_buf| {})))
-                    }
+                    PipeBufferType::Unbuffered => ctx.stderr(UnbufferedWritePipe::new(
+                        Self::emit_binary(base, "stderr_emit"),
+                    )),
+                    PipeBufferType::LineBuffer => ctx.stderr(StreamWrapper::from(
+                        LineWritePipe::new(Self::emit_string(base, "stderr_emit")),
+                    )),
+                    PipeBufferType::BlockBuffer => ctx.stderr(StreamWrapper::from(
+                        BlockWritePipe::new(Self::emit_binary(base, "stderr_emit")),
+                    )),
                 };
             }
         }
 
-        Self::init_ctx_no_context_preview_2(&mut ctx, config)?;
+        Self::init_ctx_no_context(&mut ctx, config)?;
 
         for (k, v) in o
             .envs
@@ -292,7 +308,7 @@ impl WasiContext {
         };
 
         for (guest, host) in o.physical_mount.iter() {
-            let dir = site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority(),))?;
+            let dir = site_context!(Dir::open_ambient_dir(host, ambient_authority()))?;
             ctx.preopened_dir(dir, perms, file_perms, guest);
         }
 
@@ -386,6 +402,7 @@ impl WasiContext {
             .is_some()
     }
 
+    /*
     #[func]
     fn file_is_exist(&self, path: GString, follow_symlink: Variant) -> u32 {
         warn_vfs_deprecated();
@@ -944,4 +961,5 @@ impl WasiContext {
         })
         .is_some()
     }
+    */
 }
