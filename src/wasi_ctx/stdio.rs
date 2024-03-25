@@ -1,6 +1,6 @@
+use std::collections::VecDeque;
 use std::fmt::{Display, Result as FmtResult, Write as _};
-use std::io::{IoSlice, IoSliceMut, Result as IoResult, SeekFrom, Write};
-#[cfg(feature = "wasi-preview2")]
+use std::io::{Result as IoResult, Write};
 use std::ops::Deref;
 use std::ptr;
 use std::slice;
@@ -8,35 +8,29 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-#[cfg(feature = "wasi-preview2")]
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use gdnative::prelude::*;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex, MutexGuard};
-use wasi_common::file::{FdFlags, FileType, WasiFile};
-use wasi_common::{Error, ErrorExt};
-#[cfg(feature = "wasi-preview2")]
-use wasmtime_wasi::preview2::{
-    HostOutputStream, StdoutStream, StreamError, StreamResult, Subscribe,
+use wasmtime_wasi::{
+    HostInputStream, HostOutputStream, StdinStream, StdoutStream, StreamError, StreamResult,
+    Subscribe,
 };
 
 const BUFFER_LEN: usize = 8192;
 const NL_BYTE: u8 = 10;
 
-#[cfg(feature = "wasi-preview2")]
 #[repr(transparent)]
 pub struct StreamWrapper<T> {
     inner: Arc<T>,
 }
 
-#[cfg(feature = "wasi-preview2")]
 impl<T> From<T> for StreamWrapper<T> {
     fn from(v: T) -> Self {
         Self { inner: Arc::new(v) }
     }
 }
 
-#[cfg(feature = "wasi-preview2")]
 impl<T> Clone for StreamWrapper<T> {
     fn clone(&self) -> Self {
         Self {
@@ -45,7 +39,6 @@ impl<T> Clone for StreamWrapper<T> {
     }
 }
 
-#[cfg(feature = "wasi-preview2")]
 impl<T> Deref for StreamWrapper<T> {
     type Target = T;
 
@@ -68,6 +61,7 @@ where
     }
 }
 
+/*
 #[async_trait]
 impl<F> WasiFile for UnbufferedWritePipe<F>
 where
@@ -116,8 +110,8 @@ where
         Ok(())
     }
 }
+*/
 
-#[cfg(feature = "wasi-preview2")]
 impl<F> StdoutStream for UnbufferedWritePipe<F>
 where
     for<'a> F: Fn(&'a [u8]) + Send + Sync + Clone + 'static,
@@ -131,7 +125,6 @@ where
     }
 }
 
-#[cfg(feature = "wasi-preview2")]
 #[async_trait]
 impl<F> Subscribe for UnbufferedWritePipe<F>
 where
@@ -141,7 +134,6 @@ where
     async fn ready(&mut self) {}
 }
 
-#[cfg(feature = "wasi-preview2")]
 impl<F> HostOutputStream for UnbufferedWritePipe<F>
 where
     for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
@@ -174,6 +166,7 @@ where
     }
 }
 
+/*
 #[async_trait]
 impl<F> WasiFile for LineWritePipe<F>
 where
@@ -218,8 +211,8 @@ where
         Ok(())
     }
 }
+*/
 
-#[cfg(feature = "wasi-preview2")]
 impl<F> StdoutStream for StreamWrapper<LineWritePipe<F>>
 where
     for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
@@ -233,7 +226,6 @@ where
     }
 }
 
-#[cfg(feature = "wasi-preview2")]
 #[async_trait]
 impl<F> Subscribe for StreamWrapper<LineWritePipe<F>>
 where
@@ -243,7 +235,6 @@ where
     async fn ready(&mut self) {}
 }
 
-#[cfg(feature = "wasi-preview2")]
 impl<F> HostOutputStream for StreamWrapper<LineWritePipe<F>>
 where
     for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
@@ -407,6 +398,7 @@ where
     }
 }
 
+/*
 #[async_trait]
 impl<F> WasiFile for BlockWritePipe<F>
 where
@@ -451,8 +443,8 @@ where
         Ok(())
     }
 }
+*/
 
-#[cfg(feature = "wasi-preview2")]
 impl<F> StdoutStream for StreamWrapper<BlockWritePipe<F>>
 where
     for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
@@ -466,7 +458,6 @@ where
     }
 }
 
-#[cfg(feature = "wasi-preview2")]
 #[async_trait]
 impl<F> Subscribe for StreamWrapper<BlockWritePipe<F>>
 where
@@ -476,7 +467,6 @@ where
     async fn ready(&mut self) {}
 }
 
-#[cfg(feature = "wasi-preview2")]
 impl<F> HostOutputStream for StreamWrapper<BlockWritePipe<F>>
 where
     for<'a> F: Fn(&'a [u8]) + Send + Sync + 'static,
@@ -606,7 +596,7 @@ pub struct InnerStdin<F: ?Sized> {
 }
 
 struct InnerInnerStdin {
-    buf: String,
+    buf: VecDeque<String>,
     is_eof: bool,
     ix: usize,
 }
@@ -624,7 +614,7 @@ impl<F: Fn()> OuterStdin<F> {
             is_dropped: AtomicBool::new(false),
             cond: Condvar::new(),
             inner: Mutex::new(InnerInnerStdin {
-                buf: String::new(),
+                buf: VecDeque::new(),
                 is_eof: false,
                 ix: 0,
             }),
@@ -637,7 +627,7 @@ impl<F: Fn()> OuterStdin<F> {
         loop {
             match &mut *guard {
                 InnerInnerStdin { is_eof: true, .. } => break,
-                InnerInnerStdin { buf, ix, .. } if *ix >= buf.len() => break,
+                InnerInnerStdin { buf, .. } if buf.is_empty() => break,
                 _ => (),
             }
             (self.0.f)();
@@ -660,13 +650,15 @@ impl<F: ?Sized> InnerStdin<F> {
         }
 
         let buf = &mut guard.buf;
-        let ret = write!(&mut *buf, "{}", line);
-        if !buf.ends_with('\n') {
-            buf.push('\n');
+        let mut ret = String::new();
+        write!(&mut ret, "{line}")?;
+        if !ret.ends_with('\n') {
+            ret.push('\n');
         }
+        buf.push_back(ret);
 
         self.cond.notify_one();
-        ret
+        Ok(())
     }
 
     pub fn close_pipe(&self) {
@@ -681,6 +673,7 @@ impl<F: ?Sized> InnerStdin<F> {
     }
 }
 
+/*
 #[async_trait]
 impl<F: Fn() + Send + Sync + 'static> WasiFile for OuterStdin<F> {
     fn as_any(&self) -> &dyn std::any::Any {
@@ -744,6 +737,85 @@ impl<F: Fn() + Send + Sync + 'static> WasiFile for OuterStdin<F> {
         Ok(())
     }
 }
+*/
+
+impl<F: Fn() + Send + Sync + 'static> StdinStream for StreamWrapper<OuterStdin<F>> {
+    fn stream(&self) -> Box<dyn HostInputStream> {
+        Box::new(self.clone())
+    }
+
+    fn isatty(&self) -> bool {
+        false
+    }
+}
+
+#[async_trait]
+impl<F: Fn() + Send + Sync + 'static> Subscribe for StreamWrapper<OuterStdin<F>> {
+    // Always ready
+    async fn ready(&mut self) {}
+}
+
+impl<F: Fn() + Send + Sync + 'static> HostInputStream for StreamWrapper<OuterStdin<F>> {
+    fn read(&mut self, mut size: usize) -> StreamResult<Bytes> {
+        let mut inner = self.ensure_nonempty();
+        let InnerInnerStdin { buf, ix, is_eof } = &mut *inner;
+        if *is_eof || size == 0 {
+            return Ok(Bytes::new());
+        }
+
+        let mut ret = BytesMut::with_capacity(size);
+        while size > 0 {
+            let Some(v) = buf.front() else { break };
+
+            if v.is_empty() {
+                buf.pop_front();
+                *ix = 0;
+            } else if v.len() - *ix <= size {
+                let s = &v.as_bytes()[*ix..];
+                ret.extend_from_slice(s);
+                size -= s.len();
+                buf.pop_front();
+                *ix = 0;
+            } else {
+                ret.extend_from_slice(&v.as_bytes()[*ix..*ix + size]);
+                *ix += size;
+                size = 0;
+            }
+        }
+
+        Ok(ret.into())
+    }
+
+    fn skip(&mut self, mut size: usize) -> StreamResult<usize> {
+        let mut inner = self.ensure_nonempty();
+        let InnerInnerStdin { buf, ix, is_eof } = &mut *inner;
+        if *is_eof || size == 0 {
+            return Ok(0);
+        }
+
+        let mut ret = 0;
+        while size > 0 {
+            let Some(v) = buf.front() else { break };
+
+            if v.is_empty() {
+                buf.pop_front();
+                *ix = 0;
+            } else if v.len() - *ix <= size {
+                let s = &v.as_bytes()[*ix..];
+                ret += s.len();
+                size -= s.len();
+                buf.pop_front();
+                *ix = 0;
+            } else {
+                ret += size;
+                *ix += size;
+                size = 0;
+            }
+        }
+
+        Ok(ret)
+    }
+}
 
 pub struct ByteBufferReadPipe {
     buf: PoolArray<u8>,
@@ -759,6 +831,7 @@ impl ByteBufferReadPipe {
     }
 }
 
+/*
 #[async_trait]
 impl WasiFile for ByteBufferReadPipe {
     fn as_any(&self) -> &dyn std::any::Any {
@@ -818,5 +891,62 @@ impl WasiFile for ByteBufferReadPipe {
 
     async fn readable(&self) -> Result<(), Error> {
         Ok(())
+    }
+}
+*/
+
+impl StdinStream for StreamWrapper<ByteBufferReadPipe> {
+    fn stream(&self) -> Box<dyn HostInputStream> {
+        Box::new(self.clone())
+    }
+
+    fn isatty(&self) -> bool {
+        false
+    }
+}
+
+#[async_trait]
+impl Subscribe for StreamWrapper<ByteBufferReadPipe> {
+    // Always ready
+    async fn ready(&mut self) {}
+}
+
+impl HostInputStream for StreamWrapper<ByteBufferReadPipe> {
+    fn read(&mut self, size: usize) -> StreamResult<Bytes> {
+        let buf = self.buf.read();
+        let mut pos = self.pos.lock();
+
+        if *pos == buf.len() {
+            return Ok(Bytes::new());
+        }
+
+        let s;
+        if buf.len() - *pos >= size {
+            s = &buf[*pos..*pos + size];
+            *pos += size;
+        } else {
+            s = &buf[*pos..];
+            *pos += buf.len();
+        }
+        Ok(BytesMut::from(s).into())
+    }
+
+    fn skip(&mut self, size: usize) -> StreamResult<usize> {
+        let buf = self.buf.read();
+        let mut pos = self.pos.lock();
+
+        if *pos == buf.len() {
+            return Ok(0);
+        }
+
+        let s;
+        if buf.len() - *pos >= size {
+            s = size;
+            *pos += size;
+        } else {
+            s = buf.len() - *pos;
+            *pos += buf.len();
+        }
+        Ok(s)
     }
 }

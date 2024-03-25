@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::{sync::Arc, thread, time};
 
 use anyhow::{bail, Error};
+use cfg_if::cfg_if;
 use gdnative::export::user_data::Map;
 use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
@@ -16,7 +17,7 @@ use parking_lot::{Condvar, Mutex};
 use wasmtime::component::Component;
 #[cfg(feature = "unsafe-module-serde")]
 use wasmtime::Precompiled;
-use wasmtime::{Config, Engine, ExternType, Module, ResourcesRequired};
+use wasmtime::{Config, Engine, ExternType, FuncType, Module, RefType, ResourcesRequired, ValType};
 
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
@@ -191,24 +192,24 @@ impl WasmModule {
     }
 
     fn load_module(bytes: &[u8]) -> Result<ModuleType, Error> {
-        #[cfg(feature = "wasi-preview2")]
-        {
-            let bytes = site_context!(wat::parse_bytes(bytes))?;
-            if wasmparser::Parser::is_component(&bytes) {
-                Ok(ModuleType::Component(site_context!(
-                    Component::from_binary(&ENGINE, &bytes,)
-                )?))
+        cfg_if! {
+            if #[cfg(feature = "wasi-preview2")] {
+                let bytes = site_context!(wat::parse_bytes(bytes))?;
+                if wasmparser::Parser::is_component(&bytes) {
+                    Ok(ModuleType::Component(site_context!(
+                        Component::from_binary(&ENGINE, &bytes,)
+                    )?))
+                } else {
+                    Ok(ModuleType::Core(site_context!(Module::from_binary(
+                        &ENGINE, &bytes
+                    ))?))
+                }
             } else {
-                Ok(ModuleType::Core(site_context!(Module::from_binary(
-                    &ENGINE, &bytes
+                Ok(ModuleType::Core(site_context!(Module::new(
+                    &ENGINE, bytes
                 ))?))
             }
         }
-
-        #[cfg(not(feature = "wasi-preview2"))]
-        Ok(ModuleType::Core(site_context!(Module::new(
-            &ENGINE, bytes
-        ))?))
     }
 
     fn process_deps_map(
@@ -308,10 +309,13 @@ impl WasmModule {
                 }
             };
             if !match (&ti, &j) {
-                (ExternType::Func(f1), ExternType::Func(f2)) => f1 == f2,
-                (ExternType::Global(g1), ExternType::Global(g2)) => g1 == g2,
+                (ExternType::Func(f1), ExternType::Func(f2)) => FuncType::matches(f1, f2),
+                (ExternType::Global(g1), ExternType::Global(g2)) => {
+                    ValType::matches(g1.content(), g2.content())
+                        && g1.mutability() == g2.mutability()
+                }
                 (ExternType::Table(t1), ExternType::Table(t2)) => {
-                    t1.element() == t2.element()
+                    RefType::matches(t1.element(), t2.element())
                         && t1.minimum() <= t2.minimum()
                         && match (t1.maximum(), t2.maximum()) {
                             (None, _) => true,
@@ -470,15 +474,17 @@ impl WasmModule {
         _data: PoolArray<u8>,
         _imports: Dictionary,
     ) -> Option<Ref<Reference>> {
-        #[cfg(feature = "unsafe-module-serde")]
-        if self._deserialize(_name, _data, _imports) {
-            Some(_owner.claim())
-        } else {
-            None
+        cfg_if! {
+            if #[cfg(feature = "unsafe-module-serde")] {
+                if self._deserialize(_name, _data, _imports) {
+                    Some(_owner.claim())
+                } else {
+                    None
+                }
+            } else {
+            panic!("Feature unsafe-module-serde is not enabled!");
+            }
         }
-
-        #[cfg(not(feature = "unsafe-module-serde"))]
-        panic!("Feature unsafe-module-serde is not enabled!");
     }
 
     #[method]
@@ -489,30 +495,34 @@ impl WasmModule {
         _path: String,
         _imports: Dictionary,
     ) -> Option<Ref<Reference>> {
-        #[cfg(feature = "unsafe-module-serde")]
-        if self._deserialize_file(_name, _path, _imports) {
-            Some(_owner.claim())
-        } else {
-            None
+        cfg_if! {
+            if #[cfg(feature = "unsafe-module-serde")] {
+                if self._deserialize_file(_name, _path, _imports) {
+                    Some(_owner.claim())
+                } else {
+                    None
+                }
+            } else {
+                panic!("Feature unsafe-module-serde is not enabled!");
+            }
         }
-
-        #[cfg(not(feature = "unsafe-module-serde"))]
-        panic!("Feature unsafe-module-serde is not enabled!");
     }
 
     #[method]
     fn serialize(&self) -> Option<PoolArray<u8>> {
-        #[cfg(feature = "unsafe-module-serde")]
-        return self.unwrap_data(|m| {
-            Ok(PoolArray::from_vec(match &m.module {
-                ModuleType::Core(m) => m.serialize(),
-                #[cfg(feature = "wasi-preview2")]
-                ModuleType::Component(m) => m.serialize(),
-            }?))
-        });
-
-        #[cfg(not(feature = "unsafe-module-serde"))]
-        panic!("Feature unsafe-module-serde is not enabled!");
+        cfg_if! {
+            if #[cfg(feature = "unsafe-module-serde")] {
+                self.unwrap_data(|m| {
+                    Ok(PoolArray::from_vec(match &m.module {
+                        ModuleType::Core(m) => m.serialize(),
+                        #[cfg(feature = "wasi-preview2")]
+                        ModuleType::Component(m) => m.serialize(),
+                    }?))
+                })
+            } else {
+            panic!("Feature unsafe-module-serde is not enabled!");
+            }
+        }
     }
 
     #[method]
@@ -551,65 +561,67 @@ impl WasmModule {
             let params_str = GodotString::from_str("params");
             let results_str = GodotString::from_str("results");
 
-            #[cfg(not(feature = "new-host-import"))]
-            for i in site_context!(m.module.get_core())?.imports() {
-                if i.module() != HOST_MODULE {
-                    continue;
-                }
-                if let ExternType::Func(f) = i.ty() {
-                    let (p, r) = from_signature(&f)?;
-                    ret.insert(
-                        i.name(),
-                        Dictionary::from_iter(
-                            [(params_str.to_variant(), p), (results_str.to_variant(), r)]
-                                .into_iter(),
-                        ),
-                    );
-                }
-            }
+            cfg_if! {
+                if #[cfg(feature = "new-host-import")] {
+                    for i in site_context!(m.module.get_core())?.imports() {
+                        let ExternType::Func(f) = i.ty() else {
+                            continue;
+                        };
 
-            #[cfg(feature = "new-host-import")]
-            for i in site_context!(m.module.get_core())?.imports() {
-                let ExternType::Func(f) = i.ty() else {
-                    continue;
-                };
-
-                if let Some(m) = m.imports.get(i.module()) {
-                    if m.script()
-                        .map(|m| -> Result<_, Error> {
-                            match &m.get_data()?.module {
-                                ModuleType::Core(m) => Ok(m.get_export(i.name())),
-                                #[cfg(feature = "wasi-preview2")]
-                                ModuleType::Component(_) => {
-                                    bail_with_site!("Import {} is a component", i.module())
-                                }
+                        if let Some(m) = m.imports.get(i.module()) {
+                            if m.script()
+                                .map(|m| -> Result<_, Error> {
+                                    match &m.get_data()?.module {
+                                        ModuleType::Core(m) => Ok(m.get_export(i.name())),
+                                        #[cfg(feature = "wasi-preview2")]
+                                        ModuleType::Component(_) => {
+                                            bail_with_site!("Import {} is a component", i.module())
+                                        }
+                                    }
+                                })
+                                .unwrap()?
+                                .is_some()
+                            {
+                                continue;
                             }
-                        })
-                        .unwrap()?
-                        .is_some()
-                    {
-                        continue;
+                        }
+
+                        let (p, r) = from_signature(&f)?;
+                        let v = match ret.get(i.module()) {
+                            Some(v) => Dictionary::from_variant(&v).unwrap(),
+                            None => {
+                                let v = Dictionary::new_shared();
+                                ret.insert(i.module(), v.new_ref());
+                                v
+                            }
+                        };
+                        unsafe {
+                            v.assume_unique().insert(
+                                i.name(),
+                                Dictionary::from_iter(
+                                    [(params_str.to_variant(), p), (results_str.to_variant(), r)]
+                                        .into_iter(),
+                                ),
+                            )
+                        };
+                    }
+                } else {
+                    for i in site_context!(m.module.get_core())?.imports() {
+                        if i.module() != HOST_MODULE {
+                            continue;
+                        }
+                        if let ExternType::Func(f) = i.ty() {
+                            let (p, r) = from_signature(&f)?;
+                            ret.insert(
+                                i.name(),
+                                Dictionary::from_iter(
+                                    [(params_str.to_variant(), p), (results_str.to_variant(), r)]
+                                        .into_iter(),
+                                ),
+                            );
+                        }
                     }
                 }
-
-                let (p, r) = from_signature(&f)?;
-                let v = match ret.get(i.module()) {
-                    Some(v) => Dictionary::from_variant(&v).unwrap(),
-                    None => {
-                        let v = Dictionary::new_shared();
-                        ret.insert(i.module(), v.new_ref());
-                        v
-                    }
-                };
-                unsafe {
-                    v.assume_unique().insert(
-                        i.name(),
-                        Dictionary::from_iter(
-                            [(params_str.to_variant(), p), (results_str.to_variant(), r)]
-                                .into_iter(),
-                        ),
-                    )
-                };
             }
 
             Ok(ret.into_shared())

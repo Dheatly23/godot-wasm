@@ -12,25 +12,26 @@ use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
-#[cfg(feature = "wasi")]
-use wasi_common::WasiCtx;
 #[cfg(feature = "wasi-preview2")]
-use wasmtime::component::{Instance as InstanceComp, ResourceTable};
+use wasmtime::component::Instance as InstanceComp;
+#[cfg(feature = "wasi")]
+use wasmtime::component::ResourceTable;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 use wasmtime::{
     AsContextMut, Extern, Instance as InstanceWasm, Memory, ResourceLimiter, Store,
     StoreContextMut, ValRaw,
 };
-#[cfg(feature = "wasi-preview2")]
-use wasmtime_wasi::preview2::{WasiCtx as WasiCtxPv2, WasiView};
 #[cfg(feature = "wasi")]
-use wasmtime_wasi::sync::{add_to_linker, WasiCtxBuilder};
+use wasmtime_wasi::preview1::{add_to_linker_sync, WasiPreview1Adapter, WasiPreview1View};
+#[cfg(feature = "wasi")]
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::stdio::{
-    BlockWritePipe, ByteBufferReadPipe, InnerStdin, LineWritePipe, OuterStdin, UnbufferedWritePipe,
+    BlockWritePipe, ByteBufferReadPipe, InnerStdin, LineWritePipe, OuterStdin, StreamWrapper,
+    UnbufferedWritePipe,
 };
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
@@ -171,24 +172,46 @@ impl StoreData {
 
 pub enum MaybeWasi {
     NoCtx,
-    Preview1(WasiCtx),
+    #[cfg(feature = "wasi")]
+    Preview1(WasiCtx, ResourceTable, WasiPreview1Adapter),
     #[cfg(feature = "wasi-preview2")]
-    Preview2(WasiCtxPv2, ResourceTable),
+    Preview2(WasiCtx, ResourceTable),
 }
 
-#[cfg(feature = "wasi-preview2")]
+#[cfg(feature = "wasi")]
 impl WasiView for StoreData {
     fn table(&mut self) -> &mut ResourceTable {
         match &mut self.wasi_ctx {
+            MaybeWasi::Preview1(_, tbl, _) => tbl,
+            #[cfg(feature = "wasi-preview2")]
             MaybeWasi::Preview2(_, tbl) => tbl,
             _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
         }
     }
 
-    fn ctx(&mut self) -> &mut WasiCtxPv2 {
+    fn ctx(&mut self) -> &mut WasiCtx {
         match &mut self.wasi_ctx {
+            MaybeWasi::Preview1(ctx, _, _) => ctx,
+            #[cfg(feature = "wasi-preview2")]
             MaybeWasi::Preview2(ctx, _) => ctx,
             _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
+        }
+    }
+}
+
+#[cfg(feature = "wasi")]
+impl WasiPreview1View for StoreData {
+    fn adapter(&self) -> &WasiPreview1Adapter {
+        match &self.wasi_ctx {
+            MaybeWasi::Preview1(_, _, adapter) => adapter,
+            _ => panic!("Requested WASI Preview 1 interface while none set, this is a bug"),
+        }
+    }
+
+    fn adapter_mut(&mut self) -> &mut WasiPreview1Adapter {
+        match &mut self.wasi_ctx {
+            MaybeWasi::Preview1(_, _, adapter) => adapter,
+            _ => panic!("Requested WASI Preview 1 interface while none set, this is a bug"),
         }
     }
 }
@@ -246,7 +269,7 @@ impl ResourceLimiter for MemoryLimit {
 
 impl<T> InstanceData<T>
 where
-    T: AsRef<StoreData> + AsMut<StoreData>,
+    T: Send + AsRef<StoreData> + AsMut<StoreData>,
 {
     pub fn instantiate(
         owner: &Reference,
@@ -270,7 +293,7 @@ where
             let inst_id = owner.get_instance_id();
             if config.wasi_stdin == PipeBindingType::Instance {
                 if let Some(data) = config.wasi_stdin_data.clone() {
-                    builder.stdin(Box::new(ByteBufferReadPipe::new(data)));
+                    builder.stdin(StreamWrapper::from(ByteBufferReadPipe::new(data)));
                 } else {
                     let (outer, inner) = OuterStdin::new(move || unsafe {
                         let Some(owner) = Reference::try_from_instance_id(inst_id) else {
@@ -278,14 +301,14 @@ where
                         };
                         owner.emit_signal("stdin_request", &[]);
                     });
-                    builder.stdin(Box::new(outer));
+                    builder.stdin(StreamWrapper::from(outer));
                     wasi_stdin = Some(inner as _);
                 }
             }
             if config.wasi_stdout == PipeBindingType::Instance {
-                builder.stdout(match config.wasi_stdout_buffer {
+                match config.wasi_stdout_buffer {
                     PipeBufferType::Unbuffered => {
-                        Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
+                        builder.stdout(UnbufferedWritePipe::new(move |buf| unsafe {
                             let Some(owner) = Reference::try_from_instance_id(inst_id) else {
                                 return;
                             };
@@ -293,19 +316,21 @@ where
                                 "stdout_emit",
                                 &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
                             );
-                        })) as _
+                        }))
                     }
-                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else {
-                            return;
-                        };
-                        owner.emit_signal(
-                            "stdout_emit",
-                            &[String::from_utf8_lossy(buf).to_variant()],
-                        );
-                    })) as _,
-                    PipeBufferType::BlockBuffer => {
-                        Box::new(BlockWritePipe::new(move |buf| unsafe {
+                    PipeBufferType::LineBuffer => {
+                        builder.stdout(StreamWrapper::from(LineWritePipe::new(move |buf| unsafe {
+                            let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                                return;
+                            };
+                            owner.emit_signal(
+                                "stdout_emit",
+                                &[String::from_utf8_lossy(buf).to_variant()],
+                            );
+                        })))
+                    }
+                    PipeBufferType::BlockBuffer => builder.stdout(StreamWrapper::from(
+                        BlockWritePipe::new(move |buf| unsafe {
                             let Some(owner) = Reference::try_from_instance_id(inst_id) else {
                                 return;
                             };
@@ -313,14 +338,14 @@ where
                                 "stdout_emit",
                                 &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
                             );
-                        })) as _
-                    }
-                });
+                        }),
+                    )),
+                };
             }
             if config.wasi_stderr == PipeBindingType::Instance {
-                builder.stderr(match config.wasi_stderr_buffer {
+                match config.wasi_stderr_buffer {
                     PipeBufferType::Unbuffered => {
-                        Box::new(UnbufferedWritePipe::new(move |buf| unsafe {
+                        builder.stderr(UnbufferedWritePipe::new(move |buf| unsafe {
                             let Some(owner) = Reference::try_from_instance_id(inst_id) else {
                                 return;
                             };
@@ -328,19 +353,21 @@ where
                                 "stderr_emit",
                                 &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
                             );
-                        })) as _
+                        }))
                     }
-                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| unsafe {
-                        let Some(owner) = Reference::try_from_instance_id(inst_id) else {
-                            return;
-                        };
-                        owner.emit_signal(
-                            "stderr_emit",
-                            &[String::from_utf8_lossy(buf).to_variant()],
-                        );
-                    })) as _,
-                    PipeBufferType::BlockBuffer => {
-                        Box::new(BlockWritePipe::new(move |buf| unsafe {
+                    PipeBufferType::LineBuffer => {
+                        builder.stderr(StreamWrapper::from(LineWritePipe::new(move |buf| unsafe {
+                            let Some(owner) = Reference::try_from_instance_id(inst_id) else {
+                                return;
+                            };
+                            owner.emit_signal(
+                                "stderr_emit",
+                                &[String::from_utf8_lossy(buf).to_variant()],
+                            );
+                        })))
+                    }
+                    PipeBufferType::BlockBuffer => builder.stderr(StreamWrapper::from(
+                        BlockWritePipe::new(move |buf| unsafe {
                             let Some(owner) = Reference::try_from_instance_id(inst_id) else {
                                 return;
                             };
@@ -348,25 +375,21 @@ where
                                 "stderr_emit",
                                 &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
                             );
-                        })) as _
-                    }
-                });
+                        }),
+                    )),
+                };
             }
 
-            *wasi_ctx = match &config.wasi_context {
-                Some(ctx) => {
-                    MaybeWasi::Preview1(WasiContext::build_ctx(ctx.clone(), builder, &*config)?)
+            let ctx = match &config.wasi_context {
+                Some(ctx) => WasiContext::build_ctx(ctx.clone(), builder, &*config)?,
+                None => {
+                    WasiContext::init_ctx_no_context(&mut builder, &*config)?;
+                    builder.build()
                 }
-                None => MaybeWasi::Preview1(WasiContext::init_ctx_no_context(
-                    builder.inherit_stdout().inherit_stderr().build(),
-                    &*config,
-                )?),
             };
+            *wasi_ctx = MaybeWasi::Preview1(ctx, ResourceTable::new(), WasiPreview1Adapter::new());
             let mut r = <Linker<T>>::new(&ENGINE);
-            add_to_linker(&mut r, |data| match &mut data.as_mut().wasi_ctx {
-                MaybeWasi::Preview1(ctx) => ctx,
-                _ => panic!("Requested WASI Preview 1 interface while none set, this is a bug"),
-            })?;
+            add_to_linker_sync(&mut r, |data| data.as_mut())?;
             Some(r)
         } else {
             None

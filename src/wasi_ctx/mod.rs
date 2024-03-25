@@ -1,35 +1,27 @@
-pub mod memfs;
+//pub mod memfs;
 pub mod stdio;
-pub mod timestamp;
+//pub mod timestamp;
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak};
-use std::time::SystemTime;
 
 use anyhow::Error;
 use camino::{Utf8Path, Utf8PathBuf};
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
 use gdnative::log::{error, godot_site, Site};
 use gdnative::prelude::*;
-use wasi_common::dir::OpenResult;
-use wasi_common::file::{FdFlags, FileType, OFlags};
-use wasi_common::WasiCtx;
-use wasmtime_wasi::dir::{Dir as CapDir, OpenResult as OpenResult2};
-#[cfg(feature = "wasi-preview2")]
-use wasmtime_wasi::preview2::{
-    DirPerms, FilePerms, WasiCtx as WasiCtxPv2, WasiCtxBuilder as WasiCtxBuilderPv2,
-};
-use wasmtime_wasi::{ambient_authority, Dir as PhysicalDir, WasiCtxBuilder};
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
-use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
-#[cfg(feature = "wasi-preview2")]
+//use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
 use crate::wasi_ctx::stdio::StreamWrapper;
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
-use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
+//use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
-use crate::wasm_util::{FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST};
-use crate::{bail_with_site, site_context};
 
+use crate::site_context;
+
+#[allow(dead_code)]
 fn warn_vfs_deprecated() {
     static WARNED: AtomicBool = AtomicBool::new(false);
 
@@ -46,7 +38,7 @@ pub struct WasiContext {
     bypass_stdio: bool,
     fs_readonly: bool,
 
-    memfs_root: Arc<Dir>,
+    //memfs_root: Arc<Dir>,
     physical_mount: HashMap<Utf8PathBuf, Utf8PathBuf>,
     envs: HashMap<String, String>,
 }
@@ -57,7 +49,7 @@ impl WasiContext {
             bypass_stdio: false,
             fs_readonly: false,
 
-            memfs_root: Arc::new(Dir::new(<Weak<Dir>>::new())),
+            //memfs_root: Arc::new(Dir::new(<Weak<Dir>>::new())),
             physical_mount: HashMap::new(),
             envs: HashMap::new(),
         }
@@ -85,6 +77,7 @@ impl WasiContext {
         }
     }
 
+    /*
     pub fn init_ctx_no_context(mut ctx: WasiCtx, config: &Config) -> Result<WasiCtx, Error> {
         for (k, v) in &config.wasi_envs {
             ctx.push_env(k, v)?;
@@ -226,12 +219,9 @@ impl WasiContext {
 
         unsafe { this.assume_safe().map(f)? }
     }
+    */
 
-    #[cfg(feature = "wasi-preview2")]
-    pub fn init_ctx_no_context_preview_2(
-        ctx: &mut WasiCtxBuilderPv2,
-        config: &Config,
-    ) -> Result<(), Error> {
+    pub fn init_ctx_no_context(ctx: &mut WasiCtxBuilder, config: &Config) -> Result<(), Error> {
         for (k, v) in &config.wasi_envs {
             ctx.env(k, v);
         }
@@ -241,12 +231,11 @@ impl WasiContext {
         Ok(())
     }
 
-    #[cfg(feature = "wasi-preview2")]
-    pub fn build_ctx_preview_2(
+    pub fn build_ctx(
         this: Instance<Self>,
-        mut ctx: WasiCtxBuilderPv2,
+        mut ctx: WasiCtxBuilder,
         config: &Config,
-    ) -> Result<WasiCtxPv2, Error> {
+    ) -> Result<WasiCtx, Error> {
         let f = move |o: &Self, b: TRef<'_, Reference>| -> Result<_, Error> {
             if config.wasi_stdout == PipeBindingType::Context {
                 if o.bypass_stdio {
@@ -285,7 +274,7 @@ impl WasiContext {
                 }
             }
 
-            Self::init_ctx_no_context_preview_2(&mut ctx, config)?;
+            Self::init_ctx_no_context(&mut ctx, config)?;
 
             for (k, v) in o
                 .envs
@@ -306,11 +295,10 @@ impl WasiContext {
             };
 
             for (guest, host) in o.physical_mount.iter() {
-                let dir = site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority(),))?;
+                let dir = site_context!(Dir::open_ambient_dir(host, ambient_authority()))?;
                 ctx.preopened_dir(dir, perms, file_perms, guest);
             }
 
-            // XXX: Cannot do memory filesystem yet :((
             /*
             let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
                 Some(o.memfs_root.clone()),
@@ -420,6 +408,7 @@ impl WasiContext {
             .is_some()
     }
 
+    /*
     #[method]
     fn file_is_exist(&self, path: String, #[opt] follow_symlink: Option<bool>) -> u32 {
         warn_vfs_deprecated();
@@ -972,4 +961,5 @@ impl WasiContext {
         })
         .is_some()
     }
+    */
 }

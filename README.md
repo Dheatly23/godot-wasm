@@ -30,7 +30,10 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
 * Epoch-based limiter to stop bad-behaving module.
 * Memory limiter to prevent exhaustion.
 * Experimental API for direct Godot object manipulation.
-* WASI common API with in-memory filesystem.
+* WASI common API ~~with in-memory filesystem~~.
+
+  **NOTE:** In-memory filesystem is currently disabled due to dependency problems.
+  It will be enabled in the future if possible.
 
 ## Building
 To build the addon:
