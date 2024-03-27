@@ -14,7 +14,9 @@ var module: WasmModule = null
 var instance: WasmInstance = null
 
 func __selected(index):
-	instance = WasmInstance.new().initialize(
+	instance = WasmInstance.new()
+	instance.connect("error_happened", self, "__emit_log")
+	instance = instance.initialize(
 		module,
 		{
 			"log": {
@@ -31,8 +33,10 @@ func __selected(index):
 			"wasi.context": wasi_ctx,
 		}
 	)
+
 	if instance == null:
 		emit_signal("message_emitted", "Failed to instantiate module")
+		return
 	if instance.call_wasm("init", [index]) == null:
 		emit_signal("message_emitted", "Failed to call init")
 
