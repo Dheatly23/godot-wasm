@@ -6,7 +6,7 @@ use crate::{log, Color, Renderable, State};
 #[derive(Debug, Default)]
 pub struct GameOfLife {
     size: usize,
-    data: Vec<(u16, u16)>,
+    data: Vec<u16>,
     paused: bool,
 }
 
@@ -21,25 +21,36 @@ fn from_vec(mut v: u64) -> u16 {
 }
 
 fn apply_rule(v: u64, r: u64) -> u64 {
-    let mut ret = 0u64;
-    for mut s in 0..16 {
-        s *= 4;
-        ret |= match r >> s & 15 {
-            0..=1 => 0,
-            2 => v & 1 << s,
-            3 => 1 << s,
-            4.. => 0,
-        };
-    }
+    let mut ret = v;
+
+    // Either 2 or 3
+    let mut x = r ^ 0xcccc_cccc_cccc_cccc;
+    x = x >> 2 & x >> 1;
+    x = x & x >> 1 & 0x1111_1111_1111_1111;
+
+    // Death
+    ret &= x;
+    // Reproduction
+    ret |= x & r;
+
     ret
+}
+
+const fn rot_y_neg(v: u64) -> u64 {
+    v >> 4 & 0x0fff_0fff_0fff_0fff | v << 12 & 0xf000_f000_f000_f000
+}
+
+const fn rot_y_pos(v: u64) -> u64 {
+    v << 4 & 0xfff0_fff0_fff0_fff0 | v >> 12 & 0x000f_000f_000f_000f
 }
 
 impl Renderable for GameOfLife {
     fn new() -> Self {
-        let data = vec![(0, 0); ((SIZE + 3) >> 2) * ((SIZE + 3) >> 2)];
+        let size = (SIZE + 7) >> 3 << 1;
+        let data = vec![0; size * size * 2];
 
         Self {
-            size: SIZE,
+            size,
             data,
             paused: true,
         }
@@ -50,172 +61,172 @@ impl Renderable for GameOfLife {
             return;
         }
 
-        let sx = (self.size + 3) >> 2;
-        let endrow = sx * (sx - 1);
-        debug_assert_eq!(self.data.len(), sx * sx);
+        let Self {
+            data: ref mut d,
+            size: s,
+            ..
+        } = *self;
+        let l = d.len() / 2;
+        debug_assert_eq!(d.len(), s * s * 2);
+        debug_assert_eq!(s & 1, 0);
+        log!("s: {s}");
 
-        log!("sx: {sx}");
+        let mut it = 0..s / 2;
+        while let Some(i) = it.next() {
+            let endy = it.is_empty();
+            let i = i * 2 * s;
 
-        let lx = self.size & 3;
-        log!("lx: {lx}");
-
-        if lx != 0 {
-            let mut m = ((15u8 << lx) & 15) as u16;
-            m = m | m << 4 | m << 8 | m << 12;
-            let mi = !m;
-            for i in 0..sx {
-                let j = endrow + i;
-                let v = self.data[j].0;
-                let o = self.data[i].0;
-                log!("i: {i} j: {j} v: {v:04X} o: {o:04X}");
-                self.data[j].0 = o << lx & m | v & mi;
-            }
-            let s = lx * 4;
-            let m = u16::MAX << s;
-            let mi = !m;
-            for i in 0..sx {
-                let j = endrow + i;
-                let v = self.data[j].0;
-                let o = self.data[i].0;
-                log!("i: {i} j: {j} v: {v:04X} o: {o:04X}");
-                self.data[j].0 = o << s & m | v & mi;
-            }
-        }
-
-        for i in 0..sx {
-            let endy = i == sx - 1;
-            let i = i * sx;
-
-            for j in 0..sx {
+            let mut it = 0..s / 2;
+            while let Some(j) = it.next() {
+                let endx = it.is_empty();
+                let j = j * 2;
                 let ix = i + j;
-                let endx = j == sx - 1;
                 log!("i: {i} j: {j}");
 
-                let v = to_vec(self.data[ix].0);
-                let vl = v >> 4 & 0x0111_0111_0111_0111;
-                let vr = v << 4 & 0x1110_1110_1110_1110;
-                let mut r = vl + vr;
-                r += [r << 16, r >> 16, v << 16, v >> 16]
-                    .into_iter()
-                    .sum::<u64>();
-                log!("v: {v:016X} r: {r:016X}");
+                let v00 = to_vec(d[ix]);
+                let v01 = to_vec(d[ix + 1]);
+                let v10 = to_vec(d[ix + s]);
+                let v11 = to_vec(d[ix + s + 1]);
+                let mut r00 = v01 + v11 + v10;
+                let mut r01 = v00 + v10 + v11;
+                let mut r10 = v00 + v01 + v11;
+                let mut r11 = v01 + v00 + v10;
+                log!("v00: {v00:016X} v01: {v01:016X} v10: {v10:016X} v11: {v11:016X}");
 
-                let o = if j == 0 {
-                    log!("ix: {}", sx - 1 + i);
-                    self.data[sx - 1 + i].0.wrapping_shl(((4 - lx) * 4) as _)
-                } else {
-                    log!("ix: {}", ix - 1);
-                    self.data[ix - 1].0
+                let mut ix_;
+                let mut o;
+
+                ix_ = if j == 0 { ix + s - 1 } else { ix - 1 };
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]) + to_vec(d[ix_ + s]);
+                if j == 0 {
+                    o = o.rotate_left(16);
+                }
+                r00 += o;
+                r10 += o;
+                log!("o: {o:016X}");
+
+                ix_ = if endx { i } else { ix + 2 };
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]) + to_vec(d[ix_ + s]);
+                if endx {
+                    o = o.rotate_right(16);
+                }
+                r01 += o;
+                r11 += o;
+                log!("o: {o:016X}");
+
+                ix_ = if i == 0 { l - s + j } else { ix - s };
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]) + to_vec(d[ix_ + 1]);
+                if i == 0 {
+                    o = rot_y_pos(o);
+                }
+                r00 += o;
+                r01 += o;
+                log!("o: {o:016X}");
+
+                ix_ = if endy { j } else { ix + s * 2 };
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]) + to_vec(d[ix_ + 1]);
+                if endy {
+                    o = rot_y_neg(o);
+                }
+                r10 += o;
+                r11 += o;
+                log!("o: {o:016X}");
+
+                ix_ = match (i == 0, j == 0) {
+                    (false, false) => ix - s - 1,
+                    (false, true) => ix - 1,
+                    (true, false) => l - 1 - s + j,
+                    (true, true) => l - 1,
                 };
-                let o = to_vec(o >> 12);
-                r += [o, o << 16, o >> 16].into_iter().sum::<u64>();
-                log!("o: {o:016X} r: {r:016X}");
-
-                if !endx || lx == 0 {
-                    let ix_ = if endx { i } else { ix + 1 };
-                    let o = to_vec(self.data[ix_].0 << 12);
-                    r += [o, o << 16, o >> 16].into_iter().sum::<u64>();
-                    log!("ix: {ix_} o: {o:016X} r: {r:016X}");
-
-                    let o = if i == 0 {
-                        let ix = if endx { endrow } else { endrow + j + 1 };
-                        log!("ix: {ix}");
-                        self.data[ix].0.wrapping_shl(((4 - lx) & 3) as _)
-                    } else {
-                        let ix = if endx { i - sx } else { ix - sx + 1 };
-                        log!("ix: {ix}");
-                        self.data[ix].0
-                    };
-                    log!("o: {o:04X}");
-                    if o & 8 != 0 {
-                        r += 0x1000;
-                    }
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]);
+                if i == 0 {
+                    o = rot_y_pos(o);
                 }
+                if j == 0 {
+                    o = o.rotate_left(16);
+                }
+                r00 += o;
+                log!("o: {o:016X}");
 
-                let o = if i == 0 {
-                    log!("ix: {}", endrow + j);
-                    self.data[endrow + j].0.wrapping_shl(((4 - lx) & 3) as _)
-                } else {
-                    log!("ix: {}", ix - sx);
-                    self.data[ix - sx].0
+                ix_ = match (endy, j == 0) {
+                    (false, false) => ix + s * 2 - 1,
+                    (false, true) => ix + s * 3 - 1,
+                    (true, false) => j - 1,
+                    (true, true) => s - 1,
                 };
-                let o = to_vec(o >> 3 & 0x1111);
-                r += [
-                    o,
-                    o << 4 & 0x1110_1110_1110_1110,
-                    o >> 4 & 0x0111_0111_0111_0111,
-                ]
-                .into_iter()
-                .sum::<u64>();
-                log!("o: {o:016X} r: {r:016X}");
-
-                if !endy || lx == 0 {
-                    let ix_ = if endy { j } else { ix + sx };
-                    let o = to_vec(self.data[ix_].0 << 3 & 0x8888);
-                    r += [
-                        o,
-                        o << 4 & 0x1110_1110_1110_1110,
-                        o >> 4 & 0x0111_0111_0111_0111,
-                    ]
-                    .into_iter()
-                    .sum::<u64>();
-                    log!("ix: {ix_} o: {o:016X} r: {r:016X}");
-
-                    let o = if j == 0 {
-                        let ix = if endy { sx - 1 } else { sx * 2 - 1 + i };
-                        log!("ix: {ix}");
-                        self.data[ix].0.wrapping_shl(((4 - lx) * 4) as _)
-                    } else {
-                        let ix = if endy { j - 1 } else { sx - 1 + ix };
-                        log!("ix: {ix}");
-                        self.data[ix].0
-                    };
-                    log!("o: {o:04X}");
-                    if o & 0x1000 != 0 {
-                        r += 0x1_0000_0000_0000;
-                    }
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]);
+                if endy {
+                    o = rot_y_neg(o);
                 }
+                if j == 0 {
+                    o = o.rotate_left(16);
+                }
+                r10 += o;
+                log!("o: {o:016X}");
 
-                let o = if i == 0 {
-                    let v = if j == 0 {
-                        self.data[self.data.len() - 1]
-                            .0
-                            .wrapping_shl(((4 - lx) * 4) as _)
-                    } else {
-                        self.data[endrow + j - 1].0
-                    };
-                    v.wrapping_shl(((4 - lx) & 3) as _)
-                } else if j == 0 {
-                    self.data[i - 1].0.wrapping_shl(((4 - lx) * 4) as _)
-                } else {
-                    self.data[ix - sx - 1].0
+                ix_ = match (i == 0, endx) {
+                    (false, false) => ix + 2 - s,
+                    (false, true) => ix + 2 - s * 2,
+                    (true, false) => l - s + j + 2,
+                    (true, true) => l - s,
                 };
-                if o & 0x8000 != 0 {
-                    r += 1;
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]);
+                if i == 0 {
+                    o = rot_y_pos(o);
                 }
-
-                if lx == 0 || !endx && !endy {
-                    let ix = match (endx, endy) {
-                        (false, false) => ix + sx + 1,
-                        (false, true) => j + 1,
-                        (true, false) => i + sx,
-                        (true, true) => 0,
-                    };
-                    if self.data[ix].0 & 1 != 0 {
-                        r += 0x1000_0000_0000_0000;
-                    }
+                if endx {
+                    o = o.rotate_right(16);
                 }
+                r01 += o;
+                log!("o: {o:016X}");
 
-                let o = apply_rule(v, r);
-                log!("v: {v:016X} r: {r:016X} o: {o:016X}");
-                self.data[ix].1 = from_vec(o);
-                log!("output: {:04X}", self.data[ix].1);
+                ix_ = match (endy, endx) {
+                    (false, false) => ix + 2 + s * 2,
+                    (false, true) => ix + 2 + s,
+                    (true, false) => j + 2,
+                    (true, true) => 0,
+                };
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]);
+                if endy {
+                    o = rot_y_neg(o);
+                }
+                if endx {
+                    o = o.rotate_right(16);
+                }
+                r11 += o;
+                log!("o: {o:016X}");
+
+                let o00 = apply_rule(v00, r00);
+                let o01 = apply_rule(v01, r01);
+                let o10 = apply_rule(v10, r10);
+                let o11 = apply_rule(v11, r11);
+                log!("v: {v00:016X} r: {r00:016X} o: {o00:016X}");
+                log!("v: {v01:016X} r: {r01:016X} o: {o01:016X}");
+                log!("v: {v10:016X} r: {r10:016X} o: {o10:016X}");
+                log!("v: {v11:016X} r: {r11:016X} o: {o11:016X}");
+                d[ix + l] = from_vec(o00);
+                d[ix + l + 1] = from_vec(o01);
+                d[ix + l + s] = from_vec(o10);
+                d[ix + l + s + 1] = from_vec(o11);
+                log!(
+                    "output: {:04X} {:04X} {:04X} {:04X}",
+                    d[ix + l],
+                    d[ix + l + 1],
+                    d[ix + l + s],
+                    d[ix + l + s + 1]
+                );
             }
         }
 
-        for (i, j) in &mut self.data {
-            *i = *j;
-        }
+        d.copy_within(l.., 0);
     }
 
     fn click(&mut self, x: f32, y: f32, right_click: bool) {
@@ -225,65 +236,49 @@ impl Renderable for GameOfLife {
         }
 
         let (x, y) = ((x / 4.) as i32, (y / 4.) as i32);
-        let r = 0..self.size as i32;
+        let r = 0..(self.size << 2) as i32;
         if !r.contains(&x) || !r.contains(&y) {
             return;
         }
 
         let (x, y) = (x as usize, y as usize);
-        let i = (x >> 2) + (y >> 2) * ((self.size + 3) >> 2);
-        let b = y & 3 | (x & 3) << 2;
-        self.data[i].0 ^= 1 << b;
+        let i = x % self.size + (y % self.size) * self.size;
+        let b = x / self.size | (y / self.size) << 2;
+        self.data[i] ^= 1 << b;
     }
 
     fn render(&self, state: &mut State) {
-        state.resize(self.size * 4, self.size * 4);
+        state.resize(self.size << 4, self.size << 4);
 
-        static PATTERN: &[(u32, bool)] = &[
-            (0, true),
-            (0, false),
-            (0, false),
-            (0, true),
-            (1, false),
-            (1, false),
-            (1, false),
-            (1, true),
-            (2, false),
-            (2, false),
-            (2, false),
-            (2, true),
-            (3, false),
-            (3, false),
-            (3, false),
-            (3, true),
-        ];
+        static PATTERN: [u8; 16] = [8, 9, 10, 11, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7];
 
-        for (c, (a, &(o, h))) in state.colors_mut().chunks_exact_mut(self.size * 4).zip(
-            self.data
-                .chunks_exact((self.size + 3) >> 2)
-                .flat_map(|a| repeat(a).zip(PATTERN)),
-        ) {
-            for (c, (mut v, _)) in c.chunks_mut(16).zip(a) {
-                let mut h = if h { u16::MAX } else { 0x8889 };
-                v >>= o;
-                for i in c.chunks_exact_mut(4) {
-                    let b = v & 1 != 0;
-                    for i in i {
-                        let c = match (b, h & 1 != 0) {
-                            (false, false) => 0,
-                            (false, true) => 64,
-                            (true, false) => 255,
-                            (true, true) => 191,
-                        };
-                        *i = Color {
-                            r: c,
-                            g: c,
-                            b: c,
-                            a: 255,
-                        };
-                        h >>= 1;
+        let mut it = state.colors_mut().into_iter();
+        for sy in 0..4 {
+            let mut b = true;
+            for a in self.data[..self.data.len() / 2].chunks_exact(self.size) {
+                let b_ = b;
+                b = false;
+                for b in PATTERN {
+                    let sx = (b & 3) as u32;
+                    let b = b & 4 != 0 || b & 8 != 0 && b_;
+                    for (i, &v) in a.iter().enumerate() {
+                        let v = v & 1 << (sx + sy * 4) != 0;
+                        for b in [b || i == 0, b, b, true] {
+                            let c = it.next().unwrap();
+                            let v = match (v, b) {
+                                (false, false) => 0,
+                                (false, true) => 64,
+                                (true, false) => 255,
+                                (true, true) => 191,
+                            };
+                            *c = Color {
+                                r: v,
+                                g: v,
+                                b: v,
+                                a: 255,
+                            };
+                        }
                     }
-                    v >>= 4;
                 }
             }
         }
