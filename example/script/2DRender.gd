@@ -5,6 +5,7 @@ signal message_emitted(msg)
 export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
 
 onready var wasi_ctx: WasiContext = WasiContext.new()
+onready var crypto := Crypto.new()
 
 onready var _tex := ImageTexture.new()
 onready var _img := Image.new()
@@ -24,6 +25,12 @@ func __selected(index):
 				results = [],
 				object = self,
 				method = "__log",
+			},
+			"rand": {
+				params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
+				results = [],
+				object = self,
+				method = "__rand",
 			},
 		},
 		{
@@ -95,7 +102,7 @@ func _input(event: InputEvent):
 	if (event is InputEventMouseButton) and (not event.is_pressed()):
 		var p := get_global_mouse_position()
 		p -= $Sprite.get_rect().position
-		instance.call_wasm("click", [p.x, p.y, int(event.button_index == BUTTON_RIGHT)])
+		instance.call_wasm("click", [p.x, p.y, event.button_index - 1])
 
 func __emit_log(msg):
 	emit_signal("message_emitted", msg.strip_edges())
@@ -104,3 +111,7 @@ func __log(p: int, n: int):
 	var s = instance.memory_read(p, n).get_string_from_utf8()
 	print(s)
 	emit_signal("message_emitted", s)
+
+func __rand(p: int, n: int):
+	var b := crypto.generate_random_bytes(n)
+	instance.memory_write(p, b)

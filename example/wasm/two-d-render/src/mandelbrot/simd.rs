@@ -1,7 +1,7 @@
 use std::arch::wasm32::*;
 
 use super::{map_color, SIZE, STEPS, XMAX, XMIN, YMAX, YMIN};
-use crate::{Color, Renderable, State};
+use crate::{Color, MouseButton, Renderable, State};
 
 #[derive(Debug, Clone, Copy)]
 struct Point {
@@ -90,7 +90,7 @@ impl Renderable for Mandelbrot {
         self.steps += 1;
     }
 
-    fn click(&mut self, _: f32, _: f32, _: bool) {}
+    fn click(&mut self, _: f32, _: f32, _: MouseButton) {}
 
     fn render(&self, state: &mut State) {
         if self.steps >= STEPS {

@@ -5,11 +5,23 @@ use std::cell::RefCell;
 use std::fmt::{Arguments, Write as _};
 use std::ptr::null;
 
+use getrandom::{register_custom_getrandom, Error as RandError};
+
 #[link(wasm_import_module = "host")]
 extern "C" {
     #[link_name = "log"]
     fn _log(p: *const u8, n: usize);
+    #[link_name = "rand"]
+    fn _rand(p: *mut u8, n: usize);
 }
+
+fn custom_rand(buf: &mut [u8]) -> Result<(), RandError> {
+    // SAFETY: Wraps extern call
+    unsafe { _rand(buf.as_mut_ptr(), buf.len()) }
+    Ok(())
+}
+
+register_custom_getrandom!(custom_rand);
 
 pub(crate) fn log(s: &str) {
     // SAFETY: Wraps extern call
@@ -35,11 +47,19 @@ macro_rules! log {
     };
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Unknown,
+}
+
 trait Renderable {
     fn new() -> Self;
     fn render(&self, state: &mut State);
     fn step(&mut self, time: f32, delta: f32);
-    fn click(&mut self, x: f32, y: f32, right_click: bool);
+    fn click(&mut self, x: f32, y: f32, button: MouseButton);
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -111,10 +131,10 @@ impl RenderData {
         }
     }
 
-    fn click(&mut self, x: f32, y: f32, right_click: bool) {
+    fn click(&mut self, x: f32, y: f32, button: MouseButton) {
         match self {
-            Self::Mandelbrot(v) => v.click(x, y, right_click),
-            Self::GameOfLife(v) => v.click(x, y, right_click),
+            Self::Mandelbrot(v) => v.click(x, y, button),
+            Self::GameOfLife(v) => v.click(x, y, button),
         }
     }
 }
@@ -164,10 +184,17 @@ pub extern "C" fn process(delta: f64) -> *const ExportState {
 }
 
 #[no_mangle]
-pub extern "C" fn click(x: f64, y: f64, right_click: u32) {
+pub extern "C" fn click(x: f64, y: f64, button: u32) {
+    let button = match button {
+        0 => MouseButton::Left,
+        1 => MouseButton::Right,
+        2 => MouseButton::Middle,
+        _ => MouseButton::Unknown,
+    };
+
     unsafe {
         if let Some(rp) = &mut RENDER {
-            rp.click(x as _, y as _, right_click != 0);
+            rp.click(x as _, y as _, button);
         };
     }
 }

@@ -1,8 +1,13 @@
 use std::arch::wasm32::*;
 use std::iter::repeat;
+use std::mem::size_of_val;
+use std::slice::from_raw_parts_mut;
+
+use rand_xoshiro::rand_core::{RngCore, SeedableRng};
+use rand_xoshiro::Xoshiro512StarStar;
 
 use super::SIZE;
-use crate::{log, Color, Renderable, State};
+use crate::{log, Color, MouseButton, Renderable, State};
 
 #[derive(Debug, Default)]
 pub struct GameOfLife {
@@ -274,22 +279,30 @@ impl Renderable for GameOfLife {
         d.copy_within(l.., 0);
     }
 
-    fn click(&mut self, x: f32, y: f32, right_click: bool) {
-        if right_click {
+    fn click(&mut self, x: f32, y: f32, button: MouseButton) {
+        if let MouseButton::Right = button {
             self.paused = !self.paused;
-            return;
-        }
+        } else if let MouseButton::Middle = button {
+            let mut rng = Xoshiro512StarStar::from_entropy();
+            // SAFETY: All bounds are valid.
+            unsafe {
+                rng.fill_bytes(from_raw_parts_mut(
+                    self.data.as_mut_ptr() as *mut u8,
+                    size_of_val(&self.data[..]),
+                ))
+            }
+        } else if let MouseButton::Left = button {
+            let (x, y) = ((x / 4.) as i32, (y / 4.) as i32);
+            let r = 0..(self.size << 3) as i32;
+            if !r.contains(&x) || !r.contains(&y) {
+                return;
+            }
 
-        let (x, y) = ((x / 4.) as i32, (y / 4.) as i32);
-        let r = 0..(self.size << 3) as i32;
-        if !r.contains(&x) || !r.contains(&y) {
-            return;
+            let (x, y) = (x as usize, y as usize);
+            let i = x % self.size + (y % (self.size * 2)) * self.size;
+            let b = x / self.size | (y / (self.size * 2)) << 3;
+            self.data[i] ^= 1 << b;
         }
-
-        let (x, y) = (x as usize, y as usize);
-        let i = x % self.size + (y % (self.size * 2)) * self.size;
-        let b = x / self.size | (y / (self.size * 2)) << 3;
-        self.data[i] ^= 1 << b;
     }
 
     fn render(&self, state: &mut State) {
