@@ -30,20 +30,18 @@ fn from_vec(v: v128) -> u32 {
     (u8x16_bitmask(ol) as u32) | ((u8x16_bitmask(oh) as u32) << 16)
 }
 
-fn apply_rule(mut v: v128, r: v128) -> v128 {
-    let rl = v128_and(r, u8x16_splat(0x0f));
-    let rh = u8x16_shr(r, 4);
+fn apply_rule(v: v128, r: v128) -> v128 {
+    // Either 2 or 3
+    let xl = u8x16_eq(v128_and(r, u8x16_splat(0x0e)), u8x16_splat(0x02));
+    let xh = u8x16_eq(v128_and(r, u8x16_splat(0xe0)), u8x16_splat(0x20));
+    let x = v128_and(v128_bitselect(xl, xh, u8x16_splat(0x0f)), u8x16_splat(0x11));
 
-    let mut bl = v128_and(u8x16_gt(rl, u8x16_splat(1)), u8x16_le(rl, u8x16_splat(3)));
-    let mut bh = v128_and(u8x16_gt(rh, u8x16_splat(1)), u8x16_le(rh, u8x16_splat(3)));
-    v = v128_and(v, v128_bitselect(bl, bh, u8x16_splat(0x0f)));
+    // Death
+    let v = v128_and(v, x);
+    // Reproduction
+    let v = v128_or(v, v128_and(x, r));
 
-    bl = u8x16_eq(rl, u8x16_splat(3));
-    bh = u8x16_eq(rh, u8x16_splat(3));
-    v128_or(
-        v,
-        v128_and(v128_bitselect(bl, bh, u8x16_splat(0x0f)), u8x16_splat(0x11)),
-    )
+    v
 }
 
 #[inline]
