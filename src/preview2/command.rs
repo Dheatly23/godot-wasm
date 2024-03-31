@@ -46,6 +46,7 @@ pub struct StoreData {
 
     table: ResourceTable,
     wasi_ctx: WasiCtx,
+    #[cfg(feature = "godot-component")]
     godot_ctx: GodotCtx,
 }
 
@@ -72,7 +73,7 @@ impl WasiView for StoreData {
 }
 
 fn instantiate(
-    inst_id: InstanceId,
+    _inst_id: InstanceId,
     config: Config,
     module: Gd<WasmModule>,
 ) -> Result<CommandData, Error> {
@@ -108,7 +109,8 @@ fn instantiate(
 
             table: ResourceTable::new(),
             wasi_ctx,
-            godot_ctx: GodotCtx::new(inst_id),
+            #[cfg(feature = "godot-component")]
+            godot_ctx: GodotCtx::new(_inst_id),
         },
     );
     #[cfg(feature = "epoch-timeout")]
@@ -118,6 +120,7 @@ fn instantiate(
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;
+    #[cfg(feature = "godot-component")]
     godot_add_to_linker(&mut linker, |v| &mut v.godot_ctx)?;
 
     let (bindings, instance) = Command::instantiate(&mut store, &comp, &linker)?;
