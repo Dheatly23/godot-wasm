@@ -13,8 +13,10 @@ use rayon::prelude::*;
 use scopeguard::guard;
 #[cfg(feature = "wasi")]
 use wasi_common::WasiCtx;
+#[cfg(feature = "component-model")]
+use wasmtime::component::Instance as InstanceComp;
 #[cfg(feature = "wasi-preview2")]
-use wasmtime::component::{Instance as InstanceComp, ResourceTable};
+use wasmtime::component::ResourceTable;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
@@ -78,7 +80,7 @@ pub struct InstanceData<T> {
 
 pub enum InstanceType {
     Core(InstanceWasm),
-    #[cfg(feature = "wasi-preview2")]
+    #[cfg(feature = "component-model")]
     Component(InstanceComp),
 }
 
@@ -92,7 +94,8 @@ impl InstanceType {
         }
     }
 
-    #[cfg(feature = "wasi-preview2")]
+    #[allow(dead_code)]
+    #[cfg(feature = "component-model")]
     pub fn get_component(&self) -> Result<&InstanceComp, Error> {
         if let Self::Component(m) = self {
             Ok(m)
