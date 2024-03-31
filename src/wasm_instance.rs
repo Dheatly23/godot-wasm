@@ -191,6 +191,7 @@ impl Default for StoreData {
     }
 }
 
+#[allow(dead_code)]
 pub enum MaybeWasi {
     NoCtx,
     Preview1(WasiCtx),
