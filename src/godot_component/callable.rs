@@ -2,11 +2,11 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-impl crate::godot_component::bindgen::godot::core::callable::Host
-    for crate::godot_component::GodotCtx
+impl<T: AsMut<crate::godot_component::GodotCtx>>
+    crate::godot_component::bindgen::godot::core::callable::Host for T
 {
     fn invalid(&mut self) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Callable::invalid()))
+        self.as_mut().set_into_var(Callable::invalid())
     }
 
     fn from_object_method(
@@ -14,30 +14,41 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         obj: WasmResource<Variant>,
         method: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let o: Gd<Object> = self.get_var_borrow(obj)?.try_to()?;
-        let m: StringName = self.get_var_borrow(method)?.try_to()?;
-        Ok(self.set_into_var(&Callable::from_object_method(&o, m)))
+        let this = self.as_mut();
+        let o: Gd<Object> = this.get_var_borrow(obj)?.try_to()?;
+        let m: StringName = this.get_var_borrow(method)?.try_to()?;
+        this.set_into_var(Callable::from_object_method(&o, m))
     }
 
     fn is_custom(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.get_var_borrow(var)?.try_to::<Callable>()?.is_custom())
+        Ok(self
+            .as_mut()
+            .get_var_borrow(var)?
+            .try_to::<Callable>()?
+            .is_custom())
     }
 
     fn is_valid(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.get_var_borrow(var)?.try_to::<Callable>()?.is_valid())
+        Ok(self
+            .as_mut()
+            .get_var_borrow(var)?
+            .try_to::<Callable>()?
+            .is_valid())
     }
 
     fn object(&mut self, var: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
-        let v: Callable = self.get_var_borrow(var)?.try_to()?;
-        Ok(v.object().map(|v| self.set_into_var(&v)))
+        let this = self.as_mut();
+        let v: Callable = this.get_var_borrow(var)?.try_to()?;
+        v.object().map(|v| this.set_into_var(v)).transpose()
     }
 
     fn method_name(
         &mut self,
         var: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
-        let v: Callable = self.get_var_borrow(var)?.try_to()?;
-        Ok(v.method_name().map(|v| self.set_into_var(&v)))
+        let this = self.as_mut();
+        let v: Callable = this.get_var_borrow(var)?.try_to()?;
+        v.method_name().map(|v| this.set_into_var(v)).transpose()
     }
 
     fn call(
@@ -45,12 +56,13 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         var: WasmResource<Variant>,
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
-        let v: Callable = self.get_var_borrow(var)?.try_to()?;
+        let this = self.as_mut();
+        let v: Callable = this.get_var_borrow(var)?.try_to()?;
         let args = args
             .into_iter()
-            .map(|v| self.maybe_get_var(v))
+            .map(|v| this.maybe_get_var(v))
             .collect::<AnyResult<Array<Variant>>>()?;
-        Ok(self.set_var(v.callv(args)))
+        this.set_var(v.callv(args))
     }
 
     fn callv(
@@ -58,9 +70,10 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         var: WasmResource<Variant>,
         args: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
-        let v: Callable = self.get_var_borrow(var)?.try_to()?;
-        let args: Array<Variant> = self.get_var_borrow(args)?.try_to()?;
-        Ok(self.set_var(v.callv(args)))
+        let this = self.as_mut();
+        let v: Callable = this.get_var_borrow(var)?.try_to()?;
+        let args: Array<Variant> = this.get_var_borrow(args)?.try_to()?;
+        this.set_var(v.callv(args))
     }
 
     fn bind(
@@ -68,12 +81,13 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         var: WasmResource<Variant>,
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let v: Callable = self.get_var_borrow(var)?.try_to()?;
+        let this = self.as_mut();
+        let v: Callable = this.get_var_borrow(var)?.try_to()?;
         let args = args
             .into_iter()
-            .map(|v| self.maybe_get_var(v))
+            .map(|v| this.maybe_get_var(v))
             .collect::<AnyResult<Array<Variant>>>()?;
-        Ok(self.set_into_var(&v.bindv(args)))
+        this.set_into_var(v.bindv(args))
     }
 
     fn bindv(
@@ -81,8 +95,9 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         var: WasmResource<Variant>,
         args: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let v: Callable = self.get_var_borrow(var)?.try_to()?;
-        let args: Array<Variant> = self.get_var_borrow(args)?.try_to()?;
-        Ok(self.set_into_var(&v.bindv(args)))
+        let this = self.as_mut();
+        let v: Callable = this.get_var_borrow(var)?.try_to()?;
+        let args: Array<Variant> = this.get_var_borrow(args)?.try_to()?;
+        this.set_into_var(v.bindv(args))
     }
 }

@@ -3,42 +3,41 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use crate::godot_component::bindgen::godot::core::primitive;
-use crate::godot_component::GodotCtx;
 
-impl primitive::Host for GodotCtx {
+impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     fn from_bool(&mut self, val: bool) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&val))
+        self.as_mut().set_into_var(val)
     }
 
     fn to_bool(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.get_var_borrow(var)?.try_to()?)
+        Ok(self.as_mut().get_var_borrow(var)?.try_to()?)
     }
 
     fn from_int(&mut self, val: i64) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&val))
+        self.as_mut().set_into_var(val)
     }
 
     fn to_int(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
-        Ok(self.get_var_borrow(var)?.try_to()?)
+        Ok(self.as_mut().get_var_borrow(var)?.try_to()?)
     }
 
     fn from_float(&mut self, val: f64) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&val))
+        self.as_mut().set_into_var(val)
     }
 
     fn to_float(&mut self, var: WasmResource<Variant>) -> AnyResult<f64> {
-        Ok(self.get_var_borrow(var)?.try_to()?)
+        Ok(self.as_mut().get_var_borrow(var)?.try_to()?)
     }
 
     fn from_vector2(
         &mut self,
         primitive::Vector2 { x, y }: primitive::Vector2,
     ) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Vector2 { x, y }))
+        self.as_mut().set_into_var(Vector2 { x, y })
     }
 
     fn to_vector2(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector2> {
-        let Vector2 { x, y } = self.get_var_borrow(var)?.try_to()?;
+        let Vector2 { x, y } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Vector2 { x, y })
     }
 
@@ -46,11 +45,11 @@ impl primitive::Host for GodotCtx {
         &mut self,
         primitive::Vector3 { x, y, z }: primitive::Vector3,
     ) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Vector3 { x, y, z }))
+        self.as_mut().set_into_var(Vector3 { x, y, z })
     }
 
     fn to_vector3(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector3> {
-        let Vector3 { x, y, z } = self.get_var_borrow(var)?.try_to()?;
+        let Vector3 { x, y, z } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Vector3 { x, y, z })
     }
 
@@ -58,11 +57,11 @@ impl primitive::Host for GodotCtx {
         &mut self,
         primitive::Vector4 { x, y, z, w }: primitive::Vector4,
     ) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Vector4 { x, y, z, w }))
+        self.as_mut().set_into_var(Vector4 { x, y, z, w })
     }
 
     fn to_vector4(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector4> {
-        let Vector4 { x, y, z, w } = self.get_var_borrow(var)?.try_to()?;
+        let Vector4 { x, y, z, w } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Vector4 { x, y, z, w })
     }
 
@@ -70,11 +69,11 @@ impl primitive::Host for GodotCtx {
         &mut self,
         primitive::Vector2i { x, y }: primitive::Vector2i,
     ) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Vector2i { x, y }))
+        self.as_mut().set_into_var(Vector2i { x, y })
     }
 
     fn to_vector2i(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector2i> {
-        let Vector2i { x, y } = self.get_var_borrow(var)?.try_to()?;
+        let Vector2i { x, y } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Vector2i { x, y })
     }
 
@@ -82,11 +81,11 @@ impl primitive::Host for GodotCtx {
         &mut self,
         primitive::Vector3i { x, y, z }: primitive::Vector3i,
     ) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Vector3i { x, y, z }))
+        self.as_mut().set_into_var(Vector3i { x, y, z })
     }
 
     fn to_vector3i(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector3i> {
-        let Vector3i { x, y, z } = self.get_var_borrow(var)?.try_to()?;
+        let Vector3i { x, y, z } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Vector3i { x, y, z })
     }
 
@@ -94,11 +93,11 @@ impl primitive::Host for GodotCtx {
         &mut self,
         primitive::Vector4i { x, y, z, w }: primitive::Vector4i,
     ) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Vector4i { x, y, z, w }))
+        self.as_mut().set_into_var(Vector4i { x, y, z, w })
     }
 
     fn to_vector4i(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector4i> {
-        let Vector4i { x, y, z, w } = self.get_var_borrow(var)?.try_to()?;
+        let Vector4i { x, y, z, w } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Vector4i { x, y, z, w })
     }
 
@@ -113,14 +112,14 @@ impl primitive::Host for GodotCtx {
             position: Vector2 { x: px, y: py },
             size: Vector2 { x: sx, y: sy },
         };
-        Ok(self.set_into_var(&v))
+        self.as_mut().set_into_var(v)
     }
 
     fn to_rect2(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Rect2> {
         let Rect2 {
             position: Vector2 { x: px, y: py },
             size: Vector2 { x: sx, y: sy },
-        } = self.get_var_borrow(var)?.try_to()?;
+        } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Rect2 {
             position: primitive::Vector2 { x: px, y: py },
             size: primitive::Vector2 { x: sx, y: sy },
@@ -138,14 +137,14 @@ impl primitive::Host for GodotCtx {
             position: Vector2i { x: px, y: py },
             size: Vector2i { x: sx, y: sy },
         };
-        Ok(self.set_into_var(&v))
+        self.as_mut().set_into_var(v)
     }
 
     fn to_rect2i(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Rect2i> {
         let Rect2i {
             position: Vector2i { x: px, y: py },
             size: Vector2i { x: sx, y: sy },
-        } = self.get_var_borrow(var)?.try_to()?;
+        } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Rect2i {
             position: primitive::Vector2i { x: px, y: py },
             size: primitive::Vector2i { x: sx, y: sy },
@@ -156,11 +155,11 @@ impl primitive::Host for GodotCtx {
         &mut self,
         primitive::Color { r, g, b, a }: primitive::Color,
     ) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Color { r, g, b, a }))
+        self.as_mut().set_into_var(Color { r, g, b, a })
     }
 
     fn to_color(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Color> {
-        let Color { r, g, b, a } = self.get_var_borrow(var)?.try_to()?;
+        let Color { r, g, b, a } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Color { r, g, b, a })
     }
 
@@ -175,14 +174,14 @@ impl primitive::Host for GodotCtx {
             normal: Vector3 { x, y, z },
             d,
         };
-        Ok(self.set_into_var(&v))
+        self.as_mut().set_into_var(v)
     }
 
     fn to_plane(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Plane> {
         let Plane {
             normal: Vector3 { x, y, z },
             d,
-        } = self.get_var_borrow(var)?.try_to()?;
+        } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Plane {
             normal: primitive::Vector3 { x, y, z },
             d,
@@ -193,13 +192,11 @@ impl primitive::Host for GodotCtx {
         &mut self,
         primitive::Quaternion { x, y, z, w }: primitive::Quaternion,
     ) -> AnyResult<WasmResource<Variant>> {
-        Ok(self
-            .set_var(Quaternion { x, y, z, w }.to_variant())
-            .unwrap())
+        self.as_mut().set_into_var(Quaternion { x, y, z, w })
     }
 
     fn to_quaternion(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Quaternion> {
-        let Quaternion { x, y, z, w } = self.get_var_borrow(var)?.try_to()?;
+        let Quaternion { x, y, z, w } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Quaternion { x, y, z, w })
     }
 
@@ -232,7 +229,7 @@ impl primitive::Host for GodotCtx {
                 z: sz,
             },
         };
-        Ok(self.set_into_var(&v))
+        self.as_mut().set_into_var(v)
     }
 
     fn to_aabb(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Aabb> {
@@ -249,7 +246,7 @@ impl primitive::Host for GodotCtx {
                     y: sy,
                     z: sz,
                 },
-        } = self.get_var_borrow(var)?.try_to()?;
+        } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Aabb {
             position: primitive::Vector3 {
                 x: px,
@@ -306,7 +303,7 @@ impl primitive::Host for GodotCtx {
                 },
             ],
         };
-        Ok(self.set_into_var(&v))
+        self.as_mut().set_into_var(v)
     }
 
     fn to_basis(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Basis> {
@@ -325,7 +322,7 @@ impl primitive::Host for GodotCtx {
                     y: bz,
                     z: cz,
                 }],
-        } = self.get_var_borrow(var)?.try_to()?;
+        } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Basis {
             col_a: primitive::Vector3 {
                 x: ax,
@@ -358,7 +355,7 @@ impl primitive::Host for GodotCtx {
             b: Vector2 { x: bx, y: by },
             origin: Vector2 { x: ox, y: oy },
         };
-        Ok(self.set_into_var(&v))
+        self.as_mut().set_into_var(v)
     }
 
     fn to_transform2d(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Transform2d> {
@@ -366,7 +363,7 @@ impl primitive::Host for GodotCtx {
             a: Vector2 { x: ax, y: ay },
             b: Vector2 { x: bx, y: by },
             origin: Vector2 { x: ox, y: oy },
-        } = self.get_var_borrow(var)?.try_to()?;
+        } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Transform2d {
             a: primitive::Vector2 { x: ax, y: ay },
             b: primitive::Vector2 { x: bx, y: by },
@@ -432,7 +429,7 @@ impl primitive::Host for GodotCtx {
                 z: oz,
             },
         };
-        Ok(self.set_into_var(&v))
+        self.as_mut().set_into_var(v)
     }
 
     fn to_transform3d(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Transform3d> {
@@ -460,7 +457,7 @@ impl primitive::Host for GodotCtx {
                     y: oy,
                     z: oz,
                 },
-        } = self.get_var_borrow(var)?.try_to()?;
+        } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Transform3d {
             basis: primitive::Basis {
                 col_a: primitive::Vector3 {
@@ -548,7 +545,7 @@ impl primitive::Host for GodotCtx {
                 },
             ],
         };
-        Ok(self.set_into_var(&v))
+        self.as_mut().set_into_var(v)
     }
 
     fn to_projection(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Projection> {
@@ -575,7 +572,7 @@ impl primitive::Host for GodotCtx {
                     z: dz,
                     w: dw,
                 }],
-        } = self.get_var_borrow(var)?.try_to()?;
+        } = self.as_mut().get_var_borrow(var)?.try_to()?;
         Ok(primitive::Projection {
             col_a: primitive::Vector4 {
                 x: ax,
@@ -605,29 +602,38 @@ impl primitive::Host for GodotCtx {
     }
 
     fn from_string(&mut self, val: String) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&GString::from(val)))
+        self.as_mut().set_into_var(GString::from(val))
     }
 
     fn to_string(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        Ok(self.get_var_borrow(var)?.try_to::<GString>()?.to_string())
+        Ok(self
+            .as_mut()
+            .get_var_borrow(var)?
+            .try_to::<GString>()?
+            .to_string())
     }
 
     fn from_stringname(&mut self, val: String) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&StringName::from(val)))
+        self.as_mut().set_into_var(StringName::from(val))
     }
 
     fn to_stringname(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
         Ok(self
+            .as_mut()
             .get_var_borrow(var)?
             .try_to::<StringName>()?
             .to_string())
     }
 
     fn from_nodepath(&mut self, val: String) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&NodePath::from(val)))
+        self.as_mut().set_into_var(NodePath::from(val))
     }
 
     fn to_nodepath(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        Ok(self.get_var_borrow(var)?.try_to::<NodePath>()?.to_string())
+        Ok(self
+            .as_mut()
+            .get_var_borrow(var)?
+            .try_to::<NodePath>()?
+            .to_string())
     }
 }

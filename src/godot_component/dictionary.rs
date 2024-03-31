@@ -2,53 +2,67 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-impl crate::godot_component::bindgen::godot::core::dictionary::Host
-    for crate::godot_component::GodotCtx
+impl<T: AsMut<crate::godot_component::GodotCtx>>
+    crate::godot_component::bindgen::godot::core::dictionary::Host for T
 {
     fn empty(&mut self) -> AnyResult<WasmResource<Variant>> {
-        Ok(self.set_into_var(&Dictionary::new()))
+        self.as_mut().set_into_var(Dictionary::new())
     }
 
     fn from_list(
         &mut self,
         val: Vec<(Option<WasmResource<Variant>>, Option<WasmResource<Variant>>)>,
     ) -> AnyResult<WasmResource<Variant>> {
+        let this = self.as_mut();
         let v = val
             .into_iter()
-            .map(|(k, v)| Ok((self.maybe_get_var(k)?, self.maybe_get_var(v)?)))
+            .map(|(k, v)| Ok((this.maybe_get_var(k)?, this.maybe_get_var(v)?)))
             .collect::<AnyResult<Dictionary>>()?;
-        Ok(self.set_into_var(&v))
+        this.set_into_var(v)
     }
 
     fn into_list(
         &mut self,
         var: WasmResource<Variant>,
     ) -> AnyResult<Vec<(Option<WasmResource<Variant>>, Option<WasmResource<Variant>>)>> {
-        let v: Dictionary = self.get_var_borrow(var)?.try_to()?;
-        Ok(v.iter_shared()
-            .map(|(k, v)| (self.set_var(k), self.set_var(v)))
-            .collect())
+        let this = self.as_mut();
+        let v: Dictionary = this.get_var_borrow(var)?.try_to()?;
+        v.iter_shared()
+            .map(|(k, v)| Ok((this.set_var(k)?, this.set_var(v)?)))
+            .collect()
     }
 
     fn len(&mut self, var: WasmResource<Variant>) -> AnyResult<u32> {
-        Ok(self.get_var_borrow(var)?.try_to::<Dictionary>()?.len() as _)
+        Ok(self
+            .as_mut()
+            .get_var_borrow(var)?
+            .try_to::<Dictionary>()?
+            .len() as _)
     }
 
     fn is_empty(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.get_var_borrow(var)?.try_to::<Dictionary>()?.is_empty())
+        Ok(self
+            .as_mut()
+            .get_var_borrow(var)?
+            .try_to::<Dictionary>()?
+            .is_empty())
     }
 
     fn clear(&mut self, var: WasmResource<Variant>) -> AnyResult<()> {
-        self.get_var_borrow(var)?.try_to::<Dictionary>()?.clear();
+        self.as_mut()
+            .get_var_borrow(var)?
+            .try_to::<Dictionary>()?
+            .clear();
         Ok(())
     }
 
     fn duplicate(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let r = self
+        let this = self.as_mut();
+        let r = this
             .get_var_borrow(var)?
             .try_to::<Dictionary>()?
             .duplicate_shallow();
-        Ok(self.set_into_var(&r))
+        this.set_into_var(r)
     }
 
     fn get(
@@ -56,8 +70,12 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         var: WasmResource<Variant>,
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
-        let v: Dictionary = self.get_var_borrow(var)?.try_to()?;
-        Ok(v.get(self.maybe_get_var(key)?).map(|v| self.set_var(v)))
+        let this = self.as_mut();
+        let v: Dictionary = this.get_var_borrow(var)?.try_to()?;
+        match v.get(this.maybe_get_var(key)?) {
+            Some(v) => this.set_var(v).map(Some),
+            None => Ok(None),
+        }
     }
 
     fn has(
@@ -65,10 +83,11 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         var: WasmResource<Variant>,
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<bool> {
-        Ok(self
+        let this = self.as_mut();
+        Ok(this
             .get_var_borrow(var)?
             .try_to::<Dictionary>()?
-            .contains_key(self.maybe_get_var(key)?))
+            .contains_key(this.maybe_get_var(key)?))
     }
 
     fn has_all(
@@ -76,10 +95,11 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         var: WasmResource<Variant>,
         key: WasmResource<Variant>,
     ) -> AnyResult<bool> {
-        Ok(self
+        let this = self.as_mut();
+        Ok(this
             .get_var_borrow(var)?
             .try_to::<Dictionary>()?
-            .contains_all_keys(self.get_var_borrow(key)?.try_to()?))
+            .contains_all_keys(this.get_var_borrow(key)?.try_to()?))
     }
 
     fn insert(
@@ -88,9 +108,12 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         key: Option<WasmResource<Variant>>,
         val: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
-        let mut v: Dictionary = self.get_var_borrow(var)?.try_to()?;
-        Ok(v.insert(self.maybe_get_var(key)?, self.maybe_get_var(val)?)
-            .map(|v| self.set_var(v)))
+        let this = self.as_mut();
+        let mut v: Dictionary = this.get_var_borrow(var)?.try_to()?;
+        match v.insert(this.maybe_get_var(key)?, this.maybe_get_var(val)?) {
+            Some(v) => this.set_var(v).map(Some),
+            None => Ok(None),
+        }
     }
 
     fn remove(
@@ -98,8 +121,12 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         var: WasmResource<Variant>,
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
-        let mut v: Dictionary = self.get_var_borrow(var)?.try_to()?;
-        Ok(v.remove(self.maybe_get_var(key)?).map(|v| self.set_var(v)))
+        let this = self.as_mut();
+        let mut v: Dictionary = this.get_var_borrow(var)?.try_to()?;
+        match v.remove(this.maybe_get_var(key)?) {
+            Some(v) => this.set_var(v).map(Some),
+            None => Ok(None),
+        }
     }
 
     fn extend(
@@ -108,19 +135,22 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         other: WasmResource<Variant>,
         overwrite: bool,
     ) -> AnyResult<()> {
-        let mut v: Dictionary = self.get_var_borrow(var)?.try_to()?;
-        v.extend_dictionary(self.get_var_borrow(other)?.try_to()?, overwrite);
+        let this = self.as_mut();
+        let mut v: Dictionary = this.get_var_borrow(var)?.try_to()?;
+        v.extend_dictionary(this.get_var_borrow(other)?.try_to()?, overwrite);
         Ok(())
     }
 
     fn keys(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let v: Dictionary = self.get_var_borrow(var)?.try_to()?;
-        Ok(self.set_into_var(&v.keys_array()))
+        let this = self.as_mut();
+        let v: Dictionary = this.get_var_borrow(var)?.try_to()?;
+        this.set_into_var(v.keys_array())
     }
 
     fn values(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let v: Dictionary = self.get_var_borrow(var)?.try_to()?;
-        Ok(self.set_into_var(&v.values_array()))
+        let this = self.as_mut();
+        let v: Dictionary = this.get_var_borrow(var)?.try_to()?;
+        this.set_into_var(v.values_array())
     }
 
     fn extend_list(
@@ -128,10 +158,11 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         var: WasmResource<Variant>,
         val: Vec<(Option<WasmResource<Variant>>, Option<WasmResource<Variant>>)>,
     ) -> AnyResult<()> {
-        let mut var: Dictionary = self.get_var_borrow(var)?.try_to()?;
+        let this = self.as_mut();
+        let mut var: Dictionary = this.get_var_borrow(var)?.try_to()?;
 
         for (k, v) in val.into_iter() {
-            var.insert(self.maybe_get_var(k)?, self.maybe_get_var(v)?);
+            var.insert(this.maybe_get_var(k)?, this.maybe_get_var(v)?);
         }
 
         Ok(())

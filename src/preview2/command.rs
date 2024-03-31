@@ -62,6 +62,13 @@ impl AsMut<InnerLock> for StoreData {
     }
 }
 
+#[cfg(feature = "godot-component")]
+impl AsMut<GodotCtx> for StoreData {
+    fn as_mut(&mut self) -> &mut GodotCtx {
+        &mut self.godot_ctx
+    }
+}
+
 impl WasiView for StoreData {
     fn table(&mut self) -> &mut ResourceTable {
         &mut self.table
@@ -121,7 +128,7 @@ fn instantiate(
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;
     #[cfg(feature = "godot-component")]
-    godot_add_to_linker(&mut linker, |v| &mut v.godot_ctx)?;
+    godot_add_to_linker(&mut linker)?;
 
     let (bindings, instance) = Command::instantiate(&mut store, &comp, &linker)?;
 

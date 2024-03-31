@@ -42,6 +42,12 @@ pub struct GodotCtx {
     inst_id: Option<InstanceId>,
 }
 
+impl AsMut<GodotCtx> for GodotCtx {
+    fn as_mut(&mut self) -> &mut Self {
+        self
+    }
+}
+
 impl GodotCtx {
     pub fn new(inst_id: InstanceId) -> Self {
         Self {
@@ -51,13 +57,16 @@ impl GodotCtx {
     }
 
     pub fn get_var_borrow(&mut self, res: WasmResource<Variant>) -> AnyResult<Cow<Variant>> {
+        let i = res.rep() as usize;
         if res.owned() {
-            Ok(Cow::Owned(self.table.remove(res.rep() as _).into_inner()))
-        } else if let Some(v) = self.table.get(res.rep() as _) {
-            Ok(Cow::Borrowed(&**v))
-        } else {
-            bail!("index is not valid")
+            if let Some(v) = self.table.try_remove(i) {
+                return Ok(Cow::Owned(v.into_inner()));
+            }
+        } else if let Some(v) = self.table.get(i) {
+            return Ok(Cow::Borrowed(&**v));
         }
+
+        bail!("index is not valid")
     }
 
     pub fn get_var(&mut self, res: WasmResource<Variant>) -> AnyResult<Variant> {
@@ -81,18 +90,25 @@ impl GodotCtx {
         }
     }
 
-    pub fn set_var(&mut self, var: Variant) -> Option<WasmResource<Variant>> {
+    pub fn try_insert(&mut self, var: Variant) -> AnyResult<u32> {
+        let entry = self.table.vacant_entry();
+        let ret = u32::try_from(entry.key())?;
+        entry.insert(SendSyncWrapper::new(var));
+        Ok(ret)
+    }
+
+    pub fn set_var(&mut self, var: Variant) -> AnyResult<Option<WasmResource<Variant>>> {
         if var.is_nil() {
-            None
+            Ok(None)
         } else {
-            Some(WasmResource::new_own(
-                self.table.insert(SendSyncWrapper::new(var)) as _,
-            ))
+            self.try_insert(var).map(|v| Some(WasmResource::new_own(v)))
         }
     }
 
-    pub fn set_into_var<V: ToGodot>(&mut self, var: &V) -> WasmResource<Variant> {
-        WasmResource::new_own(self.table.insert(SendSyncWrapper::new(var.to_variant())) as _)
+    pub fn set_into_var<V: ToGodot>(&mut self, var: V) -> AnyResult<WasmResource<Variant>> {
+        let v = var.to_variant();
+        drop(var);
+        self.try_insert(v).map(WasmResource::new_own)
     }
 }
 
@@ -116,71 +132,69 @@ pub mod bindgen {
     });
 }
 
-impl bindgen::godot::core::core::HostGodotVar for GodotCtx {
+impl<T: AsMut<GodotCtx>> bindgen::godot::core::core::HostGodotVar for T {
     fn drop(&mut self, rep: WasmResource<Variant>) -> AnyResult<()> {
-        self.get_var(rep)?;
+        self.as_mut().get_var(rep)?;
         Ok(())
     }
 
     fn clone(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let v = self.get_var(var)?;
-        Ok(WasmResource::new_own(
-            self.table.insert(SendSyncWrapper::new(v)) as _,
-        ))
+        let this = self.as_mut();
+        let v = this.get_var(var)?;
+        Ok(WasmResource::new_own(this.try_insert(v)?))
     }
 }
 
-impl bindgen::godot::core::core::Host for GodotCtx {
+impl<T: AsMut<GodotCtx>> bindgen::godot::core::core::Host for T {
     fn var_equals(
         &mut self,
         a: WasmResource<Variant>,
         b: WasmResource<Variant>,
     ) -> AnyResult<bool> {
-        Ok(self.get_var(a)? == self.get_var(b)?)
+        let this = self.as_mut();
+        Ok(this.get_var(a)? == this.get_var(b)?)
     }
 
     fn var_hash(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
-        Ok(self.get_var(var)?.hash())
+        Ok(self.as_mut().get_var(var)?.hash())
     }
 
     fn var_stringify(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        Ok(self.get_var(var)?.to_string())
+        Ok(self.as_mut().get_var(var)?.to_string())
     }
 }
 
-impl bindgen::godot::reflection::this::Host for GodotCtx {
+impl<T: AsMut<GodotCtx>> bindgen::godot::reflection::this::Host for T {
     fn get_this(&mut self) -> AnyResult<WasmResource<Variant>> {
-        let Some(id) = self.inst_id else {
+        let this = self.as_mut();
+        let Some(id) = this.inst_id else {
             bail_with_site!("Self instance ID is not set")
         };
 
-        Ok(self.set_into_var(&<Gd<Object>>::try_from_instance_id(id)?))
+        this.set_into_var(<Gd<Object>>::try_from_instance_id(id)?)
     }
 }
 
-pub fn add_to_linker<T>(
-    linker: &mut Linker<T>,
-    get: impl Fn(&mut T) -> &mut GodotCtx + Send + Sync + Copy + 'static,
-) -> AnyResult<()> {
-    bindgen::godot::core::core::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::typeis::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::primitive::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::byte_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::int32_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::int64_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::float32_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::float64_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::vector2_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::color_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::string_array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::array::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::dictionary::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::object::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::callable::add_to_linker(&mut *linker, get)?;
-    bindgen::godot::core::signal::add_to_linker(&mut *linker, get)?;
+pub fn add_to_linker<T: AsMut<GodotCtx>>(linker: &mut Linker<T>) -> AnyResult<()> {
+    bindgen::godot::core::core::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::typeis::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::primitive::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::byte_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::int32_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::int64_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::float32_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::float64_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::vector2_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::color_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::string_array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::array::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::dictionary::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::object::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::callable::add_to_linker(&mut *linker, |v| v)?;
+    bindgen::godot::core::signal::add_to_linker(&mut *linker, |v| v)?;
 
-    bindgen::godot::reflection::this::add_to_linker(&mut *linker, get)
+    bindgen::godot::reflection::this::add_to_linker(&mut *linker, |v| v)
 }
 
 #[derive(GodotClass)]
@@ -223,6 +237,12 @@ impl AsMut<InnerLock> for WasmScriptLikeStore {
     }
 }
 
+impl AsMut<GodotCtx> for WasmScriptLikeStore {
+    fn as_mut(&mut self) -> &mut GodotCtx {
+        &mut self.godot_ctx
+    }
+}
+
 impl WasmScriptLike {
     fn instantiate(
         inst_id: InstanceId,
@@ -255,7 +275,7 @@ impl WasmScriptLike {
         store.limiter(|data| &mut data.memory_limits);
 
         let mut linker = <Linker<WasmScriptLikeStore>>::new(&ENGINE);
-        site_context!(add_to_linker(&mut linker, |v| &mut v.godot_ctx))?;
+        site_context!(add_to_linker(&mut linker))?;
 
         let (bindings, instance) =
             site_context!(bindgen::Script::instantiate(&mut store, &comp, &linker))?;
@@ -366,9 +386,7 @@ impl WasmScriptLike {
                     store.set_epoch_deadline(v);
                 }
 
-                let res = store.data_mut().godot_ctx.set_into_var(&args);
-                drop(args);
-
+                let res = store.data_mut().godot_ctx.set_into_var(args)?;
                 let ret = m
                     .bindings
                     .call_call(&mut store, WasmResource::new_borrow(res.rep()));
