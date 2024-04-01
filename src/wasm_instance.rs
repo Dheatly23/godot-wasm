@@ -301,7 +301,7 @@ where
                         };
                         owner.emit_signal("stdin_request", &[]);
                     });
-                    builder.stdin(StreamWrapper::from(outer));
+                    builder.stdin(outer);
                     wasi_stdin = Some(inner as _);
                 }
             }

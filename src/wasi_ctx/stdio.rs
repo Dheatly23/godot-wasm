@@ -750,9 +750,9 @@ impl<F: Fn() + Send + Sync + 'static> WasiFile for OuterStdin<F> {
 }
 */
 
-impl<F: Fn() + Send + Sync + 'static> StdinStream for StreamWrapper<OuterStdin<F>> {
+impl<F: Fn() + Send + Sync + 'static> StdinStream for OuterStdin<F> {
     fn stream(&self) -> Box<dyn HostInputStream> {
-        Box::new(self.clone())
+        Box::new(Self(self.0.clone()))
     }
 
     fn isatty(&self) -> bool {
@@ -761,7 +761,7 @@ impl<F: Fn() + Send + Sync + 'static> StdinStream for StreamWrapper<OuterStdin<F
 }
 
 #[async_trait]
-impl<F: Fn() + Send + Sync + 'static> Subscribe for StreamWrapper<OuterStdin<F>> {
+impl<F: Fn() + Send + Sync + 'static> Subscribe for OuterStdin<F> {
     async fn ready(&mut self) {
         poll_fn(|cx| {
             let mut guard = self.0.inner.lock();
@@ -782,7 +782,7 @@ impl<F: Fn() + Send + Sync + 'static> Subscribe for StreamWrapper<OuterStdin<F>>
     }
 }
 
-impl<F: Fn() + Send + Sync + 'static> HostInputStream for StreamWrapper<OuterStdin<F>> {
+impl<F: Fn() + Send + Sync + 'static> HostInputStream for OuterStdin<F> {
     fn read(&mut self, mut size: usize) -> StreamResult<Bytes> {
         let mut inner = self.ensure_nonempty();
         let InnerInnerStdin {
