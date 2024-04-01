@@ -54,6 +54,7 @@ pub const TYPE_F32: u32 = 3;
 pub const TYPE_F64: u32 = 4;
 #[cfg(feature = "object-registry-extern")]
 pub const TYPE_VARIANT: u32 = 6;
+pub const TYPE_V128: u32 = 7;
 
 #[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
@@ -267,6 +268,7 @@ pub fn from_signature(sig: &FuncType) -> Result<(PackedByteArray, PackedByteArra
             ValType::I64 => TYPE_I64,
             ValType::F32 => TYPE_F32,
             ValType::F64 => TYPE_F64,
+            ValType::V128 => TYPE_V128,
             #[cfg(feature = "object-registry-extern")]
             ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => TYPE_VARIANT,
             _ => bail_with_site!("Unconvertible signture"),
@@ -292,6 +294,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
                 TYPE_I64 => ValType::I64,
                 TYPE_F32 => ValType::F32,
                 TYPE_F64 => ValType::F64,
+                TYPE_V128 => ValType::V128,
                 #[cfg(feature = "object-registry-extern")]
                 TYPE_VARIANT => ValType::Ref(RefType::EXTERNREF),
                 v => bail_with_site!("Unknown enumeration value {}", v),
@@ -329,6 +332,21 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Resul
         ValType::I64 => ValRaw::i64(site_context!(i64::try_from_variant(&v))?),
         ValType::F32 => ValRaw::f32(site_context!(f32::try_from_variant(&v))?.to_bits()),
         ValType::F64 => ValRaw::f64(site_context!(f64::try_from_variant(&v))?.to_bits()),
+        ValType::V128 => ValRaw::v128(match VariantDispatch::from(&v) {
+            VariantDispatch::Int(v) => v as u128,
+            VariantDispatch::PackedByteArray(v) => {
+                let Some(s) = v.as_slice().get(..16) else {
+                    bail_with_site!("Value too short for 128-bit integer")
+                };
+                u128::from_le_bytes(s.try_into().unwrap())
+            }
+            VariantDispatch::Array(v) => {
+                let v0 = site_context!(u64::try_from_variant(&v.try_get(0).unwrap_or_default()))?;
+                let v1 = site_context!(u64::try_from_variant(&v.try_get(1).unwrap_or_default()))?;
+                v0 as u128 | (v1 as u128) << 64
+            }
+            _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
+        }),
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
             ValRaw::externref(match variant_to_externref(v) {
@@ -347,6 +365,13 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
         ValType::I64 => v.get_i64().to_variant(),
         ValType::F32 => f32::from_bits(v.get_f32()).to_variant(),
         ValType::F64 => f64::from_bits(v.get_f64()).to_variant(),
+        ValType::V128 => {
+            let v = v.get_v128();
+            let mut r = VariantArray::new();
+            r.push((v as u64).to_variant());
+            r.push(((v >> 64) as u64).to_variant());
+            r.to_variant()
+        }
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
             externref_to_variant(ExternRef::from_raw(v.get_externref()))
