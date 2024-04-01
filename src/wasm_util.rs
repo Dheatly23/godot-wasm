@@ -340,6 +340,18 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Resul
                 };
                 u128::from_le_bytes(s.try_into().unwrap())
             }
+            VariantDispatch::PackedInt32Array(v) => {
+                let Some(s) = v.as_slice().get(..4) else {
+                    bail_with_site!("Value too short for 128-bit integer")
+                };
+                s[0] as u128 | (s[1] as u128) << 32 | (s[2] as u128) << 64 | (s[3] as u128) << 96
+            }
+            VariantDispatch::PackedInt64Array(v) => {
+                let Some(s) = v.as_slice().get(..2) else {
+                    bail_with_site!("Value too short for 128-bit integer")
+                };
+                s[0] as u128 | (s[1] as u128) << 64
+            }
             VariantDispatch::Array(v) => {
                 let v0 = site_context!(u64::try_from_variant(&v.try_get(0).unwrap_or_default()))?;
                 let v1 = site_context!(u64::try_from_variant(&v.try_get(1).unwrap_or_default()))?;
