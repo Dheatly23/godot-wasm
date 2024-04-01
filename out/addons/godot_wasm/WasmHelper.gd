@@ -6,6 +6,7 @@ const TYPE_I64 = 2
 const TYPE_F32 = 3
 const TYPE_F64 = 4
 const TYPE_VARIANT = 6
+const TYPE_V128 = 7
 
 const WASM_HEADER = PoolByteArray([
 	0x00, 0x61, 0x73, 0x6d,
