@@ -35,6 +35,8 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
   **NOTE:** In-memory filesystem is currently disabled due to dependency problems.
   It will be enabled in the future if possible.
 
+* Optional support for component model and WASI 0.2
+
 ## Building
 To build the addon:
 1. Clone this repository
