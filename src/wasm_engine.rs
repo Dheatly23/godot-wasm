@@ -116,6 +116,12 @@ pub struct WasmModule {
     base: Base<Resource>,
     data: OnceCell<ModuleData>,
 
+    #[var(get = get_is_core_module, usage_flags = [EDITOR, READ_ONLY])]
+    #[allow(dead_code)]
+    is_core_module: PhantomProperty<bool>,
+    #[var(get = get_is_component, usage_flags = [EDITOR, READ_ONLY])]
+    #[allow(dead_code)]
+    is_component: PhantomProperty<bool>,
     #[var(get = get_name, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     name: PhantomProperty<GString>,
@@ -365,6 +371,23 @@ impl WasmModule {
     #[func]
     fn get_name(&self) -> GString {
         self.unwrap_data(|m| Ok(m.name.clone())).unwrap_or_default()
+    }
+
+    #[func]
+    fn get_is_core_module(&self) -> bool {
+        self.unwrap_data(|m| Ok(matches!(m.module, ModuleType::Core(_))))
+            .unwrap_or_default()
+    }
+
+    #[func]
+    fn get_is_component(&self) -> bool {
+        cfg_if! {
+            if #[cfg(feature = "wasi-preview2")] {
+                self.unwrap_data(|m| Ok(matches!(m.module, ModuleType::Component(_)))).unwrap_or_default()
+            } else {
+                false
+            }
+        }
     }
 
     #[func]
