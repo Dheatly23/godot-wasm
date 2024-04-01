@@ -336,7 +336,7 @@ where
                         <Gd<RefCounted>>::from_instance_id(inst_id)
                             .emit_signal(SIGNAL_NAME[3].clone(), &[]);
                     });
-                    builder.stdin(StreamWrapper::from(outer));
+                    builder.stdin(outer);
                     wasi_stdin = Some(inner as _);
                 }
             }

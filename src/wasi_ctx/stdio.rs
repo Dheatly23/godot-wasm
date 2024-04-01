@@ -1,11 +1,13 @@
 use std::collections::VecDeque;
 use std::fmt::{Display, Result as FmtResult, Write as _};
+use std::future::poll_fn;
 use std::io::{Result as IoResult, Write};
 use std::ops::Deref;
 use std::ptr;
 use std::slice;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::task::{Poll, Waker};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
@@ -599,6 +601,8 @@ struct InnerInnerStdin {
     buf: VecDeque<String>,
     is_eof: bool,
     ix: usize,
+
+    waker: Option<Waker>,
 }
 
 impl<F> Drop for OuterStdin<F> {
@@ -617,6 +621,7 @@ impl<F: Fn()> OuterStdin<F> {
                 buf: VecDeque::new(),
                 is_eof: false,
                 ix: 0,
+                waker: None,
             }),
         });
         (Self(inner.clone()), inner)
@@ -625,9 +630,9 @@ impl<F: Fn()> OuterStdin<F> {
     fn ensure_nonempty(&self) -> MutexGuard<'_, InnerInnerStdin> {
         let mut guard = self.0.inner.lock();
         loop {
-            match &mut *guard {
+            match &*guard {
                 InnerInnerStdin { is_eof: true, .. } => break,
-                InnerInnerStdin { buf, .. } if buf.is_empty() => break,
+                InnerInnerStdin { buf, .. } if !buf.is_empty() => break,
                 _ => (),
             }
             (self.0.f)();
@@ -657,6 +662,9 @@ impl<F: ?Sized> InnerStdin<F> {
         }
         buf.push_back(ret);
 
+        if let Some(w) = guard.waker.take() {
+            w.wake();
+        }
         self.cond.notify_one();
         Ok(())
     }
@@ -669,6 +677,9 @@ impl<F: ?Sized> InnerStdin<F> {
         let mut guard = self.inner.lock();
         guard.is_eof = true;
 
+        if let Some(w) = guard.waker.take() {
+            w.wake();
+        }
         self.cond.notify_one();
     }
 }
@@ -739,9 +750,9 @@ impl<F: Fn() + Send + Sync + 'static> WasiFile for OuterStdin<F> {
 }
 */
 
-impl<F: Fn() + Send + Sync + 'static> StdinStream for StreamWrapper<OuterStdin<F>> {
+impl<F: Fn() + Send + Sync + 'static> StdinStream for OuterStdin<F> {
     fn stream(&self) -> Box<dyn HostInputStream> {
-        Box::new(self.clone())
+        Box::new(Self(self.0.clone()))
     }
 
     fn isatty(&self) -> bool {
@@ -750,17 +761,35 @@ impl<F: Fn() + Send + Sync + 'static> StdinStream for StreamWrapper<OuterStdin<F
 }
 
 #[async_trait]
-impl<F: Fn() + Send + Sync + 'static> Subscribe for StreamWrapper<OuterStdin<F>> {
-    // Always ready
-    async fn ready(&mut self) {}
+impl<F: Fn() + Send + Sync + 'static> Subscribe for OuterStdin<F> {
+    async fn ready(&mut self) {
+        poll_fn(|cx| {
+            let mut guard = self.0.inner.lock();
+
+            if match &*guard {
+                InnerInnerStdin { is_eof: true, .. } => true,
+                InnerInnerStdin { buf, .. } if !buf.is_empty() => true,
+                _ => false,
+            } {
+                return Poll::Ready(());
+            }
+
+            (self.0.f)();
+            guard.waker = Some(cx.waker().clone());
+            Poll::Pending
+        })
+        .await
+    }
 }
 
-impl<F: Fn() + Send + Sync + 'static> HostInputStream for StreamWrapper<OuterStdin<F>> {
+impl<F: Fn() + Send + Sync + 'static> HostInputStream for OuterStdin<F> {
     fn read(&mut self, mut size: usize) -> StreamResult<Bytes> {
         let mut inner = self.ensure_nonempty();
-        let InnerInnerStdin { buf, ix, is_eof } = &mut *inner;
-        if *is_eof || size == 0 {
-            return Ok(Bytes::new());
+        let InnerInnerStdin {
+            buf, ix, is_eof, ..
+        } = &mut *inner;
+        if *is_eof && buf.is_empty() {
+            return Err(StreamError::Closed);
         }
 
         let mut ret = BytesMut::with_capacity(size);
@@ -788,9 +817,11 @@ impl<F: Fn() + Send + Sync + 'static> HostInputStream for StreamWrapper<OuterStd
 
     fn skip(&mut self, mut size: usize) -> StreamResult<usize> {
         let mut inner = self.ensure_nonempty();
-        let InnerInnerStdin { buf, ix, is_eof } = &mut *inner;
-        if *is_eof || size == 0 {
-            return Ok(0);
+        let InnerInnerStdin {
+            buf, ix, is_eof, ..
+        } = &mut *inner;
+        if *is_eof && buf.is_empty() {
+            return Err(StreamError::Closed);
         }
 
         let mut ret = 0;
@@ -917,6 +948,8 @@ impl HostInputStream for StreamWrapper<ByteBufferReadPipe> {
         let mut pos = self.pos.lock();
 
         if *pos == buf.len() {
+            return Err(StreamError::Closed);
+        } else if size == 0 {
             return Ok(Bytes::new());
         }
 
@@ -936,6 +969,8 @@ impl HostInputStream for StreamWrapper<ByteBufferReadPipe> {
         let mut pos = self.pos.lock();
 
         if *pos == buf.len() {
+            return Err(StreamError::Closed);
+        } else if size == 0 {
             return Ok(0);
         }
 

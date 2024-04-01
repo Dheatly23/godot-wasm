@@ -5,6 +5,7 @@ signal message_emitted(msg)
 @export var wasm_file: WasmModule
 
 @onready var wasi_ctx: WasiContext = WasiContext.new()
+@onready var crypto := Crypto.new()
 
 @onready var _tex := ImageTexture.new()
 @onready var _img := Image.new()
@@ -25,6 +26,12 @@ func __selected(index):
 					callable = __log,
 				},
 			},
+			"rand": {
+				params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
+				results = [],
+				object = self,
+				method = "__rand",
+			},
 		},
 		{
 			"epoch.enable": true,
@@ -33,6 +40,7 @@ func __selected(index):
 			"wasi.context": wasi_ctx,
 		},
 	)
+
 	if instance == null:
 		message_emitted.emit("Failed to instantiate module")
 		return
@@ -86,7 +94,7 @@ func _input(event: InputEvent):
 	if (event is InputEventMouseButton) and (not event.is_pressed()):
 		var p := get_global_mouse_position()
 		p -= $Sprite.get_rect().position
-		instance.call_wasm("click", [p.x, p.y, int(event.button_index == MOUSE_BUTTON_RIGHT)])
+		instance.call_wasm("click", [p.x, p.y, event.button_index - 1])
 
 func __emit_log(msg):
 	message_emitted.emit(msg.strip_edges())
@@ -95,3 +103,7 @@ func __log(p: int, n: int):
 	var s = instance.memory_read(p, n).get_string_from_utf8()
 	print(s)
 	message_emitted.emit(s)
+
+func __rand(p: int, n: int):
+	var b := crypto.generate_random_bytes(n)
+	instance.memory_write(p, b)

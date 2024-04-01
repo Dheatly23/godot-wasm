@@ -1,13 +1,18 @@
 use std::arch::wasm32::*;
 use std::iter::repeat;
+use std::mem::size_of_val;
+use std::slice::from_raw_parts_mut;
+
+use rand_xoshiro::rand_core::{RngCore, SeedableRng};
+use rand_xoshiro::Xoshiro512StarStar;
 
 use super::SIZE;
-use crate::{log, Color, Renderable, State};
+use crate::{log, Color, MouseButton, Renderable, State};
 
 #[derive(Debug, Default)]
 pub struct GameOfLife {
     size: usize,
-    data: Vec<(u32, u32)>,
+    data: Vec<u32>,
     paused: bool,
 }
 
@@ -30,28 +35,47 @@ fn from_vec(v: v128) -> u32 {
     (u8x16_bitmask(ol) as u32) | ((u8x16_bitmask(oh) as u32) << 16)
 }
 
-fn apply_rule(mut v: v128, r: v128) -> v128 {
-    let rl = v128_and(r, u8x16_splat(0x0f));
-    let rh = u8x16_shr(r, 4);
+fn apply_rule(v: v128, r: v128) -> v128 {
+    // Either 2 or 3
+    let xl = u8x16_eq(v128_and(r, u8x16_splat(0x0e)), u8x16_splat(0x02));
+    let xh = u8x16_eq(v128_and(r, u8x16_splat(0xe0)), u8x16_splat(0x20));
+    let x = v128_and(v128_bitselect(xl, xh, u8x16_splat(0x0f)), u8x16_splat(0x11));
 
-    let mut bl = v128_and(u8x16_gt(rl, u8x16_splat(1)), u8x16_le(rl, u8x16_splat(3)));
-    let mut bh = v128_and(u8x16_gt(rh, u8x16_splat(1)), u8x16_le(rh, u8x16_splat(3)));
-    v = v128_and(v, v128_bitselect(bl, bh, u8x16_splat(0x0f)));
+    // Death
+    let v = v128_and(v, x);
+    // Reproduction
+    let v = v128_or(v, v128_and(x, r));
 
-    bl = u8x16_eq(rl, u8x16_splat(3));
-    bh = u8x16_eq(rh, u8x16_splat(3));
-    v128_or(
-        v,
-        v128_and(v128_bitselect(bl, bh, u8x16_splat(0x0f)), u8x16_splat(0x11)),
-    )
+    v
+}
+
+#[inline]
+fn rot_x_neg(v: v128) -> v128 {
+    v128_or(u32x4_shr(v, 4), u32x4_shl(v, 28))
+}
+
+#[inline]
+fn rot_x_pos(v: v128) -> v128 {
+    v128_or(u32x4_shl(v, 4), u32x4_shr(v, 28))
+}
+
+#[inline]
+fn rot_y_neg(v: v128) -> v128 {
+    u32x4_shuffle::<1, 2, 3, 0>(v, v)
+}
+
+#[inline]
+fn rot_y_pos(v: v128) -> v128 {
+    u32x4_shuffle::<3, 0, 1, 2>(v, v)
 }
 
 impl Renderable for GameOfLife {
     fn new() -> Self {
-        let data = vec![(0, 0); ((SIZE + 7) >> 3) * ((SIZE + 3) >> 2)];
+        let size = (SIZE + 31) >> 5 << 2;
+        let data = vec![0; size * size * 4];
 
         Self {
-            size: SIZE,
+            size,
             data,
             paused: true,
         }
@@ -62,245 +86,264 @@ impl Renderable for GameOfLife {
             return;
         }
 
-        let sx = (self.size + 7) >> 3;
-        let sy = (self.size + 3) >> 2;
-        let endrow = sx * (sy - 1);
-        debug_assert_eq!(self.data.len(), sx * sy);
+        let d = &mut self.data;
+        let l = d.len() / 2;
+        let sx = self.size;
+        let sy = self.size * 2;
+        debug_assert_eq!(d.len(), sx * sy * 2);
+        debug_assert_eq!(self.size & 3, 0);
 
         log!("sx: {sx} sy: {sy}");
 
-        let lx = self.size & 7;
-        let ly = self.size & 3;
-        log!("lx: {lx} ly: {ly}");
+        let mut it = 0..sy / 2;
+        while let Some(i) = it.next() {
+            let endy = it.is_empty();
+            let i = i * 2 * sx;
 
-        if lx != 0 {
-            let mut m = (255u8 << lx) as u32;
-            m = m | m << 8 | m << 16 | m << 24;
-            let mi = !m;
-            for mut i in 0..sy {
-                i *= sx;
-                let j = sx - 1 + i;
-                let v = self.data[j].0;
-                let o = self.data[i].0;
-                log!("i: {i} j: {j} v: {v:08X} o: {o:08X}");
-                self.data[j].0 = o << lx & m | v & mi;
-            }
-        }
-        if ly != 0 {
-            let s = ly * 8;
-            let m = u32::MAX << s;
-            let mi = !m;
-            for i in 0..sx {
-                let j = endrow + i;
-                let v = self.data[j].0;
-                let o = self.data[i].0;
-                log!("i: {i} j: {j} v: {v:08X} o: {o:08X}");
-                self.data[j].0 = o << s & m | v & mi;
-            }
-        }
-
-        for i in 0..sy {
-            let endy = i == sy - 1;
-            let i = i * sx;
-
-            for j in 0..sx {
+            let mut it = 0..sx / 2;
+            while let Some(j) = it.next() {
+                let endx = it.is_empty();
+                let j = j * 2;
                 let ix = i + j;
-                let endx = j == sx - 1;
                 log!("i: {i} j: {j}");
 
-                let v = to_vec(self.data[ix].0);
-                let vl = u32x4_shuffle::<4, 0, 1, 2>(v, u32x4_splat(0));
-                let vh = u32x4_shuffle::<1, 2, 3, 4>(v, u32x4_splat(0));
-                let mut r = u8x16_add(vl, vh);
-                r = u8x16_add(u8x16_add(u32x4_shl(r, 4), u32x4_shr(r, 4)), r);
-                r = u8x16_add(u8x16_add(u32x4_shl(v, 4), u32x4_shr(v, 4)), r);
-                log!("v: {:032X} r: {:032X}", print_v128(v), print_v128(r));
+                let v00 = to_vec(d[ix]);
+                let v01 = to_vec(d[ix + 1]);
+                let v10 = to_vec(d[ix + sx]);
+                let v11 = to_vec(d[ix + sx + 1]);
+                let mut r00 = u8x16_add(u8x16_add(v01, v11), v10);
+                let mut r01 = u8x16_add(u8x16_add(v00, v10), v11);
+                let mut r10 = u8x16_add(u8x16_add(v00, v01), v11);
+                let mut r11 = u8x16_add(u8x16_add(v01, v00), v10);
+                log!(
+                    "v00: {:032X} v01: {:032X} v10: {:032X} v11: {:032X}",
+                    print_v128(v00),
+                    print_v128(v01),
+                    print_v128(v10),
+                    print_v128(v11)
+                );
 
-                let o = if j == 0 {
-                    log!("ix: {}", sx - 1 + i);
-                    self.data[sx - 1 + i].0.wrapping_shl(((8 - lx) & 7) as _)
-                } else {
-                    log!("ix: {}", ix - 1);
-                    self.data[ix - 1].0
+                let mut ix_;
+                let mut o;
+
+                ix_ = if j == 0 { ix + sx - 1 } else { ix - 1 };
+                log!("ix: {ix_}");
+                o = u8x16_add(to_vec(d[ix_]), to_vec(d[ix_ + sx]));
+                if j == 0 {
+                    o = rot_x_pos(o);
+                }
+                r00 = u8x16_add(r00, o);
+                r10 = u8x16_add(r10, o);
+                log!("o: {:032X}", print_v128(o));
+
+                ix_ = if endx { i } else { ix + 2 };
+                log!("ix: {ix_}");
+                o = u8x16_add(to_vec(d[ix_]), to_vec(d[ix_ + sx]));
+                if endx {
+                    o = rot_x_neg(o);
+                }
+                r01 = u8x16_add(r01, o);
+                r11 = u8x16_add(r11, o);
+                log!("o: {:032X}", print_v128(o));
+
+                ix_ = if i == 0 { l - sx + j } else { ix - sx };
+                log!("ix: {ix_}");
+                o = u8x16_add(to_vec(d[ix_]), to_vec(d[ix_ + 1]));
+                if i == 0 {
+                    o = rot_y_pos(o);
+                }
+                r00 = u8x16_add(r00, o);
+                r01 = u8x16_add(r01, o);
+                log!("o: {:032X}", print_v128(o));
+
+                ix_ = if endy { j } else { ix + sx * 2 };
+                log!("ix: {ix_}");
+                o = u8x16_add(to_vec(d[ix_]), to_vec(d[ix_ + 1]));
+                if endy {
+                    o = rot_y_neg(o);
+                }
+                r10 = u8x16_add(r10, o);
+                r11 = u8x16_add(r11, o);
+                log!("o: {:032X}", print_v128(o));
+
+                ix_ = match (i == 0, j == 0) {
+                    (false, false) => ix - sx - 1,
+                    (false, true) => ix - 1,
+                    (true, false) => l - 1 - sx + j,
+                    (true, true) => l - 1,
                 };
-                let o = to_vec(o >> 7 & 0x01010101);
-                r = u8x16_add(o, r);
-                r = u8x16_add(u32x4_shuffle::<4, 0, 1, 2>(o, u32x4_splat(0)), r);
-                r = u8x16_add(u32x4_shuffle::<1, 2, 3, 4>(o, u32x4_splat(0)), r);
-                log!("o: {:032X} r: {:032X}", print_v128(o), print_v128(r));
-
-                if !endx || lx == 0 {
-                    let ix_ = if endx { i } else { ix + 1 };
-                    let o = to_vec(self.data[ix_].0 << 7 & 0x80808080);
-                    r = u8x16_add(o, r);
-                    r = u8x16_add(u32x4_shuffle::<4, 0, 1, 2>(o, u32x4_splat(0)), r);
-                    r = u8x16_add(u32x4_shuffle::<1, 2, 3, 4>(o, u32x4_splat(0)), r);
-                    log!(
-                        "ix: {ix_} o: {:032X} r: {:032X}",
-                        print_v128(o),
-                        print_v128(r)
-                    );
-
-                    let o = if i == 0 {
-                        let ix = if endx { endrow } else { endrow + j + 1 };
-                        log!("ix: {ix}");
-                        self.data[ix].0.wrapping_shl(((4 - ly) * 8) as _)
-                    } else {
-                        let ix = if endx { i - sx } else { ix - sx + 1 };
-                        log!("ix: {ix}");
-                        self.data[ix].0
-                    };
-                    log!("o: {o:08X}");
-                    if o & 0x100_0000 != 0 {
-                        r = u8x16_add(r, u8x16_replace_lane::<3>(u8x16_splat(0), 16));
-                    }
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]);
+                if i == 0 {
+                    o = rot_y_pos(o);
                 }
+                if j == 0 {
+                    o = rot_x_pos(o);
+                }
+                r00 = u8x16_add(r00, o);
+                log!("o: {:032X}", print_v128(o));
 
-                let o = if i == 0 {
-                    log!("ix: {}", endrow + j);
-                    self.data[endrow + j].0.wrapping_shl(((4 - ly) * 8) as _)
-                } else {
-                    log!("ix: {}", ix - sx);
-                    self.data[ix - sx].0
+                ix_ = match (endy, j == 0) {
+                    (false, false) => ix + sx * 2 - 1,
+                    (false, true) => ix + sx * 3 - 1,
+                    (true, false) => j - 1,
+                    (true, true) => sx - 1,
                 };
-                let o = to_vec(o >> 24);
-                r = u8x16_add(o, r);
-                r = u8x16_add(u32x4_shl(o, 4), r);
-                r = u8x16_add(u32x4_shr(o, 4), r);
-                log!("o: {:032X} r: {:032X}", print_v128(o), print_v128(r));
-
-                if !endy || ly == 0 {
-                    let ix_ = if endy { j } else { ix + sx };
-                    let o = to_vec(self.data[ix_].0 << 24);
-                    r = u8x16_add(o, r);
-                    r = u8x16_add(u32x4_shl(o, 4), r);
-                    r = u8x16_add(u32x4_shr(o, 4), r);
-                    log!(
-                        "ix: {ix_} o: {:032X} r: {:032X}",
-                        print_v128(o),
-                        print_v128(r)
-                    );
-
-                    let o = if j == 0 {
-                        let ix = if endy { sx - 1 } else { sx * 2 - 1 + i };
-                        log!("ix: {ix}");
-                        self.data[ix].0.wrapping_shl(((8 - lx) & 7) as _)
-                    } else {
-                        let ix = if endy { j - 1 } else { sx - 1 + ix };
-                        log!("ix: {ix}");
-                        self.data[ix].0
-                    };
-                    log!("o: {o:08X}");
-                    if o & 0x80 != 0 {
-                        r = u8x16_add(r, u8x16_replace_lane::<12>(u8x16_splat(0), 1));
-                    }
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]);
+                if endy {
+                    o = rot_y_neg(o);
                 }
+                if j == 0 {
+                    o = rot_x_pos(o);
+                }
+                r10 = u8x16_add(r10, o);
+                log!("o: {:032X}", print_v128(o));
 
-                let o = if i == 0 {
-                    let v = if j == 0 {
-                        self.data[self.data.len() - 1]
-                            .0
-                            .wrapping_shl(((8 - lx) & 7) as _)
-                    } else {
-                        self.data[endrow + j - 1].0
-                    };
-                    v.wrapping_shl(((4 - ly) * 8) as _)
-                } else if j == 0 {
-                    self.data[i - 1].0.wrapping_shl(((8 - lx) & 7) as _)
-                } else {
-                    self.data[ix - sx - 1].0
+                ix_ = match (i == 0, endx) {
+                    (false, false) => ix + 2 - sx,
+                    (false, true) => ix + 2 - sx * 2,
+                    (true, false) => l - sx + j + 2,
+                    (true, true) => l - sx,
                 };
-                if o & 0x8000_0000 != 0 {
-                    r = u8x16_add(r, u8x16_replace_lane::<0>(u8x16_splat(0), 1));
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]);
+                if i == 0 {
+                    o = rot_y_pos(o);
                 }
-
-                if (!endx || lx == 0) && (!endy || ly == 0) {
-                    let ix = match (endx, endy) {
-                        (false, false) => ix + sx + 1,
-                        (false, true) => j + 1,
-                        (true, false) => i + sx,
-                        (true, true) => 0,
-                    };
-                    if self.data[ix].0 & 1 != 0 {
-                        r = u8x16_add(r, u8x16_replace_lane::<15>(u8x16_splat(0), 16));
-                    }
+                if endx {
+                    o = rot_x_neg(o);
                 }
+                r01 = u8x16_add(r01, o);
+                log!("o: {:032X}", print_v128(o));
 
-                self.data[ix].1 = from_vec(apply_rule(v, r));
+                ix_ = match (endy, endx) {
+                    (false, false) => ix + 2 + sx * 2,
+                    (false, true) => ix + 2 + sx,
+                    (true, false) => j + 2,
+                    (true, true) => 0,
+                };
+                log!("ix: {ix_}");
+                o = to_vec(d[ix_]);
+                if endy {
+                    o = rot_y_neg(o);
+                }
+                if endx {
+                    o = rot_x_neg(o);
+                }
+                r11 = u8x16_add(r11, o);
+                log!("o: {:032X}", print_v128(o));
+
+                let o00 = apply_rule(v00, r00);
+                let o01 = apply_rule(v01, r01);
+                let o10 = apply_rule(v10, r10);
+                let o11 = apply_rule(v11, r11);
+                log!(
+                    "v: {:032X} r: {:032X} o: {:032X}",
+                    print_v128(v00),
+                    print_v128(r00),
+                    print_v128(o00)
+                );
+                log!(
+                    "v: {:032X} r: {:032X} o: {:032X}",
+                    print_v128(v01),
+                    print_v128(r01),
+                    print_v128(o01)
+                );
+                log!(
+                    "v: {:032X} r: {:032X} o: {:032X}",
+                    print_v128(v10),
+                    print_v128(r10),
+                    print_v128(o10)
+                );
+                log!(
+                    "v: {:032X} r: {:032X} o: {:032X}",
+                    print_v128(v11),
+                    print_v128(r11),
+                    print_v128(o11)
+                );
+                d[ix + l] = from_vec(o00);
+                d[ix + l + 1] = from_vec(o01);
+                d[ix + l + sx] = from_vec(o10);
+                d[ix + l + sx + 1] = from_vec(o11);
+                log!(
+                    "output: {:08X} {:08X} {:08X} {:08X}",
+                    d[ix + l],
+                    d[ix + l + 1],
+                    d[ix + l + sx],
+                    d[ix + l + sx + 1]
+                );
             }
         }
 
-        for (i, j) in &mut self.data {
-            *i = *j;
-        }
+        d.copy_within(l.., 0);
     }
 
-    fn click(&mut self, x: f32, y: f32, right_click: bool) {
-        if right_click {
+    fn click(&mut self, x: f32, y: f32, button: MouseButton) {
+        if let MouseButton::Right = button {
             self.paused = !self.paused;
-            return;
-        }
+        } else if let MouseButton::Middle = button {
+            let mut rng = Xoshiro512StarStar::from_entropy();
+            // SAFETY: All bounds are valid.
+            unsafe {
+                rng.fill_bytes(from_raw_parts_mut(
+                    self.data.as_mut_ptr() as *mut u8,
+                    size_of_val(&self.data[..]),
+                ))
+            }
+        } else if let MouseButton::Left = button {
+            let (x, y) = ((x / 4.) as i32, (y / 4.) as i32);
+            let r = 0..(self.size << 3) as i32;
+            if !r.contains(&x) || !r.contains(&y) {
+                return;
+            }
 
-        let (x, y) = ((x / 4.) as i32, (y / 4.) as i32);
-        let r = 0..self.size as i32;
-        if !r.contains(&x) || !r.contains(&y) {
-            return;
+            let (x, y) = (x as usize, y as usize);
+            let i = x % self.size + (y % (self.size * 2)) * self.size;
+            let b = x / self.size | (y / (self.size * 2)) << 3;
+            self.data[i] ^= 1 << b;
         }
-
-        let (x, y) = (x as usize, y as usize);
-        let i = (x >> 3) + (y >> 2) * ((self.size + 7) >> 3);
-        let b = x & 7 | (y & 3) << 3;
-        self.data[i].0 ^= 1 << b;
     }
 
     fn render(&self, state: &mut State) {
-        state.resize(self.size * 4, self.size * 4);
+        state.resize(self.size << 5, self.size << 5);
 
-        static PATTERN: &[(u32, bool)] = &[
-            (0, true),
-            (0, false),
-            (0, false),
-            (0, true),
-            (8, false),
-            (8, false),
-            (8, false),
-            (8, true),
-            (16, false),
-            (16, false),
-            (16, false),
-            (16, true),
-            (24, false),
-            (24, false),
-            (24, false),
-            (24, true),
+        const COLORMAP: v128 = u8x16(0, 64, 255, 191, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        static PATTERN: [u8; 32] = [
+            16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+            10, 11, 12, 13, 14, 15,
         ];
 
-        for (c, (a, &(o, h))) in state.colors_mut().chunks_exact_mut(self.size * 4).zip(
-            self.data
-                .chunks_exact((self.size + 7) >> 3)
-                .flat_map(|a| repeat(a).zip(PATTERN)),
-        ) {
-            for (c, (mut v, _)) in c.chunks_mut(32).zip(a) {
-                let mut h = if h { u32::MAX } else { 0x8888_8889 };
-                v >>= o;
-                for i in c.chunks_exact_mut(4) {
-                    let b = v & 1 != 0;
-                    for i in i {
-                        let c = match (b, h & 1 != 0) {
-                            (false, false) => 0,
-                            (false, true) => 64,
-                            (true, false) => 255,
-                            (true, true) => 191,
-                        };
-                        *i = Color {
-                            r: c,
-                            g: c,
-                            b: c,
-                            a: 255,
-                        };
-                        h >>= 1;
+        let mut it = state.colors_mut().into_iter();
+        for sy in 0..4 {
+            let mut b = true;
+            for a in self.data[..self.data.len() / 2].chunks_exact(self.size) {
+                let b_ = b;
+                b = false;
+                for b in PATTERN {
+                    let sx = (b & 7) as u32;
+                    let b = b & 8 != 0 || b & 16 != 0 && b_;
+                    for (i, &v) in a.iter().enumerate() {
+                        let v = v & 1 << (sx + sy * 8) != 0;
+
+                        let c = it.next().unwrap() as *mut _;
+                        for _ in 0..3 {
+                            it.next().unwrap();
+                        }
+                        let mut v = v128_or(
+                            u8x16_splat(if v { 2 } else { 0 }),
+                            if b {
+                                u8x16_splat(1)
+                            } else if i == 0 {
+                                u32x4(0x0101_0101, 0, 0, 0x0101_0101)
+                            } else {
+                                u32x4(0, 0, 0, 0x0101_0101)
+                            },
+                        );
+                        v = v128_or(u8x16_swizzle(COLORMAP, v), u32x4_splat(0xff00_0000));
+                        // SAFETY: Color struct is 4 byte, and there are 4 adjacent.
+                        unsafe { v128_store(c as _, v) }
                     }
-                    v >>= 1;
                 }
             }
         }
