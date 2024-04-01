@@ -24,18 +24,18 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
 
 **NOTE:** Many features are not yet available or (partially) broken.
 
-* [X] Easily run any WASM module.
-* [X] Supports WAT compilation.
-* [X] Imports any (custom) Godot methods into WASM.
-* [X] Easy access to linear memory, per-element basis or bulk array operation.
-* [X] Catch and throw runtime error/traps with signal.
+* Easily run any WASM module.
+* Supports WAT compilation.
+* Imports any (custom) Godot methods into WASM.
+* Easy access to linear memory, per-element basis or bulk array operation.
+* Catch and throw runtime error/traps with signal.
 
   **NOTE:** Signal support is a bit experimental and _might_ break.
 
-* [X] Epoch-based limiter to stop bad-behaving module.
-* [X] Memory limiter to prevent exhaustion.
-* [X] Experimental API for direct Godot object manipulation.
-* [X] WASI common API ~~with in-memory filesystem~~.
+* Epoch-based limiter to stop bad-behaving module.
+* Memory limiter to prevent exhaustion.
+* Experimental API for direct Godot object manipulation.
+* WASI common API ~~with in-memory filesystem~~.
 
   **NOTE:** In-memory filesystem is currently disabled due to dependency problems.
   It will be enabled in the future if possible.
