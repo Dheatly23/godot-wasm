@@ -53,12 +53,17 @@ value is a dictionary with content defined as follows:
 * `"results"` : Array of type enum values.
 * `"object"` : The object which to bind call.
 * `"mefhod"` : The method name to call.
+* `"callable"` : Callable to call. Replaces object-method pair.
 
 Config is too complex to be put here, read at [WasmConfig](./WasmConfig.md).
 
-### `Array|null call_wasm(String name, Array args)`
+### `Array|null call_wasm(StringName name, Array args)`
 
 Calls WASM exported function with given arguments. Returns null if it errors.
+
+### `Callable bind_wasm_callable(StringName name)`
+
+Creates a callable that calls WASM exported function.
 
 ### `String signal_error(String message)`
 
@@ -114,6 +119,11 @@ Closes standard input.
 
 Returns true if memory is available
 (an export of type memory and named `memory`).
+
+### `void memory_set_name(String name)`
+
+Sets a custom exported memory name.
+Useful if instance memory is non-standard (eg. not named `"memory"`).
 
 ### `int memory_size()`
 
@@ -175,11 +185,11 @@ Gets a 64-bit little-endian floating-point number from memory.
 
 Puts a 64-bit little-endian floating-point number to memory.
 
-### `void put_array(int ptr, PackedByteArray|PackedIntArray|PackedFloatArray array)`
+### `void put_array(int ptr, Variant array)`
 
 Writes array of values to memory.
 
-### `PackedByteArray|PackedIntArray|PackedFloatArray get_array(int ptr, int n, VariantType type)`
+### `Variant get_array(int ptr, int n, VariantType type)`
 
 Reads array of values from memory.
 
@@ -213,12 +223,16 @@ The valid types are as follows:
 | `d` | `float` | 8 | 64-bit floating-point number |
 | `v2f` | `Vector2` | 8 | 2D vector as 2 32-bit floating-point number |
 | `v2d` | `Vector2` | 16 | 2D vector as 2 64-bit floating-point number |
-| `v2i` | `Vector2` | 8 | 2D vector as 2 32-bit signed integer number |
-| `v2l` | `Vector2` | 16 | 2D vector as 2 64-bit signed integer number |
+| `v2i` | `Vector2i` | 8 | 2D vector as 2 32-bit signed integer number |
+| `v2l` | `Vector2i` | 16 | 2D vector as 2 64-bit signed integer number |
 | `v3f` | `Vector3` | 12 | 3D vector as a 3 32-bit floating-point number |
 | `v3d` | `Vector3` | 24 | 3D vector as a 3 64-bit floating-point number |
-| `v3i` | `Vector3` | 12 | 3D vector as a 3 32-bit signed integer number |
-| `v3l` | `Vector3` | 24 | 3D vector as a 3 64-bit signed integer number |
+| `v3i` | `Vector3i` | 12 | 3D vector as a 3 32-bit signed integer number |
+| `v3l` | `Vector3i` | 24 | 3D vector as a 3 64-bit signed integer number |
+| `v4f` | `Vector4` | 12 | 4D vector as a 4 32-bit floating-point number |
+| `v4d` | `Vector4` | 24 | 4D vector as a 4 64-bit floating-point number |
+| `v4i` | `Vector4i` | 12 | 4D vector as a 4 32-bit signed integer number |
+| `v4l` | `Vector4i` | 24 | 4D vector as a 4 64-bit signed integer number |
 | `pf` | `Plane` | 16 | Plane represented as abcd 32-bit floating-point number |
 | `pd` | `Plane` | 32 | Plane represented as abcd 64-bit floating-point number |
 | `qf` | `Quat` | 16 | Quaternion represented as xyzw 32-bit floating-point number |
@@ -228,10 +242,14 @@ The valid types are as follows:
 | `Cb` | `Color` | 4 | Color represented as rgba 8-bit integer |
 | `rf` | `Rect2` | 16 | Rect2 represented as 4 32-bit floating-point number |
 | `rd` | `Rect2` | 32 | Rect2 represented as 4 64-bit floating-point number |
+| `ri` | `Rect2i` | 16 | Rect2i represented as 4 32-bit signed integer number |
+| `rl` | `Rect2i` | 32 | Rect2i represented as 4 64-bit signed integer number |
 | `af` | `Aabb` | 24 | Aabb represented as 6 32-bit floating-point number |
 | `ad` | `Aabb` | 48 | Aabb represented as 6 64-bit floating-point number |
 | `mf` | `Basis` | 36 | Basis represented as 9 row-major 32-bit floating-point number |
 | `md` | `Basis` | 72 | Basis represented as 9 row-major 64-bit floating-point number |
+| `Mf` | `Projection` | 64 | Projection represented as 16 column-major 32-bit floating-point number |
+| `Md` | `Projection` | 128 | Projection represented as 16 column-major 64-bit floating-point number |
 | `tf` | `Transform2D` | 24 | 2D transform represented as 6 32-bit floating-point number |
 | `td` | `Transform2D` | 48 | 2D transform represented as 6 64-bit floating-point number |
 | `Tf` | `Transform2D` | 48 | 3D transform represented as 12 32-bit floating-point number |
