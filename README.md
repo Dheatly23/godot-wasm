@@ -6,12 +6,8 @@ Hello there! Thanks for checking out this library 🙏.
 I published this as my future portfolio on my coding adventure.
 This is my hobby project, developed over 6 months now.
 It has gone through a _lot_ of changes.
-And with Godot 4 on horizon, i _might_ port it to the next version
-(if and when rust bindings is finalized).
 
 For the Godot 3 version, check out branch `gdnative`.
-There is also a `gdextension` branch that tracks interim porting to
-GDExtension.
 
 ## ⚠ WARNING! Very Beta! ⚠
 **This repository is changing rapidly.** And since i don't really like
@@ -29,12 +25,13 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
 * Imports any (custom) Godot methods into WASM.
 * Easy access to linear memory, per-element basis or bulk array operation.
 * Catch and throw runtime error/traps with signal.
-
-  **NOTE:** Signal support is a bit experimental and _might_ break.
-
 * Epoch-based limiter to stop bad-behaving module.
 * Memory limiter to prevent exhaustion.
-* Experimental API for direct Godot object manipulation.
+* Experimental API for direct Godot object manipulation. Available in 3 flavors:
+  * Legacy `compat` API using indices. Easier to implement.
+  * Newer `extern` API using externrefs, with interop with legacy API.
+    Some programming language might not support it at all.
+  * Component-based API. Requires component model.
 * WASI common API ~~with in-memory filesystem~~.
 
   **NOTE:** In-memory filesystem is currently disabled due to dependency problems.
@@ -89,8 +86,8 @@ func _ready():
   # Create instance from module
   var instance = WasmInstance.new().initialize(
     module, # Module object
-    {} # Host imports
-    # Configuration (optional)
+    {}, # Host imports
+    {} # Configuration (optional)
   )
   # Convenience method
   # var instance = module.instantiate({})
@@ -108,8 +105,7 @@ func _ready():
 With the addon, there are many more helper scripts too:
 * `WasmHelper` : Autoload that contains many helper functions to load
   WebAssembly code.
-* `WasmFile`/`WasmFileLoader` : Importer that automatically imports
-  WASM/WAT file. It also lazily compile and cache module.
+* `WasmLoader`/`WasmSaver` : Registers WASM files as native resource.
 
 ## Potential Uses
 
