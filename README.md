@@ -9,9 +9,7 @@ It has gone through a _lot_ of changes.
 And with Godot 4 on horizon, i _might_ port it to the next version
 (if and when rust bindings is finalized).
 
-For the Godot 3 version, check out branch `gdnative`.
-There is also a `gdextension` branch that tracks interim porting to
-GDExtension.
+This is the old gdnative version and is on maintenance-only.
 
 ## ⚠ WARNING! Very Beta! ⚠
 **This repository is changing rapidly.** And since i don't really like
