@@ -36,7 +36,7 @@ camino = { version = "^1.1", optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "fe5b02ba6abec0ba2d8fff612368a9c896872810"
+rev = "824cb6c86dd380b44bad48f2b2746d2d752fa406"
 
 [dependencies.wasmtime]
 version = "^19.0"

@@ -7,7 +7,7 @@ use std::{fmt, mem, ptr};
 use anyhow::{bail, Error};
 use cfg_if::cfg_if;
 use godot::prelude::*;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
@@ -46,6 +46,8 @@ use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, ENGINE};
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
+#[cfg(feature = "wasi")]
+use crate::wasm_util::gstring_from_maybe_utf8;
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
@@ -334,7 +336,7 @@ where
                 } else {
                     let (outer, inner) = OuterStdin::new(move || {
                         <Gd<RefCounted>>::from_instance_id(inst_id)
-                            .emit_signal(SIGNAL_NAME[3].clone(), &[]);
+                            .emit_signal(StringName::from(c"stdin_request"), &[]);
                     });
                     builder.stdin(outer);
                     wasi_stdin = Some(inner as _);
@@ -345,7 +347,7 @@ where
                     PipeBufferType::Unbuffered => {
                         builder.stdout(UnbufferedWritePipe::new(move |buf| {
                             <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                                SIGNAL_NAME[1].clone(),
+                                StringName::from(c"stdout_emit"),
                                 &[PackedByteArray::from(buf).to_variant()],
                             );
                         }))
@@ -353,16 +355,16 @@ where
                     PipeBufferType::LineBuffer => {
                         builder.stdout(StreamWrapper::from(LineWritePipe::new(move |buf| {
                             <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                                SIGNAL_NAME[1].clone(),
-                                &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                                StringName::from(c"stdout_emit"),
+                                &[gstring_from_maybe_utf8(buf).to_variant()],
                             );
                         })))
                     }
                     PipeBufferType::BlockBuffer => {
                         builder.stdout(StreamWrapper::from(BlockWritePipe::new(move |buf| {
                             <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                                SIGNAL_NAME[1].clone(),
-                                &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                                StringName::from(c"stdout_emit"),
+                                &[gstring_from_maybe_utf8(buf).to_variant()],
                             );
                         })))
                     }
@@ -373,7 +375,7 @@ where
                     PipeBufferType::Unbuffered => {
                         builder.stderr(UnbufferedWritePipe::new(move |buf| {
                             <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                                SIGNAL_NAME[2].clone(),
+                                StringName::from(c"stderr_emit"),
                                 &[PackedByteArray::from(buf).to_variant()],
                             );
                         }))
@@ -381,16 +383,16 @@ where
                     PipeBufferType::LineBuffer => {
                         builder.stderr(StreamWrapper::from(LineWritePipe::new(move |buf| {
                             <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                                SIGNAL_NAME[2].clone(),
-                                &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                                StringName::from(c"stderr_emit"),
+                                &[gstring_from_maybe_utf8(buf).to_variant()],
                             );
                         })))
                     }
                     PipeBufferType::BlockBuffer => {
                         builder.stderr(StreamWrapper::from(BlockWritePipe::new(move |buf| {
                             <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                                SIGNAL_NAME[2].clone(),
-                                &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                                StringName::from(c"stderr_emit"),
+                                &[gstring_from_maybe_utf8(buf).to_variant()],
                             );
                         })))
                     }
@@ -616,22 +618,13 @@ impl StoreData {
     }
 }
 
-static SIGNAL_NAME: Lazy<[StringName; 4]> = Lazy::new(|| {
-    [
-        StringName::from_latin1_with_nul(b"error_happened\0"),
-        StringName::from_latin1_with_nul(b"stdout_emit\0"),
-        StringName::from_latin1_with_nul(b"stderr_emit\0"),
-        StringName::from_latin1_with_nul(b"stdin_request\0"),
-    ]
-});
-
 impl WasmInstance {
     fn emit_error_wrapper(&self, msg: String) {
         let args = [GString::from(msg).to_variant()];
 
         self.base()
             .clone()
-            .emit_signal(SIGNAL_NAME[0].clone(), &args);
+            .emit_signal(StringName::from(c"error_happened"), &args);
     }
 
     pub fn get_data(&self) -> Result<&InstanceData<StoreData>, Error> {

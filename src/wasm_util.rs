@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -11,7 +12,7 @@ use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::engine::WeakRef;
 use godot::prelude::*;
 use godot::register::property::PropertyHintInfo;
-use once_cell::sync::Lazy;
+
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Linker, Store, ValRaw, ValType};
@@ -118,6 +119,14 @@ macro_rules! func_registry{
             }
         }
     };
+}
+
+#[allow(dead_code)]
+pub fn gstring_from_maybe_utf8(buf: &[u8]) -> GString {
+    match String::from_utf8_lossy(buf) {
+        Cow::Owned(v) => GString::from(v),
+        Cow::Borrowed(v) => GString::from(v),
+    }
 }
 
 pub fn option_to_variant<T: ToGodot>(t: Option<T>) -> Variant {
@@ -491,32 +500,21 @@ where
     unsafe { Func::new_unchecked(store, ty_cloned, f) }
 }
 
-static DATA_STRS: Lazy<(StringName, StringName, StringName, StringName, StringName)> =
-    Lazy::new(|| {
-        (
-            StringName::from_latin1_with_nul(b"params\0"),
-            StringName::from_latin1_with_nul(b"results\0"),
-            StringName::from_latin1_with_nul(b"object\0"),
-            StringName::from_latin1_with_nul(b"method\0"),
-            StringName::from_latin1_with_nul(b"callable\0"),
-        )
-    });
-
 fn process_func(dict: Dictionary) -> Result<(FuncType, CallableEnum), Error> {
-    let Some(params) = dict.get(DATA_STRS.0.clone()) else {
+    let Some(params) = dict.get(StringName::from(c"params")) else {
         bail_with_site!("Key \"params\" does not exist")
     };
-    let Some(results) = dict.get(DATA_STRS.1.clone()) else {
+    let Some(results) = dict.get(StringName::from(c"results")) else {
         bail_with_site!("Key \"results\" does not exist")
     };
 
-    let callable = if let Some(c) = dict.get(DATA_STRS.4.clone()) {
+    let callable = if let Some(c) = dict.get(StringName::from(c"callable")) {
         CallableEnum::Callable(site_context!(Callable::try_from_variant(&c))?)
     } else {
-        let Some(object) = dict.get(DATA_STRS.2.clone()) else {
+        let Some(object) = dict.get(StringName::from(c"object")) else {
             bail_with_site!("Key \"object\" does not exist")
         };
-        let Some(method) = dict.get(DATA_STRS.3.clone()) else {
+        let Some(method) = dict.get(StringName::from(c"method")) else {
             bail_with_site!("Key \"method\" does not exist")
         };
 

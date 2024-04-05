@@ -18,7 +18,9 @@ use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe}
 //use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::site_context;
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
-use crate::wasm_util::{option_to_variant, variant_to_option, SendSyncWrapper};
+use crate::wasm_util::{
+    gstring_from_maybe_utf8, option_to_variant, variant_to_option, SendSyncWrapper,
+};
 
 #[allow(dead_code)]
 fn warn_vfs_deprecated() {
@@ -72,7 +74,7 @@ impl WasiContext {
         move |buf| {
             base.clone().emit_signal(
                 (*signal_name).clone(),
-                &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                &[gstring_from_maybe_utf8(buf).to_variant()],
             );
         }
     }
@@ -391,7 +393,12 @@ impl WasiContext {
     fn get_mounts(&self) -> Dictionary {
         self.physical_mount
             .iter()
-            .map(|(k, v)| (GString::from(k), GString::from(v)))
+            .map(|(k, v)| {
+                (
+                    GString::from(<_ as AsRef<str>>::as_ref(k)),
+                    GString::from(<_ as AsRef<str>>::as_ref(v)),
+                )
+            })
             .collect()
     }
 

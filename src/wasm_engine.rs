@@ -445,8 +445,8 @@ impl WasmModule {
     fn get_exports(&self) -> Dictionary {
         self.unwrap_data(|m| {
             let mut ret = Dictionary::new();
-            let params_str = StringName::from_latin1_with_nul(b"params\0");
-            let results_str = StringName::from_latin1_with_nul(b"results\0");
+            let params_str = StringName::from(c"params");
+            let results_str = StringName::from(c"results");
             for i in site_context!(m.module.get_core())?.exports() {
                 if let ExternType::Func(f) = i.ty() {
                     let (p, r) = from_signature(&f)?;
@@ -469,8 +469,8 @@ impl WasmModule {
     fn get_host_imports(&self) -> Dictionary {
         self.unwrap_data(|m| {
             let mut ret = Dictionary::new();
-            let params_str = StringName::from_latin1_with_nul(b"params\0");
-            let results_str = StringName::from_latin1_with_nul(b"results\0");
+            let params_str = StringName::from(c"params");
+            let results_str = StringName::from(c"results");
 
             for i in site_context!(m.module.get_core())?.imports() {
                 let ExternType::Func(f) = i.ty() else {
