@@ -1,3 +1,5 @@
+#[cfg(feature = "godot-component")]
+mod godot_component;
 #[cfg(feature = "wasi-preview2")]
 mod preview2;
 mod rw_struct;

@@ -11,7 +11,7 @@ use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Once;
 #[cfg(feature = "epoch-timeout")]
 use parking_lot::{Condvar, Mutex};
-#[cfg(feature = "wasi-preview2")]
+#[cfg(feature = "component-model")]
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
 
@@ -101,7 +101,7 @@ pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
         .wasm_multi_memory(true)
         .wasm_memory64(true);
     config.wasm_threads(false); // Disable threads for now
-    #[cfg(feature = "wasi-preview2")]
+    #[cfg(feature = "component-model")]
     config.wasm_component_model(true);
 
     Engine::new(&config).unwrap()
@@ -140,7 +140,7 @@ pub struct ModuleData {
 #[derive(Clone)]
 pub enum ModuleType {
     Core(Module),
-    #[cfg(feature = "wasi-preview2")]
+    #[cfg(feature = "component-model")]
     Component(Component),
 }
 
@@ -154,7 +154,7 @@ impl ModuleType {
         }
     }
 
-    #[cfg(feature = "wasi-preview2")]
+    #[cfg(feature = "component-model")]
     pub fn get_component(&self) -> Result<&Component, Error> {
         if let Self::Component(m) = self {
             Ok(m)
@@ -197,7 +197,7 @@ impl WasmModule {
 
     fn load_module(bytes: &[u8]) -> Result<ModuleType, Error> {
         cfg_if! {
-            if #[cfg(feature = "wasi-preview2")] {
+            if #[cfg(feature = "component-model")] {
                 let bytes = site_context!(wat::parse_bytes(bytes))?;
                 if wasmparser::Parser::is_component(&bytes) {
                     Ok(ModuleType::Component(site_context!(
@@ -236,7 +236,7 @@ impl WasmModule {
                 })
                 .collect::<Result<HashMap<_, _>, Error>>()?;
         }
-        #[cfg(feature = "wasi-preview2")]
+        #[cfg(feature = "component-model")]
         if let ModuleType::Component(_) = module {
             if !imports.is_empty() {
                 bail_with_site!("Imports not supported with component yet");
@@ -297,10 +297,10 @@ impl WasmModule {
                     Some(Precompiled::Module) => {
                         ModuleType::Core(site_context!(Module::deserialize(&ENGINE, data))?)
                     }
-                    #[cfg(feature = "wasi-preview2")]
-                    Some(Precompiled::Component) => {
-                        ModuleType::Component(site_context!(Component::deserialize(&ENGINE, data))?)
-                    }
+                    #[cfg(feature = "component-model")]
+                    Some(Precompiled::Component) => ModuleType::Component(site_context!(
+                        Component::deserialize(&ENGINE, &*data)
+                    )?),
                     _ => bail_with_site!("Unsupported data content"),
                 }
             };
@@ -330,7 +330,7 @@ impl WasmModule {
                     Some(Precompiled::Module) => {
                         ModuleType::Core(site_context!(Module::deserialize_file(&ENGINE, path))?)
                     }
-                    #[cfg(feature = "wasi-preview2")]
+                    #[cfg(feature = "component-model")]
                     Some(Precompiled::Component) => ModuleType::Component(site_context!(
                         Component::deserialize_file(&ENGINE, path)
                     )?),
@@ -430,7 +430,7 @@ impl WasmModule {
                 Ok(PackedByteArray::from(
                     &match &m.module {
                         ModuleType::Core(m) => m.serialize(),
-                        #[cfg(feature = "wasi-preview2")]
+                        #[cfg(feature = "component-model")]
                         ModuleType::Component(m) => m.serialize(),
                     }?[..],
                 ))
@@ -480,7 +480,7 @@ impl WasmModule {
                 if let Some(m) = m.imports.get(i.module()) {
                     match &m.bind().get_data()?.module {
                         ModuleType::Core(m) if m.get_export(i.name()).is_some() => continue,
-                        #[cfg(feature = "wasi-preview2")]
+                        #[cfg(feature = "component-model")]
                         ModuleType::Component(_) => {
                             bail_with_site!("Import {} is a component", i.module())
                         }
@@ -541,7 +541,7 @@ impl WasmModule {
         self.unwrap_data(|m| {
             let v = match &m.module {
                 ModuleType::Core(m) => Some(m.resources_required()),
-                #[cfg(feature = "wasi-preview2")]
+                #[cfg(feature = "component-model")]
                 ModuleType::Component(m) => m.resources_required(),
             };
             let Some(ResourcesRequired {
@@ -578,7 +578,7 @@ impl WasmModule {
         fn f(module: &ModuleData) -> Option<ResourcesRequired> {
             match &module.module {
                 ModuleType::Core(m) => Some(m.resources_required()),
-                #[cfg(feature = "wasi-preview2")]
+                #[cfg(feature = "component-model")]
                 ModuleType::Component(m) => m.resources_required(),
             }
             .into_iter()

@@ -75,6 +75,11 @@ object-registry-extern = []
 object-registry = ["object-registry-compat", "object-registry-extern"]
 more-precise-timer = []
 deterministic-wasm = []
+component-model = [
+  "wasmtime/component-model",
+  "dep:wasmparser",
+  "dep:wat",
+]
 wasi = [
   "dep:wasmtime-wasi",
 #  "dep:wasi-common",
@@ -85,12 +90,16 @@ wasi = [
   "dep:bytes",
 ]
 wasi-preview2 = [
-  "dep:wasmparser",
-  "dep:wat",
+  "dep:bytes",
   "wasi",
+  "component-model",
   "wasmtime/component-model",
 #  "wasmtime-wasi/preview2",
 #  "wasmtime-wasi/preview1-on-preview2",
+]
+godot-component = [
+  "dep:slab",
+  "component-model",
 ]
 
 [workspace]

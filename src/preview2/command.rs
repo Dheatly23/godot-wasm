@@ -5,13 +5,18 @@ use parking_lot::Mutex;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Store;
 use wasmtime_wasi::command::sync::{add_to_linker, Command};
-use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
+#[cfg(feature = "godot-component")]
+use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
 use crate::wasm_engine::{WasmModule, ENGINE};
-use crate::wasm_instance::{InstanceData, InstanceType, MaybeWasi, StoreData};
-use crate::wasm_util::config_store_common;
+#[cfg(feature = "memory-limiter")]
+use crate::wasm_instance::MemoryLimit;
+use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_util::config_store_epoch;
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
@@ -30,13 +35,58 @@ pub struct CommandData {
     bindings: Command,
 }
 
-fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Error> {
+pub struct StoreData {
+    inner_lock: InnerLock,
+
+    #[cfg(feature = "epoch-timeout")]
+    epoch_timeout: u64,
+
+    #[cfg(feature = "memory-limiter")]
+    memory_limits: MemoryLimit,
+
+    table: ResourceTable,
+    wasi_ctx: WasiCtx,
+    #[cfg(feature = "godot-component")]
+    godot_ctx: GodotCtx,
+}
+
+impl AsRef<InnerLock> for StoreData {
+    fn as_ref(&self) -> &InnerLock {
+        &self.inner_lock
+    }
+}
+
+impl AsMut<InnerLock> for StoreData {
+    fn as_mut(&mut self) -> &mut InnerLock {
+        &mut self.inner_lock
+    }
+}
+
+#[cfg(feature = "godot-component")]
+impl AsMut<GodotCtx> for StoreData {
+    fn as_mut(&mut self) -> &mut GodotCtx {
+        &mut self.godot_ctx
+    }
+}
+
+impl WasiView for StoreData {
+    fn table(&mut self) -> &mut ResourceTable {
+        &mut self.table
+    }
+
+    fn ctx(&mut self) -> &mut WasiCtx {
+        &mut self.wasi_ctx
+    }
+}
+
+fn instantiate(
+    _inst_id: InstanceId,
+    config: Config,
+    module: Gd<WasmModule>,
+) -> Result<CommandData, Error> {
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
-    let mut store = Store::new(&ENGINE, StoreData::default());
-    config_store_common(&mut store, &config)?;
-
-    let ctx = if let Config {
+    let wasi_ctx = if let Config {
         with_wasi: true,
         wasi_context: Some(ctx),
         ..
@@ -49,10 +99,37 @@ fn instantiate(config: Config, module: Gd<WasmModule>) -> Result<CommandData, Er
         WasiContext::init_ctx_no_context(&mut ctx, &config)?;
         ctx.build()
     };
-    store.data_mut().wasi_ctx = MaybeWasi::Preview2(ctx, ResourceTable::new());
+
+    let mut store = Store::new(
+        &ENGINE,
+        StoreData {
+            inner_lock: InnerLock::default(),
+
+            #[cfg(feature = "epoch-timeout")]
+            epoch_timeout: if config.with_epoch {
+                config.epoch_timeout
+            } else {
+                0
+            },
+
+            #[cfg(feature = "memory-limiter")]
+            memory_limits: MemoryLimit::from_config(&config),
+
+            table: ResourceTable::new(),
+            wasi_ctx,
+            #[cfg(feature = "godot-component")]
+            godot_ctx: GodotCtx::new(_inst_id),
+        },
+    );
+    #[cfg(feature = "epoch-timeout")]
+    config_store_epoch(&mut store, &config);
+    #[cfg(feature = "memory-limiter")]
+    store.limiter(|data| &mut data.memory_limits);
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;
+    #[cfg(feature = "godot-component")]
+    godot_add_to_linker(&mut linker)?;
 
     let (bindings, instance) = Command::instantiate(&mut store, &comp, &linker)?;
 
@@ -108,6 +185,7 @@ impl WasiCommand {
     pub fn initialize_(&self, module: Gd<WasmModule>, config: Option<Variant>) -> bool {
         match self.data.get_or_try_init(move || {
             instantiate(
+                self.base().instance_id(),
                 match config {
                     Some(v) => match Config::try_from_variant(&v) {
                         Ok(v) => v,

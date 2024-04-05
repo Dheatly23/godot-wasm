@@ -11,7 +11,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
-#[cfg(feature = "wasi-preview2")]
+#[cfg(feature = "component-model")]
 use wasmtime::component::Instance as InstanceComp;
 #[cfg(feature = "wasi")]
 use wasmtime::component::ResourceTable;
@@ -81,7 +81,7 @@ pub struct InstanceData<T> {
 
 pub enum InstanceType {
     Core(InstanceWasm),
-    #[cfg(feature = "wasi-preview2")]
+    #[cfg(feature = "component-model")]
     Component(InstanceComp),
 }
 
@@ -95,7 +95,8 @@ impl InstanceType {
         }
     }
 
-    #[cfg(feature = "wasi-preview2")]
+    #[allow(dead_code)]
+    #[cfg(feature = "component-model")]
     pub fn get_component(&self) -> Result<&InstanceComp, Error> {
         if let Self::Component(m) = self {
             Ok(m)
@@ -108,6 +109,10 @@ impl InstanceType {
 pub struct InnerLock {
     mutex_raw: *const RawMutex,
 }
+
+// SAFETY: Store data is safely contained within instance data?
+unsafe impl Send for InnerLock {}
+unsafe impl Sync for InnerLock {}
 
 impl Default for InnerLock {
     fn default() -> Self {
@@ -187,6 +192,7 @@ impl Default for StoreData {
     }
 }
 
+#[allow(dead_code)]
 pub enum MaybeWasi {
     NoCtx,
     #[cfg(feature = "wasi")]

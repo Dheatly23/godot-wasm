@@ -1,0 +1,84 @@
+package godot:core@0.1.0;
+
+interface typeis {
+    use core.{godot-var};
+
+    enum variant-type {
+        %bool,
+        int,
+        float,
+        %string,
+        vector2,
+        vector2i,
+        rect2,
+        rect2i,
+        vector3,
+        vector3i,
+        transform2d,
+        vector4,
+        vector4i,
+        plane,
+        quaternion,
+        aabb,
+        basis,
+        transform3d,
+        projection,
+        color,
+        stringname,
+        nodepath,
+        rid,
+        object,
+        callable,
+        signal,
+        dictionary,
+        array,
+        byte-array,
+        int32-array,
+        int64-array,
+        float32-array,
+        float64-array,
+        string-array,
+        vector2-array,
+        vector3-array,
+        color-array,
+    }
+
+    var-type: func(var: borrow<godot-var>) -> variant-type;
+    is-bool: func(var: borrow<godot-var>)-> bool;
+    is-int: func(var: borrow<godot-var>)-> bool;
+    is-float: func(var: borrow<godot-var>)-> bool;
+    is-string: func(var: borrow<godot-var>)-> bool;
+    is-vector2: func(var: borrow<godot-var>)-> bool;
+    is-vector2i: func(var: borrow<godot-var>)-> bool;
+    is-rect2: func(var: borrow<godot-var>)-> bool;
+    is-rect2i: func(var: borrow<godot-var>)-> bool;
+    is-vector3: func(var: borrow<godot-var>)-> bool;
+    is-vector3i: func(var: borrow<godot-var>)-> bool;
+    is-transform2d: func(var: borrow<godot-var>)-> bool;
+    is-vector4: func(var: borrow<godot-var>)-> bool;
+    is-vector4i: func(var: borrow<godot-var>)-> bool;
+    is-plane: func(var: borrow<godot-var>)-> bool;
+    is-quaternion: func(var: borrow<godot-var>)-> bool;
+    is-aabb: func(var: borrow<godot-var>)-> bool;
+    is-basis: func(var: borrow<godot-var>)-> bool;
+    is-transform3d: func(var: borrow<godot-var>)-> bool;
+    is-projection: func(var: borrow<godot-var>)-> bool;
+    is-color: func(var: borrow<godot-var>)-> bool;
+    is-stringname: func(var: borrow<godot-var>)-> bool;
+    is-nodepath: func(var: borrow<godot-var>)-> bool;
+    is-rid: func(var: borrow<godot-var>)-> bool;
+    is-object: func(var: borrow<godot-var>)-> bool;
+    is-callable: func(var: borrow<godot-var>)-> bool;
+    is-signal: func(var: borrow<godot-var>)-> bool;
+    is-dictionary: func(var: borrow<godot-var>)-> bool;
+    is-array: func(var: borrow<godot-var>)-> bool;
+    is-byte-array: func(var: borrow<godot-var>)-> bool;
+    is-int32-array: func(var: borrow<godot-var>)-> bool;
+    is-int64-array: func(var: borrow<godot-var>)-> bool;
+    is-float32-array: func(var: borrow<godot-var>)-> bool;
+    is-float64-array: func(var: borrow<godot-var>)-> bool;
+    is-string-array: func(var: borrow<godot-var>)-> bool;
+    is-vector2-array: func(var: borrow<godot-var>)-> bool;
+    is-vector3-array: func(var: borrow<godot-var>)-> bool;
+    is-color-array: func(var: borrow<godot-var>)-> bool;
+}

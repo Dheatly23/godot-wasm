@@ -1,0 +1,151 @@
+package godot:core@0.1.0;
+
+interface primitive {
+    use core.{godot-var, int, real};
+
+    record vector2 {
+        x: real,
+        y: real,
+    }
+
+    record vector3 {
+        x: real,
+        y: real,
+        z: real,
+    }
+
+    record vector4 {
+        x: real,
+        y: real,
+        z: real,
+        w: real,
+    }
+
+    record vector2i {
+        x: int,
+        y: int,
+    }
+
+    record vector3i {
+        x: int,
+        y: int,
+        z: int,
+    }
+
+    record vector4i {
+        x: int,
+        y: int,
+        z: int,
+        w: int,
+    }
+
+    record quaternion {
+        x: real,
+        y: real,
+        z: real,
+        w: real,
+    }
+
+    record plane {
+        normal: vector3,
+        d: real,
+    }
+
+    record color {
+        r: real,
+        g: real,
+        b: real,
+        a: real,
+    }
+
+    record rect2 {
+        position: vector2,
+        size: vector2,
+    }
+
+    record rect2i {
+        position: vector2i,
+        size: vector2i,
+    }
+
+    record aabb {
+        position: vector3,
+        size: vector3,
+    }
+
+    record transform2d {
+        a: vector2,
+        b: vector2,
+        origin: vector2,
+    }
+
+    record basis {
+        col-a: vector3,
+        col-b: vector3,
+        col-c: vector3,
+    }
+
+    record transform3d {
+        basis: basis,
+        origin: vector3,
+    }
+
+    record projection {
+        col-a: vector4,
+        col-b: vector4,
+        col-c: vector4,
+        col-d: vector4,
+    }
+
+    from-bool: func(val: bool) -> godot-var;
+    to-bool: func(var: borrow<godot-var>) -> bool;
+    from-int: func(val: s64) -> godot-var;
+    to-int: func(var: borrow<godot-var>) -> s64;
+    from-float: func(val: float64) -> godot-var;
+    to-float: func(var: borrow<godot-var>) -> float64;
+
+    from-vector2: func(val: vector2) -> godot-var;
+    to-vector2: func(var: borrow<godot-var>) -> vector2;
+    from-vector3: func(val: vector3) -> godot-var;
+    to-vector3: func(var: borrow<godot-var>) -> vector3;
+    from-vector4: func(val: vector4) -> godot-var;
+    to-vector4: func(var: borrow<godot-var>) -> vector4;
+
+    from-vector2i: func(val: vector2i) -> godot-var;
+    to-vector2i: func(var: borrow<godot-var>) -> vector2i;
+    from-vector3i: func(val: vector3i) -> godot-var;
+    to-vector3i: func(var: borrow<godot-var>) -> vector3i;
+    from-vector4i: func(val: vector4i) -> godot-var;
+    to-vector4i: func(var: borrow<godot-var>) -> vector4i;
+
+    from-rect2: func(val: rect2) -> godot-var;
+    to-rect2: func(var: borrow<godot-var>) -> rect2;
+    from-rect2i: func(val: rect2i) -> godot-var;
+    to-rect2i: func(var: borrow<godot-var>) -> rect2i;
+
+    from-color: func(val: color) -> godot-var;
+    to-color: func(var: borrow<godot-var>) -> color;
+    from-plane: func(val: plane) -> godot-var;
+    to-plane: func(var: borrow<godot-var>) -> plane;
+    from-quaternion: func(val: quaternion) -> godot-var;
+    to-quaternion: func(var: borrow<godot-var>) -> quaternion;
+
+    from-aabb: func(val: aabb) -> godot-var;
+    to-aabb: func(var: borrow<godot-var>) -> aabb;
+    from-basis: func(val: basis) -> godot-var;
+    to-basis: func(var: borrow<godot-var>) -> basis;
+
+    from-transform2d: func(val: transform2d) -> godot-var;
+    to-transform2d: func(var: borrow<godot-var>) -> transform2d;
+    from-transform3d: func(val: transform3d) -> godot-var;
+    to-transform3d: func(var: borrow<godot-var>) -> transform3d;
+    from-projection: func(val: projection) -> godot-var;
+    to-projection: func(var: borrow<godot-var>) -> projection;
+
+    from-string: func(val: string) -> godot-var;
+    to-string: func(var: borrow<godot-var>) -> string;
+    from-stringname: func(val: string) -> godot-var;
+    to-stringname: func(var: borrow<godot-var>) -> string;
+    from-nodepath: func(val: string) -> godot-var;
+    to-nodepath: func(var: borrow<godot-var>) -> string;
+}

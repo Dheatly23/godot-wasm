@@ -1,0 +1,34 @@
+package godot:core@0.1.0;
+
+interface core {
+    type real = float32;
+    type int = s32;
+
+    resource godot-var {
+        clone: func() -> godot-var;
+    }
+
+    var-equals: func(a: borrow<godot-var>, b: borrow<godot-var>) -> bool;
+    var-hash: func(var: borrow<godot-var>) -> s64;
+    var-stringify: func(var: borrow<godot-var>) -> string;
+}
+
+world imports {
+    import core;
+    import typeis;
+    import primitive;
+    import array;
+    import dictionary;
+    import byte-array;
+    import int32-array;
+    import int64-array;
+    import float32-array;
+    import float64-array;
+    import color-array;
+    import vector2-array;
+    import vector3-array;
+    import string-array;
+    import object;
+    import callable;
+    import signal;
+}
