@@ -22,11 +22,16 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
 
 ## Features
 
+**NOTE:** Many features are not yet available or (partially) broken.
+
 * Easily run any WASM module.
 * Supports WAT compilation.
 * Imports any (custom) Godot methods into WASM.
 * Easy access to linear memory, per-element basis or bulk array operation.
 * Catch and throw runtime error/traps with signal.
+
+  **NOTE:** Signal support is a bit experimental and _might_ break.
+
 * Epoch-based limiter to stop bad-behaving module.
 * Memory limiter to prevent exhaustion.
 * Experimental API for direct Godot object manipulation.

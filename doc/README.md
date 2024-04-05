@@ -10,4 +10,5 @@ addon. Each class is separated into it's own file, named accordingly.
 * [WasmConfig](./WasmConfig.md)
 * [WasiContext](./WasiContext.md)
 * [WasmHelper](./WasmHelper.md)
-* [WasmFile](./WasmFile.md)
+* Miscellaneous
+  * [Importing](./misc/Importing.md)

@@ -1,97 +1,97 @@
-[gd_scene load_steps=12 format=2]
+[gd_scene load_steps=12 format=3 uid="uid://qlix1kvnk7jl"]
 
-[ext_resource path="res://script/SidebarMenu.gd" type="Script" id=1]
-[ext_resource path="res://theme/default.tres" type="Theme" id=2]
-[ext_resource path="res://script/Main.gd" type="Script" id=3]
-[ext_resource path="res://scene/HelloWorld.tscn" type="PackedScene" id=4]
-[ext_resource path="res://scene/Log.tscn" type="PackedScene" id=5]
-[ext_resource path="res://scene/HostBindings.tscn" type="PackedScene" id=6]
-[ext_resource path="res://scene/DoublePendulum.tscn" type="PackedScene" id=7]
-[ext_resource path="res://scene/Connect4.tscn" type="PackedScene" id=8]
-[ext_resource path="res://scene/3DRender.tscn" type="PackedScene" id=9]
-[ext_resource path="res://scene/2DRender.tscn" type="PackedScene" id=10]
-[ext_resource path="res://scene/RunWasi.tscn" type="PackedScene" id=11]
+[ext_resource type="Script" path="res://script/SidebarMenu.gd" id="1"]
+[ext_resource type="Theme" uid="uid://cia5aaiffmela" path="res://theme/default.tres" id="2"]
+[ext_resource type="Script" path="res://script/Main.gd" id="3"]
+[ext_resource type="PackedScene" uid="uid://cw1cwdnbvf2uu" path="res://scene/HelloWorld.tscn" id="4"]
+[ext_resource type="PackedScene" uid="uid://d2re1jqfyqf12" path="res://scene/Log.tscn" id="5"]
+[ext_resource type="PackedScene" uid="uid://bmmwjemxsc0ch" path="res://scene/HostBindings.tscn" id="6"]
+[ext_resource type="PackedScene" uid="uid://htrdfx1x1wfl" path="res://scene/DoublePendulum.tscn" id="7"]
+[ext_resource type="PackedScene" uid="uid://drrbuolr657o5" path="res://scene/3DRender.tscn" id="7_o8e6r"]
+[ext_resource type="PackedScene" uid="uid://cv463osoyyr5k" path="res://scene/Connect4.tscn" id="8"]
+[ext_resource type="PackedScene" uid="uid://dq6gab2nu3kvo" path="res://scene/RunWasi.tscn" id="8_hy7s2"]
+[ext_resource type="PackedScene" uid="uid://cic1fq6ug00ur" path="res://scene/2DRender.tscn" id="10"]
 
 [node name="Main" type="Control"]
+texture_filter = 1
+texture_repeat = 1
+layout_mode = 3
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 1
-theme = ExtResource( 2 )
-script = ExtResource( 3 )
-scenes = [ ExtResource( 4 ), ExtResource( 6 ), ExtResource( 7 ), ExtResource( 8 ), ExtResource( 10 ), ExtResource( 9 ), ExtResource( 11 ) ]
-names = [ "Hello World", "Host Bindings", "Double Pendulum", "Connect 4", "2D Render", "3D Render", "Run WASM File" ]
-
-[node name="Tween" type="Tween" parent="."]
+theme = ExtResource("2")
+script = ExtResource("3")
+scenes = Array[PackedScene]([ExtResource("4"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("10"), ExtResource("7_o8e6r"), ExtResource("8_hy7s2")])
+names = Array[String](["Hello World", "Host Bindings", "Double Pendulum", "Connect 4", "2D Render", "3D Render", "Run WASI"])
 
 [node name="BGLayer" type="CanvasLayer" parent="."]
 layer = -1
 
 [node name="BG" type="ColorRect" parent="BGLayer"]
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 mouse_filter = 2
-color = Color( 0, 0, 0, 1 )
+color = Color(0, 0, 0, 1)
 
-[node name="ViewportContainer" type="ViewportContainer" parent="."]
+[node name="SubViewportContainer" type="SubViewportContainer" parent="."]
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
-mouse_filter = 2
 stretch = true
 
-[node name="Viewport" type="Viewport" parent="ViewportContainer"]
-size = Vector2( 1024, 600 )
+[node name="SubViewport" type="SubViewport" parent="SubViewportContainer"]
 transparent_bg = true
 handle_input_locally = false
-render_target_update_mode = 3
+canvas_item_default_texture_filter = 0
+size = Vector2i(1152, 648)
+render_target_update_mode = 4
 
-[node name="LogContainer" parent="." instance=ExtResource( 5 )]
+[node name="LogContainer" parent="." instance=ExtResource("5")]
+layout_mode = 0
+anchors_preset = 0
 anchor_top = 1.0
 anchor_right = 0.0
-margin_left = 20.0
-margin_top = -20.0
-margin_right = 20.0
-margin_bottom = -20.0
+offset_left = 20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = -20.0
 grow_vertical = 0
 label_count = 50
 
 [node name="Detect" type="Control" parent="."]
+anchors_preset = 0
 anchor_left = 1.0
 anchor_right = 1.0
 anchor_bottom = 1.0
-margin_left = -16.0
+offset_left = -30.0
 mouse_filter = 1
 
 [node name="SidebarMenu" type="Container" parent="."]
+layout_mode = 0
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 0
 mouse_filter = 2
-script = ExtResource( 1 )
+script = ExtResource("1")
 side = 2
 offset = 1.0
 
 [node name="Panel" type="PanelContainer" parent="SidebarMenu"]
-margin_left = 1024.0
-margin_right = 1084.0
-margin_bottom = 600.0
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
 
 [node name="Scroller" type="ScrollContainer" parent="SidebarMenu/Panel"]
-margin_left = 3.0
-margin_top = 3.0
-margin_right = 57.0
-margin_bottom = 597.0
-mouse_filter = 1
-scroll_horizontal_enabled = false
+layout_mode = 2
+horizontal_scroll_mode = 0
 
 [node name="VBox" type="VBoxContainer" parent="SidebarMenu/Panel/Scroller"]
-margin_right = 54.0
-margin_bottom = 8.0
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="Label" type="Label" parent="SidebarMenu/Panel/Scroller/VBox"]
-margin_right = 54.0
-margin_bottom = 8.0
+layout_mode = 2
 text = "Examples:"
-
-[connection signal="mouse_entered" from="." to="." method="_hide_menu"]
-[connection signal="mouse_entered" from="Detect" to="." method="_show_menu"]
-[connection signal="mouse_exited" from="Detect" to="." method="_hide_menu"]

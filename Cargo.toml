@@ -19,7 +19,6 @@ overflow-checks = false
 
 [dependencies]
 scopeguard = "^1.2"
-gdnative = "^0.11"
 parking_lot = "^0.12"
 rayon = "^1.8"
 nom = "^7.1"
@@ -34,6 +33,10 @@ async-trait = { version = "^0.1", optional = true }
 cfg-if = "^1.0"
 memchr = { version = "^2.7", optional = true }
 camino = { version = "^1.1", optional = true }
+
+[dependencies.godot]
+git = "https://github.com/godot-rust/gdext"
+rev = "824cb6c86dd380b44bad48f2b2746d2d752fa406"
 
 [dependencies.wasmtime]
 version = "^19.0"
@@ -64,8 +67,7 @@ features = [
 ]
 
 [features]
-default = ["epoch-timeout", "memory-limiter", "object-registry", "wasi"]
-new-host-import = []
+default = ["epoch-timeout", "memory-limiter", "wasi", "object-registry"]
 memory-limiter = []
 epoch-timeout = []
 object-registry-compat = ["dep:slab"]
@@ -73,7 +75,11 @@ object-registry-extern = []
 object-registry = ["object-registry-compat", "object-registry-extern"]
 more-precise-timer = []
 deterministic-wasm = []
-unsafe-module-serde = []
+component-model = [
+  "wasmtime/component-model",
+  "dep:wasmparser",
+  "dep:wat",
+]
 wasi = [
   "dep:wasmtime-wasi",
 #  "dep:wasi-common",
@@ -84,12 +90,16 @@ wasi = [
   "dep:bytes",
 ]
 wasi-preview2 = [
-  "dep:wasmparser",
-  "dep:wat",
+  "dep:bytes",
   "wasi",
+  "component-model",
   "wasmtime/component-model",
 #  "wasmtime-wasi/preview2",
 #  "wasmtime-wasi/preview1-on-preview2",
+]
+godot-component = [
+  "dep:slab",
+  "component-model",
 ]
 
 [workspace]

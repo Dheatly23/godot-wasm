@@ -9,17 +9,18 @@ use anyhow::Error;
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
-use gdnative::log::{error, godot_site, Site};
-use gdnative::prelude::*;
+use godot::prelude::*;
 use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 
 //use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
 use crate::wasi_ctx::stdio::StreamWrapper;
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 //use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
-use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
-
 use crate::site_context;
+use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
+use crate::wasm_util::{
+    gstring_from_maybe_utf8, option_to_variant, variant_to_option, SendSyncWrapper,
+};
 
 #[allow(dead_code)]
 fn warn_vfs_deprecated() {
@@ -30,50 +31,51 @@ fn warn_vfs_deprecated() {
     }
 }
 
-#[derive(NativeClass, Debug)]
-#[inherit(Reference)]
-#[register_with(Self::register_properties)]
-#[user_data(gdnative::export::user_data::RwLockData<WasiContext>)]
+#[derive(GodotClass)]
+#[class(base=RefCounted, init, tool)]
 pub struct WasiContext {
+    base: Base<RefCounted>,
+    #[init(default = false)]
+    #[export]
     bypass_stdio: bool,
+    #[init(default = false)]
+    #[export]
     fs_readonly: bool,
 
+    //#[init(default = Arc::new(Dir::new(<Weak<Dir>>::new())))]
     //memfs_root: Arc<Dir>,
+    #[init(default = HashMap::new())]
     physical_mount: HashMap<Utf8PathBuf, Utf8PathBuf>,
+    #[init(default = HashMap::new())]
     envs: HashMap<String, String>,
 }
 
 impl WasiContext {
-    fn new(_owner: &Reference) -> Self {
-        Self {
-            bypass_stdio: false,
-            fs_readonly: false,
-
-            //memfs_root: Arc::new(Dir::new(<Weak<Dir>>::new())),
-            physical_mount: HashMap::new(),
-            envs: HashMap::new(),
-        }
-    }
-
     fn emit_binary(
-        base: Ref<Reference>,
+        base: Gd<RefCounted>,
         signal_name: &'static str,
     ) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
-        move |buf| unsafe {
-            base.assume_safe().emit_signal(
-                signal_name,
-                &[<PoolArray<u8>>::from_slice(buf).owned_to_variant()],
+        let base = SendSyncWrapper::new(base);
+        let signal_name = SendSyncWrapper::new(StringName::from(signal_name));
+        move |buf| {
+            base.clone().emit_signal(
+                (*signal_name).clone(),
+                &[PackedByteArray::from(buf).to_variant()],
             );
         }
     }
 
     fn emit_string(
-        base: Ref<Reference>,
+        base: Gd<RefCounted>,
         signal_name: &'static str,
     ) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
-        move |buf| unsafe {
-            base.assume_safe()
-                .emit_signal(signal_name, &[String::from_utf8_lossy(buf).to_variant()]);
+        let base = SendSyncWrapper::new(base);
+        let signal_name = SendSyncWrapper::new(StringName::from(signal_name));
+        move |buf| {
+            base.clone().emit_signal(
+                (*signal_name).clone(),
+                &[gstring_from_maybe_utf8(buf).to_variant()],
+            );
         }
     }
 
@@ -91,133 +93,145 @@ impl WasiContext {
     }
 
     pub fn build_ctx(
-        this: Instance<Self>,
+        this: Gd<Self>,
         mut ctx: WasiCtxBuilder,
         config: &Config,
     ) -> Result<WasiCtx, Error> {
-        let f = move |o: &Self, b: TRef<'_, Reference>| -> Result<_, Error> {
-            if let (PipeBindingType::Context, Some(file)) =
-                (&config.wasi_stdin, &config.wasi_stdin_file)
-            {
-                warn_vfs_deprecated();
+        let inst_id = this.instance_id();
+        let o = this.bind();
+        if let (PipeBindingType::Context, Some(file)) =
+            (&config.wasi_stdin, &config.wasi_stdin_file)
+        {
+            warn_vfs_deprecated();
 
-                let root = Some(o.memfs_root.clone());
-                let node = if let FileEntry::Occupied(v) = site_context!(open(
-                    file,
-                    o.memfs_root.clone(),
-                    &Some(o.memfs_root.clone()),
-                    true,
-                    false,
-                ))? {
-                    v.into_inner()
-                } else {
-                    bail_with_site!("Path \"{}\" not found!", file)
-                };
+            let root = Some(o.memfs_root.clone());
+            let node = if let FileEntry::Occupied(v) = site_context!(open(
+                file,
+                o.memfs_root.clone(),
+                &Some(o.memfs_root.clone()),
+                true,
+                false,
+            ))? {
+                v.into_inner()
+            } else {
+                bail_with_site!("Path \"{}\" not found!", file)
+            };
 
-                let OpenResult::File(file) = site_context!(node.open(
-                    root,
-                    Capability {
-                        read: true,
-                        write: false
-                    },
-                    true,
-                    OFlags::empty(),
-                    FdFlags::empty(),
-                ))?
-                else {
-                    bail_with_site!("Path \"{}\" should be a file!", file)
-                };
-                ctx.stdin(file);
-            }
-            if config.wasi_stdout == PipeBindingType::Context {
-                if o.bypass_stdio {
-                    ctx.inherit_stdout();
-                } else {
-                    let base = b.claim();
-                    match config.wasi_stdout_buffer {
-                        PipeBufferType::Unbuffered => ctx.stdout(Box::new(
-                            UnbufferedWritePipe::new(Self::emit_binary(base, "stdout_emit")),
-                        )),
-                        PipeBufferType::LineBuffer => ctx.stdout(Box::new(LineWritePipe::new(
-                            Self::emit_string(base, "stdout_emit"),
-                        ))),
-                        PipeBufferType::BlockBuffer => ctx.stdout(Box::new(BlockWritePipe::new(
-                            Self::emit_binary(base, "stdout_emit"),
-                        ))),
-                    };
-                }
-            }
-            if config.wasi_stderr == PipeBindingType::Context {
-                if o.bypass_stdio {
-                    ctx.inherit_stderr();
-                } else {
-                    let base = b.claim();
-                    match config.wasi_stderr_buffer {
-                        PipeBufferType::Unbuffered => ctx.stderr(Box::new(
-                            UnbufferedWritePipe::new(Self::emit_binary(base, "stderr_emit")),
-                        )),
-                        PipeBufferType::LineBuffer => ctx.stderr(Box::new(LineWritePipe::new(
-                            Self::emit_string(base, "stderr_emit"),
-                        ))),
-                        PipeBufferType::BlockBuffer => ctx.stderr(Box::new(BlockWritePipe::new(
-                            Self::emit_binary(base, "stderr_emit"),
-                        ))),
-                    };
-                }
-            }
-
-            let c = ctx.build();
-            drop(ctx);
-            let mut ctx = Self::init_ctx_no_context(c, config)?;
-
-            for (k, v) in o
-                .envs
-                .iter()
-                .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
-            {
-                ctx.push_env(k, v)?;
-            }
-
-            let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
-
-            for (guest, host) in o.physical_mount.iter() {
-                let dir = CapDir::from_cap_std(site_context!(PhysicalDir::open_ambient_dir(
-                    host,
-                    ambient_authority(),
-                ))?);
-                let OpenResult2::Dir(dir) = site_context!(dir.open_file_(
-                    false,
-                    ".",
-                    OFlags::DIRECTORY,
-                    true,
-                    fs_writable,
-                    FdFlags::empty(),
-                ))?
-                else {
-                    bail_with_site!("Path should be a directory!")
-                };
-                site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
-            }
-
-            let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
-                Some(o.memfs_root.clone()),
+            let OpenResult::File(file) = site_context!(node.open(
+                root,
                 Capability {
                     read: true,
-                    write: fs_writable,
+                    write: false
                 },
                 true,
-                OFlags::DIRECTORY,
+                OFlags::empty(),
                 FdFlags::empty(),
             ))?
             else {
-                bail_with_site!("Root should be a directory!")
+                bail_with_site!("Path \"{}\" should be a file!", file)
             };
-            site_context!(ctx.push_preopened_dir(root, "."))?;
+            ctx.stdin(file);
+        }
+        // TODO: Emit signal
+        if config.wasi_stdout == PipeBindingType::Context {
+            if o.bypass_stdio {
+                ctx.inherit_stdout();
+            } else {
+                ctx.stdout(match config.wasi_stdout_buffer {
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stdout_emit".into(),
+                            &[PackedByteArray::from(buf).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stdout_emit".into(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stdout_emit".into(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
+                });
+            }
+        }
+        if config.wasi_stderr == PipeBindingType::Context {
+            if o.bypass_stdio {
+                ctx.inherit_stderr();
+            } else {
+                ctx.stderr(match config.wasi_stderr_buffer {
+                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stderr_emit".into(),
+                            &[PackedByteArray::from(buf).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stderr_emit".into(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
+                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| {
+                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            "stderr_emit".into(),
+                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
+                        );
+                    })) as _,
+                });
+            }
+        }
 
-            Ok(ctx)
+        let c = ctx.build();
+        drop(ctx);
+        let mut ctx = Self::init_ctx_no_context(c, config)?;
+
+        for (k, v) in o
+            .envs
+            .iter()
+            .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
+        {
+            ctx.push_env(k, v)?;
+        }
+
+        let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
+
+        for (guest, host) in o.physical_mount.iter() {
+            let dir = site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority()))?;
+            let OpenResult2::Dir(dir) = site_context!(CapDir::from_cap_std(dir).open_file_(
+                false,
+                ".",
+                OFlags::DIRECTORY,
+                true,
+                fs_writable,
+                FdFlags::empty(),
+            ))?
+            else {
+                bail_with_site!("Path should be a directory!")
+            };
+            site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
+        }
+
+        let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
+            Some(o.memfs_root.clone()),
+            Capability {
+                read: true,
+                write: !o.fs_readonly,
+            },
+            true,
+            OFlags::DIRECTORY,
+            FdFlags::empty(),
+        ))?
+        else {
+            bail_with_site!("Root should be a directory!")
         };
+        site_context!(ctx.push_preopened_dir(root, "."))?;
 
-        unsafe { this.assume_safe().map(f)? }
+        Ok(ctx)
     }
     */
 
@@ -232,94 +246,93 @@ impl WasiContext {
     }
 
     pub fn build_ctx(
-        this: Instance<Self>,
+        this: Gd<Self>,
         mut ctx: WasiCtxBuilder,
         config: &Config,
     ) -> Result<WasiCtx, Error> {
-        let f = move |o: &Self, b: TRef<'_, Reference>| -> Result<_, Error> {
-            if config.wasi_stdout == PipeBindingType::Context {
-                if o.bypass_stdio {
-                    ctx.inherit_stdout();
-                } else {
-                    let base = b.claim();
-                    match config.wasi_stdout_buffer {
-                        PipeBufferType::Unbuffered => ctx.stdout(UnbufferedWritePipe::new(
-                            Self::emit_binary(base, "stdout_emit"),
-                        )),
-                        PipeBufferType::LineBuffer => ctx.stdout(StreamWrapper::from(
-                            LineWritePipe::new(Self::emit_string(base, "stdout_emit")),
-                        )),
-                        PipeBufferType::BlockBuffer => ctx.stdout(StreamWrapper::from(
-                            BlockWritePipe::new(Self::emit_binary(base, "stdout_emit")),
-                        )),
-                    };
-                }
-            }
-            if config.wasi_stderr == PipeBindingType::Context {
-                if o.bypass_stdio {
-                    ctx.inherit_stderr();
-                } else {
-                    let base = b.claim();
-                    match config.wasi_stderr_buffer {
-                        PipeBufferType::Unbuffered => ctx.stderr(UnbufferedWritePipe::new(
-                            Self::emit_binary(base, "stderr_emit"),
-                        )),
-                        PipeBufferType::LineBuffer => ctx.stderr(StreamWrapper::from(
-                            LineWritePipe::new(Self::emit_string(base, "stderr_emit")),
-                        )),
-                        PipeBufferType::BlockBuffer => ctx.stderr(StreamWrapper::from(
-                            BlockWritePipe::new(Self::emit_binary(base, "stderr_emit")),
-                        )),
-                    };
-                }
-            }
+        let o = this.bind();
 
-            Self::init_ctx_no_context(&mut ctx, config)?;
-
-            for (k, v) in o
-                .envs
-                .iter()
-                .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
-            {
-                ctx.env(k, v);
-            }
-
-            let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
-            let (perms, file_perms) = if fs_writable {
-                (
-                    DirPerms::READ | DirPerms::MUTATE,
-                    FilePerms::READ | FilePerms::WRITE,
-                )
+        if config.wasi_stdout == PipeBindingType::Context {
+            if o.bypass_stdio {
+                ctx.inherit_stdout();
             } else {
-                (DirPerms::READ, FilePerms::READ)
-            };
-
-            for (guest, host) in o.physical_mount.iter() {
-                let dir = site_context!(Dir::open_ambient_dir(host, ambient_authority()))?;
-                ctx.preopened_dir(dir, perms, file_perms, guest);
+                let base = (*o.base()).clone();
+                match config.wasi_stdout_buffer {
+                    PipeBufferType::Unbuffered => ctx.stdout(UnbufferedWritePipe::new(
+                        Self::emit_binary(base, "stdout_emit"),
+                    )),
+                    PipeBufferType::LineBuffer => ctx.stdout(StreamWrapper::from(
+                        LineWritePipe::new(Self::emit_string(base, "stdout_emit")),
+                    )),
+                    PipeBufferType::BlockBuffer => ctx.stdout(StreamWrapper::from(
+                        BlockWritePipe::new(Self::emit_binary(base, "stdout_emit")),
+                    )),
+                };
             }
+        }
+        if config.wasi_stderr == PipeBindingType::Context {
+            if o.bypass_stdio {
+                ctx.inherit_stderr();
+            } else {
+                let base = (*o.base()).clone();
+                match config.wasi_stderr_buffer {
+                    PipeBufferType::Unbuffered => ctx.stderr(UnbufferedWritePipe::new(
+                        Self::emit_binary(base, "stderr_emit"),
+                    )),
+                    PipeBufferType::LineBuffer => ctx.stderr(StreamWrapper::from(
+                        LineWritePipe::new(Self::emit_string(base, "stderr_emit")),
+                    )),
+                    PipeBufferType::BlockBuffer => ctx.stderr(StreamWrapper::from(
+                        BlockWritePipe::new(Self::emit_binary(base, "stderr_emit")),
+                    )),
+                };
+            }
+        }
 
-            /*
-            let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
-                Some(o.memfs_root.clone()),
-                Capability {
-                    read: true,
-                    write: fs_writable,
-                },
-                true,
-                OFlags::DIRECTORY,
-                FdFlags::empty(),
-            ))?
-            else {
-                bail_with_site!("Root should be a directory!")
-            };
-            site_context!(ctx.push_preopened_dir(root, "."))?;
-            */
+        Self::init_ctx_no_context(&mut ctx, config)?;
 
-            Ok(ctx.build())
+        for (k, v) in o
+            .envs
+            .iter()
+            .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
+        {
+            ctx.env(k, v);
+        }
+
+        let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
+        let (perms, file_perms) = if fs_writable {
+            (
+                DirPerms::READ | DirPerms::MUTATE,
+                FilePerms::READ | FilePerms::WRITE,
+            )
+        } else {
+            (DirPerms::READ, FilePerms::READ)
         };
 
-        unsafe { this.assume_safe().map(f)? }
+        for (guest, host) in o.physical_mount.iter() {
+            let dir = site_context!(Dir::open_ambient_dir(host, ambient_authority()))?;
+            ctx.preopened_dir(dir, perms, file_perms, guest);
+        }
+
+        // XXX: Cannot do memory filesystem yet :((
+        /*
+        let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
+            Some(o.memfs_root.clone()),
+            Capability {
+                read: true,
+                write: fs_writable,
+            },
+            true,
+            OFlags::DIRECTORY,
+            FdFlags::empty(),
+        ))?
+        else {
+            bail_with_site!("Root should be a directory!")
+        };
+        site_context!(ctx.push_preopened_dir(root, "."))?;
+        */
+
+        Ok(ctx.build())
     }
 
     fn wrap_result<F, T>(f: F) -> Option<T>
@@ -329,92 +342,83 @@ impl WasiContext {
         match f() {
             Ok(v) => Some(v),
             Err(e) => {
-                let s = format!("{:?}", e);
-                error(
-                    e.downcast_ref::<Site>()
-                        .copied()
-                        .unwrap_or_else(|| godot_site!()),
-                    s,
-                );
+                godot_error!("{}", e);
                 None
             }
         }
     }
 }
 
-#[methods]
+#[godot_api]
 impl WasiContext {
-    fn register_properties(builder: &ClassBuilder<Self>) {
-        builder
-            .property("fs_readonly")
-            .with_getter(|this, _| this.fs_readonly)
-            .with_setter(|this, _, v| this.fs_readonly = v)
-            .done();
+    #[signal]
+    fn stdout_emit(message: Variant);
+    #[signal]
+    fn stderr_emit(message: Variant);
 
-        builder
-            .property("bypass_stdio")
-            .with_getter(|this, _| this.bypass_stdio)
-            .with_setter(|this, _, v| this.bypass_stdio = v)
-            .done();
-
-        builder
-            .signal("stdout_emit")
-            .with_param("message", VariantType::GodotString)
-            .done();
-
-        builder
-            .signal("stderr_emit")
-            .with_param("message", VariantType::GodotString)
-            .done();
+    #[func]
+    fn add_env_variable(&mut self, key: GString, value: GString) {
+        self.envs.insert(key.to_string(), value.to_string());
     }
 
-    #[method]
-    fn add_env_variable(&mut self, key: String, value: String) {
-        self.envs.insert(key, value);
-    }
-
-    #[method]
-    fn get_env_variable(&self, key: String) -> Variant {
+    #[func]
+    fn get_env_variable(&self, key: GString) -> Variant {
         self.envs
-            .get(&key)
+            .get(&key.to_string())
             .map_or_else(Variant::nil, |v| v.to_variant())
     }
 
-    #[method]
-    fn delete_env_variable(&mut self, key: String) -> Option<GodotString> {
-        self.envs.remove(&key).map(GodotString::from)
+    #[func]
+    fn delete_env_variable(&mut self, key: GString) -> Variant {
+        option_to_variant(self.envs.remove(&key.to_string()).map(GString::from))
     }
 
-    #[method]
-    fn mount_physical_dir(&mut self, host_path: String, #[opt] guest_path: Option<String>) {
+    #[func]
+    fn mount_physical_dir(&mut self, host_path: GString, guest_path: Variant) {
+        let host_path = host_path.to_string();
+        let guest_path = match variant_to_option(guest_path) {
+            Ok(v) => v,
+            Err(e) => {
+                godot_error!("{}", e);
+                return;
+            }
+        };
         self.physical_mount.insert(
             guest_path.unwrap_or_else(|| host_path.clone()).into(),
             host_path.into(),
         );
     }
 
-    #[method]
-    fn get_mounts(&self) -> Dictionary<Unique> {
+    #[func]
+    fn get_mounts(&self) -> Dictionary {
         self.physical_mount
             .iter()
-            .map(|(k, v)| (GodotString::from_str(k), GodotString::from_str(v)))
+            .map(|(k, v)| {
+                (
+                    GString::from(<_ as AsRef<str>>::as_ref(k)),
+                    GString::from(<_ as AsRef<str>>::as_ref(v)),
+                )
+            })
             .collect()
     }
 
-    #[method]
-    fn unmount_physical_dir(&mut self, guest_path: String) -> bool {
+    #[func]
+    fn unmount_physical_dir(&mut self, guest_path: GString) -> bool {
         self.physical_mount
-            .remove(Utf8Path::new(&guest_path))
+            .remove(Utf8Path::new(&guest_path.to_string()))
             .is_some()
     }
 
     /*
-    #[method]
-    fn file_is_exist(&self, path: String, #[opt] follow_symlink: Option<bool>) -> u32 {
+    #[func]
+    fn file_is_exist(&self, path: GString, follow_symlink: Variant) -> u32 {
         warn_vfs_deprecated();
 
+        let Ok(follow_symlink) = variant_to_option(follow_symlink) else {
+            return FILE_NOTEXIST;
+        };
         match open(
-            &path,
+            &path.to_string(),
             self.memfs_root.clone(),
             &Some(self.memfs_root.clone()),
             follow_symlink.unwrap_or(false),
@@ -430,18 +434,14 @@ impl WasiContext {
         }
     }
 
-    #[method]
-    fn file_make_dir(
-        &self,
-        path: String,
-        name: GodotString,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> bool {
+    #[func]
+    fn file_make_dir(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         warn_vfs_deprecated();
 
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -466,18 +466,14 @@ impl WasiContext {
         .unwrap_or(false)
     }
 
-    #[method]
-    fn file_make_file(
-        &self,
-        path: String,
-        name: GodotString,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> bool {
+    #[func]
+    fn file_make_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         warn_vfs_deprecated();
 
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -502,19 +498,20 @@ impl WasiContext {
         .unwrap_or(false)
     }
 
-    #[method]
+    #[func]
     fn file_make_link(
         &self,
-        path: String,
-        name: GodotString,
-        link: GodotString,
-        #[opt] follow_symlink: Option<bool>,
+        path: GString,
+        name: GString,
+        link: GString,
+        follow_symlink: Variant,
     ) -> bool {
         warn_vfs_deprecated();
 
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -539,18 +536,14 @@ impl WasiContext {
         .unwrap_or(false)
     }
 
-    #[method]
-    fn file_delete_file(
-        &self,
-        path: String,
-        name: GodotString,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> bool {
+    #[func]
+    fn file_delete_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         warn_vfs_deprecated();
 
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -571,17 +564,14 @@ impl WasiContext {
         .is_some()
     }
 
-    #[method]
-    fn file_dir_list(
-        &self,
-        path: String,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> Option<PoolArray<GodotString>> {
+    #[func]
+    fn file_dir_list(&self, path: GString, follow_symlink: Variant) -> PackedStringArray {
         warn_vfs_deprecated();
 
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -593,23 +583,20 @@ impl WasiContext {
                 bail_with_site!("Path {path} is not a directory")
             };
 
-            let ret = dir
-                .content
-                .read()
-                .keys()
-                .map(GodotString::from_str)
-                .collect();
+            let ret = dir.content.read().keys().map(GString::from).collect();
             Ok(ret)
         })
+        .unwrap_or_else(PackedStringArray::new)
     }
 
-    #[method]
-    fn file_stat(&self, path: String, #[opt] follow_symlink: Option<bool>) -> Option<Dictionary> {
+    #[func]
+    fn file_stat(&self, path: GString, follow_symlink: Variant) -> Variant {
         warn_vfs_deprecated();
 
-        Self::wrap_result(move || {
+        option_to_variant(Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -619,7 +606,7 @@ impl WasiContext {
             };
 
             let stat = f.filestat();
-            let dict = Dictionary::new();
+            let mut dict = Dictionary::new();
             dict.insert(
                 "filetype",
                 match stat.filetype {
@@ -629,7 +616,7 @@ impl WasiContext {
                     _ => FILE_NOTEXIST,
                 },
             );
-            dict.insert("size", stat.size);
+            dict.insert("size", stat.size as i64);
 
             fn g(time: SystemTime) -> i64 {
                 let v = to_unix_time(time);
@@ -644,27 +631,23 @@ impl WasiContext {
             dict.insert("mtime", stat.mtim.map_or(0, g));
             dict.insert("ctime", stat.ctim.map_or(0, g));
 
-            Ok(dict.into_shared())
-        })
+            Ok(dict)
+        }))
     }
 
-    #[method]
-    fn file_set_time(
-        &self,
-        path: String,
-        time: Dictionary,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> bool {
+    #[func]
+    fn file_set_time(&self, path: GString, time: Dictionary, follow_symlink: Variant) -> bool {
         warn_vfs_deprecated();
 
         Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let mtime = time
                 .get("mtime")
-                .and_then(|v| <Option<i64>>::from_variant(&v).transpose())
+                .and_then(|v| variant_to_option::<i64>(v).transpose())
                 .transpose()?;
             let atime = time
                 .get("atime")
-                .and_then(|v| <Option<i64>>::from_variant(&v).transpose())
+                .and_then(|v| variant_to_option::<i64>(v).transpose())
                 .transpose()?;
 
             let (mtime, atime) = match (
@@ -680,7 +663,7 @@ impl WasiContext {
             };
 
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -702,17 +685,14 @@ impl WasiContext {
         .is_some()
     }
 
-    #[method]
-    fn file_link_target(
-        &self,
-        path: String,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> Option<GodotString> {
+    #[func]
+    fn file_link_target(&self, path: GString, follow_symlink: Variant) -> Variant {
         warn_vfs_deprecated();
 
-        Self::wrap_result(move || {
+        option_to_variant(Self::wrap_result(move || {
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -724,21 +704,24 @@ impl WasiContext {
                 bail_with_site!("Path {path} is not a symlink")
             };
 
-            Ok(GodotString::from_str(&link.path))
-        })
+            Ok(GString::from(&link.path))
+        }))
     }
 
-    #[method]
+    #[func]
     fn file_read(
         &self,
-        path: String,
-        length: usize,
-        #[opt] offset: Option<usize>,
-        #[opt] follow_symlink: Option<bool>,
-    ) -> Option<PoolArray<u8>> {
+        path: GString,
+        length: i64,
+        offset: Variant,
+        follow_symlink: Variant,
+    ) -> Variant {
         warn_vfs_deprecated();
 
-        Self::wrap_result(move || {
+        option_to_variant(Self::wrap_result(move || {
+            let length = length as usize;
+            let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
+            let follow_symlink = variant_to_option(follow_symlink)?;
             let offset = offset.unwrap_or(0);
             let end = if length > 0 {
                 match offset.checked_add(length) {
@@ -750,7 +733,7 @@ impl WasiContext {
             };
 
             let Ok(FileEntry::Occupied(f)) = open(
-                &path,
+                &path.to_string(),
                 self.memfs_root.clone(),
                 &Some(self.memfs_root.clone()),
                 follow_symlink.unwrap_or(false),
@@ -771,7 +754,7 @@ impl WasiContext {
                 s = guard.get(offset..);
             }
             if let Some(s) = s {
-                Ok(PoolArray::from_slice(s))
+                Ok(PackedByteArray::from(s))
             } else if let Some(end) = end {
                 bail_with_site!(
                     "Index {}..{} overflowed (file size is {})",
@@ -786,32 +769,36 @@ impl WasiContext {
                     guard.len()
                 )
             }
-        })
+        }))
     }
 
-    #[method]
+    #[func]
     fn file_write(
         &self,
-        path: String,
+        path: GString,
         data: Variant,
-        #[opt] offset: Option<usize>,
-        #[opt] truncate: Option<bool>,
-        #[opt] follow_symlink: Option<bool>,
+        offset: Variant,
+        truncate: Variant,
+        follow_symlink: Variant,
     ) -> bool {
         warn_vfs_deprecated();
 
         fn f<R>(
             root: Arc<Dir>,
-            path: String,
+            path: GString,
             follow_symlink: bool,
             truncate: bool,
             offset: usize,
             end: usize,
             f_: impl FnOnce(&mut [u8]) -> Result<R, Error>,
         ) -> Result<R, Error> {
-            let Ok(FileEntry::Occupied(f)) =
-                open(&path, root.clone(), &Some(root), follow_symlink, false)
-            else {
+            let Ok(FileEntry::Occupied(f)) = open(
+                &path.to_string(),
+                root.clone(),
+                &Some(root),
+                follow_symlink,
+                false,
+            ) else {
                 bail_with_site!("Failed to open path {path}")
             };
             let Some(f) = f.as_any().downcast_ref::<File>() else {
@@ -828,7 +815,7 @@ impl WasiContext {
 
         fn g<const N: usize, T>(
             root: Arc<Dir>,
-            path: String,
+            path: GString,
             follow_symlink: bool,
             truncate: bool,
             offset: Option<usize>,
@@ -855,109 +842,129 @@ impl WasiContext {
             f(root, path, follow_symlink, truncate, offset, end, f_)
         }
 
-        let follow_symlink = follow_symlink.unwrap_or(false);
-        let truncate = truncate.unwrap_or(false);
+        Self::wrap_result(move || {
+            let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
+            let truncate = variant_to_option(truncate)?.unwrap_or(false);
+            let follow_symlink = variant_to_option(follow_symlink)?.unwrap_or(false);
+            match VariantDispatch::from(&data) {
+                VariantDispatch::PackedByteArray(s) => {
+                    let s = s.as_slice();
+                    let offset = offset.unwrap_or(0);
+                    let Some(end) = s.len().checked_add(offset) else {
+                        bail_with_site!("Length overflowed")
+                    };
 
-        Self::wrap_result(move || match data.dispatch() {
-            VariantDispatch::ByteArray(s) => {
-                let s = s.read();
-                let offset = offset.unwrap_or(0);
-                let Some(end) = s.len().checked_add(offset) else {
-                    bail_with_site!("Length overflowed")
-                };
+                    f(
+                        self.memfs_root.clone(),
+                        path,
+                        follow_symlink,
+                        truncate,
+                        offset,
+                        end,
+                        move |d| {
+                            d.copy_from_slice(s);
+                            Ok(())
+                        },
+                    )
+                }
+                VariantDispatch::String(s) => {
+                    let s = s.to_string();
+                    let s = s.as_bytes();
+                    let offset = offset.unwrap_or(0);
+                    let Some(end) = s.len().checked_add(offset) else {
+                        bail_with_site!("Length overflowed")
+                    };
 
-                f(
+                    f(
+                        self.memfs_root.clone(),
+                        path,
+                        follow_symlink,
+                        truncate,
+                        offset,
+                        end,
+                        move |d| {
+                            d.copy_from_slice(s);
+                            Ok(())
+                        },
+                    )
+                }
+                VariantDispatch::PackedInt32Array(s) => g::<4, _>(
                     self.memfs_root.clone(),
                     path,
                     follow_symlink,
                     truncate,
                     offset,
-                    end,
-                    move |d| {
-                        d.copy_from_slice(&s);
-                        Ok(())
-                    },
-                )
-            }
-            VariantDispatch::GodotString(s) => {
-                let s = s.to_string();
-                let s = s.as_bytes();
-                let offset = offset.unwrap_or(0);
-                let Some(end) = s.len().checked_add(offset) else {
-                    bail_with_site!("Length overflowed")
-                };
-
-                f(
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                ),
+                VariantDispatch::PackedInt64Array(s) => g::<8, _>(
                     self.memfs_root.clone(),
                     path,
                     follow_symlink,
                     truncate,
                     offset,
-                    end,
-                    move |d| {
-                        d.copy_from_slice(s);
-                        Ok(())
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                ),
+                VariantDispatch::PackedFloat32Array(s) => g::<4, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                ),
+                VariantDispatch::PackedFloat64Array(s) => g::<8, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| *d = s.to_le_bytes(),
+                ),
+                VariantDispatch::PackedVector2Array(s) => g::<8, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| {
+                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[4..]).unwrap() = s.y.to_le_bytes();
                     },
-                )
+                ),
+                VariantDispatch::PackedVector3Array(s) => g::<12, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| {
+                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.y.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[8..]).unwrap() = s.z.to_le_bytes();
+                    },
+                ),
+                VariantDispatch::PackedColorArray(s) => g::<16, _>(
+                    self.memfs_root.clone(),
+                    path,
+                    follow_symlink,
+                    truncate,
+                    offset,
+                    s.as_slice(),
+                    |s, d| {
+                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.r.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.g.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[8..12]).unwrap() = s.b.to_le_bytes();
+                        *<&mut [u8; 4]>::try_from(&mut d[12..]).unwrap() = s.a.to_le_bytes();
+                    },
+                ),
+                _ => bail_with_site!("Unknown value type {:?}", data.get_type()),
             }
-            VariantDispatch::Int32Array(s) => g::<4, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| *d = s.to_le_bytes(),
-            ),
-            VariantDispatch::Float32Array(s) => g::<4, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| *d = s.to_le_bytes(),
-            ),
-            VariantDispatch::Vector2Array(s) => g::<8, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| {
-                    *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut d[4..]).unwrap() = s.y.to_le_bytes();
-                },
-            ),
-            VariantDispatch::Vector3Array(s) => g::<12, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| {
-                    *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut d[8..]).unwrap() = s.z.to_le_bytes();
-                },
-            ),
-            VariantDispatch::ColorArray(s) => g::<16, _>(
-                self.memfs_root.clone(),
-                path,
-                follow_symlink,
-                truncate,
-                offset,
-                &s.read(),
-                |s, d| {
-                    *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.r.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.g.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut d[8..12]).unwrap() = s.b.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut d[12..]).unwrap() = s.a.to_le_bytes();
-                },
-            ),
-            _ => bail_with_site!("Unknown value type {:?}", data.get_type()),
         })
         .is_some()
     }

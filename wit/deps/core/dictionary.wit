@@ -1,0 +1,31 @@
+package godot:core@0.1.0;
+
+interface dictionary {
+    use core.{godot-var};
+
+    type key-val-pair = tuple<option<borrow<godot-var>>,option<borrow<godot-var>>>;
+    type key-val-pair-owned = tuple<option<godot-var>,option<godot-var>>;
+
+    empty: func() -> godot-var;
+
+    len: func(var: borrow<godot-var>) -> u32;
+    is-empty: func(var: borrow<godot-var>) -> bool;
+    clear: func(var: borrow<godot-var>);
+
+    duplicate: func(var: borrow<godot-var>) -> godot-var;
+
+    get: func(var: borrow<godot-var>, key: option<borrow<godot-var>>) -> option<option<godot-var>>;
+    has: func(var: borrow<godot-var>, key: option<borrow<godot-var>>) -> bool;
+    has-all: func(var: borrow<godot-var>, key: borrow<godot-var>) -> bool;
+
+    insert: func(var: borrow<godot-var>, key: option<borrow<godot-var>>, val: option<borrow<godot-var>>) -> option<option<godot-var>>;
+    remove: func(var: borrow<godot-var>, key: option<borrow<godot-var>>) -> option<option<godot-var>>;
+    extend: func(var: borrow<godot-var>, other: borrow<godot-var>, overwrite: bool);
+
+    keys: func(var: borrow<godot-var>) -> godot-var;
+    values: func(var: borrow<godot-var>) -> godot-var;
+
+    extend-list: func(var: borrow<godot-var>, val: list<key-val-pair>);
+    from-list: func(val: list<key-val-pair>) -> godot-var;
+    into-list: func(var: borrow<godot-var>) -> list<key-val-pair-owned>;
+}

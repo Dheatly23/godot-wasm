@@ -1,15 +1,15 @@
 [remap]
 
 importer="godot_wasm.wasm"
-type="PackedDataContainer"
-path="res://.import/connect_4.wasm-559a003e930d80695cabb722b4113cbc.res"
+type="WasmModule"
+uid="uid://bwjr6fptfyo7t"
+path="res://.godot/imported/connect_4.wasm-559a003e930d80695cabb722b4113cbc.cwasm"
 
 [deps]
 
 source_file="res://wasm/connect_4.wasm"
-dest_files=[ "res://.import/connect_4.wasm-559a003e930d80695cabb722b4113cbc.res" ]
+dest_files=["res://.godot/imported/connect_4.wasm-559a003e930d80695cabb722b4113cbc.cwasm"]
 
 [params]
 
-name="connect_4"
-imports=[  ]
+include_original_file=false

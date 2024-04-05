@@ -1,0 +1,10 @@
+package godot-wasm:script;
+
+world script {
+    include godot:core/imports@0.1.0;
+    include godot:reflection/imports@0.1.0;
+
+    use godot:core/core@0.1.0.{godot-var};
+
+    export call: func(args: borrow<godot-var>) -> option<godot-var>;
+}

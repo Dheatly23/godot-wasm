@@ -1,51 +1,54 @@
-[gd_scene load_steps=4 format=2]
+[gd_scene load_steps=5 format=3 uid="uid://cic1fq6ug00ur"]
 
-[ext_resource path="res://script/2DRender.gd" type="Script" id=1]
-[ext_resource path="res://script/2DCamera.gd" type="Script" id=2]
-[ext_resource path="res://theme/default.tres" type="Theme" id=3]
+[ext_resource type="Script" path="res://script/2DRender.gd" id="1"]
+[ext_resource type="Script" path="res://script/2DCamera.gd" id="2"]
+[ext_resource type="WasmModule" uid="uid://c0t6myf3ei6af" path="res://wasm/two_d_render.wasm" id="2_g5h2y"]
+[ext_resource type="Theme" uid="uid://cia5aaiffmela" path="res://theme/default.tres" id="3"]
 
 [node name="Root" type="Node2D"]
-script = ExtResource( 1 )
-wasm_file = "res://wasm/two_d_render.wasm"
+script = ExtResource("1")
+wasm_file = ExtResource("2_g5h2y")
 
 [node name="Camera" type="Camera2D" parent="."]
-current = true
-script = ExtResource( 2 )
+script = ExtResource("2")
 
-[node name="Sprite" type="Sprite" parent="."]
+[node name="Sprite" type="Sprite2D" parent="."]
 
 [node name="UI" type="CanvasLayer" parent="."]
 layer = 2
 
 [node name="Root" type="Control" parent="UI"]
+layout_mode = 3
+anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 mouse_filter = 2
-theme = ExtResource( 3 )
+theme = ExtResource("3")
 
 [node name="Panel" type="PanelContainer" parent="UI/Root"]
+layout_mode = 1
+anchors_preset = 9
 anchor_bottom = 1.0
-margin_left = 20.0
-margin_top = 20.0
-margin_bottom = -20.0
+offset_left = 20.0
+offset_top = 20.0
+offset_bottom = -20.0
+grow_vertical = 2
 
 [node name="VBox" type="VBoxContainer" parent="UI/Root/Panel"]
-margin_left = 3.0
-margin_top = 3.0
-margin_right = 123.0
-margin_bottom = 557.0
+layout_mode = 2
 
 [node name="Label" type="Label" parent="UI/Root/Panel/VBox"]
-margin_right = 120.0
-margin_bottom = 8.0
-rect_min_size = Vector2( 120, 0 )
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
 
 [node name="TypeLst" type="ItemList" parent="UI/Root/Panel/VBox"]
-margin_top = 12.0
-margin_right = 120.0
-margin_bottom = 554.0
+layout_mode = 2
 size_flags_vertical = 3
-items = [ "Mandelbrot", null, false, "Game of Life", null, false ]
 allow_reselect = true
+item_count = 2
+item_0/text = "Mandelbrot"
+item_1/text = "Game of Life"
 
 [connection signal="item_selected" from="UI/Root/Panel/VBox/TypeLst" to="." method="__selected"]

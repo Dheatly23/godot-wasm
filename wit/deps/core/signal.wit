@@ -1,0 +1,16 @@
+package godot:core@0.1.0;
+
+interface signal {
+    use core.{godot-var};
+
+    from-object-signal: func(obj: borrow<godot-var>, signal: borrow<godot-var>) -> godot-var;
+
+    object: func(var: borrow<godot-var>) -> option<godot-var>;
+    name: func(var: borrow<godot-var>) -> godot-var;
+
+    connect: func(var: borrow<godot-var>, callable: borrow<godot-var>, %flags: u32);
+    disconnect: func(var: borrow<godot-var>, callable: borrow<godot-var>);
+    is-connected: func(var: borrow<godot-var>, callable: borrow<godot-var>) -> bool;
+
+    emit: func(var: borrow<godot-var>, args: list<option<borrow<godot-var>>>);
+}

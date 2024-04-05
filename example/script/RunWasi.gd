@@ -2,28 +2,28 @@ extends Control
 
 signal message_emitted(msg)
 
-export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
+@export_file("*.wasm","*.wat") var wasm_file := ""
 
-onready var wasi_ctx: WasiContext = WasiContext.new()
+@onready var wasi_ctx: WasiContext = WasiContext.new()
 
-onready var file_tree: Tree = $Center/Panel/Margin/VBox/FileEdit/VBox2/Scroll/FileTree
-onready var file_title: LineEdit = $Center/Panel/Margin/VBox/FileEdit/VBox/HBoxContainer/FileLabel
-onready var file_text := $Center/Panel/Margin/VBox/FileEdit/VBox/TextBox
-onready var file_popup: PopupMenu = $PopupFileMenu
-onready var file_name_dialog := $FileNameDialog
-onready var file_name_dialog_text: LineEdit = $FileNameDialog/Box/LineEdit
+@onready var file_tree: Tree = $Center/Panel/Margin/VBox/FileEdit/VBox2/FileTree
+@onready var file_title: LineEdit = $Center/Panel/Margin/VBox/FileEdit/VBox/HBoxContainer/FileLabel
+@onready var file_text := $Center/Panel/Margin/VBox/FileEdit/VBox/TextBox
+@onready var file_popup: PopupMenu = $PopupFileMenu
+@onready var file_name_dialog := $FileNameDialog
+@onready var file_name_dialog_text: LineEdit = $FileNameDialog/Box/LineEdit
 
-onready var arg_list: ItemList = $ArgEnvDialog/Margin/Tabs/Arguments/Args
-onready var env_list: ItemList = $"ArgEnvDialog/Margin/Tabs/Environment Variables/Envs"
-onready var mnt_list: ItemList = $ArgEnvDialog/Margin/Tabs/Mounts/Mounts
+@onready var arg_list: ItemList = $ArgEnvDialog/Panel/Margin/Tabs/Arguments/Args
+@onready var env_list: ItemList = $"ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/Envs"
+@onready var mnt_list: ItemList = $ArgEnvDialog/Panel/Margin/Tabs/Mounts/Mounts
 
-onready var arg_dialog_text: TextEdit = $ArgDialog/ArgTxt
-onready var env_dialog_key: LineEdit = $EnvDialog/Grid/KeyTxt
-onready var env_dialog_val: TextEdit = $EnvDialog/Grid/ValTxt
-onready var mnt_dialog_host: LineEdit = $MountDialog/Grid/HostTxt
-onready var mnt_dialog_guest: LineEdit = $MountDialog/Grid/GuestTxt
+@onready var arg_dialog_text: TextEdit = $ArgEnvDialog/ArgDialog/ArgTxt
+@onready var env_dialog_key: LineEdit = $ArgEnvDialog/EnvDialog/Grid/KeyTxt
+@onready var env_dialog_val: TextEdit = $ArgEnvDialog/EnvDialog/Grid/ValTxt
+@onready var mnt_dialog_host: LineEdit = $ArgEnvDialog/MountDialog/Grid/HostTxt
+@onready var mnt_dialog_guest: LineEdit = $ArgEnvDialog/MountDialog/Grid/GuestTxt
 
-onready var exec_file_box := $Center/Panel/Margin/VBox/HBox/ExecFile
+@onready var exec_file_box := $Center/Panel/Margin/VBox/HBox/ExecFile
 
 var select_file_cmd := 0
 var create_file := false
@@ -34,16 +34,16 @@ var wasm_module: WasmModule = null
 var last_file_path: String = ""
 
 func _ready():
-	wasi_ctx.connect("stdout_emit", self, "__emit_log")
-	wasi_ctx.connect("stderr_emit", self, "__emit_log")
+	wasi_ctx.stdout_emit.connect(__emit_log)
+	wasi_ctx.stderr_emit.connect(__emit_log)
 
-	wasi_ctx.file_make_dir(".", "python")
-	wasi_ctx.file_make_file("python", "hello_world.py")
+	wasi_ctx.file_make_dir(".", "python", null)
+	wasi_ctx.file_make_file("python", "hello_world.py", null)
 	wasi_ctx.file_write("python/hello_world.py", """# hello_world.py
 
 print('Hello from Python!')
-""")
-	wasi_ctx.file_make_file("python", "primes.py")
+""", null, null, null)
+	wasi_ctx.file_make_file("python", "primes.py", null)
 	wasi_ctx.file_write("python/primes.py", """# primes.py
 
 def primes(n):
@@ -57,16 +57,16 @@ print("First 1000 primes:")
 p = primes(1000)
 for i in range(0, len(p), 16):
 	print(*(f"{x:3d}" for x in p[i:i+16]))
-""")
-	wasi_ctx.file_make_file("python", "read_file.py")
+""", null, null, null)
+	wasi_ctx.file_make_file("python", "read_file.py", null)
 	wasi_ctx.file_write("python/read_file.py", """# read_file.py
 
 print("Reading data/text.txt")
 with open("data/text.txt", "rt") as f:
 	for l in f:
 		print(l.strip())
-""")
-	wasi_ctx.file_make_file("python", "write_file.py")
+""", null, null, null)
+	wasi_ctx.file_make_file("python", "write_file.py", null)
 	wasi_ctx.file_write("python/write_file.py", """# write_file.py
 
 import json
@@ -79,25 +79,29 @@ with open("data/output.json", "wt") as f:
 		"alive": False,
 		"profession": "preacher",
 	}, f)
-""")
-	wasi_ctx.file_make_dir(".", "js")
-	wasi_ctx.file_make_file("js", "hello_world.js")
+""", null, null, null)
+	wasi_ctx.file_make_dir(".", "js", null)
+	wasi_ctx.file_make_file("js", "hello_world.js", null)
 	wasi_ctx.file_write("js/hello_world.js", """// hello_world.js
 
 console.log('Hello from Javascript!')
-""")
-	wasi_ctx.file_make_dir(".", "data")
-	wasi_ctx.file_make_file("data", "text.txt")
+""", null, null, null)
+	wasi_ctx.file_make_dir(".", "data", null)
+	wasi_ctx.file_make_file("data", "text.txt", null)
 	wasi_ctx.file_write("data/text.txt", """
 A text data read by read_file.py
 
 I don't really feel like putting Lorem Ipsum here :)
-""")
+""", null, null, null)
 
 	file_popup.add_item("Create New File")
 	file_popup.add_item("Create New Folder")
 	file_popup.add_separator()
 	file_popup.add_item("Delete File")
+
+	file_tree.set_column_clip_content(0, false)
+	file_tree.set_column_expand(0, true)
+	file_tree.set_column_custom_minimum_width(0, 1000)
 
 	__refresh_files()
 
@@ -111,7 +115,7 @@ func __select_exec_file(path):
 	exec_file_box.text = path
 
 func __list_tree_item(path: String, tree: TreeItem = null):
-	if wasi_ctx.file_is_exist(path) != 2:
+	if wasi_ctx.file_is_exist(path, null) != 2:
 		return
 	var items = wasi_ctx.file_dir_list(path, false)
 	if items == null:
@@ -132,27 +136,31 @@ func __refresh_files():
 	root.set_metadata(0, ".")
 	__list_tree_item(".", root)
 
-func __open_file_context(position: Vector2):
+func __open_file_context(position: Vector2, mouse_button_index: int):
+	if mouse_button_index != MOUSE_BUTTON_RIGHT:
+		return
 	var t := file_tree.get_selected()
+	if t == null:
+		return
 	var path: String = t.get_metadata(0)
 
-	var is_not_dir: bool = wasi_ctx.file_is_exist(path) != 2
+	var is_not_dir: bool = wasi_ctx.file_is_exist(path, null) != 2
 	file_popup.set_item_disabled(0, is_not_dir)
 	file_popup.set_item_disabled(1, is_not_dir)
 
-	position += file_tree.rect_global_position
+	position += file_tree.get_global_position()
 	file_popup.popup(Rect2(position, Vector2(50, 10)))
 
 func __select_popup(id):
 	match id:
 		0:
 			create_file = true
-			file_name_dialog.window_title = "New File Name"
+			file_name_dialog.title = "New File Name"
 			file_name_dialog_text.text = ""
 			file_name_dialog.popup_centered_clamped(Vector2(150, 50))
 		1:
 			create_file = false
-			file_name_dialog.window_title = "New Folder Name"
+			file_name_dialog.title = "New Folder Name"
 			file_name_dialog_text.text = ""
 			file_name_dialog.popup_centered_clamped(Vector2(150, 50))
 		3:
@@ -163,7 +171,7 @@ func __select_popup(id):
 			var name := t.get_parent().get_text(0)
 
 			if !wasi_ctx.file_delete_file(path, name, false):
-				emit_signal("message_emitted", "Cannot delete file")
+				message_emitted.emit("Cannot delete file")
 
 			__refresh_files()
 
@@ -179,10 +187,10 @@ func __create_file():
 
 	if create_file:
 		if !wasi_ctx.file_make_file(path, name, false):
-			emit_signal("message_emitted", "Cannot create file")
+			message_emitted.emit("Cannot create file")
 	else:
 		if !wasi_ctx.file_make_dir(path, name, false):
-			emit_signal("message_emitted", "Cannot create folder")
+			message_emitted.emit("Cannot create folder")
 
 	__refresh_files()
 
@@ -192,12 +200,12 @@ func __open_file():
 		return
 	var path: String = t.get_metadata(0)
 
-	if wasi_ctx.file_is_exist(path) != 1:
+	if wasi_ctx.file_is_exist(path, null) != 1:
 		return
 
 	var content = wasi_ctx.file_read(path, 1_000_000, 0, true)
 	if content == null:
-		emit_signal("message_emitted", "Cannot open file!")
+		message_emitted.emit("Cannot open file!")
 		return
 	content = content.get_string_from_utf8()
 
@@ -209,13 +217,13 @@ func __save_file():
 	if path == "":
 		return
 	if !wasi_ctx.file_write(path, file_text.text, 0, true, true):
-		emit_signal("message_emitted", "Cannot save file!")
+		message_emitted.emit("Cannot save file!")
 
 func __emit_log(msg):
-	emit_signal("message_emitted", msg)
+	message_emitted.emit(msg)
 
-func __file_name_dialog_entered(new_text):
-	file_name_dialog.get_ok().emit_signal("pressed")
+func __file_name_dialog_entered(_new_text):
+	file_name_dialog.get_ok().pressed.emit()
 
 func __open_arg_dialog():
 	$ArgEnvDialog.popup_centered_clamped(
@@ -228,7 +236,7 @@ func __add_argument():
 	var j := arg_list.get_item_count()
 
 	arg_list.add_item("")
-	if !i.empty():
+	if !i.is_empty():
 		arg_list.move_item(j, i[0])
 		j = i[0]
 
@@ -237,14 +245,14 @@ func __add_argument():
 
 func __delete_argument():
 	var i := arg_list.get_selected_items()
-	if i.empty():
+	if i.is_empty():
 		return
 	arg_list.remove_item(i[0])
 
 func __edit_argument(index: int):
 	edited_arg_ix = index
 	arg_dialog_text.text = arg_list.get_item_text(index)
-	$ArgDialog.popup_centered_clamped(Vector2(150, 150))
+	$ArgEnvDialog/ArgDialog.popup_centered_clamped(Vector2(150, 150))
 
 func __edited_argument():
 	arg_list.set_item_text(edited_arg_ix, arg_dialog_text.text)
@@ -252,20 +260,20 @@ func __edited_argument():
 func __add_environment():
 	var i := env_list.get_selected_items()
 	edited_env_ix = -1
-	if !i.empty():
+	if !i.is_empty():
 		edited_env_ix = i[0]
 
 	env_dialog_key.text = ""
 	env_dialog_val.text = ""
 	env_dialog_key.editable = true
-	$EnvDialog.popup_centered_clamped(
+	$ArgEnvDialog/EnvDialog.popup_centered_clamped(
 		Vector2(200, 100),
 		get_viewport_rect().size.aspect()
 	)
 
 func __delete_environment():
 	var i := env_list.get_selected_items()
-	if i.empty():
+	if i.is_empty():
 		return
 	var j := i[0]
 	wasi_ctx.delete_env_variable(env_list.get_item_metadata(j))
@@ -278,7 +286,7 @@ func __edit_environment(index):
 	env_dialog_key.text = k
 	env_dialog_val.text = wasi_ctx.get_env_variable(k)
 	env_dialog_key.editable = false
-	$EnvDialog.popup_centered_clamped(
+	$ArgEnvDialog/EnvDialog.popup_centered_clamped(
 		Vector2(200, 100),
 		get_viewport_rect().size.aspect()
 	)
@@ -315,14 +323,14 @@ func __refresh_mounts():
 func __add_mount():
 	mnt_dialog_host.text = ""
 	mnt_dialog_guest.text = ""
-	$MountDialog.popup_centered_clamped(
+	$ArgEnvDialog/MountDialog.popup_centered_clamped(
 		Vector2(200, 100),
 		get_viewport_rect().size.aspect()
 	)
 
 func __delete_mount():
 	var i := mnt_list.get_selected_items()
-	if i.empty():
+	if i.is_empty():
 		return
 	wasi_ctx.unmount_physical_dir(mnt_list.get_item_metadata(i[0]))
 	__refresh_mounts()
@@ -336,7 +344,7 @@ func __added_mount():
 	__refresh_mounts()
 
 func __open_mount_file():
-	$MountFileDialog.popup_centered_clamped(
+	$ArgEnvDialog/MountDialog/MountFileDialog.popup_centered_clamped(
 		Vector2(500, 500),
 		get_viewport_rect().size.aspect()
 	)
@@ -347,18 +355,19 @@ func __select_mount_file(dir):
 func __execute():
 	if wasm_module == null or last_file_path != exec_file_box.text:
 		last_file_path = exec_file_box.text
-		wasm_module = WasmHelper.load_wasm_file("wasm_file", last_file_path)
+		wasm_module = WasmHelper.load_wasm_file(last_file_path)
 	if wasm_module == null:
-		emit_signal("message_emitted", "Cannot open executable!")
+		message_emitted.emit("Cannot open executable!")
 		return
 
-	emit_signal("message_emitted", "Running file")
+	message_emitted.emit("Running file")
 	var args := ["wasm_file"]
 	for i in range(0, arg_list.get_item_count()):
 		args.append(arg_list.get_item_text(i))
 
-	var instance := InstanceHandle.new()
-	instance.instantiate(
+	var instance := WasmInstance.new()
+	instance.error_happened.connect(__emit_log)
+	instance = instance.initialize(
 		wasm_module,
 		{},
 		{
@@ -367,13 +376,8 @@ func __execute():
 			"wasi.args": args,
 		}
 	)
+	if instance == null:
+		return
 
-	instance.call_queue(
-		"_start",
-		[],
-		null,
-		"",
-		self,
-		"__emit_log"
-	)
+	instance.call_wasm(&"_start", [])
 	__refresh_files()

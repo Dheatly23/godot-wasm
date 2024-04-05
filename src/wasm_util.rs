@@ -1,21 +1,21 @@
-#[cfg(not(feature = "new-host-import"))]
-use std::collections::HashMap;
-#[cfg(not(feature = "new-host-import"))]
+use std::borrow::Cow;
 use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 #[cfg(feature = "object-registry-extern")]
 use std::ptr;
 #[cfg(feature = "epoch-timeout")]
 use std::time;
 
-use anyhow::{bail, Error};
-use gdnative::api::WeakRef;
-use gdnative::log::Site;
-use gdnative::prelude::*;
-#[cfg(feature = "new-host-import")]
-use wasmtime::Linker;
+use anyhow::{anyhow, Error};
+use godot::builtin::meta::{ConvertError, GodotConvert};
+use godot::engine::WeakRef;
+use godot::prelude::*;
+use godot::register::property::PropertyHintInfo;
+
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
-use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Store, ValRaw, ValType};
+use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Linker, Store, ValRaw, ValType};
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, RefType};
 
@@ -25,6 +25,8 @@ use crate::wasm_config::Config;
 use crate::wasm_engine::{ENGINE, EPOCH};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
+#[cfg(feature = "memory-limiter")]
+use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::StoreData;
 
 #[cfg(all(feature = "epoch-timeout", not(feature = "more-precise-timer")))]
@@ -55,46 +57,36 @@ pub const TYPE_F64: u32 = 4;
 pub const TYPE_VARIANT: u32 = 6;
 pub const TYPE_V128: u32 = 7;
 
-#[cfg(not(feature = "new-host-import"))]
-pub const HOST_MODULE: &str = "host";
 #[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
 #[cfg(feature = "object-registry-extern")]
 pub const EXTERNREF_MODULE: &str = "godot_object_v2";
-
-pub const MODULE_INCLUDES: &[&str] = &[
-    #[cfg(not(feature = "new-host-import"))]
-    HOST_MODULE,
-    #[cfg(feature = "object-registry-compat")]
-    OBJREGISTRY_MODULE,
-    #[cfg(feature = "object-registry-extern")]
-    EXTERNREF_MODULE,
-    #[cfg(feature = "wasi")]
-    "wasi_unstable",
-    #[cfg(feature = "wasi")]
-    "wasi_snapshot_preview0",
-    #[cfg(feature = "wasi")]
-    "wasi_snapshot_preview1",
-];
 
 pub const MEMORY_EXPORT: &str = "memory";
 
 #[macro_export]
 macro_rules! bail_with_site {
     ($($t:tt)*) => {
+        /*
         return Err(anyhow::anyhow!($($t)*).context(gdnative::log::godot_site!()))
+        */
+        return Err(anyhow::anyhow!($($t)*))
     };
 }
 
 #[macro_export]
 macro_rules! site_context {
     ($e:expr) => {
+        /*
         $e.map_err(|e| {
             $crate::wasm_util::add_site(anyhow::Error::from(e), gdnative::log::godot_site!())
         })
+        */
+        $e.map_err(anyhow::Error::from)
     };
 }
 
+/*
 pub fn add_site(e: Error, site: Site<'static>) -> Error {
     if e.is::<Site>() {
         e
@@ -102,6 +94,7 @@ pub fn add_site(e: Error, site: Site<'static>) -> Error {
         e.context(site)
     }
 }
+*/
 
 #[macro_export]
 macro_rules! func_registry{
@@ -128,20 +121,157 @@ macro_rules! func_registry{
     };
 }
 
-pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), Error> {
+#[allow(dead_code)]
+pub fn gstring_from_maybe_utf8(buf: &[u8]) -> GString {
+    match String::from_utf8_lossy(buf) {
+        Cow::Owned(v) => GString::from(v),
+        Cow::Borrowed(v) => GString::from(v),
+    }
+}
+
+pub fn option_to_variant<T: ToGodot>(t: Option<T>) -> Variant {
+    t.map_or_else(Variant::nil, |t| t.to_variant())
+}
+
+pub fn variant_to_option<T: FromGodot>(v: Variant) -> Result<Option<T>, ConvertError> {
+    if v.is_nil() {
+        Ok(None)
+    } else {
+        Some(T::try_from_variant(&v)).transpose()
+    }
+}
+
+pub struct PhantomProperty<T>(PhantomData<T>);
+
+impl<T: Default> Default for PhantomProperty<T> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<T> GodotConvert for PhantomProperty<T>
+where
+    T: GodotConvert,
+    T::Via: Default,
+{
+    type Via = T::Via;
+}
+
+impl<T> Var for PhantomProperty<T>
+where
+    T: Var,
+    T::Via: Default,
+{
+    fn get_property(&self) -> Self::Via {
+        Self::Via::default()
+    }
+
+    fn set_property(&mut self, _: Self::Via) {}
+
+    fn property_hint() -> PropertyHintInfo {
+        T::property_hint()
+    }
+}
+
+// Keep until gdext implement this
+#[derive(Clone)]
+pub enum VariantDispatch {
+    Nil,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(GString),
+    Vector2(Vector2),
+    Vector2i(Vector2i),
+    Rect2(Rect2),
+    Rect2i(Rect2i),
+    Vector3(Vector3),
+    Vector3i(Vector3i),
+    Transform2D(Transform2D),
+    Vector4(Vector4),
+    Vector4i(Vector4i),
+    Plane(Plane),
+    Quaternion(Quaternion),
+    Aabb(Aabb),
+    Basis(Basis),
+    Transform3D(Transform3D),
+    Projection(Projection),
+    Color(Color),
+    StringName(StringName),
+    NodePath(NodePath),
+    Rid(Rid),
+    Object(Gd<Object>),
+    Callable(Callable),
+    Signal(Signal),
+    Dictionary(Dictionary),
+    Array(Array<Variant>),
+    PackedByteArray(PackedByteArray),
+    PackedInt32Array(PackedInt32Array),
+    PackedInt64Array(PackedInt64Array),
+    PackedFloat32Array(PackedFloat32Array),
+    PackedFloat64Array(PackedFloat64Array),
+    PackedStringArray(PackedStringArray),
+    PackedVector2Array(PackedVector2Array),
+    PackedVector3Array(PackedVector3Array),
+    PackedColorArray(PackedColorArray),
+}
+
+impl From<&'_ Variant> for VariantDispatch {
+    fn from(var: &Variant) -> Self {
+        match var.get_type() {
+            VariantType::Nil => Self::Nil,
+            VariantType::Bool => Self::Bool(var.to()),
+            VariantType::Int => Self::Int(var.to()),
+            VariantType::Float => Self::Float(var.to()),
+            VariantType::String => Self::String(var.to()),
+            VariantType::Vector2 => Self::Vector2(var.to()),
+            VariantType::Vector2i => Self::Vector2i(var.to()),
+            VariantType::Rect2 => Self::Rect2(var.to()),
+            VariantType::Rect2i => Self::Rect2i(var.to()),
+            VariantType::Vector3 => Self::Vector3(var.to()),
+            VariantType::Vector3i => Self::Vector3i(var.to()),
+            VariantType::Transform2D => Self::Transform2D(var.to()),
+            VariantType::Vector4 => Self::Vector4(var.to()),
+            VariantType::Vector4i => Self::Vector4i(var.to()),
+            VariantType::Plane => Self::Plane(var.to()),
+            VariantType::Quaternion => Self::Quaternion(var.to()),
+            VariantType::Aabb => Self::Aabb(var.to()),
+            VariantType::Basis => Self::Basis(var.to()),
+            VariantType::Transform3D => Self::Transform3D(var.to()),
+            VariantType::Projection => Self::Projection(var.to()),
+            VariantType::Color => Self::Color(var.to()),
+            VariantType::StringName => Self::StringName(var.to()),
+            VariantType::NodePath => Self::NodePath(var.to()),
+            VariantType::Rid => Self::Rid(var.to()),
+            VariantType::Object => Self::Object(var.to()),
+            VariantType::Callable => Self::Callable(var.to()),
+            VariantType::Signal => Self::Signal(var.to()),
+            VariantType::Dictionary => Self::Dictionary(var.to()),
+            VariantType::Array => Self::Array(var.to()),
+            VariantType::PackedByteArray => Self::PackedByteArray(var.to()),
+            VariantType::PackedInt32Array => Self::PackedInt32Array(var.to()),
+            VariantType::PackedInt64Array => Self::PackedInt64Array(var.to()),
+            VariantType::PackedFloat32Array => Self::PackedFloat32Array(var.to()),
+            VariantType::PackedFloat64Array => Self::PackedFloat64Array(var.to()),
+            VariantType::PackedStringArray => Self::PackedStringArray(var.to()),
+            VariantType::PackedVector2Array => Self::PackedVector2Array(var.to()),
+            VariantType::PackedVector3Array => Self::PackedVector3Array(var.to()),
+            VariantType::PackedColorArray => Self::PackedColorArray(var.to()),
+        }
+    }
+}
+
+pub fn from_signature(sig: &FuncType) -> Result<(PackedByteArray, PackedByteArray), Error> {
     let p = sig.params();
     let r = sig.results();
 
-    let mut pr = <PoolArray<u8>>::new();
-    let mut rr = <PoolArray<u8>>::new();
+    let mut pr = <Vec<u8>>::new();
+    let mut rr = <Vec<u8>>::new();
 
-    pr.resize(p.len() as _);
-    rr.resize(r.len() as _);
+    pr.resize(p.len() as _, 0);
+    rr.resize(r.len() as _, 0);
 
-    for (s, d) in p
-        .zip(pr.write().iter_mut())
-        .chain(r.zip(rr.write().iter_mut()))
-    {
+    for (s, d) in p.zip(pr.iter_mut()).chain(r.zip(rr.iter_mut())) {
         *d = match s {
             ValType::I32 => TYPE_I32,
             ValType::I64 => TYPE_I64,
@@ -154,7 +284,10 @@ pub fn from_signature(sig: &FuncType) -> Result<(PoolArray<u8>, PoolArray<u8>), 
         } as _;
     }
 
-    Ok((pr, rr))
+    Ok((
+        PackedByteArray::from(&pr[..]),
+        PackedByteArray::from(&rr[..]),
+    ))
 }
 
 pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error> {
@@ -165,7 +298,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
         };
 
         for i in it {
-            ret.push(match i? {
+            ret.push(match site_context!(i)? {
                 TYPE_I32 => ValType::I32,
                 TYPE_I64 => ValType::I64,
                 TYPE_F32 => ValType::F32,
@@ -181,22 +314,22 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
     }
 
     let p = match VariantDispatch::from(&params) {
-        VariantDispatch::VariantArray(v) => f(v
-            .into_iter()
-            .map(|v| Ok(site_context!(u32::from_variant(&v))?))),
-        VariantDispatch::ByteArray(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
-        VariantDispatch::Int32Array(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
-        _ => bail!("Unconvertible value {}", params),
-    }?;
+        VariantDispatch::Array(v) => f(v
+            .iter_shared()
+            .map(|v| u32::try_from_variant(&v).map_err(Error::from)))?,
+        VariantDispatch::PackedByteArray(v) => f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?,
+        VariantDispatch::PackedInt32Array(v) => f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?,
+        _ => bail_with_site!("Unconvertible value {}", params),
+    };
 
     let r = match VariantDispatch::from(&results) {
-        VariantDispatch::VariantArray(v) => f(v
-            .into_iter()
-            .map(|v| Ok(site_context!(u32::from_variant(&v))?))),
-        VariantDispatch::ByteArray(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
-        VariantDispatch::Int32Array(v) => f(v.read().as_slice().iter().map(|v| Ok(*v as u32))),
-        _ => bail!("Unconvertible value {}", results),
-    }?;
+        VariantDispatch::Array(v) => f(v
+            .iter_shared()
+            .map(|v| u32::try_from_variant(&v).map_err(Error::from)))?,
+        VariantDispatch::PackedByteArray(v) => f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?,
+        VariantDispatch::PackedInt32Array(v) => f(v.to_vec().into_iter().map(|v| Ok(v as u32)))?,
+        _ => bail_with_site!("Unconvertible value {}", results),
+    };
 
     Ok(FuncType::new(&ENGINE, p, r))
 }
@@ -204,22 +337,33 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 // Mark this unsafe for future proofing
 pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Result<ValRaw, Error> {
     Ok(match t {
-        ValType::I32 => ValRaw::i32(site_context!(i32::from_variant(&v))?),
-        ValType::I64 => ValRaw::i64(site_context!(i64::from_variant(&v))?),
-        ValType::F32 => ValRaw::f32(site_context!(f32::from_variant(&v))?.to_bits()),
-        ValType::F64 => ValRaw::f64(site_context!(f64::from_variant(&v))?.to_bits()),
-        ValType::V128 => ValRaw::v128(match v.dispatch() {
-            VariantDispatch::I64(v) => v as u128,
-            VariantDispatch::ByteArray(v) => {
-                let s = v.read();
-                let Some(s) = s.get(..16) else {
+        ValType::I32 => ValRaw::i32(site_context!(i32::try_from_variant(&v))?),
+        ValType::I64 => ValRaw::i64(site_context!(i64::try_from_variant(&v))?),
+        ValType::F32 => ValRaw::f32(site_context!(f32::try_from_variant(&v))?.to_bits()),
+        ValType::F64 => ValRaw::f64(site_context!(f64::try_from_variant(&v))?.to_bits()),
+        ValType::V128 => ValRaw::v128(match VariantDispatch::from(&v) {
+            VariantDispatch::Int(v) => v as u128,
+            VariantDispatch::PackedByteArray(v) => {
+                let Some(s) = v.as_slice().get(..16) else {
                     bail_with_site!("Value too short for 128-bit integer")
                 };
                 u128::from_le_bytes(s.try_into().unwrap())
             }
-            VariantDispatch::VariantArray(v) => {
-                let v0 = site_context!(u64::from_variant(&v.get(0)))?;
-                let v1 = site_context!(u64::from_variant(&v.get(1)))?;
+            VariantDispatch::PackedInt32Array(v) => {
+                let Some(s) = v.as_slice().get(..4) else {
+                    bail_with_site!("Value too short for 128-bit integer")
+                };
+                s[0] as u128 | (s[1] as u128) << 32 | (s[2] as u128) << 64 | (s[3] as u128) << 96
+            }
+            VariantDispatch::PackedInt64Array(v) => {
+                let Some(s) = v.as_slice().get(..2) else {
+                    bail_with_site!("Value too short for 128-bit integer")
+                };
+                s[0] as u128 | (s[1] as u128) << 64
+            }
+            VariantDispatch::Array(v) => {
+                let v0 = site_context!(u64::try_from_variant(&v.try_get(0).unwrap_or_default()))?;
+                let v1 = site_context!(u64::try_from_variant(&v.try_get(1).unwrap_or_default()))?;
                 v0 as u128 | (v1 as u128) << 64
             }
             _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
@@ -244,10 +388,10 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
         ValType::F64 => f64::from_bits(v.get_f64()).to_variant(),
         ValType::V128 => {
             let v = v.get_v128();
-            let r = VariantArray::new();
-            r.push(v as u64);
-            r.push((v >> 64) as u64);
-            r.owned_to_variant()
+            let mut r = VariantArray::new();
+            r.push((v as u64).to_variant());
+            r.push(((v >> 64) as u64).to_variant());
+            r.to_variant()
         }
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
@@ -257,15 +401,53 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
     })
 }
 
+/// WARNING: Incredibly unsafe.
+/// It's just used as workaround to pass Godot objects across closure.
+/// (At least until it supports multi-threading)
+#[derive(Clone)]
+pub(crate) struct SendSyncWrapper<T>(T);
+
+unsafe impl<T> Send for SendSyncWrapper<T> {}
+unsafe impl<T> Sync for SendSyncWrapper<T> {}
+
+#[allow(dead_code)]
+impl<T> SendSyncWrapper<T> {
+    pub(crate) fn new(v: T) -> Self {
+        Self(v)
+    }
+
+    pub(crate) fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+impl<T> Deref for SendSyncWrapper<T> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for SendSyncWrapper<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+enum CallableEnum {
+    ObjectMethod(Gd<Object>, StringName),
+    Callable(Callable),
+}
+
 fn wrap_godot_method<T>(
     store: impl AsContextMut<Data = T>,
     ty: FuncType,
-    obj: Variant,
-    method: GodotString,
+    callable: CallableEnum,
 ) -> Func
 where
     T: AsRef<StoreData> + AsMut<StoreData>,
 {
+    let callable = SendSyncWrapper(callable);
     let ty_cloned = ty.clone();
     let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> Result<(), Error> {
         let pi = ty.params();
@@ -274,14 +456,20 @@ where
             p.push(unsafe { from_raw(&mut ctx, t, args[ix])? });
         }
 
-        let mut obj = match <Ref<WeakRef, Shared>>::from_variant(&obj) {
-            Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-            Err(_) => obj.clone(),
-        };
-        let r = ctx
-            .data_mut()
-            .as_mut()
-            .release_store(|| unsafe { site_context!(obj.call(method.clone(), &p)) })?;
+        let r = ctx.data_mut().as_mut().release_store(|| {
+            site_context!(catch_unwind(AssertUnwindSafe(|| match &*callable {
+                CallableEnum::ObjectMethod(obj, method) => {
+                    match obj.clone().try_cast::<WeakRef>() {
+                        Ok(obj) => <_>::from_variant(&obj.get_ref()),
+                        Err(obj) => obj,
+                    }
+                    .try_call(method.clone(), &p)
+                }
+                CallableEnum::Callable(c) => Ok(c.callv(p.into_iter().collect())),
+            }))
+            .map_err(|_| anyhow!("Error trying to call")))
+            .and_then(|v| Ok(v?))
+        })?;
 
         if let Some(msg) = ctx.data_mut().as_mut().error_signal.take() {
             return Err(Error::msg(msg));
@@ -289,7 +477,7 @@ where
 
         let mut ri = ty.results();
         if ri.len() == 0 {
-        } else if let Ok(r) = VariantArray::from_variant(&r) {
+        } else if let Ok(r) = <Array<Variant>>::try_from_variant(&r) {
             for (ix, t) in ri.enumerate() {
                 let v = r.get(ix as _);
                 args[ix] = unsafe { to_raw(&mut ctx, t, v)? };
@@ -301,14 +489,13 @@ where
         }
 
         #[cfg(feature = "epoch-timeout")]
-        if let Config {
-            with_epoch: true,
+        if let StoreData {
             epoch_autoreset: true,
-            epoch_timeout,
+            epoch_timeout: v @ 1..,
             ..
-        } = ctx.data().as_ref().config
+        } = *ctx.data().as_ref()
         {
-            ctx.as_context_mut().set_epoch_deadline(epoch_timeout);
+            ctx.as_context_mut().set_epoch_deadline(v);
         }
 
         Ok(())
@@ -317,36 +504,47 @@ where
     unsafe { Func::new_unchecked(store, ty_cloned, f) }
 }
 
-#[cfg(feature = "new-host-import")]
+fn process_func(dict: Dictionary) -> Result<(FuncType, CallableEnum), Error> {
+    let Some(params) = dict.get(StringName::from(c"params")) else {
+        bail_with_site!("Key \"params\" does not exist")
+    };
+    let Some(results) = dict.get(StringName::from(c"results")) else {
+        bail_with_site!("Key \"results\" does not exist")
+    };
+
+    let callable = if let Some(c) = dict.get(StringName::from(c"callable")) {
+        CallableEnum::Callable(site_context!(Callable::try_from_variant(&c))?)
+    } else {
+        let Some(object) = dict.get(StringName::from(c"object")) else {
+            bail_with_site!("Key \"object\" does not exist")
+        };
+        let Some(method) = dict.get(StringName::from(c"method")) else {
+            bail_with_site!("Key \"method\" does not exist")
+        };
+
+        CallableEnum::ObjectMethod(
+            site_context!(<Gd<Object>>::try_from_variant(&object))?,
+            match VariantDispatch::from(&method) {
+                VariantDispatch::String(s) => StringName::from(&s),
+                VariantDispatch::StringName(s) => s,
+                _ => bail_with_site!("Unknown method name {}", method),
+            },
+        )
+    };
+
+    Ok((to_signature(params, results)?, callable))
+}
+
 pub struct HostModuleCache<T> {
     cache: Linker<T>,
     host: Dictionary,
 }
 
-#[cfg(not(feature = "new-host-import"))]
-pub struct HostModuleCache<T> {
-    cache: HashMap<String, Extern>,
-    host: Dictionary,
-    phantom: PhantomData<T>,
-}
-
 impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
     pub fn new(host: Dictionary) -> Self {
-        #[cfg(feature = "new-host-import")]
-        {
-            Self {
-                cache: Linker::new(&ENGINE),
-                host,
-            }
-        }
-
-        #[cfg(not(feature = "new-host-import"))]
-        {
-            Self {
-                cache: HashMap::new(),
-                host,
-                phantom: PhantomData,
-            }
+        Self {
+            cache: Linker::new(&ENGINE),
+            host,
         }
     }
 
@@ -356,69 +554,20 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
         module: &str,
         name: &str,
     ) -> Result<Option<Extern>, Error> {
-        #[derive(FromVariant)]
-        struct Data {
-            params: Variant,
-            results: Variant,
-            object: Variant,
-            method: GodotString,
-        }
-
-        #[cfg(feature = "new-host-import")]
         if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
             Ok(r)
         } else if let Some(data) = self
             .host
             .get(module)
-            .map(|d| site_context!(Dictionary::from_variant(&d)))
+            .map(|d| site_context!(Dictionary::try_from_variant(&d)))
             .transpose()?
             .and_then(|d| d.get(name))
         {
-            let data = site_context!(Data::from_variant(&data))?;
+            let (sig, callable) =
+                process_func(site_context!(Dictionary::try_from_variant(&data))?)?;
 
-            let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
-                Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-                Err(_) => data.object.clone(),
-            };
-            if !obj.has_method(data.method.clone()) {
-                bail!("Object {} has no method {}", obj, data.method);
-            }
-
-            let v = Extern::from(wrap_godot_method(
-                &mut *store,
-                to_signature(data.params, data.results)?,
-                data.object,
-                data.method,
-            ));
+            let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
             self.cache.define(store, module, name, v.clone())?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
-
-        #[cfg(not(feature = "new-host-import"))]
-        if module != HOST_MODULE {
-            Ok(None)
-        } else if let r @ Some(_) = self.cache.get(name).cloned() {
-            Ok(r)
-        } else if let Some(data) = self.host.get(name) {
-            let data = site_context!(Data::from_variant(&data))?;
-
-            let obj = match <Ref<WeakRef, Shared>>::from_variant(&data.object) {
-                Ok(obj) => unsafe { obj.assume_safe().get_ref() },
-                Err(_) => data.object.clone(),
-            };
-            if !obj.has_method(data.method.clone()) {
-                bail!("Object {} has no method {}", obj, data.method);
-            }
-
-            let v = Extern::from(wrap_godot_method(
-                store,
-                to_signature(data.params, data.results)?,
-                data.object,
-                data.method,
-            ));
-            self.cache.insert(name.to_string(), v.clone());
             Ok(Some(v))
         } else {
             Ok(None)
@@ -426,27 +575,41 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
     }
 }
 
-pub fn config_store_common<T>(store: &mut Store<T>) -> Result<(), Error>
+#[cfg(feature = "epoch-timeout")]
+fn increment_epoch() {
+    ENGINE.increment_epoch()
+}
+
+#[cfg(feature = "epoch-timeout")]
+pub fn config_store_epoch<T>(store: &mut Store<T>, config: &Config) {
+    if config.with_epoch {
+        store.epoch_deadline_trap();
+        EPOCH.spawn_thread(increment_epoch);
+    } else {
+        store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
+    }
+    store.set_epoch_deadline(config.epoch_timeout);
+}
+
+pub fn config_store_common<T>(store: &mut Store<T>, config: &Config) -> Result<(), Error>
 where
     T: AsRef<StoreData> + AsMut<StoreData>,
 {
     #[cfg(feature = "epoch-timeout")]
-    if store.data().as_ref().config.with_epoch {
-        store.epoch_deadline_trap();
-        EPOCH.spawn_thread(|| ENGINE.increment_epoch());
-    } else {
-        store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
+    {
+        config_store_epoch(&mut *store, config);
+        let data = store.data_mut().as_mut();
+        data.epoch_timeout = if config.with_epoch {
+            config.epoch_timeout
+        } else {
+            0
+        };
+        data.epoch_autoreset = config.epoch_autoreset;
     }
 
     #[cfg(feature = "memory-limiter")]
     {
-        let data = store.data_mut().as_mut();
-        if let Some(v) = data.config.max_memory {
-            data.memory_limits.max_memory = v;
-        }
-        if let Some(v) = data.config.max_entries {
-            data.memory_limits.max_table_entries = v;
-        }
+        store.data_mut().as_mut().memory_limits = MemoryLimit::from_config(config);
         store.limiter(|data| &mut data.as_mut().memory_limits);
     }
 

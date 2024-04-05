@@ -1,19 +1,20 @@
-extends Spatial
+extends Node3D
 
 signal message_emitted(msg)
 
-export(String, FILE, "*.wasm,*.wat") var wasm_file := ""
+@export var wasm_file: WasmModule
 
-onready var wasi_ctx: WasiContext = WasiContext.new()
+@onready var wasi_ctx: WasiContext = WasiContext.new()
 
-onready var _mesh := ArrayMesh.new()
+@onready var _mesh := ArrayMesh.new()
 
-var module: WasmModule = null
 var instance: WasmInstance = null
 
 func __selected(index):
-	instance = WasmInstance.new().initialize(
-		module,
+	instance = WasmInstance.new()
+	instance.error_happened.connect(__emit_log)
+	instance = instance.initialize(
+		wasm_file,
 		{},
 		{
 			"epoch.enable": true,
@@ -23,9 +24,11 @@ func __selected(index):
 		}
 	)
 	if instance == null:
-		emit_signal("message_emitted", "Failed to instantiate module")
+		message_emitted.emit("Failed to instantiate module")
+		return
+
 	if instance.call_wasm("init", [index]) == null:
-		emit_signal("message_emitted", "Failed to call init")
+		message_emitted.emit("Failed to call init")
 
 func _ready():
 	$Mesh.mesh = _mesh
@@ -65,32 +68,10 @@ func _ready():
 #	_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
 #	return
 
-	wasi_ctx.connect("stdout_emit", self, "__emit_log")
-	wasi_ctx.connect("stderr_emit", self, "__emit_log")
+	wasi_ctx.stdout_emit.connect(__emit_log)
+	wasi_ctx.stderr_emit.connect(__emit_log)
 
-	var file: WasmFile = load(wasm_file)
-	if file == null:
-		emit_signal("message_emitted", "Failed to load module")
-		return
-	module = file.get_module()
-	if module == null:
-		emit_signal("message_emitted", "Failed to load module")
-		return
-
-	instance = WasmInstance.new().initialize(
-		module,
-		{},
-		{
-			"epoch.enable": true,
-			"epoch.timeout": 1.0,
-			"wasi.enable": true,
-			"wasi.context": wasi_ctx,
-		}
-	)
-	if instance == null:
-		emit_signal("message_emitted", "Failed to instantiate module")
-	if instance.call_wasm("init", [0]) == null:
-		emit_signal("message_emitted", "Failed to call init")
+	__selected(0)
 
 func _process(delta):
 	if instance == null:
@@ -99,7 +80,7 @@ func _process(delta):
 	var start := Time.get_ticks_usec()
 	var ret = instance.call_wasm("process", [delta])
 	if ret == null:
-		emit_signal("message_emitted", "Failed to call process")
+		message_emitted.emit("Failed to call process")
 		instance = null
 		return
 	var end := Time.get_ticks_usec()
@@ -113,32 +94,32 @@ func _process(delta):
 	data[Mesh.ARRAY_VERTEX] = instance.get_array(
 		instance.get_32(p),
 		instance.get_32(p + 4),
-		TYPE_VECTOR3_ARRAY
+		TYPE_PACKED_VECTOR3_ARRAY
 	)
 	data[Mesh.ARRAY_NORMAL] = instance.get_array(
 		instance.get_32(p + 8),
 		instance.get_32(p + 12),
-		TYPE_VECTOR3_ARRAY
+		TYPE_PACKED_VECTOR3_ARRAY
 	)
 	data[Mesh.ARRAY_TANGENT] = instance.get_array(
 		instance.get_32(p + 16),
 		instance.get_32(p + 20) * 4,
-		TYPE_REAL_ARRAY
+		TYPE_PACKED_FLOAT32_ARRAY
 	)
 	data[Mesh.ARRAY_TEX_UV] = instance.get_array(
 		instance.get_32(p + 24),
 		instance.get_32(p + 28),
-		TYPE_VECTOR2_ARRAY
+		TYPE_PACKED_VECTOR2_ARRAY
 	)
 	data[Mesh.ARRAY_COLOR] = instance.get_array(
 		instance.get_32(p + 32),
 		instance.get_32(p + 36),
-		TYPE_COLOR_ARRAY
+		TYPE_PACKED_COLOR_ARRAY
 	)
 	data[Mesh.ARRAY_INDEX] = instance.get_array(
 		instance.get_32(p + 40),
 		instance.get_32(p + 44),
-		TYPE_INT_ARRAY
+		TYPE_PACKED_INT32_ARRAY
 	)
 
 	_mesh.clear_surfaces()
@@ -146,4 +127,4 @@ func _process(delta):
 		_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
 
 func __emit_log(msg):
-	emit_signal("message_emitted", msg.strip_edges())
+	message_emitted.emit(msg.strip_edges())

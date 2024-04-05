@@ -11,7 +11,7 @@ use std::task::{Poll, Waker};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
-use gdnative::prelude::*;
+use godot::prelude::*;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex, MutexGuard};
 use wasmtime_wasi::{
@@ -849,14 +849,14 @@ impl<F: Fn() + Send + Sync + 'static> HostInputStream for OuterStdin<F> {
 }
 
 pub struct ByteBufferReadPipe {
-    buf: PoolArray<u8>,
+    buf: Vec<u8>,
     pos: Mutex<usize>,
 }
 
 impl ByteBufferReadPipe {
-    pub fn new(buf: PoolArray<u8>) -> Self {
+    pub fn new(buf: PackedByteArray) -> Self {
         Self {
-            buf,
+            buf: buf.to_vec(),
             pos: Mutex::new(0),
         }
     }
@@ -886,7 +886,7 @@ impl WasiFile for ByteBufferReadPipe {
     }
 
     async fn read_vectored<'a>(&self, bufs: &mut [IoSliceMut<'a>]) -> Result<u64, Error> {
-        let buf = self.buf.read();
+        let buf = &self.buf;
         let mut pos = self.pos.lock();
 
         if *pos == buf.len() {
@@ -944,7 +944,7 @@ impl Subscribe for StreamWrapper<ByteBufferReadPipe> {
 
 impl HostInputStream for StreamWrapper<ByteBufferReadPipe> {
     fn read(&mut self, size: usize) -> StreamResult<Bytes> {
-        let buf = self.buf.read();
+        let buf = &self.buf;
         let mut pos = self.pos.lock();
 
         if *pos == buf.len() {
@@ -965,7 +965,7 @@ impl HostInputStream for StreamWrapper<ByteBufferReadPipe> {
     }
 
     fn skip(&mut self, size: usize) -> StreamResult<usize> {
-        let buf = self.buf.read();
+        let buf = &self.buf;
         let mut pos = self.pos.lock();
 
         if *pos == buf.len() {
