@@ -10,10 +10,11 @@ use godot::register::property::PropertyHintInfo;
 /// It's just used as workaround to pass Godot objects across closure.
 /// (At least until it supports multi-threading)
 #[derive(Clone)]
-pub(crate) struct SendSyncWrapper<T>(T);
+#[repr(transparent)]
+pub(crate) struct SendSyncWrapper<T: ?Sized>(T);
 
-unsafe impl<T> Send for SendSyncWrapper<T> {}
-unsafe impl<T> Sync for SendSyncWrapper<T> {}
+unsafe impl<T: ?Sized> Send for SendSyncWrapper<T> {}
+unsafe impl<T: ?Sized> Sync for SendSyncWrapper<T> {}
 
 #[allow(dead_code)]
 impl<T> SendSyncWrapper<T> {
@@ -26,15 +27,15 @@ impl<T> SendSyncWrapper<T> {
     }
 }
 
-impl<T> Deref for SendSyncWrapper<T> {
+impl<T: ?Sized> Deref for SendSyncWrapper<T> {
     type Target = T;
-    fn deref(&self) -> &Self::Target {
+    fn deref(&self) -> &T {
         &self.0
     }
 }
 
-impl<T> DerefMut for SendSyncWrapper<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+impl<T: ?Sized> DerefMut for SendSyncWrapper<T> {
+    fn deref_mut(&mut self) -> &mut T {
         &mut self.0
     }
 }
