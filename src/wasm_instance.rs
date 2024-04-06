@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::{fmt, mem, ptr};
@@ -305,6 +305,19 @@ impl ResourceLimiter for MemoryLimit {
     }
 }
 
+struct InstanceArgs<'a, T> {
+    store: StoreContextMut<'a, T>,
+    config: &'a Config,
+    insts: HashMap<InstanceId, Option<InstanceWasm>>,
+    host: Option<HostModuleCache<T>>,
+    #[cfg(feature = "object-registry-compat")]
+    objregistry_funcs: ObjregistryFuncs,
+    #[cfg(feature = "object-registry-extern")]
+    externref_funcs: ExternrefFuncs,
+    #[cfg(feature = "wasi")]
+    wasi_linker: Option<Linker<T>>,
+}
+
 impl<T> InstanceData<T>
 where
     T: Send + AsRef<StoreData> + AsMut<StoreData>,
@@ -416,20 +429,19 @@ where
             store.data_mut().as_mut().object_registry = Some(ObjectRegistry::default());
         }
 
-        let sp = &mut store;
-        let instance = Self::instantiate_wasm(
-            sp,
+        let instance = InstanceArgs {
+            store: store.as_context_mut(),
             config,
-            module.bind().get_data()?,
-            &mut HashMap::new(),
-            &mut host.map(HostModuleCache::new),
+            insts: HashMap::new(),
+            host: host.map(HostModuleCache::new),
             #[cfg(feature = "object-registry-compat")]
-            &mut ObjregistryFuncs::default(),
+            objregistry_funcs: ObjregistryFuncs::default(),
             #[cfg(feature = "object-registry-extern")]
-            &mut ExternrefFuncs::default(),
+            externref_funcs: ExternrefFuncs::default(),
             #[cfg(feature = "wasi")]
-            wasi_linker.as_ref(),
-        )?;
+            wasi_linker,
+        }
+        .instantiate_wasm(module.bind().get_data()?)?;
 
         Ok(Self {
             instance: InstanceType::Core(instance),
@@ -439,110 +451,81 @@ where
             wasi_stdin,
         })
     }
+}
 
-    #[allow(clippy::too_many_arguments)]
-    fn instantiate_wasm(
-        store: &mut Store<T>,
-        config: &Config,
-        module: &ModuleData,
-        insts: &mut HashMap<InstanceId, InstanceWasm>,
-        host: &mut Option<HostModuleCache<T>>,
-        #[cfg(feature = "object-registry-compat")] objregistry_funcs: &mut ObjregistryFuncs,
-        #[cfg(feature = "object-registry-extern")] externref_funcs: &mut ExternrefFuncs,
-        #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<T>>,
-    ) -> AnyResult<InstanceWasm> {
+impl<'a, T> InstanceArgs<'a, T>
+where
+    T: Send + AsRef<StoreData> + AsMut<StoreData>,
+{
+    fn instantiate_wasm(&mut self, module: &ModuleData) -> AnyResult<InstanceWasm> {
         #[allow(irrefutable_let_patterns)]
         let ModuleType::Core(module_) = &module.module
         else {
             bail_with_site!("Cannot instantiate component")
         };
-        let it = module_.imports();
-        let mut imports = Vec::with_capacity(it.len());
 
-        for i in it {
-            if let Some(v) = host
-                .as_mut()
-                .and_then(|v| v.get_extern(&mut *store, i.module(), i.name()).transpose())
-                .transpose()?
-            {
-                imports.push(v);
-                continue;
-            }
+        let it = module_.imports().map(|i| {
+            let mut v = match &mut self.host {
+                Some(v) => v.get_extern(&mut self.store, i.module(), i.name())?,
+                None => None,
+            };
 
-            match (i.module(), config) {
-                #[cfg(feature = "object-registry-compat")]
-                (
-                    OBJREGISTRY_MODULE,
-                    Config {
-                        extern_bind: ExternBindingType::Registry,
-                        ..
-                    },
-                ) => {
-                    if let Some(v) =
-                        objregistry_funcs.get_func(&mut store.as_context_mut(), i.name())
-                    {
-                        imports.push(v.into());
-                        continue;
-                    }
+            #[cfg(any(feature = "object-registry-compat", feature = "object-registry-extern"))]
+            if v.is_none() {
+                v = match (i.module(), &self.config) {
+                    #[cfg(feature = "object-registry-compat")]
+                    (
+                        OBJREGISTRY_MODULE,
+                        Config {
+                            extern_bind: ExternBindingType::Registry,
+                            ..
+                        },
+                    ) => self.objregistry_funcs.get_func(&mut self.store, i.name()),
+                    #[cfg(feature = "object-registry-extern")]
+                    (
+                        EXTERNREF_MODULE,
+                        Config {
+                            extern_bind: ExternBindingType::Native,
+                            ..
+                        },
+                    ) => self.externref_funcs.get_func(&mut self.store, i.name()),
+                    _ => None,
                 }
-                #[cfg(feature = "object-registry-extern")]
-                (
-                    EXTERNREF_MODULE,
-                    Config {
-                        extern_bind: ExternBindingType::Native,
-                        ..
-                    },
-                ) => {
-                    if let Some(v) = externref_funcs.get_func(&mut store.as_context_mut(), i.name())
-                    {
-                        imports.push(v.into());
-                        continue;
-                    }
-                }
-                _ => (),
+                .map(|v| v.into());
             }
 
             #[cfg(feature = "wasi")]
-            if let Some(l) = wasi_linker.as_ref() {
-                if let Some(v) = l.get_by_import(&mut *store, &i) {
-                    imports.push(v);
-                    continue;
+            if v.is_none() {
+                if let Some(l) = &self.wasi_linker {
+                    v = l.get_by_import(&mut self.store, &i);
                 }
             }
 
-            if let Some(v) = module.imports.get(i.module()) {
-                let v = loop {
-                    match insts.get(&v.instance_id()) {
-                        Some(v) => break v,
-                        None => {
-                            let t = Self::instantiate_wasm(
-                                &mut *store,
-                                config,
-                                v.bind().get_data()?,
-                                &mut *insts,
-                                &mut *host,
-                                #[cfg(feature = "object-registry-compat")]
-                                &mut *objregistry_funcs,
-                                #[cfg(feature = "object-registry-extern")]
-                                &mut *externref_funcs,
-                                #[cfg(feature = "wasi")]
-                                wasi_linker,
-                            )?;
-                            insts.insert(v.instance_id(), t);
-                        }
-                    }
-                };
-
-                if let Some(v) = v.get_export(&mut *store, i.name()) {
-                    imports.push(v.clone());
-                    continue;
+            if v.is_none() {
+                if let Some(o) = module.imports.get(i.module()) {
+                    let id = o.instance_id();
+                    v = loop {
+                        match self.insts.entry(id) {
+                            Entry::Occupied(v) => match v.get() {
+                                Some(v) => break v.get_export(&mut self.store, i.name()),
+                                None => bail_with_site!("Recursive data structure"),
+                            },
+                            Entry::Vacant(v) => v.insert(None),
+                        };
+                        let t = self.instantiate_wasm(o.bind().get_data()?)?;
+                        self.insts.insert(id, Some(t));
+                    };
                 }
             }
 
-            bail_with_site!("Unknown import {:?}.{:?}", i.module(), i.name());
-        }
+            match v {
+                Some(v) => Ok(v),
+                None => bail_with_site!("Unknown import {:?}.{:?}", i.module(), i.name()),
+            }
+        });
+        let imports = it.collect::<AnyResult<Vec<_>>>()?;
 
-        InstanceWasm::new(store, module_, &imports)
+        InstanceWasm::new(&mut self.store, module_, &imports)
     }
 }
 
