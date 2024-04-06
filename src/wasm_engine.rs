@@ -3,7 +3,7 @@ use std::path::PathBuf;
 #[cfg(feature = "epoch-timeout")]
 use std::{sync::Arc, thread, time};
 
-use anyhow::{bail, Error};
+use anyhow::{bail, Result as AnyResult};
 use cfg_if::cfg_if;
 use godot::engine::FileAccess;
 use godot::prelude::*;
@@ -15,10 +15,11 @@ use parking_lot::{Condvar, Mutex};
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
 
+use crate::godot_util::{variant_to_option, PhantomProperty, VariantDispatch};
 use crate::wasm_instance::WasmInstance;
+use crate::wasm_util::from_signature;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
-use crate::wasm_util::{from_signature, variant_to_option, PhantomProperty, VariantDispatch};
 use crate::{bail_with_site, site_context};
 
 #[cfg(feature = "epoch-timeout")]
@@ -145,7 +146,7 @@ pub enum ModuleType {
 }
 
 impl ModuleType {
-    pub fn get_core(&self) -> Result<&Module, Error> {
+    pub fn get_core(&self) -> AnyResult<&Module> {
         #[allow(irrefutable_let_patterns)]
         if let Self::Core(m) = self {
             Ok(m)
@@ -155,7 +156,7 @@ impl ModuleType {
     }
 
     #[cfg(feature = "component-model")]
-    pub fn get_component(&self) -> Result<&Component, Error> {
+    pub fn get_component(&self) -> AnyResult<&Component> {
         if let Self::Component(m) = self {
             Ok(m)
         } else {
@@ -165,7 +166,7 @@ impl ModuleType {
 }
 
 impl WasmModule {
-    pub fn get_data(&self) -> Result<&ModuleData, Error> {
+    pub fn get_data(&self) -> AnyResult<&ModuleData> {
         if let Some(data) = self.data.get() {
             Ok(data)
         } else {
@@ -175,7 +176,7 @@ impl WasmModule {
 
     pub fn unwrap_data<F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(&ModuleData) -> Result<R, Error>,
+        F: FnOnce(&ModuleData) -> AnyResult<R>,
     {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
@@ -195,7 +196,7 @@ impl WasmModule {
         }
     }
 
-    fn load_module(bytes: &[u8]) -> Result<ModuleType, Error> {
+    fn load_module(bytes: &[u8]) -> AnyResult<ModuleType> {
         cfg_if! {
             if #[cfg(feature = "component-model")] {
                 let bytes = site_context!(wat::parse_bytes(bytes))?;
@@ -219,7 +220,7 @@ impl WasmModule {
     fn process_deps_map(
         module: &ModuleType,
         imports: Option<Dictionary>,
-    ) -> Result<HashMap<String, Gd<WasmModule>>, Error> {
+    ) -> AnyResult<HashMap<String, Gd<WasmModule>>> {
         let mut deps_map = HashMap::new();
         let Some(imports) = imports else {
             return Ok(deps_map);
@@ -228,13 +229,13 @@ impl WasmModule {
         if let ModuleType::Core(_module) = &module {
             deps_map = imports
                 .iter_shared()
-                .map(|(k, v)| -> Result<_, Error> {
+                .map(|(k, v)| -> AnyResult<_> {
                     Ok((
                         site_context!(String::try_from_variant(&k))?,
                         site_context!(<Gd<WasmModule>>::try_from_variant(&v))?,
                     ))
                 })
-                .collect::<Result<HashMap<_, _>, Error>>()?;
+                .collect::<AnyResult<_>>()?;
         }
         #[cfg(feature = "component-model")]
         if let ModuleType::Component(_) = module {
@@ -257,7 +258,7 @@ impl WasmModule {
     }
 
     fn _initialize(&self, data: Variant, imports: Option<Dictionary>) -> bool {
-        let r = self.data.get_or_try_init(move || -> Result<_, Error> {
+        let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let module = match VariantDispatch::from(&data) {
                 VariantDispatch::PackedByteArray(v) => Self::load_module(v.as_slice())?,
                 VariantDispatch::String(v) => Self::load_module(v.to_string().as_bytes())?,
@@ -289,7 +290,7 @@ impl WasmModule {
     }
 
     fn _deserialize(&self, data: PackedByteArray, imports: Option<Dictionary>) -> bool {
-        let r = self.data.get_or_try_init(move || -> Result<_, Error> {
+        let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let data = data.as_slice();
             // SAFETY: Assume the supplied data is safe to deserialize.
             let module = unsafe {
@@ -322,7 +323,7 @@ impl WasmModule {
     }
 
     fn _deserialize_file(&self, path: String, imports: Option<Dictionary>) -> bool {
-        let r = self.data.get_or_try_init(move || -> Result<_, Error> {
+        let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let path = PathBuf::from(path);
             // SAFETY: Assume the supplied file is safe to deserialize.
             let module = unsafe {
@@ -452,10 +453,9 @@ impl WasmModule {
                     let (p, r) = from_signature(&f)?;
                     ret.set(
                         i.name(),
-                        Dictionary::from_iter([
-                            (params_str.to_variant(), p),
-                            (results_str.to_variant(), r),
-                        ]),
+                        [(params_str.clone(), p), (results_str.clone(), r)]
+                            .into_iter()
+                            .collect::<Dictionary>(),
                     );
                 }
             }
@@ -499,9 +499,9 @@ impl WasmModule {
                 };
                 v.insert(
                     i.name(),
-                    Dictionary::from_iter(
-                        [(params_str.to_variant(), p), (results_str.to_variant(), r)].into_iter(),
-                    ),
+                    [(params_str.clone(), p), (results_str.clone(), r)]
+                        .into_iter()
+                        .collect::<Dictionary>(),
                 );
             }
 
@@ -524,14 +524,19 @@ impl WasmModule {
     #[func]
     fn get_signature(&self, name: StringName) -> Dictionary {
         self.unwrap_data(|m| {
-            if let Some(ExternType::Func(f)) =
+            let Some(ExternType::Func(f)) =
                 site_context!(m.module.get_core())?.get_export(&name.to_string())
-            {
-                let (p, r) = from_signature(&f)?;
-                Ok(Dictionary::from_iter([("params", p), ("results", r)]))
-            } else {
+            else {
                 bail_with_site!("No function named {}", name);
-            }
+            };
+
+            let (p, r) = from_signature(&f)?;
+            Ok([
+                (StringName::from(c"params"), p),
+                (StringName::from(c"results"), r),
+            ]
+            .into_iter()
+            .collect())
         })
         .unwrap_or_default()
     }

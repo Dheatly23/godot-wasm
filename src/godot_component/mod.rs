@@ -18,6 +18,7 @@ use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
 use wasmtime::Store;
 
+use crate::godot_util::{PhantomProperty, SendSyncWrapper};
 use crate::wasm_config::Config;
 use crate::wasm_engine::{WasmModule, ENGINE};
 #[cfg(feature = "memory-limiter")]
@@ -25,7 +26,6 @@ use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::config_store_epoch;
-use crate::wasm_util::{PhantomProperty, SendSyncWrapper};
 use crate::{bail_with_site, site_context};
 
 fn wrap_error(e: Error) -> AnyResult<()> {

@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::{fmt, mem, ptr};
 
-use anyhow::{bail, Error};
+use anyhow::{bail, Result as AnyResult};
 use cfg_if::cfg_if;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
@@ -28,6 +28,11 @@ use wasmtime_wasi::preview1::{add_to_linker_sync, WasiPreview1Adapter, WasiPrevi
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
+#[cfg(feature = "wasi")]
+use crate::godot_util::gstring_from_maybe_utf8;
+use crate::godot_util::{
+    option_to_variant, variant_to_option, PhantomProperty, SendSyncWrapper, VariantDispatch,
+};
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::stdio::{
@@ -46,16 +51,11 @@ use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, ENGINE};
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
-#[cfg(feature = "wasi")]
-use crate::wasm_util::gstring_from_maybe_utf8;
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
-use crate::wasm_util::{
-    config_store_common, from_raw, option_to_variant, to_raw, variant_to_option, HostModuleCache,
-    PhantomProperty, SendSyncWrapper, VariantDispatch, MEMORY_EXPORT,
-};
+use crate::wasm_util::{config_store_common, from_raw, to_raw, HostModuleCache, MEMORY_EXPORT};
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
@@ -86,7 +86,7 @@ pub enum InstanceType {
 }
 
 impl InstanceType {
-    pub fn get_core(&self) -> Result<&InstanceWasm, Error> {
+    pub fn get_core(&self) -> AnyResult<&InstanceWasm> {
         #[allow(irrefutable_let_patterns)]
         if let Self::Core(m) = self {
             Ok(m)
@@ -97,7 +97,7 @@ impl InstanceType {
 
     #[allow(dead_code)]
     #[cfg(feature = "component-model")]
-    pub fn get_component(&self) -> Result<&InstanceComp, Error> {
+    pub fn get_component(&self) -> AnyResult<&InstanceComp> {
         if let Self::Component(m) = self {
             Ok(m)
         } else {
@@ -140,10 +140,6 @@ pub struct StoreData {
     #[cfg(feature = "wasi")]
     pub wasi_ctx: MaybeWasi,
 }
-
-// SAFETY: Store data is safely contained within instance data?
-unsafe impl Send for StoreData {}
-unsafe impl Sync for StoreData {}
 
 impl AsRef<Self> for StoreData {
     fn as_ref(&self) -> &Self {
@@ -276,7 +272,7 @@ impl ResourceLimiter for MemoryLimit {
         current: usize,
         desired: usize,
         max: Option<usize>,
-    ) -> Result<bool, Error> {
+    ) -> AnyResult<bool> {
         if max.map_or(false, |max| desired > max) {
             return Ok(false);
         } else if self.max_memory == u64::MAX {
@@ -292,12 +288,7 @@ impl ResourceLimiter for MemoryLimit {
         }
     }
 
-    fn table_growing(
-        &mut self,
-        current: u32,
-        desired: u32,
-        max: Option<u32>,
-    ) -> Result<bool, Error> {
+    fn table_growing(&mut self, current: u32, desired: u32, max: Option<u32>) -> AnyResult<bool> {
         if max.map_or(false, |max| desired > max) {
             return Ok(false);
         } else if self.max_table_entries == u64::MAX {
@@ -324,7 +315,7 @@ where
         config: &Config,
         module: Gd<WasmModule>,
         host: Option<Dictionary>,
-    ) -> Result<Self, Error> {
+    ) -> AnyResult<Self> {
         config_store_common(&mut store, config)?;
 
         #[cfg(feature = "wasi")]
@@ -459,7 +450,7 @@ where
         #[cfg(feature = "object-registry-compat")] objregistry_funcs: &mut ObjregistryFuncs,
         #[cfg(feature = "object-registry-extern")] externref_funcs: &mut ExternrefFuncs,
         #[cfg(feature = "wasi")] wasi_linker: Option<&Linker<T>>,
-    ) -> Result<InstanceWasm, Error> {
+    ) -> AnyResult<InstanceWasm> {
         #[allow(irrefutable_let_patterns)]
         let ModuleType::Core(module_) = &module.module
         else {
@@ -608,19 +599,19 @@ impl StoreData {
     }
 
     #[cfg(feature = "object-registry-compat")]
-    pub fn get_registry(&self) -> Result<&ObjectRegistry, Error> {
-        site_context!(self
-            .object_registry
-            .as_ref()
-            .ok_or_else(|| Error::msg("Object registry not enabled!")))
+    pub fn get_registry(&self) -> AnyResult<&ObjectRegistry> {
+        match self.object_registry.as_ref() {
+            Some(v) => Ok(v),
+            None => bail_with_site!("Object registry not enabled!"),
+        }
     }
 
     #[cfg(feature = "object-registry-compat")]
-    pub fn get_registry_mut(&mut self) -> Result<&mut ObjectRegistry, Error> {
-        site_context!(self
-            .object_registry
-            .as_mut()
-            .ok_or_else(|| Error::msg("Object registry not enabled!")))
+    pub fn get_registry_mut(&mut self) -> AnyResult<&mut ObjectRegistry> {
+        match self.object_registry.as_mut() {
+            Some(v) => Ok(v),
+            None => bail_with_site!("Object registry not enabled!"),
+        }
     }
 }
 
@@ -633,7 +624,7 @@ impl WasmInstance {
             .emit_signal(StringName::from(c"error_happened"), &args);
     }
 
-    pub fn get_data(&self) -> Result<&InstanceData<StoreData>, Error> {
+    pub fn get_data(&self) -> AnyResult<&InstanceData<StoreData>> {
         if let Some(data) = self.data.get() {
             Ok(data)
         } else {
@@ -643,7 +634,7 @@ impl WasmInstance {
 
     pub fn unwrap_data<F, R>(&self, f: F) -> Option<R>
     where
-        F: FnOnce(&InstanceData<StoreData>) -> Result<R, Error>,
+        F: FnOnce(&InstanceData<StoreData>) -> AnyResult<R>,
     {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
@@ -670,7 +661,7 @@ impl WasmInstance {
         host: Option<Dictionary>,
         config: Option<Variant>,
     ) -> bool {
-        let r = self.data.get_or_try_init(move || -> Result<_, Error> {
+        let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let mut ret = InstanceData::instantiate(
                 self.base().instance_id(),
                 Store::new(&ENGINE, StoreData::default()),
@@ -711,7 +702,7 @@ impl WasmInstance {
 
     fn get_memory<F, R>(&self, f: F) -> Option<R>
     where
-        for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> Result<R, Error>,
+        for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> AnyResult<R>,
     {
         self.unwrap_data(|m| {
             m.acquire_store(|_, store| match self.memory {
@@ -723,7 +714,7 @@ impl WasmInstance {
 
     fn read_memory<F, R>(&self, i: usize, n: usize, f: F) -> Option<R>
     where
-        F: FnOnce(&[u8]) -> Result<R, Error>,
+        F: FnOnce(&[u8]) -> AnyResult<R>,
     {
         self.get_memory(|store, mem| {
             let data = mem.data(&store);
@@ -736,7 +727,7 @@ impl WasmInstance {
 
     fn write_memory<F, R>(&self, i: usize, n: usize, f: F) -> Option<R>
     where
-        for<'a> F: FnOnce(&'a mut [u8]) -> Result<R, Error>,
+        for<'a> F: FnOnce(&'a mut [u8]) -> AnyResult<R>,
     {
         self.get_memory(|mut store, mem| {
             let data = mem.data_mut(&mut store);
@@ -1279,7 +1270,7 @@ impl WasmInstance {
             i: usize,
             s: &[T],
             f: impl Fn(&T, &mut [u8; N]) + Send + Sync,
-        ) -> Result<(), Error> {
+        ) -> AnyResult<()> {
             let e = i + s.len() * N;
             let Some(d) = d.get_mut(i..e) else {
                 bail_with_site!("Index out of range ({}..{})", i, e);
@@ -1346,93 +1337,77 @@ impl WasmInstance {
     }
 
     #[func]
-    fn get_array(&self, i: i64, n: i64, t: i64) -> Variant {
-        fn f<const N: usize, T: Send, R: for<'a> From<&'a [T]>>(
+    fn get_array(&self, i: i64, n: i64, t: i32) -> Variant {
+        fn f<const N: usize, T, R>(
             s: &[u8],
             i: usize,
             n: usize,
             f: impl Fn(&[u8; N]) -> T + Send + Sync,
-        ) -> Result<R, Error> {
+        ) -> AnyResult<Variant>
+        where
+            T: Send,
+            for<'a> R: From<&'a [T]>,
+            R: ToGodot,
+        {
             let e = i + n * N;
             let Some(s) = s.get(i..e) else {
-                bail_with_site!("Index out of range ({}..{})", i, e);
+                bail_with_site!("Index out of range ({i}..{e})");
             };
 
             Ok(R::from(
                 &s.par_chunks_exact(N)
                     .map(|s| f(s.try_into().unwrap()))
                     .collect::<Vec<_>>(),
-            ))
+            )
+            .to_variant())
         }
 
         option_to_variant(self.get_memory(|store, mem| {
             let (i, n) = (i as usize, n as usize);
             let data = mem.data(&store);
-            match t {
-                29 => {
+            match site_context!(VariantType::try_from_godot(t))? {
+                VariantType::PackedByteArray => {
                     let e = i + n;
                     let Some(s) = data.get(i..e) else {
-                        bail_with_site!("Index out of range ({}..{})", i, e);
+                        bail_with_site!("Index out of range ({i}..{e})");
                     };
 
-                    Ok(Variant::from(PackedByteArray::from(s)))
+                    Ok(PackedByteArray::from(s).to_variant())
                 }
-                30 => Ok(Variant::from(f::<4, _, PackedInt32Array>(
-                    data,
-                    i,
-                    n,
-                    |s| i32::from_le_bytes(*s),
-                )?)),
-                31 => Ok(Variant::from(f::<8, _, PackedInt64Array>(
-                    data,
-                    i,
-                    n,
-                    |s| i64::from_le_bytes(*s),
-                )?)),
-                32 => Ok(Variant::from(f::<4, _, PackedFloat32Array>(
-                    data,
-                    i,
-                    n,
-                    |s| f32::from_le_bytes(*s),
-                )?)),
-                33 => Ok(Variant::from(f::<8, _, PackedFloat64Array>(
-                    data,
-                    i,
-                    n,
-                    |s| f64::from_le_bytes(*s),
-                )?)),
-                35 => Ok(Variant::from(f::<8, _, PackedVector2Array>(
-                    data,
-                    i,
-                    n,
-                    |s| Vector2 {
+                VariantType::PackedInt32Array => {
+                    f::<4, _, PackedInt32Array>(data, i, n, |s| i32::from_le_bytes(*s))
+                }
+                VariantType::PackedInt64Array => {
+                    f::<8, _, PackedInt64Array>(data, i, n, |s| i64::from_le_bytes(*s))
+                }
+                VariantType::PackedFloat32Array => {
+                    f::<4, _, PackedFloat32Array>(data, i, n, |s| f32::from_le_bytes(*s))
+                }
+                VariantType::PackedFloat64Array => {
+                    f::<8, _, PackedFloat64Array>(data, i, n, |s| f64::from_le_bytes(*s))
+                }
+                VariantType::PackedVector2Array => {
+                    f::<8, _, PackedVector2Array>(data, i, n, |s| Vector2 {
                         x: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(s[4..].try_into().unwrap()),
-                    },
-                )?)),
-                36 => Ok(Variant::from(f::<12, _, PackedVector3Array>(
-                    data,
-                    i,
-                    n,
-                    |s| Vector3 {
+                    })
+                }
+                VariantType::PackedVector3Array => {
+                    f::<12, _, PackedVector3Array>(data, i, n, |s| Vector3 {
                         x: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(s[4..8].try_into().unwrap()),
                         z: f32::from_le_bytes(s[8..].try_into().unwrap()),
-                    },
-                )?)),
-                37 => Ok(Variant::from(f::<16, _, PackedColorArray>(
-                    data,
-                    i,
-                    n,
-                    |s| Color {
+                    })
+                }
+                VariantType::PackedColorArray => {
+                    f::<16, _, PackedColorArray>(data, i, n, |s| Color {
                         r: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         g: f32::from_le_bytes(s[4..8].try_into().unwrap()),
                         b: f32::from_le_bytes(s[8..12].try_into().unwrap()),
                         a: f32::from_le_bytes(s[12..].try_into().unwrap()),
-                    },
-                )?)),
-                ..=37 => bail_with_site!("Unsupported type ID {}", t),
-                _ => bail_with_site!("Unknown type {}", t),
+                    })
+                }
+                t => bail_with_site!("Unsupported type ID {t:?}"),
             }
         }))
     }

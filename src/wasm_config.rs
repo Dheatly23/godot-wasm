@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 
+use crate::godot_util::VariantDispatch;
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
-use crate::wasm_util::VariantDispatch;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 

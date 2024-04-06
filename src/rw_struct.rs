@@ -1,7 +1,7 @@
 use std::error;
 use std::fmt;
 
-use anyhow::Error;
+use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use nom::character::complete::{anychar, satisfy, u32 as u32_};
 use nom::combinator::{map, opt};
@@ -210,12 +210,12 @@ impl<I> ContextError<I> for SingleError<I> {
     }
 }
 
-pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> Result<Array<Variant>, Error> {
+pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> AnyResult<Array<Variant>> {
     fn f<const N: usize, T: ToGodot>(
         (data, p, a): &mut (&[u8], usize, Array<Variant>),
         n: usize,
         f: impl Fn(&[u8; N]) -> T,
-    ) -> Result<(), Error> {
+    ) -> AnyResult<()> {
         for _ in 0..n {
             let s = *p;
             let e = s + N;
@@ -603,12 +603,12 @@ pub fn write_struct(
     p: usize,
     mut format: &str,
     arr: Array<Variant>,
-) -> Result<usize, Error> {
+) -> AnyResult<usize> {
     fn f<const N: usize, T: FromGodot>(
         (data, p, a): &mut (&mut [u8], usize, impl Iterator<Item = Variant>),
         n: usize,
         f: impl Fn(&mut [u8; N], T),
-    ) -> Result<(), Error> {
+    ) -> AnyResult<()> {
         for _ in 0..n {
             let Some(v) = a
                 .next()

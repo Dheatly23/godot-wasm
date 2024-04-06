@@ -198,7 +198,10 @@ func_registry! {
         let a = site_context!(PackedStringArray::try_from_variant(
             &externref_to_variant(a)
         ))?;
-        Ok(variant_to_externref(a.get(i as _).to_variant()))
+        let Some(v) = a.as_slice().get(i as usize).map(|v| v.to_variant()) else {
+            bail_with_site!("Index {i} out of bounds")
+        };
+        Ok(variant_to_externref(v))
     },
     get_many => |mut ctx: Caller<_>, a: Option<ExternRef>, i: u32, f: Option<Func>| -> Result<u32, Error> {
         let f: TypedFunc<Option<ExternRef>, u32> = match f {

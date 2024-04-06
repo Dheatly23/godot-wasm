@@ -266,7 +266,10 @@ func_registry! {
         let a = site_context!(PackedStringArray::try_from_variant(
             &reg.get_or_nil(a as _)
         ))?;
-        Ok(reg.register(a.get(i as _).to_variant()) as _)
+        let Some(v) = a.as_slice().get(i as usize).map(|v| v.to_variant()) else {
+            bail_with_site!("Index {i} out of bounds")
+        };
+        Ok(reg.register(v) as _)
     },
     slice => |mut ctx: Caller<T>, a: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
         if to > from {

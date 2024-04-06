@@ -7,8 +7,10 @@ use slab::Slab;
 
 pub use funcs::Funcs;
 
+use crate::godot_util::SendSyncWrapper;
+
 pub struct ObjectRegistry {
-    slab: Slab<Variant>,
+    slab: Slab<SendSyncWrapper<Variant>>,
 }
 
 impl Default for ObjectRegistry {
@@ -22,7 +24,7 @@ impl ObjectRegistry {
     #[inline]
     pub fn get(&self, ix: usize) -> Option<Variant> {
         match ix.checked_sub(1) {
-            Some(ix) => self.slab.get(ix).cloned(),
+            Some(ix) => self.slab.get(ix).map(|v| &**v).cloned(),
             None => None,
         }
     }
@@ -32,14 +34,14 @@ impl ObjectRegistry {
         if v.is_nil() {
             0
         } else {
-            self.slab.insert(v) + 1
+            self.slab.insert(SendSyncWrapper::new(v)) + 1
         }
     }
 
     #[inline]
     pub fn unregister(&mut self, ix: usize) -> Option<Variant> {
         match ix.checked_sub(1) {
-            Some(ix) => self.slab.try_remove(ix),
+            Some(ix) => self.slab.try_remove(ix).map(|v| v.into_inner()),
             None => None,
         }
     }
@@ -50,11 +52,12 @@ impl ObjectRegistry {
             return self.unregister(ix);
         }
         ix.checked_sub(1)
-            .and_then(|ix| self.slab.get_mut(ix).as_mut().map(|p| mem::replace(*p, v)))
+            .and_then(|ix| self.slab.get_mut(ix))
+            .map(|p| mem::replace(p, SendSyncWrapper::new(v)).into_inner())
     }
 
     #[inline]
     pub fn get_or_nil(&self, ix: usize) -> Variant {
-        self.get(ix).unwrap_or_else(Variant::nil)
+        self.get(ix).unwrap_or_default()
     }
 }

@@ -3,9 +3,8 @@ pub mod stdio;
 //pub mod timestamp;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::Error;
+use anyhow::Result as AnyResult;
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
@@ -16,13 +15,13 @@ use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
 use crate::wasi_ctx::stdio::StreamWrapper;
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 //use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
-use crate::site_context;
-use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
-use crate::wasm_util::{
+use crate::godot_util::{
     gstring_from_maybe_utf8, option_to_variant, variant_to_option, SendSyncWrapper,
 };
+use crate::site_context;
+use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 
-#[allow(dead_code)]
+/*
 fn warn_vfs_deprecated() {
     static WARNED: AtomicBool = AtomicBool::new(false);
 
@@ -30,6 +29,7 @@ fn warn_vfs_deprecated() {
         godot_warn!("Due to wasi-common deprecation, virtual FS methods is going to be removed");
     }
 }
+*/
 
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
@@ -235,7 +235,7 @@ impl WasiContext {
     }
     */
 
-    pub fn init_ctx_no_context(ctx: &mut WasiCtxBuilder, config: &Config) -> Result<(), Error> {
+    pub fn init_ctx_no_context(ctx: &mut WasiCtxBuilder, config: &Config) -> AnyResult<()> {
         for (k, v) in &config.wasi_envs {
             ctx.env(k, v);
         }
@@ -249,7 +249,7 @@ impl WasiContext {
         this: Gd<Self>,
         mut ctx: WasiCtxBuilder,
         config: &Config,
-    ) -> Result<WasiCtx, Error> {
+    ) -> AnyResult<WasiCtx> {
         let o = this.bind();
 
         if config.wasi_stdout == PipeBindingType::Context {
@@ -335,6 +335,7 @@ impl WasiContext {
         Ok(ctx.build())
     }
 
+    /*
     fn wrap_result<F, T>(f: F) -> Option<T>
     where
         F: FnOnce() -> Result<T, Error>,
@@ -347,6 +348,7 @@ impl WasiContext {
             }
         }
     }
+    */
 }
 
 #[godot_api]

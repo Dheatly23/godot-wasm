@@ -3,7 +3,7 @@ mod funcs;
 use godot::prelude::*;
 use wasmtime::ExternRef;
 
-use crate::wasm_util::SendSyncWrapper;
+use crate::godot_util::SendSyncWrapper;
 pub use funcs::Funcs;
 
 pub fn externref_to_variant(v: Option<ExternRef>) -> Variant {
@@ -12,7 +12,7 @@ pub fn externref_to_variant(v: Option<ExternRef>) -> Variant {
             .downcast_ref::<SendSyncWrapper<Variant>>()
             .map(|v| (**v).clone())
     })
-    .unwrap_or_else(Variant::nil)
+    .unwrap_or_default()
 }
 
 pub fn variant_to_externref(v: Variant) -> Option<ExternRef> {
