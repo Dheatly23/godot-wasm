@@ -772,7 +772,7 @@ impl fmt::Display for WasmCallable {
         }
 
         write!(f, "), (")?;
-        start = false;
+        start = true;
         for v in self.ty.results() {
             let s = if start {
                 start = false;
