@@ -171,7 +171,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::reflection::this::Host for T {
             bail_with_site!("Self instance ID is not set")
         };
 
-        this.set_into_var(<Gd<Object>>::try_from_instance_id(id)?)
+        this.set_into_var(<Gd<Object>>::try_from_instance_id(id).map_err(|e| e.into_erased())?)
     }
 }
 

@@ -2,6 +2,8 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
+use crate::godot_util::from_var_any;
+
 impl<T: AsMut<crate::godot_component::GodotCtx>>
     crate::godot_component::bindgen::godot::core::callable::Host for T
 {
@@ -15,30 +17,22 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         method: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(obj)?.try_to()?;
-        let m: StringName = this.get_var_borrow(method)?.try_to()?;
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(obj)?)?;
+        let m: StringName = from_var_any(&*this.get_var_borrow(method)?)?;
         this.set_into_var(Callable::from_object_method(&o, m))
     }
 
     fn is_custom(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self
-            .as_mut()
-            .get_var_borrow(var)?
-            .try_to::<Callable>()?
-            .is_custom())
+        Ok(from_var_any::<Callable>(&*self.as_mut().get_var_borrow(var)?)?.is_custom())
     }
 
     fn is_valid(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self
-            .as_mut()
-            .get_var_borrow(var)?
-            .try_to::<Callable>()?
-            .is_valid())
+        Ok(from_var_any::<Callable>(&*self.as_mut().get_var_borrow(var)?)?.is_valid())
     }
 
     fn object(&mut self, var: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Callable = this.get_var_borrow(var)?.try_to()?;
+        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
         v.object().map(|v| this.set_into_var(v)).transpose()
     }
 
@@ -47,7 +41,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Callable = this.get_var_borrow(var)?.try_to()?;
+        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
         v.method_name().map(|v| this.set_into_var(v)).transpose()
     }
 
@@ -57,7 +51,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Callable = this.get_var_borrow(var)?.try_to()?;
+        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -71,8 +65,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Callable = this.get_var_borrow(var)?.try_to()?;
-        let args: Array<Variant> = this.get_var_borrow(args)?.try_to()?;
+        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
+        let args: Array<Variant> = from_var_any(&*this.get_var_borrow(args)?)?;
         this.set_var(v.callv(args))
     }
 
@@ -82,7 +76,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let v: Callable = this.get_var_borrow(var)?.try_to()?;
+        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -96,8 +90,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let v: Callable = this.get_var_borrow(var)?.try_to()?;
-        let args: Array<Variant> = this.get_var_borrow(args)?.try_to()?;
+        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
+        let args: Array<Variant> = from_var_any(&*this.get_var_borrow(args)?)?;
         this.set_into_var(v.bindv(args))
     }
 }

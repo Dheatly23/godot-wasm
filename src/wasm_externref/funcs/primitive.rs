@@ -7,6 +7,7 @@ use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Func, StoreContextMut};
 
+use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::{func_registry, site_context};
@@ -24,7 +25,7 @@ macro_rules! prim_value {
         func_registry!{
             $head,
             get => |_: Caller<_>, v: Option<ExternRef>| -> Result<($($tx),*), Error> {
-                let $($v)* = site_context!(<$tv>::try_from_variant(&externref_to_variant(v)))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(v)))?;
                 Ok(($($x.into()),*))
             },
             new => |_: Caller<_>, $($x : $tx),*| -> Result<Option<ExternRef>, Error> {
@@ -32,7 +33,7 @@ macro_rules! prim_value {
                 Ok(variant_to_externref(v.to_variant()))
             },
             read => |mut ctx: Caller<_>, v: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-                let $($v)* = site_context!(<$tv>::try_from_variant(&externref_to_variant(v)))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(v)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -262,7 +263,7 @@ prim_value! {
 func_registry! {
     (ProjectionFuncs, "projection."),
     read => |mut ctx: Caller<T>, v: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-        let v = site_context!(Projection::try_from_variant(&externref_to_variant(v)))?;
+        let v = site_context!(from_var_any::<Projection>(&externref_to_variant(v)))?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),

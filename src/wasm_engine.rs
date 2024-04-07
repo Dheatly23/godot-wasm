@@ -8,9 +8,8 @@ use cfg_if::cfg_if;
 use godot::engine::FileAccess;
 use godot::prelude::*;
 use once_cell::sync::{Lazy, OnceCell};
-use parking_lot::Once;
 #[cfg(feature = "epoch-timeout")]
-use parking_lot::{Condvar, Mutex};
+use parking_lot::{Condvar, Mutex, Once};
 #[cfg(feature = "component-model")]
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
@@ -231,8 +230,8 @@ impl WasmModule {
                 .iter_shared()
                 .map(|(k, v)| -> AnyResult<_> {
                     Ok((
-                        site_context!(String::try_from_variant(&k))?,
-                        site_context!(<Gd<WasmModule>>::try_from_variant(&v))?,
+                        site_context!(k.try_to::<String>().map_err(|e| e.into_erased()))?,
+                        site_context!(v.try_to::<Gd<WasmModule>>().map_err(|e| e.into_erased()))?,
                     ))
                 })
                 .collect::<AnyResult<_>>()?;

@@ -612,7 +612,7 @@ pub fn write_struct(
         for _ in 0..n {
             let Some(v) = a
                 .next()
-                .map(|v| site_context!(T::try_from_variant(&v)))
+                .map(|v| site_context!(v.try_to::<T>().map_err(|e| e.into_erased())))
                 .transpose()?
             else {
                 bail_with_site!("Input array too small")

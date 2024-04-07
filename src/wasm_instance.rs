@@ -1,6 +1,8 @@
+#[cfg(feature = "wasi")]
 use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
+#[cfg(feature = "wasi")]
 use std::sync::Arc;
 use std::{fmt, mem, ptr};
 
@@ -164,6 +166,7 @@ impl AsMut<InnerLock> for StoreData {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for StoreData {
     fn default() -> Self {
         Self {
@@ -306,6 +309,7 @@ impl ResourceLimiter for MemoryLimit {
 
 struct InstanceArgs<'a, T> {
     store: StoreContextMut<'a, T>,
+    #[allow(dead_code)]
     config: &'a Config,
     insts: HashMap<InstanceId, Option<InstanceWasm>>,
     host: Option<HostModuleCache<T>>,
@@ -322,7 +326,7 @@ where
     T: Send + AsRef<StoreData> + AsMut<StoreData>,
 {
     pub fn instantiate(
-        inst_id: InstanceId,
+        _inst_id: InstanceId,
         mut store: Store<T>,
         config: &Config,
         module: Gd<WasmModule>,
@@ -344,7 +348,7 @@ where
                     builder.stdin(StreamWrapper::from(ByteBufferReadPipe::new(data)));
                 } else {
                     let (outer, inner) = OuterStdin::new(move || {
-                        <Gd<RefCounted>>::from_instance_id(inst_id)
+                        <Gd<RefCounted>>::from_instance_id(_inst_id)
                             .emit_signal(StringName::from(c"stdin_request"), &[]);
                     });
                     builder.stdin(outer);
@@ -355,7 +359,7 @@ where
                 match config.wasi_stdout_buffer {
                     PipeBufferType::Unbuffered => {
                         builder.stdout(UnbufferedWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
                                 StringName::from(c"stdout_emit"),
                                 &[PackedByteArray::from(buf).to_variant()],
                             );
@@ -363,7 +367,7 @@ where
                     }
                     PipeBufferType::LineBuffer => {
                         builder.stdout(StreamWrapper::from(LineWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
                                 StringName::from(c"stdout_emit"),
                                 &[gstring_from_maybe_utf8(buf).to_variant()],
                             );
@@ -371,7 +375,7 @@ where
                     }
                     PipeBufferType::BlockBuffer => {
                         builder.stdout(StreamWrapper::from(BlockWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
                                 StringName::from(c"stdout_emit"),
                                 &[gstring_from_maybe_utf8(buf).to_variant()],
                             );
@@ -383,7 +387,7 @@ where
                 match config.wasi_stderr_buffer {
                     PipeBufferType::Unbuffered => {
                         builder.stderr(UnbufferedWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
                                 StringName::from(c"stderr_emit"),
                                 &[PackedByteArray::from(buf).to_variant()],
                             );
@@ -391,7 +395,7 @@ where
                     }
                     PipeBufferType::LineBuffer => {
                         builder.stderr(StreamWrapper::from(LineWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
                                 StringName::from(c"stderr_emit"),
                                 &[gstring_from_maybe_utf8(buf).to_variant()],
                             );
@@ -399,7 +403,7 @@ where
                     }
                     PipeBufferType::BlockBuffer => {
                         builder.stderr(StreamWrapper::from(BlockWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
+                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
                                 StringName::from(c"stderr_emit"),
                                 &[gstring_from_maybe_utf8(buf).to_variant()],
                             );
@@ -791,7 +795,7 @@ impl RustCallable for WasmCallable {
     fn invoke(&mut self, args: &[&Variant]) -> Result<Variant, ()> {
         let ty = &self.ty;
         let f = &self.f;
-        let f = move |_: &'_ _, mut store: StoreContextMut<'_, StoreData>| {
+        let f = move |_: &'_ _, #[allow(unused_mut)] mut store: StoreContextMut<'_, StoreData>| {
             #[cfg(feature = "epoch-timeout")]
             if let v @ 1.. = store.data().epoch_timeout {
                 store.set_epoch_deadline(v);
@@ -1040,12 +1044,12 @@ impl WasmInstance {
     }
 
     #[func]
-    fn stdin_add_line(&self, line: GString) {
+    fn stdin_add_line(&self, _line: GString) {
         cfg_if! {
             if #[cfg(feature = "wasi")] {
                 self.unwrap_data(|m| {
                     if let Some(stdin) = &m.wasi_stdin {
-                        stdin.add_line(line)?;
+                        stdin.add_line(_line)?;
                     }
                     Ok(())
                 });
@@ -1289,7 +1293,7 @@ impl WasmInstance {
         option_to_variant(self.get_memory(|store, mem| {
             let (i, n) = (i as usize, n as usize);
             let data = mem.data(&store);
-            match site_context!(VariantType::try_from_godot(t))? {
+            match site_context!(VariantType::try_from_godot(t).map_err(|e| e.into_erased()))? {
                 VariantType::PackedByteArray => {
                     let e = i + n;
                     let Some(s) = data.get(i..e) else {

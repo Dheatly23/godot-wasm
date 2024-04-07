@@ -1,8 +1,10 @@
+#[cfg(feature = "wasi")]
 use std::collections::HashMap;
 
 use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 
+#[cfg(feature = "epoch-timeout")]
 use crate::godot_util::VariantDispatch;
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
@@ -57,7 +59,7 @@ fn get_field<T: FromGodot>(
 ) -> Result<Option<T>, ConvertError> {
     for name in names {
         if let Some(v) = d.get(name) {
-            return Some(T::try_from_variant(&v)).transpose();
+            return Some(v.try_to()).transpose();
         }
     }
 
@@ -75,8 +77,8 @@ fn compute_epoch(v: Option<Variant>) -> Result<u64, ConvertError> {
             .saturating_mul(EPOCH_MULTIPLIER)),
         Some(VariantDispatch::Float(v)) => Ok((v * (EPOCH_MULTIPLIER as f64)).trunc() as _),
         _ => Err(match v {
-            Some(v) => ConvertError::with_cause_value("Unknown value", v),
-            None => ConvertError::with_cause("Empty value"),
+            Some(v) => ConvertError::with_error_value("Unknown value", v),
+            None => ConvertError::with_error("Empty value"),
         }),
     }
     .map(|i| i.max(1))
@@ -85,12 +87,12 @@ fn compute_epoch(v: Option<Variant>) -> Result<u64, ConvertError> {
 #[cfg(feature = "wasi")]
 fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, ConvertError> {
     let v = match v {
-        Some(v) => <Array<Variant>>::try_from_variant(&v)?,
+        Some(v) => v.try_to::<VariantArray>()?,
         None => return Ok(Vec::new()),
     };
     let mut ret = Vec::with_capacity(v.len());
     for i in v.iter_shared() {
-        ret.push(String::try_from_variant(&i)?);
+        ret.push(i.try_to::<String>()?);
     }
     Ok(ret)
 }
@@ -98,12 +100,12 @@ fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, ConvertError> {
 #[cfg(feature = "wasi")]
 fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, ConvertError> {
     let v = match v {
-        Some(v) => Dictionary::try_from_variant(&v)?,
+        Some(v) => v.try_to::<Dictionary>()?,
         None => return Ok(HashMap::new()),
     };
     let mut ret = HashMap::with_capacity(v.len());
     for (k, v) in v.iter_shared() {
-        ret.insert(String::try_from_variant(&k)?, String::try_from_variant(&v)?);
+        ret.insert(k.try_to::<String>()?, v.try_to::<String>()?);
     }
     Ok(ret)
 }
@@ -175,7 +177,7 @@ impl FromGodot for Config {
         if v.is_nil() {
             return Ok(Self::default());
         }
-        Self::convert(Dictionary::try_from_variant(v)?)
+        Self::convert(v.try_to()?)
     }
 
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
@@ -222,10 +224,7 @@ impl FromGodot for ExternBindingType {
             }
             #[cfg(feature = "object-registry-extern")]
             ['e', 'x', 't', 'e', 'r', 'n'] | ['n', 'a', 't', 'i', 'v', 'e'] => Ok(Self::Native),
-            _ => Err(ConvertError::with_cause_value(
-                "Unknown variant",
-                via.clone(),
-            )),
+            _ => Err(ConvertError::with_error_value("Unknown variant", via)),
         }
     }
 }
@@ -252,16 +251,19 @@ pub enum PipeBindingType {
     Context,
 }
 
+#[cfg(feature = "wasi")]
 impl Default for PipeBindingType {
     fn default() -> Self {
         Self::Context
     }
 }
 
+#[cfg(feature = "wasi")]
 impl GodotConvert for PipeBindingType {
     type Via = GString;
 }
 
+#[cfg(feature = "wasi")]
 impl FromGodot for PipeBindingType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
         // SAFETY: Eh whatevers, if it blows up i assume no responsibility
@@ -271,14 +273,12 @@ impl FromGodot for PipeBindingType {
             [] | ['u', 'n', 'b', 'o', 'u', 'n', 'd'] => Ok(Self::Unbound),
             ['i', 'n', 's', 't', 'a', 'n', 'c', 'e'] => Ok(Self::Instance),
             ['c', 'o', 'n', 't', 'e', 'x', 't'] => Ok(Self::Context),
-            _ => Err(ConvertError::with_cause_value(
-                "Unknown variant",
-                via.clone(),
-            )),
+            _ => Err(ConvertError::with_error_value("Unknown variant", via)),
         }
     }
 }
 
+#[cfg(feature = "wasi")]
 impl ToGodot for PipeBindingType {
     fn to_godot(&self) -> Self::Via {
         match self {
@@ -299,16 +299,19 @@ pub enum PipeBufferType {
     BlockBuffer,
 }
 
+#[cfg(feature = "wasi")]
 impl Default for PipeBufferType {
     fn default() -> Self {
         Self::LineBuffer
     }
 }
 
+#[cfg(feature = "wasi")]
 impl GodotConvert for PipeBufferType {
     type Via = GString;
 }
 
+#[cfg(feature = "wasi")]
 impl FromGodot for PipeBufferType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
         // SAFETY: Eh whatevers, if it blows up i assume no responsibility
@@ -318,14 +321,12 @@ impl FromGodot for PipeBufferType {
             [] | ['u', 'n', 'b', 'u', 'f', 'f', 'e', 'r', 'e', 'd'] => Ok(Self::Unbuffered),
             ['l', 'i', 'n', 'e'] => Ok(Self::LineBuffer),
             ['b', 'l', 'o', 'c', 'k'] => Ok(Self::BlockBuffer),
-            _ => Err(ConvertError::with_cause_value(
-                "Unknown variant",
-                via.clone(),
-            )),
+            _ => Err(ConvertError::with_error_value("Unknown variant", via)),
         }
     }
 }
 
+#[cfg(feature = "wasi")]
 impl ToGodot for PipeBufferType {
     fn to_godot(&self) -> Self::Via {
         match self {

@@ -3,6 +3,7 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use super::wrap_error;
+use crate::godot_util::from_var_any;
 
 impl<T: AsMut<crate::godot_component::GodotCtx>>
     crate::godot_component::bindgen::godot::core::signal::Host for T
@@ -13,14 +14,14 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         signal: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(obj)?.try_to()?;
-        let s: StringName = this.get_var_borrow(signal)?.try_to()?;
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(obj)?)?;
+        let s: StringName = from_var_any(&*this.get_var_borrow(signal)?)?;
         this.set_into_var(Signal::from_object_signal(&o, s))
     }
 
     fn object(&mut self, var: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Signal = this.get_var_borrow(var)?.try_to()?;
+        let v: Signal = from_var_any(&*this.get_var_borrow(var)?)?;
         match v.object() {
             Some(v) => this.set_into_var(v).map(Some),
             None => Ok(None),
@@ -29,7 +30,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
 
     fn name(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let v: Signal = this.get_var_borrow(var)?.try_to()?;
+        let v: Signal = from_var_any(&*this.get_var_borrow(var)?)?;
         this.set_into_var(v.name())
     }
 
@@ -40,8 +41,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         flags: u32,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let v: Signal = this.get_var_borrow(var)?.try_to()?;
-        wrap_error(v.connect(this.get_var_borrow(callable)?.try_to()?, flags as _))
+        let v: Signal = from_var_any(&*this.get_var_borrow(var)?)?;
+        wrap_error(v.connect(from_var_any(&*this.get_var_borrow(callable)?)?, flags as _))
     }
 
     fn disconnect(
@@ -50,8 +51,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         callable: WasmResource<Variant>,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let v: Signal = this.get_var_borrow(var)?.try_to()?;
-        v.disconnect(this.get_var_borrow(callable)?.try_to()?);
+        let v: Signal = from_var_any(&*this.get_var_borrow(var)?)?;
+        v.disconnect(from_var_any(&*this.get_var_borrow(callable)?)?);
         Ok(())
     }
 
@@ -61,8 +62,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         callable: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
-        let v: Signal = this.get_var_borrow(var)?.try_to()?;
-        Ok(v.is_connected(this.get_var_borrow(callable)?.try_to()?))
+        let v: Signal = from_var_any(&*this.get_var_borrow(var)?)?;
+        Ok(v.is_connected(from_var_any(&*this.get_var_borrow(callable)?)?))
     }
 
     fn emit(
@@ -71,7 +72,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let v: Signal = this.get_var_borrow(var)?.try_to()?;
+        let v: Signal = from_var_any(&*this.get_var_borrow(var)?)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))

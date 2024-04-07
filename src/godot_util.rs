@@ -2,7 +2,8 @@ use std::borrow::Cow;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
-use godot::builtin::meta::{ConvertError, GodotConvert};
+use anyhow::Result as AnyResult;
+use godot::builtin::meta::GodotConvert;
 use godot::prelude::*;
 use godot::register::property::PropertyHintInfo;
 
@@ -40,6 +41,10 @@ impl<T: ?Sized> DerefMut for SendSyncWrapper<T> {
     }
 }
 
+pub fn from_var_any<T: FromGodot>(v: &Variant) -> AnyResult<T> {
+    v.try_to::<T>().map_err(|e| e.into_erased().into())
+}
+
 #[allow(dead_code)]
 pub fn gstring_from_maybe_utf8(buf: &[u8]) -> GString {
     match String::from_utf8_lossy(buf) {
@@ -55,11 +60,11 @@ pub fn option_to_variant<T: ToGodot>(t: Option<T>) -> Variant {
     }
 }
 
-pub fn variant_to_option<T: FromGodot>(v: Variant) -> Result<Option<T>, ConvertError> {
+pub fn variant_to_option<T: FromGodot>(v: Variant) -> AnyResult<Option<T>> {
     if v.is_nil() {
         Ok(None)
     } else {
-        v.try_to().map(Some)
+        v.try_to().map(Some).map_err(|e| e.into_erased().into())
     }
 }
 

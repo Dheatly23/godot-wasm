@@ -3,6 +3,7 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use super::wrap_error;
+use crate::godot_util::from_var_any;
 
 impl<T: AsMut<crate::godot_component::GodotCtx>>
     crate::godot_component::bindgen::godot::core::object::Host for T
@@ -13,16 +14,15 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         };
 
         self.as_mut()
-            .set_into_var(<Gd<Object>>::try_from_instance_id(id)?)
+            .set_into_var(<Gd<Object>>::try_from_instance_id(id).map_err(|e| e.into_erased())?)
     }
 
     fn instance_id(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
-        Ok(self
-            .as_mut()
-            .get_var_borrow(var)?
-            .try_to::<Gd<Object>>()?
-            .instance_id()
-            .to_i64())
+        Ok(
+            from_var_any::<Gd<Object>>(&*self.as_mut().get_var_borrow(var)?)?
+                .instance_id()
+                .to_i64(),
+        )
     }
 
     fn get_property_list(
@@ -30,19 +30,19 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         this.set_into_var(o.get_property_list())
     }
 
     fn get_method_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         this.set_into_var(o.get_method_list())
     }
 
     fn get_signal_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         this.set_into_var(o.get_signal_list())
     }
 
@@ -52,8 +52,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         name: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
-        Ok(o.has_method(this.get_var_borrow(name)?.try_to()?))
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        Ok(o.has_method(from_var_any(&*this.get_var_borrow(name)?)?))
     }
 
     fn has_signal(
@@ -62,8 +62,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         name: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
-        Ok(o.has_signal(this.get_var_borrow(name)?.try_to()?))
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        Ok(o.has_signal(from_var_any(&*this.get_var_borrow(name)?)?))
     }
 
     fn call(
@@ -73,8 +73,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
-        let name: StringName = this.get_var_borrow(name)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        let name: StringName = from_var_any(&*this.get_var_borrow(name)?)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -89,9 +89,9 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
-        let name: StringName = this.get_var_borrow(name)?.try_to()?;
-        let args: Array<Variant> = this.get_var_borrow(args)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        let name: StringName = from_var_any(&*this.get_var_borrow(name)?)?;
+        let args: Array<Variant> = from_var_any(&*this.get_var_borrow(args)?)?;
         this.set_var(o.callv(name, args))
     }
 
@@ -102,8 +102,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
-        let name: StringName = this.get_var_borrow(name)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        let name: StringName = from_var_any(&*this.get_var_borrow(name)?)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -119,11 +119,11 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         flags: u32,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         wrap_error(
             o.connect_ex(
-                this.get_var_borrow(name)?.try_to()?,
-                this.get_var_borrow(callable)?.try_to()?,
+                from_var_any(&*this.get_var_borrow(name)?)?,
+                from_var_any(&*this.get_var_borrow(callable)?)?,
             )
             .flags(flags)
             .done(),
@@ -137,10 +137,10 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         callable: WasmResource<Variant>,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         o.disconnect(
-            this.get_var_borrow(name)?.try_to()?,
-            this.get_var_borrow(callable)?.try_to()?,
+            from_var_any(&*this.get_var_borrow(name)?)?,
+            from_var_any(&*this.get_var_borrow(callable)?)?,
         );
         Ok(())
     }
@@ -152,10 +152,10 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         callable: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         Ok(o.is_connected(
-            this.get_var_borrow(name)?.try_to()?,
-            this.get_var_borrow(callable)?.try_to()?,
+            from_var_any(&*this.get_var_borrow(name)?)?,
+            from_var_any(&*this.get_var_borrow(callable)?)?,
         ))
     }
 
@@ -166,8 +166,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
-        let name: StringName = this.get_var_borrow(name)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        let name: StringName = from_var_any(&*this.get_var_borrow(name)?)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -181,8 +181,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         name: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
-        let name: StringName = this.get_var_borrow(name)?.try_to()?;
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        let name: StringName = from_var_any(&*this.get_var_borrow(name)?)?;
         this.set_var(o.get(name))
     }
 
@@ -193,9 +193,9 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         val: Option<WasmResource<Variant>>,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         o.set(
-            this.get_var_borrow(name)?.try_to()?,
+            from_var_any(&*this.get_var_borrow(name)?)?,
             this.maybe_get_var(val)?,
         );
         Ok(())
@@ -208,9 +208,9 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         val: Option<WasmResource<Variant>>,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         o.set_deferred(
-            this.get_var_borrow(name)?.try_to()?,
+            from_var_any(&*this.get_var_borrow(name)?)?,
             this.maybe_get_var(val)?,
         );
         Ok(())
@@ -222,8 +222,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         name: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
-        let name: NodePath = this.get_var_borrow(name)?.try_to()?;
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        let name: NodePath = from_var_any(&*this.get_var_borrow(name)?)?;
         this.set_var(o.get_indexed(name))
     }
 
@@ -234,9 +234,9 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         val: Option<WasmResource<Variant>>,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let mut o: Gd<Object> = this.get_var_borrow(var)?.try_to()?;
+        let mut o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
         o.set_indexed(
-            this.get_var_borrow(name)?.try_to()?,
+            from_var_any(&*this.get_var_borrow(name)?)?,
             this.maybe_get_var(val)?,
         );
         Ok(())

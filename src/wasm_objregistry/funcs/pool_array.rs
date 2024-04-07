@@ -2,6 +2,7 @@ use anyhow::{bail, Error};
 use godot::prelude::*;
 use wasmtime::{Caller, Extern, Func, StoreContextMut};
 
+use crate::godot_util::from_var_any;
 use crate::wasm_instance::StoreData;
 use crate::{bail_with_site, func_registry, site_context};
 
@@ -13,11 +14,11 @@ macro_rules! readwrite_array {
         func_registry!{
             ($fi, $name),
             len => |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
-                let v = site_context!(<$t>::try_from_variant(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
+                let v = site_context!(from_var_any::<$t>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
                 Ok(v.len() as _)
             },
             read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
-                let $v = site_context!(<$t>::try_from_variant(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
+                let $v = site_context!(from_var_any::<$t>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -40,7 +41,7 @@ macro_rules! readwrite_array {
                 if to > from {
                     bail_with_site!("Invalid range ({}..{})", from, to);
                 }
-                let $v = site_context!(<$t>::try_from_variant(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
+                let $v = site_context!(from_var_any::<$t>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -165,13 +166,13 @@ impl Funcs {
 func_registry! {
     (ByteArrayFuncs, "byte_array."),
     len => |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
-        let a = site_context!(PackedByteArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedByteArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         Ok(a.len() as _)
     },
     read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
-        let a = site_context!(PackedByteArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedByteArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         let mem = match ctx.get_export("memory") {
@@ -186,7 +187,7 @@ func_registry! {
         if to > from {
             bail_with_site!("Invalid range ({}..{})", from, to);
         }
-        let a = site_context!(PackedByteArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedByteArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         let mem = match ctx.get_export("memory") {
@@ -256,14 +257,14 @@ readwrite_array! {
 func_registry! {
     (StringArrayFuncs, "string_array."),
     len => |ctx: Caller<T>, a: u32| -> Result<u32, Error> {
-        let a = site_context!(PackedStringArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedStringArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(a as _)
         ))?;
         Ok(a.len() as _)
     },
     get => |mut ctx: Caller<T>, a: u32, i: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let a = site_context!(PackedStringArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedStringArray>(
             &reg.get_or_nil(a as _)
         ))?;
         let Some(v) = a.as_slice().get(i as usize).map(|v| v.to_variant()) else {
@@ -280,7 +281,7 @@ func_registry! {
             _ => return Ok(0),
         };
 
-        let a = site_context!(PackedStringArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedStringArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(a as _),
         ))?;
         let s = match a.as_slice().get(from as usize..to as usize) {
@@ -329,7 +330,7 @@ func_registry! {
         };
         let mut v = Vec::with_capacity(n);
         for s in ps.chunks(4) {
-            v.push(site_context!(GString::try_from_variant(
+            v.push(site_context!(from_var_any::<GString>(
                 &reg.get_or_nil(u32::from_le_bytes(s.try_into().unwrap()) as _),
             ))?);
         }
@@ -356,7 +357,7 @@ func_registry! {
         };
         let mut v = Vec::with_capacity(n);
         for s in ps.chunks(4) {
-            v.push(site_context!(GString::try_from_variant(
+            v.push(site_context!(from_var_any::<GString>(
                 &reg.get_or_nil(u32::from_le_bytes(s.try_into().unwrap()) as _),
             ))?);
         }

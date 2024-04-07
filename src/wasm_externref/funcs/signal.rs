@@ -5,6 +5,7 @@ use godot::engine::global::Error as GError;
 use godot::prelude::*;
 use wasmtime::{Caller, ExternRef, Func, StoreContextMut, TypedFunc};
 
+use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::{bail_with_site, func_registry, site_context};
@@ -12,24 +13,24 @@ use crate::{bail_with_site, func_registry, site_context};
 func_registry! {
     "signal.",
     from_object_signal => |_: Caller<_>, obj: Option<ExternRef>, name: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let obj = site_context!(<Gd<Object>>::try_from_variant(&externref_to_variant(obj)))?;
-        let name = site_context!(StringName::try_from_variant(&externref_to_variant(name)))?;
+        let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(obj)))?;
+        let name = site_context!(from_var_any::<StringName>(&externref_to_variant(name)))?;
         Ok(variant_to_externref(Signal::from_object_signal(&obj, name).to_variant()))
     },
     object => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(Signal::try_from_variant(&externref_to_variant(v)))?;
+        let v = site_context!(from_var_any::<Signal>(&externref_to_variant(v)))?;
         Ok(variant_to_externref(match v.object() {
             Some(v) => v.to_variant(),
             None => Variant::nil(),
         }))
     },
     name => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(Signal::try_from_variant(&externref_to_variant(v)))?;
+        let v = site_context!(from_var_any::<Signal>(&externref_to_variant(v)))?;
         Ok(variant_to_externref(v.name().to_variant()))
     },
     connect => |_: Caller<_>, v: Option<ExternRef>, target: Option<ExternRef>, flags: i64| -> Result<(), Error> {
-        let v = site_context!(Signal::try_from_variant(&externref_to_variant(v)))?;
-        let target = site_context!(Callable::try_from_variant(&externref_to_variant(target)))?;
+        let v = site_context!(from_var_any::<Signal>(&externref_to_variant(v)))?;
+        let target = site_context!(from_var_any::<Callable>(&externref_to_variant(target)))?;
 
         match catch_unwind(AssertUnwindSafe(|| v.connect(target, flags))) {
             Ok(GError::OK) => Ok(()),
@@ -38,8 +39,8 @@ func_registry! {
         }
     },
     disconnect => |_: Caller<_>, v: Option<ExternRef>, target: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(Signal::try_from_variant(&externref_to_variant(v)))?;
-        let target = site_context!(Callable::try_from_variant(&externref_to_variant(target)))?;
+        let v = site_context!(from_var_any::<Signal>(&externref_to_variant(v)))?;
+        let target = site_context!(from_var_any::<Callable>(&externref_to_variant(target)))?;
 
         match catch_unwind(AssertUnwindSafe(|| v.disconnect(target))) {
             Ok(_) => Ok(()),
@@ -47,8 +48,8 @@ func_registry! {
         }
     },
     is_connected => |_: Caller<_>, v: Option<ExternRef>, target: Option<ExternRef>| -> Result<u32, Error> {
-        let v = site_context!(Signal::try_from_variant(&externref_to_variant(v)))?;
-        let target = site_context!(Callable::try_from_variant(&externref_to_variant(target)))?;
+        let v = site_context!(from_var_any::<Signal>(&externref_to_variant(v)))?;
+        let target = site_context!(from_var_any::<Callable>(&externref_to_variant(target)))?;
 
         match catch_unwind(AssertUnwindSafe(|| v.is_connected(target))) {
             Ok(v) => Ok(v as _),
@@ -56,7 +57,7 @@ func_registry! {
         }
     },
     emit => |mut ctx: Caller<_>, v: Option<ExternRef>, f: Option<Func>| -> Result<(), Error> {
-        let c = site_context!(Signal::try_from_variant(&externref_to_variant(v)))?;
+        let c = site_context!(from_var_any::<Signal>(&externref_to_variant(v)))?;
 
         let mut v = Vec::new();
         if let Some(f) = f {
@@ -76,7 +77,7 @@ func_registry! {
         }
     },
     connections => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(Signal::try_from_variant(&externref_to_variant(v)))?;
+        let v = site_context!(from_var_any::<Signal>(&externref_to_variant(v)))?;
 
         match catch_unwind(AssertUnwindSafe(|| v.connections())) {
             Ok(v) => Ok(variant_to_externref(v.to_variant())),

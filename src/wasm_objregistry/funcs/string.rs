@@ -5,13 +5,14 @@ use anyhow::Error;
 use godot::prelude::*;
 use wasmtime::{Caller, Extern, Func, StoreContextMut};
 
+use crate::godot_util::from_var_any;
 use crate::wasm_instance::StoreData;
 use crate::{bail_with_site, func_registry, site_context};
 
 func_registry! {
     "string.",
     len => |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
-        let v = site_context!(GString::try_from_variant(
+        let v = site_context!(from_var_any::<GString>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
 
@@ -20,7 +21,7 @@ func_registry! {
         Ok(v.iter().map(|c| c.len_utf8()).sum::<usize>() as _)
     },
     read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
-        let v = site_context!(GString::try_from_variant(
+        let v = site_context!(from_var_any::<GString>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         let mem = match ctx.get_export("memory") {
@@ -60,14 +61,14 @@ func_registry! {
         Ok(ctx.data_mut().as_mut().get_registry_mut()?.register(v) as _)
     },
     to_string_name => |mut ctx: Caller<T>, i: u32| -> Result<(), Error> {
-        let v = site_context!(GString::try_from_variant(
+        let v = site_context!(from_var_any::<GString>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, StringName::from(v).to_variant());
         Ok(())
     },
     from_string_name => |mut ctx: Caller<T>, i: u32| -> Result<(), Error> {
-        let v = site_context!(StringName::try_from_variant(
+        let v = site_context!(from_var_any::<StringName>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, GString::from(v).to_variant());

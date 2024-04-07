@@ -5,6 +5,7 @@ use anyhow::Error;
 use godot::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Func, StoreContextMut};
 
+use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::{bail_with_site, func_registry, site_context};
@@ -12,14 +13,14 @@ use crate::{bail_with_site, func_registry, site_context};
 func_registry! {
     "string.",
     len => |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
-        let v = site_context!(GString::try_from_variant(&externref_to_variant(v)))?;
+        let v = site_context!(from_var_any::<GString>(&externref_to_variant(v)))?;
 
         // SAFETY: Externalize the safety of it
         let v = unsafe { v.chars_unchecked() };
         Ok(v.iter().map(|c| c.len_utf8()).sum::<usize>() as _)
     },
     read => |mut ctx: Caller<_>, v: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-        let v = site_context!(GString::try_from_variant(&externref_to_variant(v)))?;
+        let v = site_context!(from_var_any::<GString>(&externref_to_variant(v)))?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -44,9 +45,9 @@ func_registry! {
         Ok(variant_to_externref(v.to_variant()))
     },
     to_string_name => |_: Caller<T>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        Ok(variant_to_externref(StringName::from(site_context!(GString::try_from_variant(&externref_to_variant(v)))?).to_variant()))
+        Ok(variant_to_externref(StringName::from(site_context!(from_var_any::<GString>(&externref_to_variant(v)))?).to_variant()))
     },
     from_string_name => |_: Caller<T>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        Ok(variant_to_externref(GString::from(site_context!(StringName::try_from_variant(&externref_to_variant(v)))?).to_variant()))
+        Ok(variant_to_externref(GString::from(site_context!(from_var_any::<StringName>(&externref_to_variant(v)))?).to_variant()))
     },
 }

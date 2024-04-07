@@ -7,6 +7,7 @@ use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use wasmtime::{Caller, Extern, Func, StoreContextMut};
 
+use crate::godot_util::from_var_any;
 use crate::wasm_instance::StoreData;
 use crate::{func_registry, site_context};
 
@@ -24,7 +25,7 @@ macro_rules! prim_value {
             $head,
             get => |ctx: Caller<T>, i: u32| -> Result<($($tx),*), Error> {
                 let v = ctx.data().as_ref().get_registry()?.get_or_nil(i as _);
-                let $($v)* = site_context!(<$tv>::try_from_variant(&v))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&v))?;
                 Ok(($($x.into()),*))
             },
             set => |mut ctx: Caller<T>, i: u32, $($x : $tx),*| -> Result<(), Error> {
@@ -37,7 +38,7 @@ macro_rules! prim_value {
                 Ok(ctx.data_mut().as_mut().get_registry_mut()?.register(v.to_variant()) as _)
             },
             read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
-                let $($v)* = site_context!(<$tv>::try_from_variant(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -268,7 +269,7 @@ prim_value! {
 func_registry! {
     (ProjectionFuncs, "projection."),
     read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
-        let v = site_context!(Projection::try_from_variant(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
+        let v = site_context!(from_var_any::<Projection>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),

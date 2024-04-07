@@ -2,6 +2,7 @@ use anyhow::Error;
 use godot::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Func, StoreContextMut, TypedFunc};
 
+use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::{bail_with_site, func_registry, site_context};
@@ -15,11 +16,11 @@ macro_rules! readwrite_array {
         func_registry!{
             $head,
             len => |_: Caller<_>, a: Option<ExternRef>| -> Result<u32, Error> {
-                let a = site_context!(<$t>::try_from_variant(&externref_to_variant(a)))?;
+                let a = site_context!(from_var_any::<$t>(&externref_to_variant(a)))?;
                 Ok(a.len() as _)
             },
             read => |mut ctx: Caller<_>, a: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-                let a = site_context!(<$t>::try_from_variant(&externref_to_variant(a)))?;
+                let a = site_context!(from_var_any::<$t>(&externref_to_variant(a)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -45,7 +46,7 @@ macro_rules! readwrite_array {
                     return Ok(0);
                 }
 
-                let a = site_context!(<$t>::try_from_variant(&externref_to_variant(a)))?;
+                let a = site_context!(from_var_any::<$t>(&externref_to_variant(a)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -140,11 +141,11 @@ impl Funcs {
 func_registry! {
     (ByteArrayFuncs, "byte_array."),
     len => |_: Caller<_>, a: Option<ExternRef>| -> Result<u32, Error> {
-        let a = site_context!(PackedByteArray::try_from_variant(&externref_to_variant(a)))?;
+        let a = site_context!(from_var_any::<PackedByteArray>(&externref_to_variant(a)))?;
         Ok(a.len() as _)
     },
     read => |mut ctx: Caller<_>, a: Option<ExternRef>, p: u32| -> Result<u32, Error> {
-        let a = site_context!(PackedByteArray::try_from_variant(&externref_to_variant(a)))?;
+        let a = site_context!(from_var_any::<PackedByteArray>(&externref_to_variant(a)))?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -189,13 +190,13 @@ readwrite_array! {
 func_registry! {
     (StringArrayFuncs, "string_array."),
     len => |_: Caller<_>, a: Option<ExternRef>| -> Result<u32, Error> {
-        let a = site_context!(PackedStringArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedStringArray>(
             &externref_to_variant(a)
         ))?;
         Ok(a.len() as _)
     },
     get => |_: Caller<_>, a: Option<ExternRef>, i: u32| -> Result<Option<ExternRef>, Error> {
-        let a = site_context!(PackedStringArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedStringArray>(
             &externref_to_variant(a)
         ))?;
         let Some(v) = a.as_slice().get(i as usize).map(|v| v.to_variant()) else {
@@ -208,7 +209,7 @@ func_registry! {
             Some(f) => site_context!(f.typed(&ctx))?,
             None => return Ok(0),
         };
-        let a = site_context!(PackedStringArray::try_from_variant(
+        let a = site_context!(from_var_any::<PackedStringArray>(
             &externref_to_variant(a)
         ))?;
 
@@ -236,7 +237,7 @@ func_registry! {
         let mut v = Vec::new();
         loop {
             let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
-            v.push(site_context!(GString::try_from_variant(
+            v.push(site_context!(from_var_any::<GString>(
                 &externref_to_variant(e)
             ))?);
             if n == 0 {
