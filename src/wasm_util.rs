@@ -1,4 +1,7 @@
-#[cfg(feature = "object-registry-extern")]
+use std::borrow::Borrow;
+use std::cell::UnsafeCell;
+use std::mem::MaybeUninit;
+use std::ops::{Deref, DerefMut};
 use std::ptr;
 #[cfg(feature = "epoch-timeout")]
 use std::time;
@@ -174,13 +177,13 @@ pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
 }
 
 // Mark this unsafe for future proofing
-pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> AnyResult<ValRaw> {
+pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: &Variant) -> AnyResult<ValRaw> {
     Ok(match t {
         ValType::I32 => ValRaw::i32(site_context!(v.try_to())?),
         ValType::I64 => ValRaw::i64(site_context!(v.try_to())?),
         ValType::F32 => ValRaw::f32(site_context!(v.try_to::<f32>())?.to_bits()),
         ValType::F64 => ValRaw::f64(site_context!(v.try_to::<f64>())?.to_bits()),
-        ValType::V128 => ValRaw::v128(match VariantDispatch::from(&v) {
+        ValType::V128 => ValRaw::v128(match VariantDispatch::from(v) {
             VariantDispatch::Int(v) => v as u128,
             VariantDispatch::PackedByteArray(v) => {
                 let Some(s) = v.as_slice().get(..16) else {
@@ -209,7 +212,7 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> AnyRe
         }),
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
-            ValRaw::externref(match variant_to_externref(v) {
+            ValRaw::externref(match variant_to_externref(v.clone()) {
                 Some(v) => v.to_raw(_store),
                 None => ptr::null_mut(),
             })
@@ -239,6 +242,76 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> AnyR
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })
+}
+
+thread_local! {
+    static CALLVEC: UnsafeCell<Vec<ValRaw>> = const { UnsafeCell::new(Vec::new()) };
+}
+
+pub unsafe fn raw_call<S, It>(
+    mut ctx: S,
+    f: &Func,
+    ty: &FuncType,
+    args: It,
+) -> AnyResult<VariantArray>
+where
+    S: AsContextMut,
+    It: IntoIterator,
+    It::Item: Borrow<Variant>,
+{
+    struct F(MaybeUninit<Vec<ValRaw>>);
+
+    impl Drop for F {
+        fn drop(&mut self) {
+            let mut t = unsafe { self.0.assume_init_read() };
+            t.clear();
+            let _ = CALLVEC.try_with(move |v| unsafe {
+                let o = &mut *v.get();
+                if t.capacity() > o.capacity() {
+                    *o = t;
+                }
+            });
+        }
+    }
+
+    impl Deref for F {
+        type Target = Vec<ValRaw>;
+        fn deref(&self) -> &Vec<ValRaw> {
+            unsafe { self.0.assume_init_ref() }
+        }
+    }
+
+    impl DerefMut for F {
+        fn deref_mut(&mut self) -> &mut Vec<ValRaw> {
+            unsafe { self.0.assume_init_mut() }
+        }
+    }
+
+    let mut v = CALLVEC.with(|v| F(MaybeUninit::new(ptr::replace(v.get(), Vec::new()))));
+    v.clear();
+
+    ctx.as_context_mut().gc();
+
+    let pi = ty.params();
+    let ri = ty.results();
+
+    let pl = pi.len();
+    v.resize(pl.max(ri.len()), ValRaw::i32(0));
+
+    let mut args = args.into_iter();
+    for (p, (i, o)) in pi.zip(v.iter_mut().enumerate()) {
+        let Some(v) = args.next() else {
+            bail_with_site!("Too few parameters (expected {pl}, got {i})")
+        };
+        *o = to_raw(&mut ctx, p, v.borrow())?;
+    }
+    drop(args);
+
+    f.call_unchecked(&mut ctx, v.as_mut_ptr(), v.len())?;
+
+    ri.zip(v.iter())
+        .map(|(t, v)| from_raw(&mut ctx, t, *v))
+        .collect()
 }
 
 enum CallableEnum {
@@ -283,12 +356,15 @@ where
         let mut ri = ty.results();
         if ri.len() == 0 {
         } else if let Ok(r) = r.try_to::<VariantArray>() {
-            for (ix, t) in ri.enumerate() {
-                let v = r.try_get(ix as _).unwrap_or_default();
-                args[ix] = unsafe { to_raw(&mut ctx, t, v)? };
+            let rl = ri.len();
+            for (t, (i, o)) in ri.zip(args.iter_mut().enumerate()) {
+                let Some(v) = r.try_get(i) else {
+                    bail_with_site!("Too few return value (expected {rl}, got {i})")
+                };
+                *o = unsafe { to_raw(&mut ctx, t, &v)? };
             }
         } else if ri.len() == 1 {
-            args[0] = unsafe { to_raw(&mut ctx, ri.next().unwrap(), r)? };
+            args[0] = unsafe { to_raw(&mut ctx, ri.next().unwrap(), &r)? };
         } else {
             bail_with_site!("Unconvertible return value {}", r);
         }

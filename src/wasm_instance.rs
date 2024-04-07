@@ -21,7 +21,6 @@ use wasmtime::Linker;
 use wasmtime::ResourceLimiter;
 use wasmtime::{
     AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, Store, StoreContextMut,
-    ValRaw,
 };
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::preview1::{add_to_linker_sync, WasiPreview1Adapter, WasiPreview1View};
@@ -55,7 +54,7 @@ use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
-use crate::wasm_util::{config_store_common, from_raw, to_raw, HostModuleCache, MEMORY_EXPORT};
+use crate::wasm_util::{config_store_common, raw_call, HostModuleCache, MEMORY_EXPORT};
 use crate::{bail_with_site, site_context};
 
 #[derive(GodotClass)]
@@ -793,39 +792,12 @@ impl RustCallable for WasmCallable {
         let ty = &self.ty;
         let f = &self.f;
         let f = move |_: &'_ _, mut store: StoreContextMut<'_, StoreData>| {
-            let pi = ty.params();
-            let ri = ty.results();
-            let mut arr = Vec::with_capacity(pi.len().max(ri.len()));
-
-            store.gc();
-
-            let pl = pi.len();
-            for (t, v) in pi.zip(args) {
-                arr.push(unsafe { to_raw(&mut store, t, (**v).clone())? });
-            }
-            if args.len() != pl {
-                bail_with_site!("Too few parameter (expected {}, got {})", pl, args.len());
-            }
-            while arr.len() < ri.len() {
-                arr.push(ValRaw::i32(0));
-            }
-
             #[cfg(feature = "epoch-timeout")]
             if let v @ 1.. = store.data().epoch_timeout {
                 store.set_epoch_deadline(v);
             }
 
-            // SAFETY: Array length is maximum of params and returns and initialized
-            unsafe {
-                site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr(), arr.len()))?;
-            }
-
-            let mut ret = Array::new();
-            for (t, v) in ri.zip(arr) {
-                ret.push(unsafe { from_raw(&mut store, t, v)? });
-            }
-
-            Ok(ret.to_variant())
+            unsafe { raw_call(store, f, ty, args.iter().copied()).map(|v| v.to_variant()) }
         };
 
         self.this
@@ -874,52 +846,23 @@ impl WasmInstance {
     }
 
     #[func]
-    fn call_wasm(&self, name: StringName, args: Array<Variant>) -> Array<Variant> {
+    fn call_wasm(&self, name: StringName, args: Array<Variant>) -> Variant {
         self.unwrap_data(move |m| {
             m.acquire_store(move |m, mut store| {
                 let name = name.to_string();
                 let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &name) {
-                    Some(f) => match f {
-                        Extern::Func(f) => f,
-                        _ => bail_with_site!("Export {} is not a function", &name),
-                    },
+                    Some(Extern::Func(f)) => f,
+                    Some(_) => bail_with_site!("Export {} is not a function", &name),
                     None => bail_with_site!("Export {} does not exists", &name),
                 };
-
-                store.gc();
-
                 let ty = f.ty(&store);
-                let pi = ty.params();
-                let ri = ty.results();
-                let mut arr = Vec::with_capacity(pi.len().max(ri.len()));
-
-                let pl = pi.len();
-                for (t, v) in pi.zip(args.iter_shared()) {
-                    arr.push(unsafe { to_raw(&mut store, t, v)? });
-                }
-                if arr.len() != pl {
-                    bail_with_site!("Too few parameter (expected {}, got {})", pl, arr.len());
-                }
-                while arr.len() < ri.len() {
-                    arr.push(ValRaw::i32(0));
-                }
 
                 #[cfg(feature = "epoch-timeout")]
                 if let v @ 1.. = store.data().epoch_timeout {
                     store.set_epoch_deadline(v);
                 }
 
-                // SAFETY: Array length is maximum of params and returns and initialized
-                unsafe {
-                    site_context!(f.call_unchecked(&mut store, arr.as_mut_ptr(), arr.len()))?;
-                }
-
-                let mut ret = Array::new();
-                for (t, v) in ri.zip(arr) {
-                    ret.push(unsafe { from_raw(&mut store, t, v)? });
-                }
-
-                Ok(ret)
+                unsafe { raw_call(store, &f, &ty, args.iter_shared()).map(|v| v.to_variant()) }
             })
         })
         .unwrap_or_default()
@@ -931,10 +874,8 @@ impl WasmInstance {
             m.acquire_store(|m, mut store| {
                 let n = name.to_string();
                 let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &n) {
-                    Some(f) => match f {
-                        Extern::Func(f) => f,
-                        _ => bail_with_site!("Export {} is not a function", &n),
-                    },
+                    Some(Extern::Func(f)) => f,
+                    Some(_) => bail_with_site!("Export {} is not a function", &n),
                     None => bail_with_site!("Export {} does not exists", &n),
                 };
                 let ty = f.ty(&store);
