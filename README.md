@@ -4,7 +4,8 @@ WebAssembly binding for Godot, with rich feature set.
 ## Introduction
 Hello there! Thanks for checking out this library 🙏.
 I published this as my future portfolio on my coding adventure.
-This is my hobby project, developed over 6 months now.
+This is my hobby project, developed over 6 months
+(+1 year porting to Godot 4).
 It has gone through a _lot_ of changes.
 
 For the Godot 3 version, check out branch `gdnative`.
@@ -37,6 +38,7 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
   **NOTE:** In-memory filesystem is currently disabled due to dependency problems.
   It will be enabled in the future if possible.
 
+* Native resource support to ease import/export.
 * Optional support for component model and WASI 0.2
 
 ## Building
@@ -45,6 +47,9 @@ To build the addon:
 2. Install `cargo-make` (see installation guide [here](https://crates.io/crates/cargo-make))
 3. Run `cargo make deploy`
 4. Copy addon in `out/addons/godot_wasm` to your project
+
+Extra build arguments can be added with
+environment variable `BUILD_EXTRA_ARGS`, separated by semicolon.
 
 ### Cross-Compilation
 To cross-compile, we use WSL (Windows) and [cross](https://crates.io/crates/cross) (Linux).
@@ -55,10 +60,11 @@ Note: It may be broken at the moment, so feel free to submit an issue.
 Only Linux → Windows and Windows → Linux is currently supported.
 
 ## Using the Library
-After adding it to your Godot project, there are 3 classes added by the library:
+After adding it to your Godot project, there are many classes added by the library:
 * `WasmModule` : Contains the compiled WebAssembly module.
 * `WasmInstance` : Contains the instantiated module.
 * `WasiContext` : Context for WASI, including stdout and filesystem.
+* `WasiCommand` : Optional class to run WASI 0.2 runnable component.
 
 Due to limitation of godot-rust,
 you must call `initialize` after creating new object.
@@ -78,8 +84,7 @@ func _ready():
   # initialize() returns itself if succeed and null otherwise
   # WARNING! DO NOT USE UNINITIALIZED/FAILED MODULE OBJECTS
   var module = WasmModule.new().initialize(
-    "test", # Name of module (not really used)
-    WAT, # Module string (accepts PoolByteArray or String)
+    WAT, # Module data (accepts PackedByteArray, String, FileAccess, or WasmModule)
     {} # Imports to other module
   )
 
@@ -87,7 +92,7 @@ func _ready():
   var instance = WasmInstance.new().initialize(
     module, # Module object
     {}, # Host imports
-    {} # Configuration (optional)
+    {} # Configuration
   )
   # Convenience method
   # var instance = module.instantiate({})
