@@ -2,12 +2,10 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-use super::wrap_error;
+use crate::godot_component::{bindgen, wrap_error, GodotCtx};
 use crate::godot_util::from_var_any;
 
-impl<T: AsMut<crate::godot_component::GodotCtx>>
-    crate::godot_component::bindgen::godot::core::signal::Host for T
-{
+impl<T: AsMut<GodotCtx>> bindgen::godot::core::signal::Host for T {
     fn from_object_signal(
         &mut self,
         obj: WasmResource<Variant>,

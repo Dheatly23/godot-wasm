@@ -2,12 +2,10 @@ use anyhow::{bail, Result as AnyResult};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-use super::wrap_error;
+use crate::godot_component::{bindgen, wrap_error, GodotCtx};
 use crate::godot_util::from_var_any;
 
-impl<T: AsMut<crate::godot_component::GodotCtx>>
-    crate::godot_component::bindgen::godot::core::object::Host for T
-{
+impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     fn from_instance_id(&mut self, id: i64) -> AnyResult<WasmResource<Variant>> {
         let Some(id) = InstanceId::try_from_i64(id) else {
             bail!("Instance ID is 0")
