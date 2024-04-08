@@ -129,7 +129,7 @@ fn instantiate(
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;
     #[cfg(feature = "godot-component")]
-    godot_add_to_linker(&mut linker)?;
+    godot_add_to_linker(&mut linker, |v| v)?;
 
     let (bindings, instance) = Command::instantiate(&mut store, &comp, &linker)?;
 
