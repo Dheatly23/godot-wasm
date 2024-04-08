@@ -156,8 +156,8 @@ impl WasmScriptLike {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
+                let s = format!("{e:?}");
                 /*
-                let s = format!("{:?}", e);
                 error(
                     e.downcast_ref::<Site>()
                         .copied()
@@ -165,13 +165,11 @@ impl WasmScriptLike {
                     &s,
                 );
                 */
-                godot_error!("{:?}", e);
-                /*
-                self.base.emit_signal(
-                    StringName::from("error_happened"),
-                    &[format!("{}", e).to_variant()],
+                godot_error!("{s}");
+                self.base().clone().emit_signal(
+                    StringName::from(c"error_happened"),
+                    &[GString::from(s).to_variant()],
                 );
-                */
                 None
             }
         }
@@ -196,7 +194,12 @@ impl WasmScriptLike {
         }) {
             Ok(_) => true,
             Err(e) => {
-                godot_error!("{}", e);
+                let s = format!("{e:?}");
+                godot_error!("{s}");
+                self.base().clone().emit_signal(
+                    StringName::from(c"error_happened"),
+                    &[GString::from(s).to_variant()],
+                );
                 false
             }
         }
