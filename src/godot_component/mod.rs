@@ -1,12 +1,5 @@
-mod array;
-mod callable;
 mod classes;
-mod dictionary;
-mod object;
-mod packed_array;
-mod primitive;
-mod signal;
-mod typeis;
+mod core;
 
 use std::borrow::Cow;
 
