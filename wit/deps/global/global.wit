@@ -1,0 +1,45 @@
+package godot:global@0.1.0;
+
+interface globalscope {
+    use godot:core/core@0.1.0.{godot-var};
+
+    // Printing
+    print: func(s: string);
+    print-rich: func(s: string);
+    printerr: func(s: string);
+    push-error: func(s: string);
+    push-warning: func(s: string);
+
+    // var_to_* and *_to_var
+    bytes-to-var: func(b: borrow<godot-var>) -> option<godot-var>;
+    bytes-to-var-with-objects: func(b: borrow<godot-var>) -> option<godot-var>;
+    var-to-bytes: func(v: option<borrow<godot-var>>) -> godot-var;
+    var-to-bytes-with-objects: func(v: option<borrow<godot-var>>) -> godot-var;
+    var-to-str: func(v: option<borrow<godot-var>>) -> godot-var;
+    str-to-var: func(s: borrow<godot-var>) -> option<godot-var>;
+
+    weakref: func(v: borrow<godot-var>) -> option<godot-var>;
+
+    is-instance-valid: func(v: borrow<godot-var>) -> bool;
+    is-instance-id-valid: func(id: u64) -> bool;
+
+    is-same: func(a: borrow<godot-var>, b: borrow<godot-var>) -> bool;
+
+    // RNG
+    rand-from-seed: func(seed: u64) -> godot-var;
+    randf: func() -> f64;
+    randf-range: func(%from: f64, to: f64) -> f64;
+    randfn: func(mean: f64, deviation: f64) -> f64;
+    randi: func() -> s64;
+    randi-range: func(%from: s64, to: s64) -> s64;
+    randomize: func();
+    seed: func(seed: u64);
+
+    // Load/save
+    load: func(path: string) -> godot-var;
+    save: func(res: borrow<godot-var>, path: string);
+}
+
+world imports {
+    import globalscope;
+}

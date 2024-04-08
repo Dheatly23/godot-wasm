@@ -1,5 +1,6 @@
 mod classes;
 mod core;
+mod global;
 
 use std::borrow::Cow;
 
@@ -23,7 +24,8 @@ fn wrap_error(e: Error) -> AnyResult<()> {
 #[derive(Default)]
 pub struct GodotCtx {
     table: Slab<SendSyncWrapper<Variant>>,
-    inst_id: Option<InstanceId>,
+    pub inst_id: Option<InstanceId>,
+    pub allow_unsafe_behavior: bool,
 }
 
 impl AsMut<GodotCtx> for GodotCtx {
@@ -107,6 +109,7 @@ pub mod bindgen {
         interfaces: "
             include godot:core/imports@0.1.0;
             include godot:reflection/imports@0.1.0;
+            include godot:global/imports@0.1.0;
         ",
         tracing: false,
         async: false,
