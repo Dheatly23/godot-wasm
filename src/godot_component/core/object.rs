@@ -23,6 +23,30 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
         )
     }
 
+    fn get_class(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
+        Ok(
+            from_var_any::<Gd<Object>>(&*self.as_mut().get_var_borrow(var)?)?
+                .get_class()
+                .to_string(),
+        )
+    }
+
+    fn is_class(&mut self, var: WasmResource<Variant>, class: String) -> AnyResult<bool> {
+        Ok(
+            from_var_any::<Gd<Object>>(&*self.as_mut().get_var_borrow(var)?)?
+                .is_class(class.into()),
+        )
+    }
+
+    fn get_script(
+        &mut self,
+        var: WasmResource<Variant>,
+    ) -> AnyResult<Option<WasmResource<Variant>>> {
+        let this = self.as_mut();
+        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(var)?)?;
+        this.set_var(o.get_script())
+    }
+
     fn get_property_list(
         &mut self,
         var: WasmResource<Variant>,
