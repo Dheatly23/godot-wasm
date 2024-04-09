@@ -230,7 +230,7 @@ impl WasmScriptLike {
     }
 
     #[func]
-    fn call_wasm(&self, args: Array<Variant>) -> Variant {
+    fn call_wasm(&self, args: VariantArray) -> Variant {
         self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
                 #[cfg(feature = "epoch-timeout")]

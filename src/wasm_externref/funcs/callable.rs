@@ -42,7 +42,7 @@ func_registry! {
     call => |mut ctx: Caller<_>, v: Option<ExternRef>, f: Option<Func>| -> Result<Option<ExternRef>, Error> {
         let c = site_context!(from_var_any::<Callable>(&externref_to_variant(v)))?;
 
-        let mut v = <Array<Variant>>::new();
+        let mut v = VariantArray::new();
         if let Some(f) = f {
             let f: TypedFunc<u32, (Option<ExternRef>, u32)> = site_context!(f.typed(&ctx))?;
             loop {

@@ -18,15 +18,12 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     }
 
     fn class_exists(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(
-            ClassDb::singleton()
-                .class_exists(from_var_any(&*self.as_mut().get_var_borrow(class)?)?),
-        )
+        Ok(ClassDb::singleton().class_exists(from_var_any(self.as_mut().get_var_borrow(class)?)?))
     }
 
     fn is_class_enabled(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
         Ok(ClassDb::singleton()
-            .is_class_enabled(from_var_any(&*self.as_mut().get_var_borrow(class)?)?))
+            .is_class_enabled(from_var_any(self.as_mut().get_var_borrow(class)?)?))
     }
 
     fn get_parent_class(
@@ -34,7 +31,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         class: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let r = ClassDb::singleton().get_parent_class(from_var_any(&*this.get_var_borrow(class)?)?);
+        let r = ClassDb::singleton().get_parent_class(from_var_any(this.get_var_borrow(class)?)?);
         this.set_into_var(r)
     }
 
@@ -45,8 +42,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<bool> {
         let this = self.as_mut();
         Ok(ClassDb::singleton().is_parent_class(
-            from_var_any(&*this.get_var_borrow(class)?)?,
-            from_var_any(&*this.get_var_borrow(parent)?)?,
+            from_var_any(this.get_var_borrow(class)?)?,
+            from_var_any(this.get_var_borrow(parent)?)?,
         ))
     }
 
@@ -56,13 +53,13 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         let r = ClassDb::singleton()
-            .get_inheriters_from_class(from_var_any(&*this.get_var_borrow(class)?)?);
+            .get_inheriters_from_class(from_var_any(this.get_var_borrow(class)?)?);
         this.set_into_var(r)
     }
 
     fn can_instantiate(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
         Ok(ClassDb::singleton()
-            .can_instantiate(from_var_any(&*self.as_mut().get_var_borrow(class)?)?))
+            .can_instantiate(from_var_any(self.as_mut().get_var_borrow(class)?)?))
     }
 
     fn instantiate(
@@ -72,7 +69,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         let this = self.as_mut();
         gate_unsafe(&*this)?;
 
-        let r = ClassDb::singleton().instantiate(from_var_any(&*this.get_var_borrow(class)?)?);
+        let r = ClassDb::singleton().instantiate(from_var_any(this.get_var_borrow(class)?)?);
         this.set_var(r)
     }
 
@@ -85,8 +82,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         let this = self.as_mut();
         let r = ClassDb::singleton()
             .class_get_enum_constants_ex(
-                from_var_any(&*this.get_var_borrow(class)?)?,
-                from_var_any(&*this.get_var_borrow(name)?)?,
+                from_var_any(this.get_var_borrow(class)?)?,
+                from_var_any(this.get_var_borrow(name)?)?,
             )
             .no_inheritance(no_inherit)
             .done();
@@ -100,7 +97,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         let r = ClassDb::singleton()
-            .class_get_enum_list_ex(from_var_any(&*this.get_var_borrow(class)?)?)
+            .class_get_enum_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
             .done();
         this.set_into_var(r)
@@ -113,8 +110,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<i64> {
         let this = self.as_mut();
         Ok(ClassDb::singleton().class_get_integer_constant(
-            from_var_any(&*this.get_var_borrow(class)?)?,
-            from_var_any(&*this.get_var_borrow(name)?)?,
+            from_var_any(this.get_var_borrow(class)?)?,
+            from_var_any(this.get_var_borrow(name)?)?,
         ))
     }
 
@@ -127,8 +124,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         let this = self.as_mut();
         let r = ClassDb::singleton()
             .class_get_integer_constant_enum_ex(
-                from_var_any(&*this.get_var_borrow(class)?)?,
-                from_var_any(&*this.get_var_borrow(name)?)?,
+                from_var_any(this.get_var_borrow(class)?)?,
+                from_var_any(this.get_var_borrow(name)?)?,
             )
             .no_inheritance(no_inherit)
             .done();
@@ -142,7 +139,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         let r = ClassDb::singleton()
-            .class_get_integer_constant_list_ex(from_var_any(&*this.get_var_borrow(class)?)?)
+            .class_get_integer_constant_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
             .done();
         this.set_into_var(r)
@@ -155,7 +152,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         let r = ClassDb::singleton()
-            .class_get_method_list_ex(from_var_any(&*this.get_var_borrow(class)?)?)
+            .class_get_method_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
             .done();
         this.set_into_var(r)
@@ -168,7 +165,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         let r = ClassDb::singleton()
-            .class_get_property_list_ex(from_var_any(&*this.get_var_borrow(class)?)?)
+            .class_get_property_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
             .done();
         this.set_into_var(r)
@@ -181,7 +178,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         let r = ClassDb::singleton()
-            .class_get_signal_list_ex(from_var_any(&*this.get_var_borrow(class)?)?)
+            .class_get_signal_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
             .done();
         this.set_into_var(r)
@@ -194,8 +191,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         let r = ClassDb::singleton().class_get_signal(
-            from_var_any(&*this.get_var_borrow(class)?)?,
-            from_var_any(&*this.get_var_borrow(name)?)?,
+            from_var_any(this.get_var_borrow(class)?)?,
+            from_var_any(this.get_var_borrow(name)?)?,
         );
         this.set_into_var(r)
     }
@@ -207,8 +204,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         let r = ClassDb::singleton().class_get_property(
-            from_var_any(&*this.get_var_borrow(object)?)?,
-            from_var_any(&*this.get_var_borrow(name)?)?,
+            from_var_any(this.get_var_borrow(object)?)?,
+            from_var_any(this.get_var_borrow(name)?)?,
         );
         this.set_var(r)
     }
@@ -221,8 +218,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<()> {
         let this = self.as_mut();
         wrap_error(ClassDb::singleton().class_set_property(
-            from_var_any(&*this.get_var_borrow(object)?)?,
-            from_var_any(&*this.get_var_borrow(name)?)?,
+            from_var_any(this.get_var_borrow(object)?)?,
+            from_var_any(this.get_var_borrow(name)?)?,
             this.maybe_get_var(value)?,
         ))
     }
@@ -236,8 +233,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         let this = self.as_mut();
         Ok(ClassDb::singleton()
             .class_has_enum_ex(
-                from_var_any(&*this.get_var_borrow(class)?)?,
-                from_var_any(&*this.get_var_borrow(name)?)?,
+                from_var_any(this.get_var_borrow(class)?)?,
+                from_var_any(this.get_var_borrow(name)?)?,
             )
             .no_inheritance(no_inherit)
             .done())
@@ -250,8 +247,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<bool> {
         let this = self.as_mut();
         Ok(ClassDb::singleton().class_has_integer_constant(
-            from_var_any(&*this.get_var_borrow(class)?)?,
-            from_var_any(&*this.get_var_borrow(name)?)?,
+            from_var_any(this.get_var_borrow(class)?)?,
+            from_var_any(this.get_var_borrow(name)?)?,
         ))
     }
 
@@ -264,8 +261,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         let this = self.as_mut();
         Ok(ClassDb::singleton()
             .class_has_method_ex(
-                from_var_any(&*this.get_var_borrow(class)?)?,
-                from_var_any(&*this.get_var_borrow(name)?)?,
+                from_var_any(this.get_var_borrow(class)?)?,
+                from_var_any(this.get_var_borrow(name)?)?,
             )
             .no_inheritance(no_inherit)
             .done())
@@ -278,8 +275,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     ) -> AnyResult<bool> {
         let this = self.as_mut();
         Ok(ClassDb::singleton().class_has_signal(
-            from_var_any(&*this.get_var_borrow(class)?)?,
-            from_var_any(&*this.get_var_borrow(name)?)?,
+            from_var_any(this.get_var_borrow(class)?)?,
+            from_var_any(this.get_var_borrow(name)?)?,
         ))
     }
 }

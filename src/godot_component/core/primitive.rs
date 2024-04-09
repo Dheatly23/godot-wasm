@@ -11,7 +11,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_bool(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        from_var_any(&*self.as_mut().get_var_borrow(var)?)
+        from_var_any(self.as_mut().get_var_borrow(var)?)
     }
 
     fn from_int(&mut self, val: i64) -> AnyResult<WasmResource<Variant>> {
@@ -19,7 +19,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_int(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
-        from_var_any(&*self.as_mut().get_var_borrow(var)?)
+        from_var_any(self.as_mut().get_var_borrow(var)?)
     }
 
     fn from_float(&mut self, val: f64) -> AnyResult<WasmResource<Variant>> {
@@ -27,7 +27,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_float(&mut self, var: WasmResource<Variant>) -> AnyResult<f64> {
-        from_var_any(&*self.as_mut().get_var_borrow(var)?)
+        from_var_any(self.as_mut().get_var_borrow(var)?)
     }
 
     fn from_vector2(
@@ -38,7 +38,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_vector2(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector2> {
-        let Vector2 { x, y } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        let Vector2 { x, y } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Vector2 { x, y })
     }
 
@@ -50,7 +50,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_vector3(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector3> {
-        let Vector3 { x, y, z } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        let Vector3 { x, y, z } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Vector3 { x, y, z })
     }
 
@@ -62,7 +62,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_vector4(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector4> {
-        let Vector4 { x, y, z, w } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        let Vector4 { x, y, z, w } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Vector4 { x, y, z, w })
     }
 
@@ -74,7 +74,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_vector2i(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector2i> {
-        let Vector2i { x, y } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        let Vector2i { x, y } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Vector2i { x, y })
     }
 
@@ -86,7 +86,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_vector3i(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector3i> {
-        let Vector3i { x, y, z } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        let Vector3i { x, y, z } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Vector3i { x, y, z })
     }
 
@@ -98,7 +98,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_vector4i(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Vector4i> {
-        let Vector4i { x, y, z, w } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        let Vector4i { x, y, z, w } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Vector4i { x, y, z, w })
     }
 
@@ -120,7 +120,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
         let Rect2 {
             position: Vector2 { x: px, y: py },
             size: Vector2 { x: sx, y: sy },
-        } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Rect2 {
             position: primitive::Vector2 { x: px, y: py },
             size: primitive::Vector2 { x: sx, y: sy },
@@ -145,7 +145,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
         let Rect2i {
             position: Vector2i { x: px, y: py },
             size: Vector2i { x: sx, y: sy },
-        } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Rect2i {
             position: primitive::Vector2i { x: px, y: py },
             size: primitive::Vector2i { x: sx, y: sy },
@@ -160,7 +160,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_color(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Color> {
-        let Color { r, g, b, a } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        let Color { r, g, b, a } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Color { r, g, b, a })
     }
 
@@ -182,7 +182,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
         let Plane {
             normal: Vector3 { x, y, z },
             d,
-        } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Plane {
             normal: primitive::Vector3 { x, y, z },
             d,
@@ -197,7 +197,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_quaternion(&mut self, var: WasmResource<Variant>) -> AnyResult<primitive::Quaternion> {
-        let Quaternion { x, y, z, w } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        let Quaternion { x, y, z, w } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Quaternion { x, y, z, w })
     }
 
@@ -247,7 +247,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
                     y: sy,
                     z: sz,
                 },
-        } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Aabb {
             position: primitive::Vector3 {
                 x: px,
@@ -323,7 +323,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
                     y: bz,
                     z: cz,
                 }],
-        } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Basis {
             col_a: primitive::Vector3 {
                 x: ax,
@@ -364,7 +364,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
             a: Vector2 { x: ax, y: ay },
             b: Vector2 { x: bx, y: by },
             origin: Vector2 { x: ox, y: oy },
-        } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Transform2d {
             a: primitive::Vector2 { x: ax, y: ay },
             b: primitive::Vector2 { x: bx, y: by },
@@ -458,7 +458,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
                     y: oy,
                     z: oz,
                 },
-        } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Transform3d {
             basis: primitive::Basis {
                 col_a: primitive::Vector3 {
@@ -573,7 +573,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
                     z: dz,
                     w: dw,
                 }],
-        } = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+        } = from_var_any(self.as_mut().get_var_borrow(var)?)?;
         Ok(primitive::Projection {
             col_a: primitive::Vector4 {
                 x: ax,
@@ -607,7 +607,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_string(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        Ok(from_var_any::<GString>(&*self.as_mut().get_var_borrow(var)?)?.to_string())
+        Ok(from_var_any::<GString>(self.as_mut().get_var_borrow(var)?)?.to_string())
     }
 
     fn from_stringname(&mut self, val: String) -> AnyResult<WasmResource<Variant>> {
@@ -615,7 +615,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_stringname(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        Ok(from_var_any::<StringName>(&*self.as_mut().get_var_borrow(var)?)?.to_string())
+        Ok(from_var_any::<StringName>(self.as_mut().get_var_borrow(var)?)?.to_string())
     }
 
     fn from_nodepath(&mut self, val: String) -> AnyResult<WasmResource<Variant>> {
@@ -623,6 +623,6 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> primitive::Host for T {
     }
 
     fn to_nodepath(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        Ok(from_var_any::<NodePath>(&*self.as_mut().get_var_borrow(var)?)?.to_string())
+        Ok(from_var_any::<NodePath>(self.as_mut().get_var_borrow(var)?)?.to_string())
     }
 }

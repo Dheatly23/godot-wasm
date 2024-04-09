@@ -15,7 +15,7 @@ macro_rules! impl_packed_array {
             }
 
             fn to(&mut self, var: WasmResource<Variant>) -> AnyResult<Vec<$m::Elem>> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.to_vec())
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.to_vec())
             }
 
             fn slice(
@@ -24,7 +24,7 @@ macro_rules! impl_packed_array {
                 begin: u32,
                 end: u32,
             ) -> AnyResult<Vec<$m::Elem>> {
-                let v: $t = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+                let v: $t = from_var_any(self.as_mut().get_var_borrow(var)?)?;
                 let Some(v) = v.as_slice().get(begin as usize..end as usize) else {
                     bail!("index ({begin}..{end}) out of bound")
                 };
@@ -32,15 +32,15 @@ macro_rules! impl_packed_array {
             }
 
             fn len(&mut self, var: WasmResource<Variant>) -> AnyResult<u32> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.len() as _)
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.len() as _)
             }
 
             fn is_empty(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.is_empty())
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.is_empty())
             }
 
             fn get(&mut self, var: WasmResource<Variant>, i: u32) -> AnyResult<$m::Elem> {
-                let v: $t = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+                let v: $t = from_var_any(self.as_mut().get_var_borrow(var)?)?;
                 let Some(v) = v.as_slice().get(i as usize) else {
                     bail!("index {i} out of bound")
                 };
@@ -48,11 +48,11 @@ macro_rules! impl_packed_array {
             }
 
             fn contains(&mut self, var: WasmResource<Variant>, val: $m::Elem) -> AnyResult<bool> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.contains(val))
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.contains(val))
             }
 
             fn count(&mut self, var: WasmResource<Variant>, val: $m::Elem) -> AnyResult<u32> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.count(val) as _)
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.count(val) as _)
             }
 
             fn find(
@@ -61,7 +61,7 @@ macro_rules! impl_packed_array {
                 val: $m::Elem,
                 from: Option<u32>,
             ) -> AnyResult<Option<u32>> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?
                     .find(val, from.map(|v| v as _))
                     .map(|v| v as _))
             }
@@ -72,7 +72,7 @@ macro_rules! impl_packed_array {
                 val: $m::Elem,
                 from: Option<u32>,
             ) -> AnyResult<Option<u32>> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?
                     .rfind(val, from.map(|v| v as _))
                     .map(|v| v as _))
             }
@@ -84,7 +84,7 @@ macro_rules! impl_packed_array {
                 end: u32,
             ) -> AnyResult<WasmResource<Variant>> {
                 let this = self.as_mut();
-                let v: $t = from_var_any(&*this.get_var_borrow(var)?)?;
+                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
                 this.set_into_var(v.subarray(begin as _, end as _))
             }
         }
@@ -99,7 +99,7 @@ macro_rules! impl_packed_array {
             }
 
             fn to(&mut self, var: WasmResource<Variant>) -> AnyResult<Vec<$m::Elem>> {
-                let v: $t = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+                let v: $t = from_var_any(self.as_mut().get_var_borrow(var)?)?;
                 Ok(v.as_slice().iter().map(|$v| $e2).collect())
             }
 
@@ -109,7 +109,7 @@ macro_rules! impl_packed_array {
                 begin: u32,
                 end: u32,
             ) -> AnyResult<Vec<$m::Elem>> {
-                let v: $t = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+                let v: $t = from_var_any(self.as_mut().get_var_borrow(var)?)?;
                 let Some(v) = v.as_slice().get(begin as usize..end as usize) else {
                     bail!("index ({begin}..{end}) out of bound")
                 };
@@ -117,15 +117,15 @@ macro_rules! impl_packed_array {
             }
 
             fn len(&mut self, var: WasmResource<Variant>) -> AnyResult<u32> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.len() as _)
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.len() as _)
             }
 
             fn is_empty(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.is_empty())
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.is_empty())
             }
 
             fn get(&mut self, var: WasmResource<Variant>, i: u32) -> AnyResult<$m::Elem> {
-                let v: $t = from_var_any(&*self.as_mut().get_var_borrow(var)?)?;
+                let v: $t = from_var_any(self.as_mut().get_var_borrow(var)?)?;
                 let Some($v) = v.as_slice().get(i as usize) else {
                     bail!("index {i} out of bound")
                 };
@@ -133,11 +133,11 @@ macro_rules! impl_packed_array {
             }
 
             fn contains(&mut self, var: WasmResource<Variant>, $v: $m::Elem) -> AnyResult<bool> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.contains($e1))
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.contains($e1))
             }
 
             fn count(&mut self, var: WasmResource<Variant>, $v: $m::Elem) -> AnyResult<u32> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?.count($e1) as _)
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?.count($e1) as _)
             }
 
             fn find(
@@ -146,7 +146,7 @@ macro_rules! impl_packed_array {
                 $v: $m::Elem,
                 from: Option<u32>,
             ) -> AnyResult<Option<u32>> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?
                     .find($e1, from.map(|v| v as _))
                     .map(|v| v as _))
             }
@@ -157,7 +157,7 @@ macro_rules! impl_packed_array {
                 $v: $m::Elem,
                 from: Option<u32>,
             ) -> AnyResult<Option<u32>> {
-                Ok(from_var_any::<$t>(&*self.as_mut().get_var_borrow(var)?)?
+                Ok(from_var_any::<$t>(self.as_mut().get_var_borrow(var)?)?
                     .rfind($e1, from.map(|v| v as _))
                     .map(|v| v as _))
             }
@@ -169,7 +169,7 @@ macro_rules! impl_packed_array {
                 end: u32,
             ) -> AnyResult<WasmResource<Variant>> {
                 let this = self.as_mut();
-                let v: $t = from_var_any(&*this.get_var_borrow(var)?)?;
+                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
                 this.set_into_var(v.subarray(begin as _, end as _))
             }
         }

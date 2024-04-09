@@ -210,9 +210,9 @@ impl<I> ContextError<I> for SingleError<I> {
     }
 }
 
-pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> AnyResult<Array<Variant>> {
+pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> AnyResult<VariantArray> {
     fn f<const N: usize, T: ToGodot>(
-        (data, p, a): &mut (&[u8], usize, Array<Variant>),
+        (data, p, a): &mut (&[u8], usize, VariantArray),
         n: usize,
         f: impl Fn(&[u8; N]) -> T,
     ) -> AnyResult<()> {
@@ -602,7 +602,7 @@ pub fn write_struct(
     data: &mut [u8],
     p: usize,
     mut format: &str,
-    arr: Array<Variant>,
+    arr: VariantArray,
 ) -> AnyResult<usize> {
     fn f<const N: usize, T: FromGodot>(
         (data, p, a): &mut (&mut [u8], usize, impl Iterator<Item = Variant>),

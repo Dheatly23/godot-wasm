@@ -17,22 +17,22 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         method: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let o: Gd<Object> = from_var_any(&*this.get_var_borrow(obj)?)?;
-        let m: StringName = from_var_any(&*this.get_var_borrow(method)?)?;
+        let o: Gd<Object> = from_var_any(this.get_var_borrow(obj)?)?;
+        let m: StringName = from_var_any(this.get_var_borrow(method)?)?;
         this.set_into_var(Callable::from_object_method(&o, m))
     }
 
     fn is_custom(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(from_var_any::<Callable>(&*self.as_mut().get_var_borrow(var)?)?.is_custom())
+        Ok(from_var_any::<Callable>(self.as_mut().get_var_borrow(var)?)?.is_custom())
     }
 
     fn is_valid(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(from_var_any::<Callable>(&*self.as_mut().get_var_borrow(var)?)?.is_valid())
+        Ok(from_var_any::<Callable>(self.as_mut().get_var_borrow(var)?)?.is_valid())
     }
 
     fn object(&mut self, var: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
+        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
         v.object().map(|v| this.set_into_var(v)).transpose()
     }
 
@@ -41,7 +41,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
+        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
         v.method_name().map(|v| this.set_into_var(v)).transpose()
     }
 
@@ -51,11 +51,11 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
+        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
-            .collect::<AnyResult<Array<Variant>>>()?;
+            .collect::<AnyResult<VariantArray>>()?;
         this.set_var(v.callv(args))
     }
 
@@ -65,8 +65,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
-        let args: Array<Variant> = from_var_any(&*this.get_var_borrow(args)?)?;
+        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
+        let args: VariantArray = from_var_any(this.get_var_borrow(args)?)?;
         this.set_var(v.callv(args))
     }
 
@@ -76,11 +76,11 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
+        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
-            .collect::<AnyResult<Array<Variant>>>()?;
+            .collect::<AnyResult<VariantArray>>()?;
         this.set_into_var(v.bindv(args))
     }
 
@@ -90,8 +90,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         args: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let v: Callable = from_var_any(&*this.get_var_borrow(var)?)?;
-        let args: Array<Variant> = from_var_any(&*this.get_var_borrow(args)?)?;
+        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
+        let args: VariantArray = from_var_any(this.get_var_borrow(args)?)?;
         this.set_into_var(v.bindv(args))
     }
 }

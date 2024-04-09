@@ -10,7 +10,7 @@ use crate::{func_registry, site_context};
 func_registry! {
     "array.",
     new => |_: Caller<_>| -> Result<Option<ExternRef>, Error> {
-        Ok(variant_to_externref(<Array<Variant>>::new().to_variant()))
+        Ok(variant_to_externref(VariantArray::new().to_variant()))
     },
     len => |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
         Ok(site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?.len() as _)

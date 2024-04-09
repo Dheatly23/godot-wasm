@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -41,8 +41,8 @@ impl<T: ?Sized> DerefMut for SendSyncWrapper<T> {
     }
 }
 
-pub fn from_var_any<T: FromGodot>(v: &Variant) -> AnyResult<T> {
-    v.try_to::<T>().map_err(|e| e.into_erased().into())
+pub fn from_var_any<T: FromGodot>(v: impl Borrow<Variant>) -> AnyResult<T> {
+    v.borrow().try_to::<T>().map_err(|e| e.into_erased().into())
 }
 
 #[allow(dead_code)]
@@ -131,7 +131,7 @@ pub enum VariantDispatch {
     Callable(Callable),
     Signal(Signal),
     Dictionary(Dictionary),
-    Array(Array<Variant>),
+    Array(VariantArray),
     PackedByteArray(PackedByteArray),
     PackedInt32Array(PackedInt32Array),
     PackedInt64Array(PackedInt64Array),

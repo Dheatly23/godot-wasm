@@ -40,7 +40,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         b: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v = bytes_to_var(from_var_any(&*this.get_var_borrow(b)?)?);
+        let v = bytes_to_var(from_var_any(this.get_var_borrow(b)?)?);
         this.set_var(v)
     }
 
@@ -51,7 +51,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         let this = self.as_mut();
         gate_unsafe(&*this)?;
 
-        let v = bytes_to_var_with_objects(from_var_any(&*this.get_var_borrow(b)?)?);
+        let v = bytes_to_var_with_objects(from_var_any(this.get_var_borrow(b)?)?);
         this.set_var(v)
     }
 
@@ -83,7 +83,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
 
     fn str_to_var(&mut self, s: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let v = str_to_var(from_var_any(&*this.get_var_borrow(s)?)?);
+        let v = str_to_var(from_var_any(this.get_var_borrow(s)?)?);
         this.set_var(v)
     }
 
@@ -149,7 +149,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
 
     fn save(&mut self, res: WasmResource<Variant>, path: String) -> AnyResult<()> {
         match ResourceSaver::singleton()
-            .save_ex(from_var_any(&*self.as_mut().get_var_borrow(res)?)?)
+            .save_ex(from_var_any(self.as_mut().get_var_borrow(res)?)?)
             .path((&path).into())
             .done()
         {

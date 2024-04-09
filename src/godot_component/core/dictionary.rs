@@ -28,28 +28,28 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
     ) -> AnyResult<Vec<(Option<WasmResource<Variant>>, Option<WasmResource<Variant>>)>> {
         let this = self.as_mut();
-        let v: Dictionary = from_var_any(&*this.get_var_borrow(var)?)?;
+        let v: Dictionary = from_var_any(this.get_var_borrow(var)?)?;
         v.iter_shared()
             .map(|(k, v)| Ok((this.set_var(k)?, this.set_var(v)?)))
             .collect()
     }
 
     fn len(&mut self, var: WasmResource<Variant>) -> AnyResult<u32> {
-        Ok(from_var_any::<Dictionary>(&*self.as_mut().get_var_borrow(var)?)?.len() as _)
+        Ok(from_var_any::<Dictionary>(self.as_mut().get_var_borrow(var)?)?.len() as _)
     }
 
     fn is_empty(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(from_var_any::<Dictionary>(&*self.as_mut().get_var_borrow(var)?)?.is_empty())
+        Ok(from_var_any::<Dictionary>(self.as_mut().get_var_borrow(var)?)?.is_empty())
     }
 
     fn clear(&mut self, var: WasmResource<Variant>) -> AnyResult<()> {
-        from_var_any::<Dictionary>(&*self.as_mut().get_var_borrow(var)?)?.clear();
+        from_var_any::<Dictionary>(self.as_mut().get_var_borrow(var)?)?.clear();
         Ok(())
     }
 
     fn duplicate(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let r = from_var_any::<Dictionary>(&*this.get_var_borrow(var)?)?.duplicate_shallow();
+        let r = from_var_any::<Dictionary>(this.get_var_borrow(var)?)?.duplicate_shallow();
         this.set_into_var(r)
     }
 
@@ -59,7 +59,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
         let this = self.as_mut();
-        let v: Dictionary = from_var_any(&*this.get_var_borrow(var)?)?;
+        let v: Dictionary = from_var_any(this.get_var_borrow(var)?)?;
         match v.get(this.maybe_get_var(key)?) {
             Some(v) => this.set_var(v).map(Some),
             None => Ok(None),
@@ -72,7 +72,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
-        Ok(from_var_any::<Dictionary>(&*this.get_var_borrow(var)?)?
+        Ok(from_var_any::<Dictionary>(this.get_var_borrow(var)?)?
             .contains_key(this.maybe_get_var(key)?))
     }
 
@@ -82,8 +82,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         key: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
-        Ok(from_var_any::<Dictionary>(&*this.get_var_borrow(var)?)?
-            .contains_all_keys(from_var_any(&*this.get_var_borrow(key)?)?))
+        Ok(from_var_any::<Dictionary>(this.get_var_borrow(var)?)?
+            .contains_all_keys(from_var_any(this.get_var_borrow(key)?)?))
     }
 
     fn insert(
@@ -93,7 +93,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         val: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
         let this = self.as_mut();
-        let mut v: Dictionary = from_var_any(&*this.get_var_borrow(var)?)?;
+        let mut v: Dictionary = from_var_any(this.get_var_borrow(var)?)?;
         match v.insert(this.maybe_get_var(key)?, this.maybe_get_var(val)?) {
             Some(v) => this.set_var(v).map(Some),
             None => Ok(None),
@@ -106,7 +106,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
         let this = self.as_mut();
-        let mut v: Dictionary = from_var_any(&*this.get_var_borrow(var)?)?;
+        let mut v: Dictionary = from_var_any(this.get_var_borrow(var)?)?;
         match v.remove(this.maybe_get_var(key)?) {
             Some(v) => this.set_var(v).map(Some),
             None => Ok(None),
@@ -120,20 +120,20 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         overwrite: bool,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let mut v: Dictionary = from_var_any(&*this.get_var_borrow(var)?)?;
-        v.extend_dictionary(from_var_any(&*this.get_var_borrow(other)?)?, overwrite);
+        let mut v: Dictionary = from_var_any(this.get_var_borrow(var)?)?;
+        v.extend_dictionary(from_var_any(this.get_var_borrow(other)?)?, overwrite);
         Ok(())
     }
 
     fn keys(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let v: Dictionary = from_var_any(&*this.get_var_borrow(var)?)?;
+        let v: Dictionary = from_var_any(this.get_var_borrow(var)?)?;
         this.set_into_var(v.keys_array())
     }
 
     fn values(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        let v: Dictionary = from_var_any(&*this.get_var_borrow(var)?)?;
+        let v: Dictionary = from_var_any(this.get_var_borrow(var)?)?;
         this.set_into_var(v.values_array())
     }
 
@@ -143,7 +143,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         val: Vec<(Option<WasmResource<Variant>>, Option<WasmResource<Variant>>)>,
     ) -> AnyResult<()> {
         let this = self.as_mut();
-        let mut var: Dictionary = from_var_any(&*this.get_var_borrow(var)?)?;
+        let mut var: Dictionary = from_var_any(this.get_var_borrow(var)?)?;
 
         for (k, v) in val.into_iter() {
             var.insert(this.maybe_get_var(k)?, this.maybe_get_var(v)?);

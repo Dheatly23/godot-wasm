@@ -850,7 +850,7 @@ impl WasmInstance {
     }
 
     #[func]
-    fn call_wasm(&self, name: StringName, args: Array<Variant>) -> Variant {
+    fn call_wasm(&self, name: StringName, args: VariantArray) -> Variant {
         self.unwrap_data(move |m| {
             m.acquire_store(move |m, mut store| {
                 let name = name.to_string();
@@ -1348,7 +1348,7 @@ impl WasmInstance {
     }
 
     #[func]
-    fn write_struct(&self, format: GString, p: i64, arr: Array<Variant>) -> i64 {
+    fn write_struct(&self, format: GString, p: i64, arr: VariantArray) -> i64 {
         self.get_memory(|store, mem| {
             write_struct(mem.data_mut(store), p as _, &format.to_string(), arr)
         })

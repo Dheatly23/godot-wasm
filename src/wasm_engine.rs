@@ -391,9 +391,9 @@ impl WasmModule {
     }
 
     #[func]
-    fn get_imported_modules(&self) -> Array<Variant> {
+    fn get_imported_modules(&self) -> VariantArray {
         self.unwrap_data(|m| {
-            Ok(<Array<Variant>>::from_iter(
+            Ok(VariantArray::from_iter(
                 m.imports.values().map(|v| v.clone().to_variant()),
             ))
         })
