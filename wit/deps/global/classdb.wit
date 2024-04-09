@@ -1,0 +1,19 @@
+package godot:global@0.1.0;
+
+interface classdb {
+    use godot:core/core@0.1.0.{godot-var};
+
+    singleton: func() -> godot-var;
+
+    get-class-list: func() -> godot-var;
+
+    class-exists: func(name: borrow<godot-var>) -> bool;
+    is-class-enabled: func(name: borrow<godot-var>) -> bool;
+
+    get-parent-class: func(name: borrow<godot-var>) -> godot-var;
+    is-parent-class: func(name: borrow<godot-var>, parent: borrow<godot-var>) -> bool;
+    get-inheriters-from-class: func(name: borrow<godot-var>) -> godot-var;
+
+    can-instantiate: func(name: borrow<godot-var>) -> bool;
+    instantiate: func(name: borrow<godot-var>) -> option<godot-var>;
+}

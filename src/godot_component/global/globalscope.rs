@@ -5,15 +5,9 @@ use godot::engine::{ResourceLoader, ResourceSaver};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
+use super::gate_unsafe;
 use crate::godot_component::{bindgen, GodotCtx};
 use crate::godot_util::from_var_any;
-
-fn gate_unsafe(this: &GodotCtx) -> AnyResult<()> {
-    if !this.allow_unsafe_behavior {
-        bail!("Potentially unsafe operation attempted, aborting")
-    }
-    Ok(())
-}
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
     fn print(&mut self, s: String) -> AnyResult<()> {
