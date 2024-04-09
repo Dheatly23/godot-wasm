@@ -187,5 +187,8 @@ pub fn add_to_linker<T, U: AsMut<GodotCtx>>(
     bindgen::godot::core::callable::add_to_linker(&mut *linker, f)?;
     bindgen::godot::core::signal::add_to_linker(&mut *linker, f)?;
 
+    bindgen::godot::global::globalscope::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::global::classdb::add_to_linker(&mut *linker, f)?;
+
     bindgen::godot::reflection::this::add_to_linker(&mut *linker, f)
 }
