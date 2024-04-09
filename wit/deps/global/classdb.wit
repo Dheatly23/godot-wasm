@@ -7,13 +7,34 @@ interface classdb {
 
     get-class-list: func() -> godot-var;
 
-    class-exists: func(name: borrow<godot-var>) -> bool;
-    is-class-enabled: func(name: borrow<godot-var>) -> bool;
+    class-exists: func(class: borrow<godot-var>) -> bool;
+    is-class-enabled: func(class: borrow<godot-var>) -> bool;
 
-    get-parent-class: func(name: borrow<godot-var>) -> godot-var;
-    is-parent-class: func(name: borrow<godot-var>, parent: borrow<godot-var>) -> bool;
-    get-inheriters-from-class: func(name: borrow<godot-var>) -> godot-var;
+    get-parent-class: func(class: borrow<godot-var>) -> godot-var;
+    is-parent-class: func(class: borrow<godot-var>, parent: borrow<godot-var>) -> bool;
+    get-inheriters-from-class: func(class: borrow<godot-var>) -> godot-var;
 
-    can-instantiate: func(name: borrow<godot-var>) -> bool;
-    instantiate: func(name: borrow<godot-var>) -> option<godot-var>;
+    can-instantiate: func(class: borrow<godot-var>) -> bool;
+    instantiate: func(class: borrow<godot-var>) -> option<godot-var>;
+
+    class-get-enum-constants: func(class: borrow<godot-var>, %enum: borrow<godot-var>, no-inheritance: bool) -> godot-var;
+    class-get-enum-list: func(class: borrow<godot-var>, no-inheritance: bool) -> godot-var;
+
+    class-get-integer-constant: func(class: borrow<godot-var>, name: borrow<godot-var>) -> s64;
+    class-get-integer-constant-enum: func(class: borrow<godot-var>, name: borrow<godot-var>, no-inheritance: bool) -> godot-var;
+    class-get-integer-constant-list: func(class: borrow<godot-var>, no-inheritance: bool) -> godot-var;
+
+    class-get-method-list: func(class: borrow<godot-var>, no-inheritance: bool) -> godot-var;
+
+    class-get-property-list: func(class: borrow<godot-var>, no-inheritance: bool) -> godot-var;
+    class-get-property: func(object: borrow<godot-var>, property: borrow<godot-var>) -> option<godot-var>;
+    class-set-property: func(object: borrow<godot-var>, property: borrow<godot-var>, value: option<borrow<godot-var>>);
+
+    class-get-signal: func(class: borrow<godot-var>, name: borrow<godot-var>) -> godot-var;
+    class-get-signal-list: func(class: borrow<godot-var>, no-inheritance: bool) -> godot-var;
+
+    class-has-enum: func(class: borrow<godot-var>, name: borrow<godot-var>, no-inheritance: bool) -> bool;
+    class-has-integer-constant: func(class: borrow<godot-var>, name: borrow<godot-var>) -> bool;
+    class-has-method: func(class: borrow<godot-var>, method: borrow<godot-var>, no-inheritance: bool) -> bool;
+    class-has-signal: func(class: borrow<godot-var>, signal: borrow<godot-var>) -> bool;
 }
