@@ -1,4 +1,5 @@
 use anyhow::Error;
+use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -18,6 +19,41 @@ use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::config_store_epoch;
 use crate::{bail_with_site, site_context};
+
+#[derive(Default)]
+struct CommandConfig {
+    config: Config,
+
+    #[cfg(feature = "godot-component")]
+    use_comp_godot: bool,
+}
+
+impl GodotConvert for CommandConfig {
+    type Via = Dictionary;
+}
+
+impl FromGodot for CommandConfig {
+    fn try_from_variant(v: &Variant) -> Result<Self, ConvertError> {
+        if v.is_nil() {
+            return Ok(Self::default());
+        }
+        Self::try_from_godot(v.try_to()?)
+    }
+
+    fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
+        let use_comp_godot = via
+            .get("component.godot.enable")
+            .map(|v| v.try_to())
+            .transpose()?
+            .unwrap_or_default();
+
+        let config = Config::try_from_godot(via)?;
+        Ok(Self {
+            config,
+            use_comp_godot,
+        })
+    }
+}
 
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
@@ -47,7 +83,7 @@ pub struct StoreData {
     table: ResourceTable,
     wasi_ctx: WasiCtx,
     #[cfg(feature = "godot-component")]
-    godot_ctx: GodotCtx,
+    godot_ctx: Option<GodotCtx>,
 }
 
 impl AsRef<InnerLock> for StoreData {
@@ -59,13 +95,6 @@ impl AsRef<InnerLock> for StoreData {
 impl AsMut<InnerLock> for StoreData {
     fn as_mut(&mut self) -> &mut InnerLock {
         &mut self.inner_lock
-    }
-}
-
-#[cfg(feature = "godot-component")]
-impl AsMut<GodotCtx> for StoreData {
-    fn as_mut(&mut self) -> &mut GodotCtx {
-        &mut self.godot_ctx
     }
 }
 
@@ -81,7 +110,7 @@ impl WasiView for StoreData {
 
 fn instantiate(
     _inst_id: InstanceId,
-    config: Config,
+    config: CommandConfig,
     module: Gd<WasmModule>,
 ) -> Result<CommandData, Error> {
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
@@ -90,13 +119,13 @@ fn instantiate(
         with_wasi: true,
         wasi_context: Some(ctx),
         ..
-    } = &config
+    } = &config.config
     {
-        WasiContext::build_ctx(ctx.clone(), WasiCtxBuilder::new(), &config)?
+        WasiContext::build_ctx(ctx.clone(), WasiCtxBuilder::new(), &config.config)?
     } else {
         let mut ctx = WasiCtxBuilder::new();
         ctx.inherit_stdout().inherit_stderr();
-        WasiContext::init_ctx_no_context(&mut ctx, &config)?;
+        WasiContext::init_ctx_no_context(&mut ctx, &config.config)?;
         ctx.build()
     };
 
@@ -106,30 +135,38 @@ fn instantiate(
             inner_lock: InnerLock::default(),
 
             #[cfg(feature = "epoch-timeout")]
-            epoch_timeout: if config.with_epoch {
-                config.epoch_timeout
+            epoch_timeout: if config.config.with_epoch {
+                config.config.epoch_timeout
             } else {
                 0
             },
 
             #[cfg(feature = "memory-limiter")]
-            memory_limits: MemoryLimit::from_config(&config),
+            memory_limits: MemoryLimit::from_config(&config.config),
 
             table: ResourceTable::new(),
             wasi_ctx,
             #[cfg(feature = "godot-component")]
-            godot_ctx: GodotCtx::new(_inst_id),
+            godot_ctx: if config.use_comp_godot {
+                Some(GodotCtx::new(_inst_id))
+            } else {
+                None
+            },
         },
     );
     #[cfg(feature = "epoch-timeout")]
-    config_store_epoch(&mut store, &config);
+    config_store_epoch(&mut store, &config.config);
     #[cfg(feature = "memory-limiter")]
     store.limiter(|data| &mut data.memory_limits);
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
     add_to_linker(&mut linker)?;
     #[cfg(feature = "godot-component")]
-    godot_add_to_linker(&mut linker, |v| v)?;
+    godot_add_to_linker(&mut linker, |v| {
+        v.godot_ctx
+            .as_mut()
+            .expect("Godot component is enabled, but no context is provided")
+    })?;
 
     let (bindings, instance) = Command::instantiate(&mut store, &comp, &linker)?;
 
@@ -182,18 +219,16 @@ impl WasiCommand {
 
     pub fn initialize_(&self, module: Gd<WasmModule>, config: Option<Variant>) -> bool {
         match self.data.get_or_try_init(move || {
+            let config = config.and_then(|v| match v.try_to() {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    godot_error!("{}", e);
+                    None
+                }
+            });
             instantiate(
                 self.base().instance_id(),
-                match config {
-                    Some(v) => match Config::try_from_variant(&v) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            godot_error!("{}", e);
-                            Config::default()
-                        }
-                    },
-                    None => Config::default(),
-                },
+                config.unwrap_or_default(),
                 module,
             )
         }) {
