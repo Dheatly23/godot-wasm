@@ -43,4 +43,5 @@ interface globalscope {
 world imports {
     import globalscope;
     import classdb;
+    import engine;
 }

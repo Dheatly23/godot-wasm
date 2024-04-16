@@ -1,4 +1,5 @@
 mod classdb;
+mod engine;
 mod globalscope;
 
 use anyhow::{bail, Result as AnyResult};

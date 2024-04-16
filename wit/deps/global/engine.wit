@@ -1,0 +1,46 @@
+package godot:global@0.1.0;
+
+interface engine {
+    use godot:core/core@0.1.0.{godot-var};
+
+    singleton: func() -> godot-var;
+
+    get-max-fps: func() -> s32;
+    get-max-physics-steps-per-frame: func() -> s32;
+    get-physics-jitter-fix: func() -> f64;
+    get-physics-ticks-per-second: func() -> s32;
+    is-printing-error-messages: func() -> bool;
+    get-time-scale: func() -> f64;
+
+    get-architecture-name: func() -> godot-var;
+    get-author-info: func() -> godot-var;
+    get-copyright-info: func() -> godot-var;
+    get-donor-info: func() -> godot-var;
+    get-license-info: func() -> godot-var;
+    get-license-text: func() -> godot-var;
+    get-version-info: func() -> godot-var;
+
+    get-frames-drawn: func() -> s32;
+    get-frames-per-second: func() -> f64;
+    get-physics-frames: func() -> u64;
+    get-process-frames: func() -> u64;
+    get-physics-interpolation-fraction: func() -> f64;
+    is-in-physics-frame: func() -> bool;
+
+    get-main-loop: func() -> godot-var;
+
+    is-editor-hint: func() -> bool;
+
+    has-singleton: func(name: borrow<godot-var>) -> bool;
+    get-singleton: func(name: borrow<godot-var>) -> option<godot-var>;
+    get-singleton-list: func() -> godot-var;
+    register-singleton: func(name: borrow<godot-var>, instance: borrow<godot-var>);
+    unregister-singleton: func(name: borrow<godot-var>);
+
+    get-script-language: func(i: s32) -> option<godot-var>;
+    get-script-language-count: func() -> s32;
+    register-script-language: func(language: borrow<godot-var>);
+    unregister-script-language: func(language: borrow<godot-var>);
+
+    get-write-movie-path: func() -> godot-var;
+}
