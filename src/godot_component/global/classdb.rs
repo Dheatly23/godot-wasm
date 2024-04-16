@@ -9,7 +9,9 @@ use crate::godot_util::from_var_any;
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     fn singleton(&mut self) -> AnyResult<WasmResource<Variant>> {
-        self.as_mut().set_into_var(ClassDb::singleton())
+        let this = self.as_mut();
+        gate_unsafe(&*this)?;
+        this.set_into_var(ClassDb::singleton())
     }
 
     fn get_class_list(&mut self) -> AnyResult<WasmResource<Variant>> {
