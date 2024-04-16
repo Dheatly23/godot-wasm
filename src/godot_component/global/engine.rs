@@ -4,7 +4,7 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use super::gate_unsafe;
-use crate::godot_component::{bindgen, wrap_error, GodotCtx};
+use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
 use crate::godot_util::from_var_any;
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
@@ -150,7 +150,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         Ok(Engine::singleton().is_in_physics_frame())
     }
 
-    fn register_script_language(&mut self, lang: WasmResource<Variant>) -> AnyResult<()> {
+    fn register_script_language(&mut self, lang: WasmResource<Variant>) -> ErrorRes {
         let this = self.as_mut();
         gate_unsafe(&*this)?;
 
@@ -159,7 +159,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         )
     }
 
-    fn unregister_script_language(&mut self, lang: WasmResource<Variant>) -> AnyResult<()> {
+    fn unregister_script_language(&mut self, lang: WasmResource<Variant>) -> ErrorRes {
         let this = self.as_mut();
         gate_unsafe(&*this)?;
 

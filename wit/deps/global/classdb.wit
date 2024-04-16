@@ -1,7 +1,7 @@
 package godot:global@0.1.0;
 
 interface classdb {
-    use godot:core/core@0.1.0.{godot-var};
+    use godot:core/core@0.1.0.{godot-var, error-res};
 
     singleton: func() -> godot-var;
 
@@ -28,7 +28,7 @@ interface classdb {
 
     class-get-property-list: func(class: borrow<godot-var>, no-inheritance: bool) -> godot-var;
     class-get-property: func(object: borrow<godot-var>, property: borrow<godot-var>) -> option<godot-var>;
-    class-set-property: func(object: borrow<godot-var>, property: borrow<godot-var>, value: option<borrow<godot-var>>);
+    class-set-property: func(object: borrow<godot-var>, property: borrow<godot-var>, value: option<borrow<godot-var>>) -> error-res;
 
     class-get-signal: func(class: borrow<godot-var>, name: borrow<godot-var>) -> godot-var;
     class-get-signal-list: func(class: borrow<godot-var>, no-inheritance: bool) -> godot-var;

@@ -13,14 +13,6 @@ use wasmtime::component::{Linker, Resource as WasmResource};
 use crate::bail_with_site;
 use crate::godot_util::SendSyncWrapper;
 
-fn wrap_error(e: Error) -> AnyResult<()> {
-    if e == Error::OK {
-        Ok(())
-    } else {
-        bail!("{e:?}")
-    }
-}
-
 #[derive(Default)]
 pub struct GodotCtx {
     table: Slab<SendSyncWrapper<Variant>>,
@@ -120,6 +112,64 @@ pub mod bindgen {
             "godot:core/core/godot-var": GVar,
         },
     });
+}
+
+type ErrorRes<T = ()> = AnyResult<Result<T, bindgen::godot::core::core::Error>>;
+
+fn wrap_error(e: Error) -> ErrorRes {
+    use bindgen::godot::core::core::Error as RetError;
+    match e {
+        Error::OK => Ok(Ok(())),
+        Error::FAILED => Ok(Err(RetError::Failed)),
+        Error::ERR_UNAVAILABLE => Ok(Err(RetError::ErrUnavailable)),
+        Error::ERR_UNCONFIGURED => Ok(Err(RetError::ErrUnconfigured)),
+        Error::ERR_UNAUTHORIZED => Ok(Err(RetError::ErrUnauthorized)),
+        Error::ERR_PARAMETER_RANGE_ERROR => Ok(Err(RetError::ErrParameterRangeError)),
+        Error::ERR_OUT_OF_MEMORY => Ok(Err(RetError::ErrOutOfMemory)),
+        Error::ERR_FILE_NOT_FOUND => Ok(Err(RetError::ErrFileNotFound)),
+        Error::ERR_FILE_BAD_DRIVE => Ok(Err(RetError::ErrFileBadDrive)),
+        Error::ERR_FILE_BAD_PATH => Ok(Err(RetError::ErrFileBadPath)),
+        Error::ERR_FILE_NO_PERMISSION => Ok(Err(RetError::ErrFileNoPermission)),
+        Error::ERR_FILE_ALREADY_IN_USE => Ok(Err(RetError::ErrFileAlreadyInUse)),
+        Error::ERR_FILE_CANT_OPEN => Ok(Err(RetError::ErrFileCantOpen)),
+        Error::ERR_FILE_CANT_WRITE => Ok(Err(RetError::ErrFileCantWrite)),
+        Error::ERR_FILE_CANT_READ => Ok(Err(RetError::ErrFileCantRead)),
+        Error::ERR_FILE_UNRECOGNIZED => Ok(Err(RetError::ErrFileUnrecognized)),
+        Error::ERR_FILE_CORRUPT => Ok(Err(RetError::ErrFileCorrupt)),
+        Error::ERR_FILE_MISSING_DEPENDENCIES => Ok(Err(RetError::ErrFileMissingDependencies)),
+        Error::ERR_FILE_EOF => Ok(Err(RetError::ErrFileEof)),
+        Error::ERR_CANT_OPEN => Ok(Err(RetError::ErrCantOpen)),
+        Error::ERR_CANT_CREATE => Ok(Err(RetError::ErrCantCreate)),
+        Error::ERR_QUERY_FAILED => Ok(Err(RetError::ErrQueryFailed)),
+        Error::ERR_ALREADY_IN_USE => Ok(Err(RetError::ErrAlreadyInUse)),
+        Error::ERR_LOCKED => Ok(Err(RetError::ErrLocked)),
+        Error::ERR_TIMEOUT => Ok(Err(RetError::ErrTimeout)),
+        Error::ERR_CANT_CONNECT => Ok(Err(RetError::ErrCantConnect)),
+        Error::ERR_CANT_RESOLVE => Ok(Err(RetError::ErrCantResolve)),
+        Error::ERR_CONNECTION_ERROR => Ok(Err(RetError::ErrConnectionError)),
+        Error::ERR_CANT_ACQUIRE_RESOURCE => Ok(Err(RetError::ErrCantAcquireResource)),
+        Error::ERR_CANT_FORK => Ok(Err(RetError::ErrCantFork)),
+        Error::ERR_INVALID_DATA => Ok(Err(RetError::ErrInvalidData)),
+        Error::ERR_INVALID_PARAMETER => Ok(Err(RetError::ErrInvalidParameter)),
+        Error::ERR_ALREADY_EXISTS => Ok(Err(RetError::ErrAlreadyExists)),
+        Error::ERR_DOES_NOT_EXIST => Ok(Err(RetError::ErrDoesNotExist)),
+        Error::ERR_DATABASE_CANT_READ => Ok(Err(RetError::ErrDatabaseCantRead)),
+        Error::ERR_DATABASE_CANT_WRITE => Ok(Err(RetError::ErrDatabaseCantWrite)),
+        Error::ERR_COMPILATION_FAILED => Ok(Err(RetError::ErrCompilationFailed)),
+        Error::ERR_METHOD_NOT_FOUND => Ok(Err(RetError::ErrMethodNotFound)),
+        Error::ERR_LINK_FAILED => Ok(Err(RetError::ErrLinkFailed)),
+        Error::ERR_SCRIPT_FAILED => Ok(Err(RetError::ErrScriptFailed)),
+        Error::ERR_CYCLIC_LINK => Ok(Err(RetError::ErrCyclicLink)),
+        Error::ERR_INVALID_DECLARATION => Ok(Err(RetError::ErrInvalidDeclaration)),
+        Error::ERR_DUPLICATE_SYMBOL => Ok(Err(RetError::ErrDuplicateSymbol)),
+        Error::ERR_PARSE_ERROR => Ok(Err(RetError::ErrParseError)),
+        Error::ERR_BUSY => Ok(Err(RetError::ErrBusy)),
+        Error::ERR_SKIP => Ok(Err(RetError::ErrSkip)),
+        Error::ERR_HELP => Ok(Err(RetError::ErrHelp)),
+        Error::ERR_BUG => Ok(Err(RetError::ErrBug)),
+        Error::ERR_PRINTER_ON_FIRE => Ok(Err(RetError::ErrPrinterOnFire)),
+        e => bail!("{e:?}"),
+    }
 }
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::core::core::HostGodotVar for T {

@@ -2,7 +2,7 @@ use anyhow::{bail, Result as AnyResult};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-use crate::godot_component::{bindgen, wrap_error, GodotCtx};
+use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
 use crate::godot_util::from_var_any;
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
@@ -140,7 +140,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
         name: WasmResource<Variant>,
         callable: WasmResource<Variant>,
         flags: u32,
-    ) -> AnyResult<()> {
+    ) -> ErrorRes {
         let this = self.as_mut();
         let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
         wrap_error(
@@ -187,7 +187,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
         var: WasmResource<Variant>,
         name: WasmResource<Variant>,
         args: Vec<Option<WasmResource<Variant>>>,
-    ) -> AnyResult<()> {
+    ) -> ErrorRes {
         let this = self.as_mut();
         let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
         let name: StringName = from_var_any(this.get_var_borrow(name)?)?;

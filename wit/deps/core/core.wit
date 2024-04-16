@@ -4,6 +4,158 @@ interface core {
     type real = float32;
     type int = s32;
 
+    enum error {
+        // No OK value.
+
+        // Generic error.
+        failed,
+
+        //Unavailable error.
+        err-unavailable,
+
+        // Unconfigured error.
+        err-unconfigured,
+
+        // Unauthorized error.
+        err-unauthorized,
+
+        // Parameter range error.
+        err-parameter-range-error,
+
+        // Out of memory (OOM) error.
+        err-out-of-memory,
+
+        // File: Not found error.
+        err-file-not-found,
+
+        // File: Bad drive error.
+        err-file-bad-drive,
+
+        // File: Bad path error.
+        err-file-bad-path,
+
+        // File: No permission error.
+        err-file-no-permission,
+
+        // File: Already in use error.
+        err-file-already-in-use,
+
+        // File: Can't open error.
+        err-file-cant-open,
+
+        // File: Can't write error.
+        err-file-cant-write,
+
+        // File: Can't read error.
+        err-file-cant-read,
+
+        // File: Unrecognized error.
+        err-file-unrecognized,
+
+        // File: Corrupt error.
+        err-file-corrupt,
+
+        // File: Missing dependencies error.
+        err-file-missing-dependencies,
+
+        // File: End of file (EOF) error.
+        err-file-eof,
+
+        // Can't open error.
+        err-cant-open,
+
+        // Can't create error.
+        err-cant-create,
+
+        // Query failed error.
+        err-query-failed,
+
+        // Already in use error.
+        err-already-in-use,
+
+        // Locked error.
+        err-locked,
+
+        // Timeout error.
+        err-timeout,
+
+        // Can't connect error.
+        err-cant-connect,
+
+        // Can't resolve error.
+        err-cant-resolve,
+
+        // Connection error.
+        err-connection-error,
+
+        // Can't acquire resource error.
+        err-cant-acquire-resource,
+
+        // Can't fork process error.
+        err-cant-fork,
+
+        // Invalid data error.
+        err-invalid-data,
+
+        // Invalid parameter error.
+        err-invalid-parameter,
+
+        // Already exists error.
+        err-already-exists,
+
+        // Does not exist error.
+        err-does-not-exist,
+
+        // Database: Read error.
+        err-database-cant-read,
+
+        // Database: Write error.
+        err-database-cant-write,
+
+        // Compilation failed error.
+        err-compilation-failed,
+
+        // Method not found error.
+        err-method-not-found,
+
+        // Linking failed error.
+        err-link-failed,
+
+        // Script failed error.
+        err-script-failed,
+
+        // Cycling link (import cycle) error.
+        err-cyclic-link,
+
+        // Invalid declaration error.
+        err-invalid-declaration,
+
+        // Duplicate symbol error.
+        err-duplicate-symbol,
+
+        // Parse error.
+        err-parse-error,
+
+        // Busy error.
+        err-busy,
+
+        // Skip error.
+        err-skip,
+
+        // Help error. Used internally when passing --version or --help as executable options.
+        err-help,
+
+        // Bug error, caused by an implementation issue in the method.
+        //
+        // Note: If a built-in method returns this code, please open an issue on the GitHub Issue Tracker.
+        err-bug,
+
+        // Printer on fire error (This is an easter egg, no built-in methods return this error code).
+        err-printer-on-fire,
+    }
+
+    type error-res = result<_, error>;
+
     resource godot-var {
         clone: func() -> godot-var;
     }

@@ -4,7 +4,7 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use super::gate_unsafe;
-use crate::godot_component::{bindgen, wrap_error, GodotCtx};
+use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
 use crate::godot_util::from_var_any;
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
@@ -217,7 +217,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         object: WasmResource<Variant>,
         name: WasmResource<Variant>,
         value: Option<WasmResource<Variant>>,
-    ) -> AnyResult<()> {
+    ) -> ErrorRes {
         let this = self.as_mut();
         wrap_error(ClassDb::singleton().class_set_property(
             from_var_any(this.get_var_borrow(object)?)?,

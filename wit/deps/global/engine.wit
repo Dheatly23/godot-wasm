@@ -1,7 +1,7 @@
 package godot:global@0.1.0;
 
 interface engine {
-    use godot:core/core@0.1.0.{godot-var};
+    use godot:core/core@0.1.0.{godot-var, error-res};
 
     singleton: func() -> godot-var;
 
@@ -39,8 +39,8 @@ interface engine {
 
     get-script-language: func(i: s32) -> option<godot-var>;
     get-script-language-count: func() -> s32;
-    register-script-language: func(language: borrow<godot-var>);
-    unregister-script-language: func(language: borrow<godot-var>);
+    register-script-language: func(language: borrow<godot-var>) -> error-res;
+    unregister-script-language: func(language: borrow<godot-var>) -> error-res;
 
     get-write-movie-path: func() -> godot-var;
 }
