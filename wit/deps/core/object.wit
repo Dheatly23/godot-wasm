@@ -6,8 +6,8 @@ interface object {
     from-instance-id: func(id: s64) -> godot-var;
     instance-id: func(var: borrow<godot-var>) -> s64;
 
-    get-class: func(var: borrow<godot-var>) -> string;
-    is-class: func(var: borrow<godot-var>, class: string) -> bool;
+    get-class: func(var: borrow<godot-var>) -> godot-var;
+    is-class: func(var: borrow<godot-var>, class: borrow<godot-var>) -> bool;
     get-script: func(var: borrow<godot-var>) -> option<godot-var>;
 
     get-property-list: func(var: borrow<godot-var>) -> godot-var;

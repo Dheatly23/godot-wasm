@@ -22,15 +22,21 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
             .map(|v| v.instance_id().to_i64())
     }
 
-    fn get_class(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        self.as_mut()
-            .get_var_borrow(var)
-            .and_then(from_var_any::<Gd<Object>>)
-            .map(|v| v.get_class().to_string())
+    fn get_class(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
+        let this = self.as_mut();
+        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        this.set_into_var(o.get_class())
     }
 
-    fn is_class(&mut self, var: WasmResource<Variant>, class: String) -> AnyResult<bool> {
-        Ok(from_var_any::<Gd<Object>>(self.as_mut().get_var_borrow(var)?)?.is_class(class.into()))
+    fn is_class(
+        &mut self,
+        var: WasmResource<Variant>,
+        class: WasmResource<Variant>,
+    ) -> AnyResult<bool> {
+        let this = self.as_mut();
+        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let c: GString = from_var_any(this.get_var_borrow(class)?)?;
+        Ok(o.is_class(c))
     }
 
     fn get_script(
