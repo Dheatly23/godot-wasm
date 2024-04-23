@@ -13,7 +13,9 @@ use godot::prelude::*;
 
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
-use wasmtime::{AsContextMut, Caller, Extern, Func, FuncType, Linker, Store, ValRaw, ValType};
+use wasmtime::{
+    AsContextMut, Caller, Extern, Func, FuncType, Linker, RootScope, Store, ValRaw, ValType,
+};
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, RefType};
 
@@ -265,14 +267,13 @@ thread_local! {
     static CALLVEC: UnsafeCell<Vec<ValRaw>> = const { UnsafeCell::new(Vec::new()) };
 }
 
-pub unsafe fn raw_call<S, It>(
-    mut ctx: S,
+pub unsafe fn raw_call<It>(
+    ctx: impl AsContextMut,
     f: &Func,
     ty: &FuncType,
     args: It,
 ) -> AnyResult<VariantArray>
 where
-    S: AsContextMut,
     It: IntoIterator,
     It::Item: Borrow<Variant>,
 {
@@ -307,6 +308,7 @@ where
     let mut v = CALLVEC.with(|v| F(MaybeUninit::new(ptr::replace(v.get(), Vec::new()))));
     v.clear();
 
+    let mut ctx = RootScope::new(ctx);
     ctx.as_context_mut().gc();
 
     let pi = ty.params();
