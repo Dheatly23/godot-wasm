@@ -5,8 +5,8 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Store;
-use wasmtime_wasi::command::sync::{add_to_linker, Command};
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::bindings::sync::Command;
+use wasmtime_wasi::{add_to_linker_sync, WasiCtx, WasiCtxBuilder, WasiView};
 
 #[cfg(feature = "godot-component")]
 use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
@@ -115,19 +115,19 @@ fn instantiate(
 ) -> Result<CommandData, Error> {
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
-    let wasi_ctx = if let Config {
+    let mut builder = WasiCtxBuilder::new();
+    if let Config {
         with_wasi: true,
         wasi_context: Some(ctx),
         ..
     } = &config.config
     {
-        WasiContext::build_ctx(ctx.clone(), WasiCtxBuilder::new(), &config.config)?
+        WasiContext::build_ctx(ctx.clone(), &mut builder, &config.config)
     } else {
-        let mut ctx = WasiCtxBuilder::new();
-        ctx.inherit_stdout().inherit_stderr();
-        WasiContext::init_ctx_no_context(&mut ctx, &config.config)?;
-        ctx.build()
-    };
+        builder.inherit_stdout().inherit_stderr();
+        WasiContext::init_ctx_no_context(&mut builder, &config.config)
+    }?;
+    let wasi_ctx = builder.build();
 
     let mut store = Store::new(
         &ENGINE,
@@ -160,7 +160,7 @@ fn instantiate(
     store.limiter(|data| &mut data.memory_limits);
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
-    add_to_linker(&mut linker)?;
+    add_to_linker_sync(&mut linker)?;
     #[cfg(feature = "godot-component")]
     godot_add_to_linker(&mut linker, |v| {
         v.godot_ctx

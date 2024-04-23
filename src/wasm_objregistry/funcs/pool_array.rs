@@ -13,11 +13,11 @@ macro_rules! readwrite_array {
     ),* $(,)?) => {$(
         func_registry!{
             ($fi, $name),
-            len => |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+            len => |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
                 let v = site_context!(from_var_any::<$t>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
                 Ok(v.len() as _)
             },
-            read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
+            read => |mut ctx: Caller<'_, T>, i: u32, p: u32| -> Result<u32, Error> {
                 let $v = site_context!(from_var_any::<$t>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
@@ -37,7 +37,7 @@ macro_rules! readwrite_array {
                 }
                 Ok(1)
             },
-            slice => |mut ctx: Caller<T>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
+            slice => |mut ctx: Caller<'_, T>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
                 if to > from {
                     bail_with_site!("Invalid range ({}..{})", from, to);
                 }
@@ -68,7 +68,7 @@ macro_rules! readwrite_array {
                 }
                 Ok(1)
             },
-            write => |mut ctx: Caller<T>, i: u32, p: u32, n: u32| -> Result<u32, Error> {
+            write => |mut ctx: Caller<'_, T>, i: u32, p: u32, n: u32| -> Result<u32, Error> {
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -94,7 +94,7 @@ macro_rules! readwrite_array {
                 ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, r);
                 Ok(1)
             },
-            write_new => |mut ctx: Caller<T>, p: u32, n: u32| -> Result<u32, Error> {
+            write_new => |mut ctx: Caller<'_, T>, p: u32, n: u32| -> Result<u32, Error> {
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -165,13 +165,13 @@ impl Funcs {
 
 func_registry! {
     (ByteArrayFuncs, "byte_array."),
-    len => |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+    len => |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
         let a = site_context!(from_var_any::<PackedByteArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         Ok(a.len() as _)
     },
-    read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
+    read => |mut ctx: Caller<'_, T>, i: u32, p: u32| -> Result<u32, Error> {
         let a = site_context!(from_var_any::<PackedByteArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
@@ -183,7 +183,7 @@ func_registry! {
         site_context!(mem.write(&mut ctx, p as _, a.as_slice()))?;
         Ok(1)
     },
-    slice => |mut ctx: Caller<T>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
+    slice => |mut ctx: Caller<'_, T>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
         if to > from {
             bail_with_site!("Invalid range ({}..{})", from, to);
         }
@@ -206,7 +206,7 @@ func_registry! {
         site_context!(mem.write(&mut ctx, p as _, s))?;
         Ok(1)
     },
-    write => |mut ctx: Caller<T>, i: u32, p: u32, n: u32| -> Result<u32, Error> {
+    write => |mut ctx: Caller<'_, T>, i: u32, p: u32, n: u32| -> Result<u32, Error> {
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -221,7 +221,7 @@ func_registry! {
             .replace(i as _, a.to_variant());
         Ok(1)
     },
-    write_new => |mut ctx: Caller<T>, p: u32, n: u32| -> Result<u32, Error> {
+    write_new => |mut ctx: Caller<'_, T>, p: u32, n: u32| -> Result<u32, Error> {
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -256,13 +256,13 @@ readwrite_array! {
 
 func_registry! {
     (StringArrayFuncs, "string_array."),
-    len => |ctx: Caller<T>, a: u32| -> Result<u32, Error> {
+    len => |ctx: Caller<'_, T>, a: u32| -> Result<u32, Error> {
         let a = site_context!(from_var_any::<PackedStringArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(a as _)
         ))?;
         Ok(a.len() as _)
     },
-    get => |mut ctx: Caller<T>, a: u32, i: u32| -> Result<u32, Error> {
+    get => |mut ctx: Caller<'_, T>, a: u32, i: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let a = site_context!(from_var_any::<PackedStringArray>(
             &reg.get_or_nil(a as _)
@@ -272,7 +272,7 @@ func_registry! {
         };
         Ok(reg.register(v) as _)
     },
-    slice => |mut ctx: Caller<T>, a: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
+    slice => |mut ctx: Caller<'_, T>, a: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
         if to > from {
             bail_with_site!("Invalid range ({}..{})", from, to);
         }
@@ -313,7 +313,7 @@ func_registry! {
 
         Ok(ret)
     },
-    write => |mut ctx: Caller<T>, a: u32, p: u32, n: u32| -> Result<u32, Error> {
+    write => |mut ctx: Caller<'_, T>, a: u32, p: u32, n: u32| -> Result<u32, Error> {
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -340,7 +340,7 @@ func_registry! {
         reg.replace(a as _, r);
         Ok(1)
     },
-    write_new => |mut ctx: Caller<T>, p: u32, n: u32| -> Result<u32, Error> {
+    write_new => |mut ctx: Caller<'_, T>, p: u32, n: u32| -> Result<u32, Error> {
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),

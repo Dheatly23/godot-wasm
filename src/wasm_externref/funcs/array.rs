@@ -1,6 +1,6 @@
-use anyhow::Error;
+use anyhow::Result as AnyResult;
 use godot::prelude::*;
-use wasmtime::{Caller, ExternRef, Func, StoreContextMut};
+use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut};
 
 use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
@@ -9,118 +9,124 @@ use crate::{func_registry, site_context};
 
 func_registry! {
     "array.",
-    new => |_: Caller<_>| -> Result<Option<ExternRef>, Error> {
-        Ok(variant_to_externref(VariantArray::new().to_variant()))
+    new => |ctx: Caller<'_, _>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        variant_to_externref(ctx, VariantArray::new().to_variant())
     },
-    len => |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
-        Ok(site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?.len() as _)
+    len => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        Ok(site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.len() as _)
     },
-    get => |_: Caller<_>, v: Option<ExternRef>, i: u32| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        Ok(variant_to_externref(v.get(i as _)))
+    get => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        variant_to_externref(ctx, v.get(i as _))
     },
-    set => |_: Caller<_>, v: Option<ExternRef>, i: u32, x: Option<ExternRef>| -> Result<(), Error> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    set => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         v.set(i as _, x);
         Ok(())
     },
-    count => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<u32, Error> {
-        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    count => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(v.count(&x) as _)
     },
-    contains => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<u32, Error> {
-        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    contains => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(v.contains(&x) as _)
     },
-    find => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<u32, Error> {
-        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    find => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(match v.find(&x, None) {
             Some(v) => v as _,
             None => u32::MAX,
         })
     },
-    find_from => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>, from: u32| -> Result<u32, Error> {
-        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    find_from => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>, from: u32| -> AnyResult<u32> {
+        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(match v.find(&x, Some(from as _)) {
             Some(v) => v as _,
             None => u32::MAX,
         })
     },
-    rfind => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<u32, Error> {
-        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    rfind => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(match v.rfind(&x, None) {
             Some(v) => v as _,
             None => u32::MAX,
         })
     },
-    rfind_from => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>, from: u32| -> Result<u32, Error> {
-        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    rfind_from => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>, from: u32| -> AnyResult<u32> {
+        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(match v.rfind(&x, Some(from as _)) {
             Some(v) => v as _,
             None => u32::MAX,
         })
     },
-    reverse => |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-        site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?.reverse();
+    reverse => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.reverse();
         Ok(())
     },
-    sort => |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-        site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?.sort_unstable();
+    sort => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.sort_unstable();
         Ok(())
     },
-    duplicate => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        Ok(variant_to_externref(v.duplicate_shallow().to_variant()))
+    duplicate => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        variant_to_externref(ctx, v.duplicate_shallow().to_variant())
     },
-    clear => |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-        site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?.clear();
+    clear => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.clear();
         Ok(())
     },
-    remove => |_: Caller<_>, v: Option<ExternRef>, i: u32| -> Result<(), Error> {
-        site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?.remove(i as _);
+    remove => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<()> {
+        site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.remove(i as _);
         Ok(())
     },
-    erase => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    erase => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         v.erase(&x);
         Ok(())
     },
-    resize => |_: Caller<_>, v: Option<ExternRef>, i: u32| -> Result<(), Error> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
+    resize => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<()> {
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
         v.resize(i as _, &Variant::nil());
         Ok(())
     },
-    push => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    push => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         v.push(x);
         Ok(())
     },
-    pop => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        Ok(variant_to_externref(v.pop().unwrap_or_else(Variant::nil)))
+    pop => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        match v.pop() {
+            Some(v) => variant_to_externref(ctx, v),
+            None => Ok(None),
+        }
     },
-    push_front => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    push_front => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         v.push_front(x);
         Ok(())
     },
-    pop_front => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        Ok(variant_to_externref(v.pop_front().unwrap_or_else(Variant::nil)))
+    pop_front => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        match v.pop_front() {
+            Some(v) => variant_to_externref(ctx, v),
+            None => Ok(None),
+        }
     },
-    insert => |_: Caller<_>, v: Option<ExternRef>, i: u32, x: Option<ExternRef>| -> Result<(), Error> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    insert => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         v.insert(i as _, x);
         Ok(())
     },

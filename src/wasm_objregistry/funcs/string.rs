@@ -11,7 +11,7 @@ use crate::{bail_with_site, func_registry, site_context};
 
 func_registry! {
     "string.",
-    len => |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+    len => |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
         let v = site_context!(from_var_any::<GString>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
@@ -20,7 +20,7 @@ func_registry! {
         let v = unsafe { v.chars_unchecked() };
         Ok(v.iter().map(|c| c.len_utf8()).sum::<usize>() as _)
     },
-    read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
+    read => |mut ctx: Caller<'_, T>, i: u32, p: u32| -> Result<u32, Error> {
         let v = site_context!(from_var_any::<GString>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
@@ -35,7 +35,7 @@ func_registry! {
         };
         Ok(1)
     },
-    write => |mut ctx: Caller<T>, i: u32, p: u32, n: u32| -> Result<u32, Error> {
+    write => |mut ctx: Caller<'_, T>, i: u32, p: u32, n: u32| -> Result<u32, Error> {
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -48,7 +48,7 @@ func_registry! {
         ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, v);
         Ok(1)
     },
-    write_new => |mut ctx: Caller<T>, p: u32, n: u32| -> Result<u32, Error> {
+    write_new => |mut ctx: Caller<'_, T>, p: u32, n: u32| -> Result<u32, Error> {
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -60,14 +60,14 @@ func_registry! {
         };
         Ok(ctx.data_mut().as_mut().get_registry_mut()?.register(v) as _)
     },
-    to_string_name => |mut ctx: Caller<T>, i: u32| -> Result<(), Error> {
+    to_string_name => |mut ctx: Caller<'_, T>, i: u32| -> Result<(), Error> {
         let v = site_context!(from_var_any::<GString>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, StringName::from(v).to_variant());
         Ok(())
     },
-    from_string_name => |mut ctx: Caller<T>, i: u32| -> Result<(), Error> {
+    from_string_name => |mut ctx: Caller<'_, T>, i: u32| -> Result<(), Error> {
         let v = site_context!(from_var_any::<StringName>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;

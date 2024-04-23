@@ -25,7 +25,7 @@ use wasmtime::{
     AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, Store, StoreContextMut,
 };
 #[cfg(feature = "wasi")]
-use wasmtime_wasi::preview1::{add_to_linker_sync, WasiPreview1Adapter, WasiPreview1View};
+use wasmtime_wasi::preview1::{add_to_linker_sync, WasiP1Ctx};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
@@ -194,7 +194,7 @@ impl Default for StoreData {
 pub enum MaybeWasi {
     NoCtx,
     #[cfg(feature = "wasi")]
-    Preview1(WasiCtx, ResourceTable, WasiPreview1Adapter),
+    Preview1(WasiP1Ctx),
     #[cfg(feature = "wasi-preview2")]
     Preview2(WasiCtx, ResourceTable),
 }
@@ -203,7 +203,7 @@ pub enum MaybeWasi {
 impl WasiView for StoreData {
     fn table(&mut self) -> &mut ResourceTable {
         match &mut self.wasi_ctx {
-            MaybeWasi::Preview1(_, tbl, _) => tbl,
+            MaybeWasi::Preview1(v) => v.table(),
             #[cfg(feature = "wasi-preview2")]
             MaybeWasi::Preview2(_, tbl) => tbl,
             _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
@@ -212,27 +212,10 @@ impl WasiView for StoreData {
 
     fn ctx(&mut self) -> &mut WasiCtx {
         match &mut self.wasi_ctx {
-            MaybeWasi::Preview1(ctx, _, _) => ctx,
+            MaybeWasi::Preview1(v) => v.ctx(),
             #[cfg(feature = "wasi-preview2")]
             MaybeWasi::Preview2(ctx, _) => ctx,
             _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
-        }
-    }
-}
-
-#[cfg(feature = "wasi")]
-impl WasiPreview1View for StoreData {
-    fn adapter(&self) -> &WasiPreview1Adapter {
-        match &self.wasi_ctx {
-            MaybeWasi::Preview1(_, _, adapter) => adapter,
-            _ => panic!("Requested WASI Preview 1 interface while none set, this is a bug"),
-        }
-    }
-
-    fn adapter_mut(&mut self) -> &mut WasiPreview1Adapter {
-        match &mut self.wasi_ctx {
-            MaybeWasi::Preview1(_, _, adapter) => adapter,
-            _ => panic!("Requested WASI Preview 1 interface while none set, this is a bug"),
         }
     }
 }
@@ -412,16 +395,16 @@ where
                 };
             }
 
-            let ctx = match &config.wasi_context {
-                Some(ctx) => WasiContext::build_ctx(ctx.clone(), builder, config)?,
-                None => {
-                    WasiContext::init_ctx_no_context(&mut builder, config)?;
-                    builder.build()
-                }
-            };
-            *wasi_ctx = MaybeWasi::Preview1(ctx, ResourceTable::new(), WasiPreview1Adapter::new());
+            match &config.wasi_context {
+                Some(ctx) => WasiContext::build_ctx(ctx.clone(), &mut builder, config),
+                None => WasiContext::init_ctx_no_context(&mut builder, config),
+            }?;
+            *wasi_ctx = MaybeWasi::Preview1(builder.build_p1());
             let mut r = <Linker<T>>::new(&ENGINE);
-            add_to_linker_sync(&mut r, |data| data.as_mut())?;
+            add_to_linker_sync(&mut r, |data| match &mut data.as_mut().wasi_ctx {
+                MaybeWasi::Preview1(v) => v,
+                _ => panic!("WASI Preview 1 context required, but none supplied"),
+            })?;
             Some(r)
         } else {
             None

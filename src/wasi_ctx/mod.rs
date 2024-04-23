@@ -6,10 +6,9 @@ use std::collections::HashMap;
 
 use anyhow::Result as AnyResult;
 use camino::{Utf8Path, Utf8PathBuf};
-use cap_std::ambient_authority;
-use cap_std::fs::Dir;
+
 use godot::prelude::*;
-use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
 
 //use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
 use crate::wasi_ctx::stdio::StreamWrapper;
@@ -236,6 +235,8 @@ impl WasiContext {
     */
 
     pub fn init_ctx_no_context(ctx: &mut WasiCtxBuilder, config: &Config) -> AnyResult<()> {
+        ctx.allow_blocking_current_thread(true);
+
         for (k, v) in &config.wasi_envs {
             ctx.env(k, v);
         }
@@ -245,11 +246,7 @@ impl WasiContext {
         Ok(())
     }
 
-    pub fn build_ctx(
-        this: Gd<Self>,
-        mut ctx: WasiCtxBuilder,
-        config: &Config,
-    ) -> AnyResult<WasiCtx> {
+    pub fn build_ctx(this: Gd<Self>, ctx: &mut WasiCtxBuilder, config: &Config) -> AnyResult<()> {
         let o = this.bind();
 
         if config.wasi_stdout == PipeBindingType::Context {
@@ -289,7 +286,7 @@ impl WasiContext {
             }
         }
 
-        Self::init_ctx_no_context(&mut ctx, config)?;
+        Self::init_ctx_no_context(&mut *ctx, config)?;
 
         for (k, v) in o
             .envs
@@ -310,8 +307,7 @@ impl WasiContext {
         };
 
         for (guest, host) in o.physical_mount.iter() {
-            let dir = site_context!(Dir::open_ambient_dir(host, ambient_authority()))?;
-            ctx.preopened_dir(dir, perms, file_perms, guest);
+            site_context!(ctx.preopened_dir(host, guest, perms, file_perms))?;
         }
 
         // XXX: Cannot do memory filesystem yet :((
@@ -332,7 +328,7 @@ impl WasiContext {
         site_context!(ctx.push_preopened_dir(root, "."))?;
         */
 
-        Ok(ctx.build())
+        Ok(())
     }
 
     /*

@@ -19,19 +19,19 @@ macro_rules! is_typecheck{
                 T: AsRef<StoreData> + AsMut<StoreData>,
             {
                 match name {
-                    $(concat!($n, ".is") => Some(self.$i.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+                    $(concat!($n, ".is") => Some(self.$i.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
                         match ctx.data().as_ref().get_registry()?.get(i as _) {
                             Some(v) if v.get_type() == VariantType::$var => Ok(1),
                             _ => Ok(0),
                         }
                     })).clone()),)*
-                    "null.is_not" => Some(self.not_null.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+                    "null.is_not" => Some(self.not_null.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
                         match ctx.data().as_ref().get_registry()?.get(i as _) {
                             Some(_) => Ok(1),
                             None => Ok(0),
                         }
                     })).clone()),
-                    "variant_type" => Some(self.variant_type.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+                    "variant_type" => Some(self.variant_type.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
                         match ctx.data().as_ref().get_registry()?.get(i as _) {
                             Some(v) => Ok(v.get_type() as _),
                             _ => Ok(0),

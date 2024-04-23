@@ -181,7 +181,7 @@ pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
 }
 
 // Mark this unsafe for future proofing
-pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: &Variant) -> AnyResult<ValRaw> {
+pub unsafe fn to_raw(mut _store: impl AsContextMut, t: ValType, v: &Variant) -> AnyResult<ValRaw> {
     Ok(match t {
         ValType::I32 => ValRaw::i32(site_context!(v.try_to().map_err(|e| e.into_erased()))?),
         ValType::I64 => ValRaw::i64(site_context!(v.try_to().map_err(|e| e.into_erased()))?),
@@ -228,9 +228,9 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: &Variant) -> AnyR
         }),
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
-            ValRaw::externref(match variant_to_externref(v.clone()) {
-                Some(v) => v.to_raw(_store),
-                None => ptr::null_mut(),
+            ValRaw::externref(match variant_to_externref(&mut _store, v.clone())? {
+                Some(v) => v.to_raw(_store)?,
+                None => 0,
             })
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
@@ -238,7 +238,7 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: &Variant) -> AnyR
 }
 
 // Mark this unsafe for future proofing
-pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> AnyResult<Variant> {
+pub unsafe fn from_raw(mut _store: impl AsContextMut, t: ValType, v: ValRaw) -> AnyResult<Variant> {
     Ok(match t {
         ValType::I32 => v.get_i32().to_variant(),
         ValType::I64 => v.get_i64().to_variant(),
@@ -254,7 +254,8 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> AnyR
         }
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
-            externref_to_variant(ExternRef::from_raw(v.get_externref()))
+            let v = ExternRef::from_raw(&mut _store, v.get_externref());
+            return externref_to_variant(_store, v);
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })

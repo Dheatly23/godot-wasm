@@ -8,31 +8,31 @@ use crate::{bail_with_site, func_registry, site_context};
 
 func_registry! {
     "array.",
-    new => |mut ctx: Caller<T>| -> Result<u32, Error> {
+    new => |mut ctx: Caller<'_, T>| -> Result<u32, Error> {
         Ok(ctx
             .data_mut().as_mut()
             .get_registry_mut()?
             .register(VariantArray::new().to_variant()) as _)
     },
-    len => |ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+    len => |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
         Ok(site_context!(from_var_any::<VariantArray>(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?
         .len() as _)
     },
-    get => |mut ctx: Caller<T>, v: u32, i: u32| -> Result<u32, Error> {
+    get => |mut ctx: Caller<'_, T>, v: u32, i: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         Ok(reg.register(v.try_get(i as _).unwrap_or_default()) as _)
     },
-    set => |ctx: Caller<T>, v: u32, i: u32, x: u32| -> Result<(), Error> {
+    set => |ctx: Caller<'_, T>, v: u32, i: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
         v.set(i as _, x);
         Ok(())
     },
-    slice => |mut ctx: Caller<T>, v: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
+    slice => |mut ctx: Caller<'_, T>, v: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
         if to > from {
             bail_with_site!("Invalid range ({}..{})", from, to);
         }
@@ -68,19 +68,19 @@ func_registry! {
 
         Ok(ret)
     },
-    count => |ctx: Caller<T>, v: u32, x: u32| -> Result<u32, Error> {
+    count => |ctx: Caller<'_, T>, v: u32, x: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
         Ok(v.count(&x) as _)
     },
-    contains => |ctx: Caller<T>, v: u32, x: u32| -> Result<u32, Error> {
+    contains => |ctx: Caller<'_, T>, v: u32, x: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
         Ok(v.contains(&x) as _)
     },
-    find => |ctx: Caller<T>, v: u32, x: u32| -> Result<u32, Error> {
+    find => |ctx: Caller<'_, T>, v: u32, x: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
@@ -89,7 +89,7 @@ func_registry! {
             None => u32::MAX,
         })
     },
-    find_from => |ctx: Caller<T>, v: u32, x: u32, from: u32| -> Result<u32, Error> {
+    find_from => |ctx: Caller<'_, T>, v: u32, x: u32, from: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
@@ -98,7 +98,7 @@ func_registry! {
             None => u32::MAX,
         })
     },
-    rfind => |ctx: Caller<T>, v: u32, x: u32| -> Result<u32, Error> {
+    rfind => |ctx: Caller<'_, T>, v: u32, x: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
@@ -107,7 +107,7 @@ func_registry! {
             None => u32::MAX,
         })
     },
-    rfind_from => |ctx: Caller<T>, v: u32, x: u32, from: u32| -> Result<u32, Error> {
+    rfind_from => |ctx: Caller<'_, T>, v: u32, x: u32, from: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
@@ -116,73 +116,73 @@ func_registry! {
             None => u32::MAX,
         })
     },
-    reverse => |ctx: Caller<T>, v: u32| -> Result<(), Error> {
+    reverse => |ctx: Caller<'_, T>, v: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         v.reverse();
         Ok(())
     },
-    sort => |ctx: Caller<T>, v: u32| -> Result<(), Error> {
+    sort => |ctx: Caller<'_, T>, v: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         v.sort_unstable();
         Ok(())
     },
-    duplicate => |mut ctx: Caller<T>, v: u32| -> Result<u32, Error> {
+    duplicate => |mut ctx: Caller<'_, T>, v: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         Ok(reg.register(v.duplicate_shallow().to_variant()) as _)
     },
-    clear => |ctx: Caller<T>, v: u32| -> Result<(), Error> {
+    clear => |ctx: Caller<'_, T>, v: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         v.clear();
         Ok(())
     },
-    remove => |ctx: Caller<T>, v: u32, i: u32| -> Result<(), Error> {
+    remove => |ctx: Caller<'_, T>, v: u32, i: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         v.remove(i as _);
         Ok(())
     },
-    erase => |ctx: Caller<T>, v: u32, x: u32| -> Result<(), Error> {
+    erase => |ctx: Caller<'_, T>, v: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
         v.erase(&x);
         Ok(())
     },
-    resize => |ctx: Caller<T>, v: u32, i: u32| -> Result<(), Error> {
+    resize => |ctx: Caller<'_, T>, v: u32, i: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         v.resize(i as _, &Variant::nil());
         Ok(())
     },
-    push => |ctx: Caller<T>, v: u32, x: u32| -> Result<(), Error> {
+    push => |ctx: Caller<'_, T>, v: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
         v.push(x);
         Ok(())
     },
-    pop => |mut ctx: Caller<T>, v: u32| -> Result<u32, Error> {
+    pop => |mut ctx: Caller<'_, T>, v: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         Ok(reg.register(v.pop().unwrap_or_else(Variant::nil)) as _)
     },
-    push_front => |ctx: Caller<T>, v: u32, x: u32| -> Result<(), Error> {
+    push_front => |ctx: Caller<'_, T>, v: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
         v.push_front(x);
         Ok(())
     },
-    pop_front => |mut ctx: Caller<T>, v: u32| -> Result<u32, Error> {
+    pop_front => |mut ctx: Caller<'_, T>, v: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         Ok(reg.register(v.pop_front().unwrap_or_else(Variant::nil)) as _)
     },
-    insert => |ctx: Caller<T>, v: u32, i: u32, x: u32| -> Result<(), Error> {
+    insert => |ctx: Caller<'_, T>, v: u32, i: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
