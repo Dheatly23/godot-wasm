@@ -19,7 +19,7 @@ use wasmtime::component::ResourceTable;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 use wasmtime::{
-    AsContextMut, Extern, Instance as InstanceWasm, Memory, ResourceLimiter, Store,
+    AsContextMut, Extern, Instance as InstanceWasm, Memory, ResourceLimiter, RootScope, Store,
     StoreContextMut, ValRaw,
 };
 #[cfg(feature = "wasi")]
@@ -775,6 +775,8 @@ impl WasmInstance {
                 };
 
                 store.gc();
+                let mut scope = RootScope::new(store);
+                let mut store = scope.as_context_mut();
 
                 let ty = f.ty(&store);
                 let pi = ty.params();
