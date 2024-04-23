@@ -5,21 +5,17 @@ pub mod stdio;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::Error;
+use anyhow::Result as AnyResult;
 use camino::{Utf8Path, Utf8PathBuf};
-use cap_std::ambient_authority;
-use cap_std::fs::Dir;
-use gdnative::log::{error, godot_site, Site};
+
 use gdnative::prelude::*;
-use wasmtime_wasi::{DirPerms, FilePerms, WasiCtx, WasiCtxBuilder};
+use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
 
 //use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
 use crate::wasi_ctx::stdio::StreamWrapper;
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 //use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
-
-use crate::site_context;
 
 #[allow(dead_code)]
 fn warn_vfs_deprecated() {
@@ -221,7 +217,9 @@ impl WasiContext {
     }
     */
 
-    pub fn init_ctx_no_context(ctx: &mut WasiCtxBuilder, config: &Config) -> Result<(), Error> {
+    pub fn init_ctx_no_context(ctx: &mut WasiCtxBuilder, config: &Config) -> AnyResult<()> {
+        ctx.allow_blocking_current_thread(true);
+
         for (k, v) in &config.wasi_envs {
             ctx.env(k, v);
         }
@@ -233,10 +231,10 @@ impl WasiContext {
 
     pub fn build_ctx(
         this: Instance<Self>,
-        mut ctx: WasiCtxBuilder,
+        ctx: &mut WasiCtxBuilder,
         config: &Config,
-    ) -> Result<WasiCtx, Error> {
-        let f = move |o: &Self, b: TRef<'_, Reference>| -> Result<_, Error> {
+    ) -> AnyResult<()> {
+        let f = move |o: &Self, b: TRef<'_, Reference>| -> AnyResult<_> {
             if config.wasi_stdout == PipeBindingType::Context {
                 if o.bypass_stdio {
                     ctx.inherit_stdout();
@@ -274,7 +272,7 @@ impl WasiContext {
                 }
             }
 
-            Self::init_ctx_no_context(&mut ctx, config)?;
+            Self::init_ctx_no_context(&mut *ctx, config)?;
 
             for (k, v) in o
                 .envs
@@ -295,8 +293,7 @@ impl WasiContext {
             };
 
             for (guest, host) in o.physical_mount.iter() {
-                let dir = site_context!(Dir::open_ambient_dir(host, ambient_authority()))?;
-                ctx.preopened_dir(dir, perms, file_perms, guest);
+                ctx.preopened_dir(host, guest, perms, file_perms)?;
             }
 
             /*
@@ -316,29 +313,10 @@ impl WasiContext {
             site_context!(ctx.push_preopened_dir(root, "."))?;
             */
 
-            Ok(ctx.build())
+            Ok(())
         };
 
         unsafe { this.assume_safe().map(f)? }
-    }
-
-    fn wrap_result<F, T>(f: F) -> Option<T>
-    where
-        F: FnOnce() -> Result<T, Error>,
-    {
-        match f() {
-            Ok(v) => Some(v),
-            Err(e) => {
-                let s = format!("{:?}", e);
-                error(
-                    e.downcast_ref::<Site>()
-                        .copied()
-                        .unwrap_or_else(|| godot_site!()),
-                    s,
-                );
-                None
-            }
-        }
     }
 }
 

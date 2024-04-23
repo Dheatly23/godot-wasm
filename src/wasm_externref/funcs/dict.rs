@@ -1,6 +1,6 @@
-use anyhow::Error;
+use anyhow::Result as AnyResult;
 use gdnative::prelude::*;
-use wasmtime::{Caller, ExternRef, Func, StoreContextMut};
+use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut};
 
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
@@ -8,35 +8,35 @@ use crate::{func_registry, site_context};
 
 func_registry! {
     "dictionary.",
-    new => |_: Caller<_>| -> Result<Option<ExternRef>, Error> {
-        Ok(variant_to_externref(Dictionary::new().owned_to_variant()))
+    new => |ctx: Caller<'_, _>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        variant_to_externref(ctx, Dictionary::new().owned_to_variant())
     },
-    len => |_: Caller<_>, d: Option<ExternRef>| -> Result<i32, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
+    len => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>| -> AnyResult<i32> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
         Ok(d.len())
     },
-    has => |_: Caller<_>, d: Option<ExternRef>, k: Option<ExternRef>| -> Result<u32, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
-        let k = externref_to_variant(k);
+    has => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>, k: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
+        let k = externref_to_variant(&ctx, k)?;
         Ok(d.contains(k) as _)
     },
-    has_all => |_: Caller<_>, d: Option<ExternRef>, ka: Option<ExternRef>| -> Result<u32, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
-        let ka = site_context!(VariantArray::from_variant(&externref_to_variant(ka)))?;
+    has_all => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>, ka: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
+        let ka = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, ka)?))?;
         Ok(d.contains_all(&ka) as _)
     },
-    get => |_: Caller<_>, d: Option<ExternRef>, k: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
-        let k = externref_to_variant(k);
+    get => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>, k: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
+        let k = externref_to_variant(&ctx, k)?;
         match d.get(k) {
-            Some(v) => Ok(variant_to_externref(v)),
+            Some(v) => variant_to_externref(ctx, v),
             _ => Ok(None),
         }
     },
-    set => |_: Caller<_>, d: Option<ExternRef>, k: Option<ExternRef>, v: Option<ExternRef>| -> Result<u32, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
-        let k = externref_to_variant(k);
-        let v = externref_to_variant(v);
+    set => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>, k: Option<Rooted<ExternRef>>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
+        let k = externref_to_variant(&ctx, k)?;
+        let v = externref_to_variant(&ctx, v)?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let d = unsafe { d.assume_unique() };
@@ -44,9 +44,9 @@ func_registry! {
         d.insert(k, v);
         Ok(r as _)
     },
-    delete => |_: Caller<_>, d: Option<ExternRef>, k: Option<ExternRef>| -> Result<u32, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
-        let k = externref_to_variant(k);
+    delete => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>, k: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
+        let k = externref_to_variant(&ctx, k)?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let d = unsafe { d.assume_unique() };
@@ -54,24 +54,24 @@ func_registry! {
         d.erase(k);
         Ok(r as _)
     },
-    keys => |_: Caller<_>, d: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
-        Ok(variant_to_externref(d.keys().owned_to_variant()))
+    keys => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
+        variant_to_externref(ctx, d.keys().owned_to_variant())
     },
-    values => |_: Caller<_>, d: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
-        Ok(variant_to_externref(d.values().owned_to_variant()))
+    values => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
+        variant_to_externref(ctx, d.values().owned_to_variant())
     },
-    clear => |_: Caller<_>, d: Option<ExternRef>| -> Result<(), Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
+    clear => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let d = unsafe { d.assume_unique() };
         d.clear();
         Ok(())
     },
-    duplicate => |_: Caller<_>, d: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let d = site_context!(Dictionary::from_variant(&externref_to_variant(d)))?;
-        Ok(variant_to_externref(d.duplicate().owned_to_variant()))
+    duplicate => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let d = site_context!(Dictionary::from_variant(&externref_to_variant(&ctx, d)?))?;
+        variant_to_externref(ctx, d.duplicate().owned_to_variant())
     },
 }

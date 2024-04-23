@@ -2,12 +2,11 @@
 use std::collections::HashMap;
 #[cfg(not(feature = "new-host-import"))]
 use std::marker::PhantomData;
-#[cfg(feature = "object-registry-extern")]
-use std::ptr;
+
 #[cfg(feature = "epoch-timeout")]
 use std::time;
 
-use anyhow::{bail, Error};
+use anyhow::{bail, Error, Result as AnyResult};
 use gdnative::api::WeakRef;
 use gdnative::log::Site;
 use gdnative::prelude::*;
@@ -202,7 +201,7 @@ pub fn to_signature(params: Variant, results: Variant) -> Result<FuncType, Error
 }
 
 // Mark this unsafe for future proofing
-pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Result<ValRaw, Error> {
+pub unsafe fn to_raw(mut _store: impl AsContextMut, t: ValType, v: Variant) -> AnyResult<ValRaw> {
     Ok(match t {
         ValType::I32 => ValRaw::i32(site_context!(i32::from_variant(&v))?),
         ValType::I64 => ValRaw::i64(site_context!(i64::from_variant(&v))?),
@@ -226,9 +225,9 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Resul
         }),
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
-            ValRaw::externref(match variant_to_externref(v) {
-                Some(v) => v.to_raw(_store),
-                None => ptr::null_mut(),
+            ValRaw::externref(match variant_to_externref(&mut _store, v)? {
+                Some(v) => v.to_raw(_store)?,
+                None => 0,
             })
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
@@ -236,7 +235,7 @@ pub unsafe fn to_raw(_store: impl AsContextMut, t: ValType, v: Variant) -> Resul
 }
 
 // Mark this unsafe for future proofing
-pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Result<Variant, Error> {
+pub unsafe fn from_raw(mut _store: impl AsContextMut, t: ValType, v: ValRaw) -> AnyResult<Variant> {
     Ok(match t {
         ValType::I32 => v.get_i32().to_variant(),
         ValType::I64 => v.get_i64().to_variant(),
@@ -251,7 +250,8 @@ pub unsafe fn from_raw(_store: impl AsContextMut, t: ValType, v: ValRaw) -> Resu
         }
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
-            externref_to_variant(ExternRef::from_raw(v.get_externref()))
+            let v = ExternRef::from_raw(&mut _store, v.get_externref());
+            return externref_to_variant(_store, v);
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })

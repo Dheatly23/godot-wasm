@@ -7,31 +7,31 @@ use crate::{bail_with_site, func_registry, site_context};
 
 func_registry! {
     "dictionary.",
-    new => |mut ctx: Caller<T>| -> Result<u32, Error> {
+    new => |mut ctx: Caller<'_, T>| -> Result<u32, Error> {
         Ok(ctx
             .data_mut().as_mut()
             .get_registry_mut()?
             .register(Dictionary::new().owned_to_variant()) as _)
     },
-    len => |ctx: Caller<T>, i: u32| -> Result<i32, Error> {
+    len => |ctx: Caller<'_, T>, i: u32| -> Result<i32, Error> {
         let v = site_context!(Dictionary::from_variant(
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
         Ok(v.len())
     },
-    has => |ctx: Caller<T>, i: u32, k: u32| -> Result<u32, Error> {
+    has => |ctx: Caller<'_, T>, i: u32, k: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
         let k = reg.get_or_nil(k as _);
         Ok(v.contains(k) as _)
     },
-    has_all => |ctx: Caller<T>, i: u32, ka: u32| -> Result<u32, Error> {
+    has_all => |ctx: Caller<'_, T>, i: u32, ka: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
         let ka = site_context!(VariantArray::from_variant(&reg.get_or_nil(ka as _)))?;
         Ok(v.contains_all(&ka) as _)
     },
-    get => |mut ctx: Caller<T>, i: u32, k: u32| -> Result<u32, Error> {
+    get => |mut ctx: Caller<'_, T>, i: u32, k: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let v = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
         let k = reg.get_or_nil(k as _);
@@ -40,7 +40,7 @@ func_registry! {
             _ => Ok(0),
         }
     },
-    set => |ctx: Caller<T>, i: u32, k: u32, v: u32| -> Result<u32, Error> {
+    set => |ctx: Caller<'_, T>, i: u32, k: u32, v: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
         let k = reg.get_or_nil(k as _);
@@ -52,7 +52,7 @@ func_registry! {
         d.insert(k, v);
         Ok(r as _)
     },
-    delete => |ctx: Caller<T>, i: u32, k: u32| -> Result<u32, Error> {
+    delete => |ctx: Caller<'_, T>, i: u32, k: u32| -> Result<u32, Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
         let k = reg.get_or_nil(k as _);
@@ -63,17 +63,17 @@ func_registry! {
         d.erase(k);
         Ok(r as _)
     },
-    keys => |mut ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+    keys => |mut ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
         Ok(reg.register(d.keys().owned_to_variant()) as _)
     },
-    values => |mut ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+    values => |mut ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
         Ok(reg.register(d.values().owned_to_variant()) as _)
     },
-    iter_slice => |mut ctx: Caller<T>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
+    iter_slice => |mut ctx: Caller<'_, T>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
         if to > from {
             bail_with_site!("Invalid range ({}..{})", from, to);
         }
@@ -111,7 +111,7 @@ func_registry! {
 
         Ok(ret)
     },
-    clear => |ctx: Caller<T>, i: u32| -> Result<(), Error> {
+    clear => |ctx: Caller<'_, T>, i: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
         let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
 
@@ -120,7 +120,7 @@ func_registry! {
         d.clear();
         Ok(())
     },
-    duplicate => |mut ctx: Caller<T>, i: u32| -> Result<u32, Error> {
+    duplicate => |mut ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let d = site_context!(Dictionary::from_variant(&reg.get_or_nil(i as _)))?;
         Ok(reg.register(d.duplicate().owned_to_variant()) as _)

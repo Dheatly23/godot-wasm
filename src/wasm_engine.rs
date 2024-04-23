@@ -106,7 +106,6 @@ pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
         .wasm_multi_value(true)
         .wasm_multi_memory(true)
         .wasm_memory64(true);
-    config.wasm_threads(false); // Disable threads for now
     #[cfg(feature = "wasi-preview2")]
     config.wasm_component_model(true);
 

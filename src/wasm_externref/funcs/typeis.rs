@@ -1,6 +1,6 @@
-use anyhow::Error;
+use anyhow::Result as AnyResult;
 use gdnative::prelude::*;
-use wasmtime::{Caller, ExternRef, Func, StoreContextMut};
+use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut};
 
 use crate::wasm_externref::externref_to_variant;
 use crate::wasm_instance::StoreData;
@@ -19,14 +19,14 @@ macro_rules! is_typecheck{
                 T: AsRef<StoreData> + AsMut<StoreData>,
             {
                 match name {
-                    $(concat!($n, ".is") => Some(self.$i.get_or_insert_with(move || Func::wrap(store, |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
-                        match externref_to_variant(v).get_type() {
+                    $(concat!($n, ".is") => Some(self.$i.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+                        match externref_to_variant(&ctx, v)?.get_type() {
                             VariantType::$var => Ok(1),
                             _ => Ok(0),
                         }
                     })).clone()),)*
-                    "variant_type" => Some(self.variant_type.get_or_insert_with(move || Func::wrap(store, |_: Caller<_>, v: Option<ExternRef>| -> Result<u32, Error> {
-                        Ok(externref_to_variant(v).get_type() as _)
+                    "variant_type" => Some(self.variant_type.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+                        Ok(externref_to_variant(&ctx, v)?.get_type() as _)
                     })).clone()),
                     _ => None,
                 }

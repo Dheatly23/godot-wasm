@@ -20,21 +20,21 @@ macro_rules! prim_value {
     )),* $(,)?) => {$(
         func_registry!{
             $head,
-            get => |ctx: Caller<T>, i: u32| -> Result<($($tx),*), Error> {
+            get => |ctx: Caller<'_, T>, i: u32| -> Result<($($tx),*), Error> {
                 let v = ctx.data().as_ref().get_registry()?.get_or_nil(i as _);
                 let $($v)* = site_context!(<$tv>::from_variant(&v))?;
                 Ok(($($x.into()),*))
             },
-            set => |mut ctx: Caller<T>, i: u32, $($x : $tx),*| -> Result<(), Error> {
+            set => |mut ctx: Caller<'_, T>, i: u32, $($x : $tx),*| -> Result<(), Error> {
                 let v = $($v)*;
                 ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, <$tv>::from(v).to_variant());
                 Ok(())
             },
-            new => |mut ctx: Caller<T>, $($x : $tx),*| -> Result<u32, Error> {
+            new => |mut ctx: Caller<'_, T>, $($x : $tx),*| -> Result<u32, Error> {
                 let v = $($v)*;
                 Ok(ctx.data_mut().as_mut().get_registry_mut()?.register(v.to_variant()) as _)
             },
-            read => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
+            read => |mut ctx: Caller<'_, T>, i: u32, p: u32| -> Result<u32, Error> {
                 let $($v)* = site_context!(<$tv>::from_variant(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
@@ -54,7 +54,7 @@ macro_rules! prim_value {
 
                 Ok(1)
             },
-            write => |mut ctx: Caller<T>, i: u32, p: u32| -> Result<u32, Error> {
+            write => |mut ctx: Caller<'_, T>, i: u32, p: u32| -> Result<u32, Error> {
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),

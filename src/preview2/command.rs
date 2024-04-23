@@ -6,8 +6,8 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Store;
-use wasmtime_wasi::command::sync::{add_to_linker, Command};
-use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi::bindings::sync::Command;
+use wasmtime_wasi::{add_to_linker_sync, WasiCtxBuilder};
 
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
@@ -43,23 +43,23 @@ fn instantiate(config: Config, module: Instance<WasmModule, Shared>) -> Result<C
     config_store_common(&mut store)?;
 
     let config = &store.data().config;
-    let ctx = if let Config {
+    let mut builder = WasiCtxBuilder::new();
+    if let Config {
         with_wasi: true,
         wasi_context: Some(ctx),
         ..
     } = config
     {
-        WasiContext::build_ctx(ctx.clone(), WasiCtxBuilder::new(), config)?
+        WasiContext::build_ctx(ctx.clone(), &mut builder, config)
     } else {
         let mut ctx = WasiCtxBuilder::new();
         ctx.inherit_stdout().inherit_stderr();
-        WasiContext::init_ctx_no_context(&mut ctx, config)?;
-        ctx.build()
-    };
-    store.data_mut().wasi_ctx = MaybeWasi::Preview2(ctx, ResourceTable::new());
+        WasiContext::init_ctx_no_context(&mut ctx, config)
+    }?;
+    store.data_mut().wasi_ctx = MaybeWasi::Preview2(builder.build(), ResourceTable::new());
 
     let mut linker = <Linker<StoreData>>::new(&ENGINE);
-    add_to_linker(&mut linker)?;
+    add_to_linker_sync(&mut linker)?;
 
     let (bindings, instance) = Command::instantiate(&mut store, &comp, &linker)?;
 

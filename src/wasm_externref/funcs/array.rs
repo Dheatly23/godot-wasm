@@ -1,6 +1,6 @@
-use anyhow::Error;
+use anyhow::Result as AnyResult;
 use gdnative::prelude::*;
-use wasmtime::{Caller, ExternRef, Func, StoreContextMut};
+use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut};
 
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
@@ -8,129 +8,129 @@ use crate::{func_registry, site_context};
 
 func_registry! {
     "array.",
-    new => |_: Caller<_>| -> Result<Option<ExternRef>, Error> {
-        Ok(variant_to_externref(VariantArray::new().owned_to_variant()))
+    new => |ctx: Caller<'_, _>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        variant_to_externref(ctx, VariantArray::new().owned_to_variant())
     },
-    len => |_: Caller<_>, v: Option<ExternRef>| -> Result<i32, Error> {
-        Ok(site_context!(VariantArray::from_variant(&externref_to_variant(v)))?.len())
+    len => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<i32> {
+        Ok(site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?.len())
     },
-    get => |_: Caller<_>, v: Option<ExternRef>, i: i32| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        Ok(variant_to_externref(v.get(i)))
+    get => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: i32| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        variant_to_externref(ctx, v.get(i))
     },
-    set => |_: Caller<_>, v: Option<ExternRef>, i: i32, x: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    set => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: i32, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         v.set(i, x);
         Ok(())
     },
-    count => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<i32, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    count => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<i32> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(v.count(x))
     },
-    contains => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<u32, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    contains => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(v.contains(x) as _)
     },
-    find => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>, from: i32| -> Result<i32, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    find => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>, from: i32| -> AnyResult<i32> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(v.find(x, from))
     },
-    rfind => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>, from: i32| -> Result<i32, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    rfind => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>, from: i32| -> AnyResult<i32> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(v.rfind(x, from))
     },
-    find_last => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<i32, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    find_last => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<i32> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
         Ok(v.find_last(x))
     },
-    invert => |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
+    invert => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
         v.invert();
         Ok(())
     },
-    sort => |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
+    sort => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
         v.sort();
         Ok(())
     },
-    duplicate => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        Ok(variant_to_externref(v.duplicate().owned_to_variant()))
+    duplicate => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        variant_to_externref(ctx, v.duplicate().owned_to_variant())
     },
-    clear => |_: Caller<_>, v: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
+    clear => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
         v.clear();
         Ok(())
     },
-    remove => |_: Caller<_>, v: Option<ExternRef>, i: i32| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
+    remove => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: i32| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
         v.remove(i);
         Ok(())
     },
-    erase => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    erase => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
         v.erase(x);
         Ok(())
     },
-    resize => |_: Caller<_>, v: Option<ExternRef>, i: i32| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
+    resize => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: i32| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
         v.resize(i);
         Ok(())
     },
-    push => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    push => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
         v.push(x);
         Ok(())
     },
-    pop => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
+    pop => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
-        Ok(variant_to_externref(v.pop()))
+        variant_to_externref(ctx, v.pop())
     },
-    push_front => |_: Caller<_>, v: Option<ExternRef>, x: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    push_front => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
         v.push_front(x);
         Ok(())
     },
-    pop_front => |_: Caller<_>, v: Option<ExternRef>| -> Result<Option<ExternRef>, Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
+    pop_front => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
-        Ok(variant_to_externref(v.pop_front()))
+        variant_to_externref(ctx, v.pop_front())
     },
-    insert => |_: Caller<_>, v: Option<ExternRef>, i: i32, x: Option<ExternRef>| -> Result<(), Error> {
-        let v = site_context!(VariantArray::from_variant(&externref_to_variant(v)))?;
-        let x = externref_to_variant(x);
+    insert => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: i32, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
+        let v = site_context!(VariantArray::from_variant(&externref_to_variant(&ctx, v)?))?;
+        let x = externref_to_variant(&ctx, x)?;
 
         // SAFETY: It's up to wasm/godot if dictionary is uniquely held.
         let v = unsafe { v.assume_unique() };
