@@ -11,7 +11,7 @@ use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
 
 use crate::bail_with_site;
-use crate::godot_util::SendSyncWrapper;
+use crate::godot_util::{ErrorWrapper, SendSyncWrapper};
 
 #[derive(Default)]
 pub struct GodotCtx {
@@ -168,7 +168,7 @@ fn wrap_error(e: Error) -> ErrorRes {
         Error::ERR_HELP => Ok(Err(RetError::ErrHelp)),
         Error::ERR_BUG => Ok(Err(RetError::ErrBug)),
         Error::ERR_PRINTER_ON_FIRE => Ok(Err(RetError::ErrPrinterOnFire)),
-        e => bail!("{e:?}"),
+        e => Err(ErrorWrapper::from(e).into()),
     }
 }
 

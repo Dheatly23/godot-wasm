@@ -7,7 +7,7 @@ use wasmtime::component::Resource as WasmResource;
 
 use super::gate_unsafe;
 use crate::godot_component::{bindgen, GodotCtx};
-use crate::godot_util::from_var_any;
+use crate::godot_util::{from_var_any, ErrorWrapper};
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
     fn print(&mut self, s: String) -> AnyResult<()> {
@@ -154,7 +154,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
             .done()
         {
             Error::OK => Ok(()),
-            e => bail!("Cannot save resource {path}: {e:?}"),
+            e => Err(ErrorWrapper::new(e, format!("cannot save resource {path}: {e:?}")).into()),
         }
     }
 }

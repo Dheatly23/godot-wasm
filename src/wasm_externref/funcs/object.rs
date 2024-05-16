@@ -3,7 +3,7 @@ use godot::engine::global::Error as GError;
 use godot::prelude::*;
 use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut, TypedFunc};
 
-use crate::godot_util::from_var_any;
+use crate::godot_util::{from_var_any, ErrorWrapper};
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::{bail_with_site, func_registry, site_context};
@@ -125,7 +125,7 @@ func_registry! {
 
         match obj.connect_ex(signal, target).flags(flags).done() {
             GError::OK => Ok(()),
-            e => bail_with_site!("Error: {e:?}"),
+            e => Err(ErrorWrapper::from(e).into()),
         }
     },
     disconnect => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, signal: Option<Rooted<ExternRef>>, target: Option<Rooted<ExternRef>>| -> AnyResult<()> {

@@ -1,9 +1,12 @@
 use std::borrow::{Borrow, Cow};
+use std::error::Error;
+use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::Result as AnyResult;
 use godot::builtin::meta::GodotConvert;
+use godot::engine::global::Error as GError;
 use godot::prelude::*;
 use godot::register::property::PropertyHintInfo;
 
@@ -184,6 +187,69 @@ impl From<&'_ Variant> for VariantDispatch {
             VariantType::PackedVector2Array => Self::PackedVector2Array(var.to()),
             VariantType::PackedVector3Array => Self::PackedVector3Array(var.to()),
             VariantType::PackedColorArray => Self::PackedColorArray(var.to()),
+        }
+    }
+}
+
+pub struct ErrorWrapper {
+    error: GError,
+    msg: Option<String>,
+}
+
+impl fmt::Debug for ErrorWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            if let Some(m) = &self.msg {
+                writeln!(f, "godot error {m}:")
+            } else {
+                writeln!(f, "godot error:")
+            }?;
+            write!(f, "{:#?}", self.error)
+        } else {
+            if let Some(m) = &self.msg {
+                write!(f, "godot error {m}:")
+            } else {
+                write!(f, "godot error: ")
+            }?;
+            write!(f, "{:?}", self.error)
+        }
+    }
+}
+
+impl fmt::Display for ErrorWrapper {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            if let Some(m) = &self.msg {
+                writeln!(f, "godot error {m}:")
+            } else {
+                writeln!(f, "godot error:")
+            }?;
+            write!(f, "{:#?}", self.error)
+        } else {
+            if let Some(m) = &self.msg {
+                write!(f, "godot error {m}:")
+            } else {
+                write!(f, "godot error: ")
+            }?;
+            write!(f, "{:?}", self.error)
+        }
+    }
+}
+
+impl Error for ErrorWrapper {}
+
+impl From<GError> for ErrorWrapper {
+    fn from(error: GError) -> Self {
+        Self { error, msg: None }
+    }
+}
+
+impl ErrorWrapper {
+    #[allow(dead_code)]
+    pub fn new(error: GError, msg: String) -> Self {
+        Self {
+            error,
+            msg: Some(msg),
         }
     }
 }
