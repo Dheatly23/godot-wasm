@@ -1,5 +1,6 @@
 mod classes;
 mod core;
+pub mod filter;
 mod global;
 
 use std::borrow::Cow;
@@ -10,14 +11,14 @@ use godot::prelude::*;
 use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
 
-use crate::bail_with_site;
 use crate::godot_util::{ErrorWrapper, SendSyncWrapper};
+use crate::{bail_with_site, site_context};
 
 #[derive(Default)]
 pub struct GodotCtx {
     table: Slab<SendSyncWrapper<Variant>>,
     pub inst_id: Option<InstanceId>,
-    pub allow_unsafe_behavior: bool,
+    pub filter: filter::Filter,
 }
 
 impl AsMut<GodotCtx> for GodotCtx {
@@ -192,21 +193,27 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::core::Host for T {
         b: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "core", "var-equals"))?;
         Ok(this.get_var(a)? == this.get_var(b)?)
     }
 
     fn var_hash(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
-        Ok(self.as_mut().get_var(var)?.hash())
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "core", "var-hash"))?;
+        Ok(this.get_var(var)?.hash())
     }
 
     fn var_stringify(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        Ok(self.as_mut().get_var(var)?.to_string())
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "core", "var-stringify"))?;
+        Ok(this.get_var(var)?.to_string())
     }
 }
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::reflection::this::Host for T {
     fn get_this(&mut self) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this.filter.pass("godot:reflection", "this", "get-this"))?;
         let Some(id) = this.inst_id else {
             bail_with_site!("Self instance ID is not set")
         };

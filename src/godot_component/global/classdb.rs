@@ -3,29 +3,37 @@ use godot::engine::ClassDb;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-use super::gate_unsafe;
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
 use crate::godot_util::from_var_any;
+use crate::site_context;
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
     fn singleton(&mut self) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
-        gate_unsafe(&*this)?;
+        site_context!(this.filter.pass("godot:global", "classdb", "singleton"))?;
         this.set_into_var(ClassDb::singleton())
     }
 
     fn get_class_list(&mut self) -> AnyResult<WasmResource<Variant>> {
-        self.as_mut()
-            .set_into_var(ClassDb::singleton().get_class_list())
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "get-class-list"))?;
+        this.set_into_var(ClassDb::singleton().get_class_list())
     }
 
     fn class_exists(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(ClassDb::singleton().class_exists(from_var_any(self.as_mut().get_var_borrow(class)?)?))
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:global", "classdb", "class-exists"))?;
+        Ok(ClassDb::singleton().class_exists(from_var_any(this.get_var_borrow(class)?)?))
     }
 
     fn is_class_enabled(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(ClassDb::singleton()
-            .is_class_enabled(from_var_any(self.as_mut().get_var_borrow(class)?)?))
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "is-class-enabled"))?;
+        Ok(ClassDb::singleton().is_class_enabled(from_var_any(this.get_var_borrow(class)?)?))
     }
 
     fn get_parent_class(
@@ -33,6 +41,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         class: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "get-parent-class"))?;
         let r = ClassDb::singleton().get_parent_class(from_var_any(this.get_var_borrow(class)?)?);
         this.set_into_var(r)
     }
@@ -43,6 +54,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         parent: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "is-parent-class"))?;
         Ok(ClassDb::singleton().is_parent_class(
             from_var_any(this.get_var_borrow(class)?)?,
             from_var_any(this.get_var_borrow(parent)?)?,
@@ -54,14 +68,20 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         class: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "get-inheriters-from-class"))?;
         let r = ClassDb::singleton()
             .get_inheriters_from_class(from_var_any(this.get_var_borrow(class)?)?);
         this.set_into_var(r)
     }
 
     fn can_instantiate(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(ClassDb::singleton()
-            .can_instantiate(from_var_any(self.as_mut().get_var_borrow(class)?)?))
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "can-instantiate"))?;
+        Ok(ClassDb::singleton().can_instantiate(from_var_any(this.get_var_borrow(class)?)?))
     }
 
     fn instantiate(
@@ -69,8 +89,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         class: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        gate_unsafe(&*this)?;
-
+        site_context!(this.filter.pass("godot:global", "classdb", "instantiate"))?;
         let r = ClassDb::singleton().instantiate(from_var_any(this.get_var_borrow(class)?)?);
         this.set_var(r)
     }
@@ -82,6 +101,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-get-enum-constants"))?;
         let r = ClassDb::singleton()
             .class_get_enum_constants_ex(
                 from_var_any(this.get_var_borrow(class)?)?,
@@ -98,6 +120,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-get-enum-list"))?;
         let r = ClassDb::singleton()
             .class_get_enum_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
@@ -111,6 +136,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         name: WasmResource<Variant>,
     ) -> AnyResult<i64> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-get-integer-constants"))?;
         Ok(ClassDb::singleton().class_get_integer_constant(
             from_var_any(this.get_var_borrow(class)?)?,
             from_var_any(this.get_var_borrow(name)?)?,
@@ -124,6 +152,11 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this.filter.pass(
+            "godot:global",
+            "classdb",
+            "class-get-integer-constant-enum"
+        ))?;
         let r = ClassDb::singleton()
             .class_get_integer_constant_enum_ex(
                 from_var_any(this.get_var_borrow(class)?)?,
@@ -140,6 +173,11 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this.filter.pass(
+            "godot:global",
+            "classdb",
+            "class-get-integer-constant-list"
+        ))?;
         let r = ClassDb::singleton()
             .class_get_integer_constant_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
@@ -153,6 +191,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-get-method-list"))?;
         let r = ClassDb::singleton()
             .class_get_method_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
@@ -166,6 +207,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-get-property-list"))?;
         let r = ClassDb::singleton()
             .class_get_property_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
@@ -179,6 +223,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-get-signal-list"))?;
         let r = ClassDb::singleton()
             .class_get_signal_list_ex(from_var_any(this.get_var_borrow(class)?)?)
             .no_inheritance(no_inherit)
@@ -192,6 +239,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         name: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-get-signal"))?;
         let r = ClassDb::singleton().class_get_signal(
             from_var_any(this.get_var_borrow(class)?)?,
             from_var_any(this.get_var_borrow(name)?)?,
@@ -205,6 +255,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         name: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-get-property"))?;
         let r = ClassDb::singleton().class_get_property(
             from_var_any(this.get_var_borrow(object)?)?,
             from_var_any(this.get_var_borrow(name)?)?,
@@ -219,6 +272,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         value: Option<WasmResource<Variant>>,
     ) -> ErrorRes {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-set-property"))?;
         wrap_error(ClassDb::singleton().class_set_property(
             from_var_any(this.get_var_borrow(object)?)?,
             from_var_any(this.get_var_borrow(name)?)?,
@@ -233,6 +289,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-has-enum"))?;
         Ok(ClassDb::singleton()
             .class_has_enum_ex(
                 from_var_any(this.get_var_borrow(class)?)?,
@@ -248,6 +307,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         name: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-has-integer-constant"))?;
         Ok(ClassDb::singleton().class_has_integer_constant(
             from_var_any(this.get_var_borrow(class)?)?,
             from_var_any(this.get_var_borrow(name)?)?,
@@ -261,6 +323,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         no_inherit: bool,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-has-method"))?;
         Ok(ClassDb::singleton()
             .class_has_method_ex(
                 from_var_any(this.get_var_borrow(class)?)?,
@@ -276,6 +341,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::classdb::Host for T {
         name: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "classdb", "class-has-signal"))?;
         Ok(ClassDb::singleton().class_has_signal(
             from_var_any(this.get_var_borrow(class)?)?,
             from_var_any(this.get_var_borrow(name)?)?,

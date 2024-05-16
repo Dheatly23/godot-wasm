@@ -9,6 +9,8 @@ use wasmtime_wasi::bindings::sync::Command;
 use wasmtime_wasi::{add_to_linker_sync, WasiCtx, WasiCtxBuilder, WasiView};
 
 #[cfg(feature = "godot-component")]
+use crate::godot_component::filter::Filter;
+#[cfg(feature = "godot-component")]
 use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
@@ -26,6 +28,8 @@ struct CommandConfig {
 
     #[cfg(feature = "godot-component")]
     use_comp_godot: bool,
+    #[cfg(feature = "godot-component")]
+    filter: Filter,
 }
 
 impl GodotConvert for CommandConfig {
@@ -41,16 +45,25 @@ impl FromGodot for CommandConfig {
     }
 
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
+        #[cfg(feature = "godot-component")]
         let use_comp_godot = via
             .get("component.godot.enable")
             .map(|v| v.try_to())
             .transpose()?
             .unwrap_or_default();
+        #[cfg(feature = "godot-component")]
+        let filter = via
+            .get("component.godot.filter")
+            .map(|v| v.try_to())
+            .transpose()?
+            .unwrap_or_default();
 
-        let config = Config::try_from_godot(via)?;
         Ok(Self {
-            config,
+            config: Config::try_from_godot(via)?,
+            #[cfg(feature = "godot-component")]
             use_comp_godot,
+            #[cfg(feature = "godot-component")]
+            filter,
         })
     }
 }
@@ -113,6 +126,13 @@ fn instantiate(
     config: CommandConfig,
     module: Gd<WasmModule>,
 ) -> Result<CommandData, Error> {
+    let CommandConfig {
+        config,
+        #[cfg(feature = "godot-component")]
+        use_comp_godot,
+        #[cfg(feature = "godot-component")]
+        filter,
+    } = config;
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
     let mut builder = WasiCtxBuilder::new();
@@ -120,42 +140,46 @@ fn instantiate(
         with_wasi: true,
         wasi_context: Some(ctx),
         ..
-    } = &config.config
+    } = &config
     {
-        WasiContext::build_ctx(ctx.clone(), &mut builder, &config.config)
+        WasiContext::build_ctx(ctx.clone(), &mut builder, &config)
     } else {
         builder.inherit_stdout().inherit_stderr();
-        WasiContext::init_ctx_no_context(&mut builder, &config.config)
+        WasiContext::init_ctx_no_context(&mut builder, &config)
     }?;
     let wasi_ctx = builder.build();
 
+    #[cfg(feature = "godot-component")]
+    let godot_ctx = if use_comp_godot {
+        let mut ctx = GodotCtx::new(_inst_id);
+        ctx.filter = filter;
+        Some(ctx)
+    } else {
+        None
+    };
     let mut store = Store::new(
         &ENGINE,
         StoreData {
             inner_lock: InnerLock::default(),
 
             #[cfg(feature = "epoch-timeout")]
-            epoch_timeout: if config.config.with_epoch {
-                config.config.epoch_timeout
+            epoch_timeout: if config.with_epoch {
+                config.epoch_timeout
             } else {
                 0
             },
 
             #[cfg(feature = "memory-limiter")]
-            memory_limits: MemoryLimit::from_config(&config.config),
+            memory_limits: MemoryLimit::from_config(&config),
 
             table: ResourceTable::new(),
             wasi_ctx,
             #[cfg(feature = "godot-component")]
-            godot_ctx: if config.use_comp_godot {
-                Some(GodotCtx::new(_inst_id))
-            } else {
-                None
-            },
+            godot_ctx,
         },
     );
     #[cfg(feature = "epoch-timeout")]
-    config_store_epoch(&mut store, &config.config);
+    config_store_epoch(&mut store, &config);
     #[cfg(feature = "memory-limiter")]
     store.limiter(|data| &mut data.memory_limits);
 

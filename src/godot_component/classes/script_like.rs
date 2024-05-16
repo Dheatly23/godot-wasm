@@ -1,4 +1,5 @@
 use anyhow::Result as AnyResult;
+use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -6,6 +7,7 @@ use wasmtime::component::{bindgen, Linker, Resource as WasmResource};
 use wasmtime::Store;
 
 use crate::godot_component::bindgen::godot as g_;
+use crate::godot_component::filter::Filter;
 use crate::godot_component::{add_to_linker, GodotCtx};
 use crate::godot_util::PhantomProperty;
 use crate::wasm_config::Config;
@@ -46,6 +48,39 @@ bindgen!({
         "godot:reflection/this": g_::reflection::this,
     },
 });
+
+#[derive(Default)]
+struct ScriptConfig {
+    config: Config,
+
+    filter: Filter,
+}
+
+impl GodotConvert for ScriptConfig {
+    type Via = Dictionary;
+}
+
+impl FromGodot for ScriptConfig {
+    fn try_from_variant(v: &Variant) -> Result<Self, ConvertError> {
+        if v.is_nil() {
+            return Ok(Self::default());
+        }
+        Self::try_from_godot(v.try_to()?)
+    }
+
+    fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
+        let filter = via
+            .get("component.godot.filter")
+            .map(|v| v.try_to())
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(Self {
+            config: Config::try_from_godot(via)?,
+            filter,
+        })
+    }
+}
 
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
@@ -96,11 +131,13 @@ impl AsMut<GodotCtx> for WasmScriptLikeStore {
 impl WasmScriptLike {
     fn instantiate(
         inst_id: InstanceId,
-        config: Config,
+        ScriptConfig { config, filter }: ScriptConfig,
         module: Gd<WasmModule>,
     ) -> AnyResult<WasmScriptLikeData> {
         let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
+        let mut godot_ctx = GodotCtx::new(inst_id);
+        godot_ctx.filter = filter;
         let mut store = Store::new(
             &ENGINE,
             WasmScriptLikeStore {
@@ -116,7 +153,7 @@ impl WasmScriptLike {
                 #[cfg(feature = "memory-limiter")]
                 memory_limits: MemoryLimit::from_config(&config),
 
-                godot_ctx: GodotCtx::new(inst_id),
+                godot_ctx,
             },
         );
         #[cfg(feature = "epoch-timeout")]
@@ -179,16 +216,15 @@ impl WasmScriptLike {
         match self.data.get_or_try_init(move || {
             Self::instantiate(
                 self.base().instance_id(),
-                match config {
-                    Some(v) => match Config::try_from_variant(&v) {
-                        Ok(v) => v,
+                config
+                    .and_then(|v| match v.try_to() {
+                        Ok(v) => Some(v),
                         Err(e) => {
                             godot_error!("{}", e);
-                            Config::default()
+                            None
                         }
-                    },
-                    None => Config::default(),
-                },
+                    })
+                    .unwrap_or_default(),
                 module,
             )
         }) {

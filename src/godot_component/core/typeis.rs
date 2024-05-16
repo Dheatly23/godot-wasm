@@ -3,10 +3,13 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use crate::godot_component::bindgen::godot::core::typeis;
+use crate::site_context;
 
 impl<T: AsMut<crate::godot_component::GodotCtx>> typeis::Host for T {
     fn var_type(&mut self, var: WasmResource<Variant>) -> AnyResult<typeis::VariantType> {
-        Ok(match self.as_mut().get_var_borrow(var)?.get_type() {
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "var-type"))?;
+        Ok(match this.get_var_borrow(var)?.get_type() {
             VariantType::Bool => typeis::VariantType::Bool,
             VariantType::Int => typeis::VariantType::Int,
             VariantType::Float => typeis::VariantType::Float,
@@ -49,150 +52,224 @@ impl<T: AsMut<crate::godot_component::GodotCtx>> typeis::Host for T {
     }
 
     fn is_bool(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Bool)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-bool"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Bool)
     }
 
     fn is_int(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Int)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-int"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Int)
     }
 
     fn is_float(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Float)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-float"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Float)
     }
 
     fn is_string(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::String)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-string"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::String)
     }
 
     fn is_vector2(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Vector2)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-vector2"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Vector2)
     }
 
     fn is_vector2i(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Vector2i)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-vector2i"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Vector2i)
     }
 
     fn is_rect2(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Rect2)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-rect2"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Rect2)
     }
 
     fn is_rect2i(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Rect2i)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-rect2i"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Rect2i)
     }
 
     fn is_vector3(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Vector3)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-vector3"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Vector3)
     }
 
     fn is_vector3i(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Vector3i)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-vector3i"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Vector3i)
     }
 
     fn is_transform2d(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Transform2D)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-transform2d"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Transform2D)
     }
 
     fn is_vector4(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Vector4)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-vector4"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Vector4)
     }
 
     fn is_vector4i(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Vector4i)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-vector4i"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Vector4i)
     }
 
     fn is_plane(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Plane)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-plane"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Plane)
     }
 
     fn is_quaternion(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Quaternion)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-quaternion"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Quaternion)
     }
 
     fn is_aabb(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Aabb)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-aabb"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Aabb)
     }
 
     fn is_basis(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Basis)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-basis"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Basis)
     }
 
     fn is_transform3d(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Transform3D)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-transform3d"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Transform3D)
     }
 
     fn is_projection(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Projection)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-projection"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Projection)
     }
 
     fn is_color(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Color)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-color"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Color)
     }
 
     fn is_stringname(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::StringName)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-stringname"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::StringName)
     }
 
     fn is_nodepath(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::NodePath)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-nodepath"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::NodePath)
     }
 
     fn is_rid(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Rid)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-rid"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Rid)
     }
 
     fn is_object(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Object)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-object"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Object)
     }
 
     fn is_callable(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Callable)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-callable"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Callable)
     }
 
     fn is_signal(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Signal)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-signal"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Signal)
     }
 
     fn is_dictionary(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Dictionary)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-dictionary"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Dictionary)
     }
 
     fn is_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::Array)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::Array)
     }
 
     fn is_byte_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedByteArray)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-byte-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedByteArray)
     }
 
     fn is_int32_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedInt32Array)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-int32-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedInt32Array)
     }
 
     fn is_int64_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedInt64Array)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-int64-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedInt64Array)
     }
 
     fn is_float32_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedFloat32Array)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-float32-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedFloat32Array)
     }
 
     fn is_float64_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedFloat64Array)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-float64-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedFloat64Array)
     }
 
     fn is_string_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedStringArray)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-string-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedStringArray)
     }
 
     fn is_vector2_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedVector2Array)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-vector2-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedVector2Array)
     }
 
     fn is_vector3_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedVector3Array)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-vector3-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedVector3Array)
     }
 
     fn is_color_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        Ok(self.as_mut().get_var_borrow(var)?.get_type() == VariantType::PackedColorArray)
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "typeis", "is-color-array"))?;
+        Ok(this.get_var_borrow(var)?.get_type() == VariantType::PackedColorArray)
     }
 }

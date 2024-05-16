@@ -1,7 +1,7 @@
 package godot:global@0.1.0;
 
 interface globalscope {
-    use godot:core/core@0.1.0.{godot-var};
+    use godot:core/core@0.1.0.{godot-var, error-res};
 
     // Printing
     print: func(s: string);
@@ -37,7 +37,7 @@ interface globalscope {
 
     // Load/save
     load: func(path: string) -> godot-var;
-    save: func(res: borrow<godot-var>, path: string);
+    save: func(res: borrow<godot-var>, path: string) -> error-res;
 }
 
 world imports {
