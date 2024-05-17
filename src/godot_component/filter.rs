@@ -163,7 +163,7 @@ enum FilterItem<T> {
 fn parse_line(
     i: CharSlice<'_>,
 ) -> IResult<CharSlice<'_>, Option<(FilterItem<&[char]>, bool)>, SingleError<CharSlice<'_>>> {
-    let f = |c| matches!(c, 'a'..='z' | 'A'..='Z' | ':' | '-');
+    let f = |c: char| c.is_alphanumeric() || matches!(c, ':' | '-');
 
     map(
         delimited(
