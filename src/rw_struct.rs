@@ -1,5 +1,7 @@
-use std::error;
-use std::fmt;
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult, Write as _};
+use std::ops::RangeFrom;
+use std::slice::SliceIndex;
 
 use anyhow::Result as AnyResult;
 use godot::prelude::*;
@@ -7,9 +9,211 @@ use nom::character::complete::{anychar, satisfy, u32 as u32_};
 use nom::combinator::{map, opt};
 use nom::error::{context, ContextError, ErrorKind, ParseError};
 use nom::sequence::pair;
-use nom::{Err as NomErr, IResult};
+use nom::{
+    AsChar, Compare, CompareResult, Err as NomErr, IResult, InputIter, InputLength, InputTake,
+    InputTakeAtPosition, Needed, Offset, Slice,
+};
 
 use crate::{bail_with_site, site_context};
+
+#[derive(Clone)]
+pub struct CharSlice<'a>(pub &'a [char]);
+
+impl<'a> Display for CharSlice<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        for &c in self.0 {
+            f.write_char(c)?;
+        }
+        Ok(())
+    }
+}
+
+impl<'a> Debug for CharSlice<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        <Self as Display>::fmt(self, f)
+    }
+}
+
+impl<'a, R> Slice<R> for CharSlice<'a>
+where
+    R: SliceIndex<[char], Output = [char]>,
+{
+    #[inline]
+    fn slice(&self, r: R) -> Self {
+        Self(&self.0[r])
+    }
+}
+
+impl<'a> Offset for CharSlice<'a> {
+    #[inline]
+    fn offset(&self, o: &Self) -> usize {
+        // SAFETY: First and second should be coming from same slice
+        unsafe { o.0.as_ptr().offset_from(self.0.as_ptr()) as _ }
+    }
+}
+
+#[inline]
+fn cmp_char_iter(
+    a: impl IntoIterator<Item = char>,
+    b: impl IntoIterator<Item = char>,
+) -> CompareResult {
+    let (mut a, mut b) = (a.into_iter(), b.into_iter());
+    loop {
+        match (a.next(), b.next()) {
+            (_, None) => break CompareResult::Ok,
+            (Some(a), Some(b)) if a != b => break CompareResult::Error,
+            (None, Some(_)) => break CompareResult::Incomplete,
+            _ => (),
+        }
+    }
+}
+
+impl<'a, 'b> Compare<CharSlice<'b>> for CharSlice<'a> {
+    fn compare(&self, o: CharSlice<'b>) -> CompareResult {
+        let (s, o) = (self.0, o.0);
+        let l = s.len().min(o.len());
+        if &s[..l] == &o[..l] {
+            if l == o.len() {
+                CompareResult::Ok
+            } else {
+                CompareResult::Incomplete
+            }
+        } else {
+            CompareResult::Error
+        }
+    }
+
+    fn compare_no_case(&self, o: CharSlice<'b>) -> CompareResult {
+        cmp_char_iter(
+            self.0.iter().flat_map(|c| c.to_lowercase()),
+            o.0.iter().flat_map(|c| c.to_lowercase()),
+        )
+    }
+}
+
+impl<'a, 'b> Compare<&'b str> for CharSlice<'a> {
+    fn compare(&self, o: &'b str) -> CompareResult {
+        cmp_char_iter(self.0.iter().copied(), o.chars())
+    }
+
+    fn compare_no_case(&self, o: &'b str) -> CompareResult {
+        cmp_char_iter(
+            self.0.iter().flat_map(|c| c.to_lowercase()),
+            o.chars().flat_map(|c| c.to_lowercase()),
+        )
+    }
+}
+
+impl<'a> InputIter for CharSlice<'a> {
+    type Item = char;
+    type Iter = std::iter::Enumerate<Self::IterElem>;
+    type IterElem = std::iter::Copied<std::slice::Iter<'a, char>>;
+
+    #[inline]
+    fn iter_indices(&self) -> Self::Iter {
+        self.iter_elements().enumerate()
+    }
+
+    #[inline]
+    fn iter_elements(&self) -> Self::IterElem {
+        self.0.iter().copied()
+    }
+
+    #[inline]
+    fn position<P>(&self, predicate: P) -> Option<usize>
+    where
+        P: Fn(Self::Item) -> bool,
+    {
+        self.0.iter().position(|b| predicate(*b))
+    }
+
+    #[inline]
+    fn slice_index(&self, count: usize) -> Result<usize, Needed> {
+        if self.0.len() >= count {
+            Ok(count)
+        } else {
+            Err(Needed::new(count - self.0.len()))
+        }
+    }
+}
+
+impl<'a> InputLength for CharSlice<'a> {
+    #[inline]
+    fn input_len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a> InputTake for CharSlice<'a> {
+    #[inline]
+    fn take(&self, c: usize) -> Self {
+        Self(&self.0[..c])
+    }
+
+    #[inline]
+    fn take_split(&self, c: usize) -> (Self, Self) {
+        let (a, b) = self.0.split_at(c);
+        (Self(b), Self(a))
+    }
+}
+
+impl<'a> InputTakeAtPosition for CharSlice<'a> {
+    type Item = char;
+
+    fn split_at_position<P, E: ParseError<Self>>(&self, predicate: P) -> IResult<Self, Self, E>
+    where
+        P: Fn(Self::Item) -> bool,
+    {
+        match self.0.iter().position(|c| predicate(*c)) {
+            Some(i) => Ok(self.take_split(i)),
+            None => Err(NomErr::Incomplete(Needed::new(1))),
+        }
+    }
+
+    fn split_at_position1<P, E: ParseError<Self>>(
+        &self,
+        predicate: P,
+        e: ErrorKind,
+    ) -> IResult<Self, Self, E>
+    where
+        P: Fn(Self::Item) -> bool,
+    {
+        match self.0.iter().position(|c| predicate(*c)) {
+            Some(0) => Err(NomErr::Error(E::from_error_kind(self.clone(), e))),
+            Some(i) => Ok(self.take_split(i)),
+            None => Err(NomErr::Incomplete(Needed::new(1))),
+        }
+    }
+
+    fn split_at_position_complete<P, E: ParseError<Self>>(
+        &self,
+        predicate: P,
+    ) -> IResult<Self, Self, E>
+    where
+        P: Fn(Self::Item) -> bool,
+    {
+        match self.0.iter().position(|c| predicate(*c)) {
+            Some(i) => Ok(self.take_split(i)),
+            None => Ok(self.take_split(self.input_len())),
+        }
+    }
+
+    fn split_at_position1_complete<P, E: ParseError<Self>>(
+        &self,
+        predicate: P,
+        e: ErrorKind,
+    ) -> IResult<Self, Self, E>
+    where
+        P: Fn(Self::Item) -> bool,
+    {
+        match self.0.iter().position(|c| predicate(*c)) {
+            Some(0) => Err(NomErr::Error(E::from_error_kind(self.clone(), e))),
+            Some(i) => Ok(self.take_split(i)),
+            None if self.0.is_empty() => Err(NomErr::Error(E::from_error_kind(self.clone(), e))),
+            None => Ok(self.take_split(self.input_len())),
+        }
+    }
+}
 
 enum DataType {
     Padding,
@@ -44,10 +248,13 @@ enum VectorSubtype {
     Long,
 }
 
-fn parse_vector_subtype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, VectorSubtype, E> {
-    match anychar(i)? {
+fn parse_vector_subtype<I, E>(i: I) -> IResult<I, VectorSubtype, E>
+where
+    E: ParseError<I> + ContextError<I>,
+    I: Clone + InputIter + InputLength + Slice<RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+{
+    match anychar(i.clone())? {
         (i, 'f') => Ok((i, VectorSubtype::Float)),
         (i, 'd') => Ok((i, VectorSubtype::Double)),
         (i, 'i') => Ok((i, VectorSubtype::Int)),
@@ -62,10 +269,13 @@ enum ColorSubtype {
     Byte,
 }
 
-fn parse_color_subtype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, ColorSubtype, E> {
-    match anychar(i)? {
+fn parse_color_subtype<I, E>(i: I) -> IResult<I, ColorSubtype, E>
+where
+    E: ParseError<I> + ContextError<I>,
+    I: Clone + InputIter + InputLength + Slice<RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+{
+    match anychar(i.clone())? {
         (i, 'f') => Ok((i, ColorSubtype::Float)),
         (i, 'd') => Ok((i, ColorSubtype::Double)),
         (i, 'b') => Ok((i, ColorSubtype::Byte)),
@@ -78,20 +288,26 @@ enum FloatSubtype {
     Double,
 }
 
-fn parse_float_subtype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, FloatSubtype, E> {
-    match anychar(i)? {
+fn parse_float_subtype<I, E>(i: I) -> IResult<I, FloatSubtype, E>
+where
+    E: ParseError<I> + ContextError<I>,
+    I: Clone + InputIter + InputLength + Slice<RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+{
+    match anychar(i.clone())? {
         (i, 'f') => Ok((i, FloatSubtype::Float)),
         (i, 'd') => Ok((i, FloatSubtype::Double)),
         _ => Err(NomErr::Error(E::from_error_kind(i, ErrorKind::OneOf))),
     }
 }
 
-fn parse_datatype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
-    i: &'a str,
-) -> IResult<&'a str, DataType, E> {
-    match satisfy(|c| c.is_ascii_alphabetic())(i)? {
+fn parse_datatype<I, E>(i: I) -> IResult<I, DataType, E>
+where
+    E: ParseError<I> + ContextError<I>,
+    I: Clone + InputIter + InputLength + Slice<RangeFrom<usize>>,
+    <I as InputIter>::Item: AsChar,
+{
+    match satisfy(|c| c.is_ascii_alphabetic())(i.clone())? {
         (i, 'x') => Ok((i, DataType::Padding)),
         (i, 'b') => Ok((i, DataType::SignedByte)),
         (i, 'B') => Ok((i, DataType::UnsignedByte)),
@@ -104,13 +320,16 @@ fn parse_datatype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
         (i, 'f') => Ok((i, DataType::Float)),
         (i, 'd') => Ok((i, DataType::Double)),
         (i, 'v') => {
-            let e = |e: NomErr<E>| e.map(|e| E::add_context(i, "vector size", e));
+            let e = |e: NomErr<E>| e.map(|e| E::add_context(i.clone(), "vector size", e));
             let f = context("vector element type", parse_vector_subtype);
-            match anychar(i).map_err(e)? {
+            match anychar(i.clone()).map_err(e)? {
                 (i, '2') => map(f, DataType::Vector2)(i),
                 (i, '3') => map(f, DataType::Vector3)(i),
                 (i, '4') => map(f, DataType::Vector4)(i),
-                _ => Err(e(NomErr::Error(E::from_error_kind(i, ErrorKind::OneOf)))),
+                _ => Err(e(NomErr::Error(E::from_error_kind(
+                    i.clone(),
+                    ErrorKind::OneOf,
+                )))),
             }
         }
         (i, 'p') => context(
@@ -153,14 +372,14 @@ fn parse_datatype<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     }
 }
 
-struct SingleError<I> {
+pub struct SingleError<I> {
     input: I,
     kind: ErrorKind,
     context: Option<&'static str>,
 }
 
-impl<I: fmt::Display> fmt::Display for SingleError<I> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<I: Display> Display for SingleError<I> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "error {:?} at: {}", self.kind, self.input)?;
         if let Some(ctx) = self.context {
             write!(f, "in section '{}', at: {}", ctx, self.input)?;
@@ -169,18 +388,18 @@ impl<I: fmt::Display> fmt::Display for SingleError<I> {
     }
 }
 
-impl<I: fmt::Display> fmt::Debug for SingleError<I> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <Self as fmt::Display>::fmt(self, f)
+impl<I: Display> Debug for SingleError<I> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        <Self as Display>::fmt(self, f)
     }
 }
 
-impl<I: fmt::Display> error::Error for SingleError<I> {}
+impl<I: Display> Error for SingleError<I> {}
 
-impl<I: ToOwned + ?Sized> SingleError<&I> {
-    fn into_owned(self) -> SingleError<I::Owned> {
+impl<'a> SingleError<CharSlice<'a>> {
+    pub fn into_owned(self) -> SingleError<String> {
         SingleError {
-            input: self.input.to_owned(),
+            input: self.input.0.iter().collect(),
             kind: self.kind,
             context: self.context,
         }
@@ -210,7 +429,7 @@ impl<I> ContextError<I> for SingleError<I> {
     }
 }
 
-pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> AnyResult<VariantArray> {
+pub fn read_struct(data: &[u8], p: usize, format: &[char]) -> AnyResult<VariantArray> {
     fn f<const N: usize, T: ToGodot>(
         (data, p, a): &mut (&[u8], usize, VariantArray),
         n: usize,
@@ -229,9 +448,10 @@ pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> AnyResult<Variant
         Ok(())
     }
 
+    let mut format = CharSlice(format);
     let mut r = (data, p, Array::new());
     let mut p_ = pair(opt(u32_), parse_datatype);
-    while !format.is_empty() {
+    while !format.0.is_empty() {
         let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::into_owned))?;
         format = i;
         let n = n.unwrap_or(1) as usize;
@@ -601,7 +821,7 @@ pub fn read_struct(data: &[u8], p: usize, mut format: &str) -> AnyResult<Variant
 pub fn write_struct(
     data: &mut [u8],
     p: usize,
-    mut format: &str,
+    format: &[char],
     arr: VariantArray,
 ) -> AnyResult<usize> {
     fn f<const N: usize, T: FromGodot>(
@@ -629,9 +849,10 @@ pub fn write_struct(
         Ok(())
     }
 
+    let mut format = CharSlice(format);
     let mut r = (data, p, arr.iter_shared());
     let mut p_ = pair(opt(u32_), parse_datatype);
-    while !format.is_empty() {
+    while !format.0.is_empty() {
         let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::into_owned))?;
         format = i;
         let n = n.unwrap_or(1) as usize;
