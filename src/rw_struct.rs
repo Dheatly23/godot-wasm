@@ -72,7 +72,7 @@ impl<'a, 'b> Compare<CharSlice<'b>> for CharSlice<'a> {
     fn compare(&self, o: CharSlice<'b>) -> CompareResult {
         let (s, o) = (self.0, o.0);
         let l = s.len().min(o.len());
-        if &s[..l] == &o[..l] {
+        if s[..l] == o[..l] {
             if l == o.len() {
                 CompareResult::Ok
             } else {

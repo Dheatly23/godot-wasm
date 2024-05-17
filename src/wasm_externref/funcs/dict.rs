@@ -13,7 +13,7 @@ func_registry! {
         variant_to_externref(ctx, Dictionary::new().to_variant())
     },
     len => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-        let d = site_context!(from_var_any::<Dictionary>(&externref_to_variant(&ctx, d)?))?;
+        let d = site_context!(from_var_any::<Dictionary>(&externref_to_variant(ctx, d)?))?;
         Ok(d.len() as _)
     },
     has => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>, k: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
@@ -54,7 +54,7 @@ func_registry! {
         variant_to_externref(ctx, d.values_array().to_variant())
     },
     clear => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>| -> AnyResult<()> {
-        let mut d = site_context!(from_var_any::<Dictionary>(&externref_to_variant(&ctx, d)?))?;
+        let mut d = site_context!(from_var_any::<Dictionary>(&externref_to_variant(ctx, d)?))?;
         d.clear();
         Ok(())
     },

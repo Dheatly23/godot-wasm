@@ -159,9 +159,10 @@ enum FilterItem<T> {
     Method(T, T, T),
 }
 
-fn parse_line<'a>(
-    i: CharSlice<'a>,
-) -> IResult<CharSlice<'a>, Option<(FilterItem<&'a [char]>, bool)>, SingleError<CharSlice<'a>>> {
+#[allow(clippy::type_complexity)]
+fn parse_line(
+    i: CharSlice<'_>,
+) -> IResult<CharSlice<'_>, Option<(FilterItem<&[char]>, bool)>, SingleError<CharSlice<'_>>> {
     let f = |c| matches!(c, 'a'..='z' | 'A'..='Z' | ':' | '-');
 
     map(

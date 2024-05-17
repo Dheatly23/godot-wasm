@@ -242,7 +242,7 @@ impl WasiCommand {
     }
 
     pub fn initialize_(&self, module: Gd<WasmModule>, config: Option<Variant>) -> bool {
-        match self.data.get_or_try_init(move || {
+        let t = self.data.get_or_try_init(move || {
             let config = config.and_then(|v| match v.try_to() {
                 Ok(v) => Some(v),
                 Err(e) => {
@@ -255,7 +255,8 @@ impl WasiCommand {
                 config.unwrap_or_default(),
                 module,
             )
-        }) {
+        });
+        match t {
             Ok(_) => true,
             Err(e) => {
                 let s = format!("{e:?}");

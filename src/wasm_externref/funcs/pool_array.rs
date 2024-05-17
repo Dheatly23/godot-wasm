@@ -141,7 +141,7 @@ impl Funcs {
 func_registry! {
     (ByteArrayFuncs, "byte_array."),
     len => |ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-        let a = site_context!(from_var_any::<PackedByteArray>(&externref_to_variant(&ctx, a)?))?;
+        let a = site_context!(from_var_any::<PackedByteArray>(&externref_to_variant(ctx, a)?))?;
         Ok(a.len() as _)
     },
     read => |mut ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>, p: u32| -> AnyResult<u32> {
@@ -191,7 +191,7 @@ func_registry! {
     (StringArrayFuncs, "string_array."),
     len => |ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let a = site_context!(from_var_any::<PackedStringArray>(
-            &externref_to_variant(&ctx, a)?
+            &externref_to_variant(ctx, a)?
         ))?;
         Ok(a.len() as _)
     },

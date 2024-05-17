@@ -18,7 +18,7 @@ func_registry! {
         variant_to_externref(ctx, site_context!(<Gd<Object>>::try_from_instance_id(id).map_err(|e| e.into_erased()))?.to_variant())
     },
     instance_id => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>| -> AnyResult<i64> {
-        site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?).map(|o| o.instance_id().to_i64()))
+        site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(ctx, obj)?).map(|o| o.instance_id().to_i64()))
     },
     get_property_list => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?)).and_then(|o| variant_to_externref(ctx, o.get_property_list().to_variant()))

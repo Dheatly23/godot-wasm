@@ -13,7 +13,7 @@ use crate::{bail_with_site, func_registry, site_context};
 func_registry! {
     "string.",
     len => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-        let v = site_context!(from_var_any::<GString>(&externref_to_variant(&ctx, v)?))?;
+        let v = site_context!(from_var_any::<GString>(&externref_to_variant(ctx, v)?))?;
 
         // SAFETY: Externalize the safety of it
         let v = unsafe { v.chars_unchecked() };

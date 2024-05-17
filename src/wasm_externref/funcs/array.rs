@@ -13,7 +13,7 @@ func_registry! {
         variant_to_externref(ctx, VariantArray::new().to_variant())
     },
     len => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-        Ok(site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.len() as _)
+        Ok(site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx, v)?))?.len() as _)
     },
     get => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
@@ -68,11 +68,11 @@ func_registry! {
         })
     },
     reverse => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
-        site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.reverse();
+        site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx, v)?))?.reverse();
         Ok(())
     },
     sort => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
-        site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.sort_unstable();
+        site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx, v)?))?.sort_unstable();
         Ok(())
     },
     duplicate => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
@@ -80,11 +80,11 @@ func_registry! {
         variant_to_externref(ctx, v.duplicate_shallow().to_variant())
     },
     clear => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
-        site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.clear();
+        site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx, v)?))?.clear();
         Ok(())
     },
     remove => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<()> {
-        site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?.remove(i as _);
+        site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx, v)?))?.remove(i as _);
         Ok(())
     },
     erase => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
@@ -94,7 +94,7 @@ func_registry! {
         Ok(())
     },
     resize => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<()> {
-        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
+        let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx, v)?))?;
         v.resize(i as _, &Variant::nil());
         Ok(())
     },

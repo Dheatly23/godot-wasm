@@ -20,10 +20,10 @@ func_registry! {
         variant_to_externref(ctx, Callable::invalid().to_variant())
     },
     is_custom => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-        Ok(site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?.is_custom() as _)
+        Ok(site_context!(from_var_any::<Callable>(&externref_to_variant(ctx, v)?))?.is_custom() as _)
     },
     is_valid => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-        Ok(site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?.is_valid() as _)
+        Ok(site_context!(from_var_any::<Callable>(&externref_to_variant(ctx, v)?))?.is_valid() as _)
     },
     object => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
