@@ -32,4 +32,9 @@ interface object {
 
     get-indexed: func(var: borrow<godot-var>, path: borrow<godot-var>) -> option<godot-var>;
     set-indexed: func(var: borrow<godot-var>, path: borrow<godot-var>, val: option<borrow<godot-var>>);
+
+    can-translate-messages: func(var: borrow<godot-var>) -> bool;
+    set-message-translation: func(var: borrow<godot-var>, val: bool);
+    tr: func(var: borrow<godot-var>, msg: borrow<godot-var>, ctx: option<borrow<godot-var>>) -> godot-var;
+    tr-n: func(var: borrow<godot-var>, msg: borrow<godot-var>, plural: borrow<godot-var>, n: s32, ctx: option<borrow<godot-var>>) -> godot-var;
 }

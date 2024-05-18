@@ -288,4 +288,64 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
         );
         Ok(())
     }
+
+    fn can_translate_messages(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:core", "object", "can-translate-messages"))?;
+        Ok(from_var_any::<Gd<Object>>(this.get_var_borrow(var)?)?.can_translate_messages())
+    }
+
+    fn set_message_translation(&mut self, var: WasmResource<Variant>, val: bool) -> AnyResult<()> {
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:core", "object", "set-message-translation"))?;
+        from_var_any::<Gd<Object>>(this.get_var_borrow(var)?)?.set_message_translation(val);
+        Ok(())
+    }
+
+    fn tr(
+        &mut self,
+        var: WasmResource<Variant>,
+        msg: WasmResource<Variant>,
+        ctx: Option<WasmResource<Variant>>,
+    ) -> AnyResult<WasmResource<Variant>> {
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "object", "tr"))?;
+        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let m: StringName = from_var_any(this.get_var_borrow(msg)?)?;
+        let r = if let Some(ctx) = ctx {
+            o.tr_ex(m)
+                .context(from_var_any(this.get_var_borrow(ctx)?)?)
+                .done()
+        } else {
+            o.tr(m)
+        };
+        this.set_into_var(r)
+    }
+
+    fn tr_n(
+        &mut self,
+        var: WasmResource<Variant>,
+        msg: WasmResource<Variant>,
+        plural: WasmResource<Variant>,
+        n: i32,
+        ctx: Option<WasmResource<Variant>>,
+    ) -> AnyResult<WasmResource<Variant>> {
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:core", "object", "tr-n"))?;
+        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let m: StringName = from_var_any(this.get_var_borrow(msg)?)?;
+        let p: StringName = from_var_any(this.get_var_borrow(plural)?)?;
+        let r = if let Some(ctx) = ctx {
+            o.tr_n_ex(m, p, n)
+                .context(from_var_any(this.get_var_borrow(ctx)?)?)
+                .done()
+        } else {
+            o.tr_n(m, p, n)
+        };
+        this.set_into_var(r)
+    }
 }
