@@ -6,7 +6,6 @@ use parking_lot::Mutex;
 use wasmtime::component::{bindgen, Linker, Resource as WasmResource};
 use wasmtime::Store;
 
-use crate::godot_component::bindgen::godot as g_;
 use crate::godot_component::filter::Filter;
 use crate::godot_component::{add_to_linker, GodotCtx};
 use crate::godot_util::PhantomProperty;
@@ -28,24 +27,7 @@ bindgen!({
         duplicate_if_necessary: false
     },
     with: {
-        "godot:core/core": g_::core::core,
-        "godot:core/typeis": g_::core::typeis,
-        "godot:core/primitive": g_::core::primitive,
-        "godot:core/array": g_::core::array,
-        "godot:core/dictionary": g_::core::dictionary,
-        "godot:core/byte-array": g_::core::byte_array,
-        "godot:core/int32-array": g_::core::int32_array,
-        "godot:core/int64-array": g_::core::int64_array,
-        "godot:core/float32-array": g_::core::float32_array,
-        "godot:core/float64-array": g_::core::float64_array,
-        "godot:core/color-array": g_::core::color_array,
-        "godot:core/vector2-array": g_::core::vector2_array,
-        "godot:core/vector3-array": g_::core::vector3_array,
-        "godot:core/string-array": g_::core::string_array,
-        "godot:core/object": g_::core::object,
-        "godot:core/callable": g_::core::callable,
-        "godot:core/signal": g_::core::signal,
-        "godot:reflection/this": g_::reflection::this,
+        "godot": crate::godot_component::bindgen::godot,
     },
 });
 
