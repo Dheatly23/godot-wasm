@@ -2,7 +2,6 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-use crate::godot_util::from_var_any;
 use crate::site_context;
 
 impl<T: AsMut<crate::godot_component::GodotCtx>>
@@ -23,27 +22,27 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         site_context!(this
             .filter
             .pass("godot:core", "callable", "from-object-method"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(obj)?)?;
-        let m: StringName = from_var_any(this.get_var_borrow(method)?)?;
+        let o: Gd<Object> = this.get_value(obj)?;
+        let m: StringName = this.get_value(method)?;
         this.set_into_var(Callable::from_object_method(&o, m))
     }
 
     fn is_custom(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "callable", "is-custom"))?;
-        Ok(from_var_any::<Callable>(this.get_var_borrow(var)?)?.is_custom())
+        Ok(this.get_value::<Callable>(var)?.is_custom())
     }
 
     fn is_valid(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "callable", "is-valid"))?;
-        Ok(from_var_any::<Callable>(this.get_var_borrow(var)?)?.is_valid())
+        Ok(this.get_value::<Callable>(var)?.is_valid())
     }
 
     fn object(&mut self, var: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "callable", "object"))?;
-        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
+        let v: Callable = this.get_value(var)?;
         v.object().map(|v| this.set_into_var(v)).transpose()
     }
 
@@ -53,7 +52,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "callable", "method-name"))?;
-        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
+        let v: Callable = this.get_value(var)?;
         v.method_name().map(|v| this.set_into_var(v)).transpose()
     }
 
@@ -64,7 +63,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "callable", "call"))?;
-        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
+        let v: Callable = this.get_value(var)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -79,8 +78,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "callable", "callv"))?;
-        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
-        let args: VariantArray = from_var_any(this.get_var_borrow(args)?)?;
+        let v: Callable = this.get_value(var)?;
+        let args: VariantArray = this.get_value(args)?;
         this.set_var(v.callv(args))
     }
 
@@ -91,7 +90,7 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "callable", "bind"))?;
-        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
+        let v: Callable = this.get_value(var)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -106,8 +105,8 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "callable", "bindv"))?;
-        let v: Callable = from_var_any(this.get_var_borrow(var)?)?;
-        let args: VariantArray = from_var_any(this.get_var_borrow(args)?)?;
+        let v: Callable = this.get_value(var)?;
+        let args: VariantArray = this.get_value(args)?;
         this.set_into_var(v.bindv(args))
     }
 }

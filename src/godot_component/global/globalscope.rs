@@ -6,7 +6,6 @@ use wasmtime::component::Resource as WasmResource;
 
 use crate::godot_component::bindgen::godot::core::typeis::VariantType as CompVarType;
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
-use crate::godot_util::from_var_any;
 use crate::site_context;
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
@@ -59,7 +58,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         site_context!(this
             .filter
             .pass("godot:global", "globalscope", "bytes-to-var"))?;
-        let v = bytes_to_var(from_var_any(this.get_var_borrow(b)?)?);
+        let v = bytes_to_var(this.get_value(b)?);
         this.set_var(v)
     }
 
@@ -73,7 +72,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
             "globalscope",
             "bytes-to-var-with-objects"
         ))?;
-        let v = bytes_to_var_with_objects(from_var_any(this.get_var_borrow(b)?)?);
+        let v = bytes_to_var_with_objects(this.get_value(b)?);
         this.set_var(v)
     }
 
@@ -117,7 +116,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         site_context!(this
             .filter
             .pass("godot:global", "globalscope", "str-to-var"))?;
-        let v = str_to_var(from_var_any(this.get_var_borrow(s)?)?);
+        let v = str_to_var(this.get_value(s)?);
         this.set_var(v)
     }
 
@@ -274,7 +273,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         site_context!(this.filter.pass("godot:global", "globalscope", "save"))?;
         wrap_error(
             ResourceSaver::singleton()
-                .save_ex(from_var_any(this.get_var_borrow(res)?)?)
+                .save_ex(this.get_value(res)?)
                 .path((&path).into())
                 .done(),
         )

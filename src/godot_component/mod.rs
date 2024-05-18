@@ -11,7 +11,7 @@ use godot::prelude::*;
 use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
 
-use crate::godot_util::{ErrorWrapper, SendSyncWrapper};
+use crate::godot_util::{from_var_any, ErrorWrapper, SendSyncWrapper};
 use crate::{bail_with_site, site_context};
 
 #[derive(Default)]
@@ -67,6 +67,10 @@ impl GodotCtx {
             None => Ok(Variant::nil()),
             Some(res) => self.get_var(res),
         }
+    }
+
+    pub fn get_value<T: FromGodot>(&mut self, res: WasmResource<Variant>) -> AnyResult<T> {
+        self.get_var_borrow(res).and_then(from_var_any)
     }
 
     pub fn try_insert(&mut self, var: Variant) -> AnyResult<u32> {

@@ -4,7 +4,6 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
-use crate::godot_util::from_var_any;
 use crate::site_context;
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
@@ -231,7 +230,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:global", "engine", "get-singleton"))?;
-        let name: StringName = from_var_any(this.get_var_borrow(name)?)?;
+        let name: StringName = this.get_value(name)?;
         Engine::singleton()
             .get_singleton(name)
             .map(|v| this.set_into_var(v))
@@ -265,7 +264,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
     fn has_singleton(&mut self, name: WasmResource<Variant>) -> AnyResult<bool> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:global", "engine", "has-singleton"))?;
-        Ok(Engine::singleton().has_singleton(from_var_any(this.get_var_borrow(name)?)?))
+        Ok(Engine::singleton().has_singleton(this.get_value(name)?))
     }
 
     fn is_editor_hint(&mut self) -> AnyResult<bool> {
@@ -287,9 +286,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         site_context!(this
             .filter
             .pass("godot:global", "engine", "register-script-language"))?;
-        wrap_error(
-            Engine::singleton().register_script_language(from_var_any(this.get_var_borrow(lang)?)?),
-        )
+        wrap_error(Engine::singleton().register_script_language(this.get_value(lang)?))
     }
 
     fn unregister_script_language(&mut self, lang: WasmResource<Variant>) -> ErrorRes {
@@ -297,9 +294,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         site_context!(this
             .filter
             .pass("godot:global", "engine", "unregister-script-language"))?;
-        wrap_error(
-            Engine::singleton().register_script_language(from_var_any(this.get_var_borrow(lang)?)?),
-        )
+        wrap_error(Engine::singleton().register_script_language(this.get_value(lang)?))
     }
 
     fn register_singleton(
@@ -311,9 +306,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         site_context!(this
             .filter
             .pass("godot:global", "engine", "register-singleton"))?;
-        let name: StringName = from_var_any(this.get_var_borrow(name)?)?;
-        let inst: Gd<Object> = from_var_any(this.get_var_borrow(inst)?)?;
-        Engine::singleton().register_singleton(name, inst);
+        Engine::singleton().register_singleton(this.get_value(name)?, this.get_value(inst)?);
         Ok(())
     }
 
@@ -322,7 +315,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         site_context!(this
             .filter
             .pass("godot:global", "engine", "unregister-singleton"))?;
-        Engine::singleton().unregister_singleton(from_var_any(this.get_var_borrow(name)?)?);
+        Engine::singleton().unregister_singleton(this.get_value(name)?);
         Ok(())
     }
 }

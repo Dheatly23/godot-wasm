@@ -3,7 +3,6 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use crate::godot_component::GodotCtx;
-use crate::godot_util::from_var_any;
 use crate::site_context;
 
 macro_rules! impl_packed_array {
@@ -20,7 +19,7 @@ macro_rules! impl_packed_array {
             fn to(&mut self, var: WasmResource<Variant>) -> AnyResult<Vec<$m::Elem>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "to"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.to_vec())
+                Ok(this.get_value::<$t>(var)?.to_vec())
             }
 
             fn slice(
@@ -31,7 +30,7 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<Vec<$m::Elem>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "slice"))?;
-                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
+                let v: $t = this.get_value(var)?;
                 let Some(v) = v.as_slice().get(begin as usize..end as usize) else {
                     bail!("index ({begin}..{end}) out of bound")
                 };
@@ -41,19 +40,19 @@ macro_rules! impl_packed_array {
             fn len(&mut self, var: WasmResource<Variant>) -> AnyResult<u32> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "len"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.len() as _)
+                Ok(this.get_value::<$t>(var)?.len() as _)
             }
 
             fn is_empty(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "is-empty"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.is_empty())
+                Ok(this.get_value::<$t>(var)?.is_empty())
             }
 
             fn get(&mut self, var: WasmResource<Variant>, i: u32) -> AnyResult<$m::Elem> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "get"))?;
-                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
+                let v: $t = this.get_value(var)?;
                 let Some(v) = v.as_slice().get(i as usize) else {
                     bail!("index {i} out of bound")
                 };
@@ -63,13 +62,13 @@ macro_rules! impl_packed_array {
             fn contains(&mut self, var: WasmResource<Variant>, val: $m::Elem) -> AnyResult<bool> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "contains"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.contains(val))
+                Ok(this.get_value::<$t>(var)?.contains(val))
             }
 
             fn count(&mut self, var: WasmResource<Variant>, val: $m::Elem) -> AnyResult<u32> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "count"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.count(val) as _)
+                Ok(this.get_value::<$t>(var)?.count(val) as _)
             }
 
             fn find(
@@ -80,7 +79,8 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<Option<u32>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "find"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?
+                Ok(this
+                    .get_value::<$t>(var)?
                     .find(val, from.map(|v| v as _))
                     .map(|v| v as _))
             }
@@ -93,7 +93,8 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<Option<u32>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "rfind"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?
+                Ok(this
+                    .get_value::<$t>(var)?
                     .rfind(val, from.map(|v| v as _))
                     .map(|v| v as _))
             }
@@ -106,7 +107,7 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<WasmResource<Variant>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "subarray"))?;
-                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
+                let v: $t = this.get_value(var)?;
                 this.set_into_var(v.subarray(begin as _, end as _))
             }
         }
@@ -124,7 +125,7 @@ macro_rules! impl_packed_array {
             fn to(&mut self, var: WasmResource<Variant>) -> AnyResult<Vec<$m::Elem>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "to"))?;
-                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
+                let v: $t = this.get_value(var)?;
                 Ok(v.as_slice().iter().map(|$v| $e2).collect())
             }
 
@@ -136,7 +137,7 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<Vec<$m::Elem>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "slice"))?;
-                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
+                let v: $t = this.get_value(var)?;
                 let Some(v) = v.as_slice().get(begin as usize..end as usize) else {
                     bail!("index ({begin}..{end}) out of bound")
                 };
@@ -146,19 +147,19 @@ macro_rules! impl_packed_array {
             fn len(&mut self, var: WasmResource<Variant>) -> AnyResult<u32> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "len"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.len() as _)
+                Ok(this.get_value::<$t>(var)?.len() as _)
             }
 
             fn is_empty(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "is-empty"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.is_empty())
+                Ok(this.get_value::<$t>(var)?.is_empty())
             }
 
             fn get(&mut self, var: WasmResource<Variant>, i: u32) -> AnyResult<$m::Elem> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "get"))?;
-                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
+                let v: $t = this.get_value(var)?;
                 let Some($v) = v.as_slice().get(i as usize) else {
                     bail!("index {i} out of bound")
                 };
@@ -168,13 +169,13 @@ macro_rules! impl_packed_array {
             fn contains(&mut self, var: WasmResource<Variant>, $v: $m::Elem) -> AnyResult<bool> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "contains"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.contains($e1))
+                Ok(this.get_value::<$t>(var)?.contains($e1))
             }
 
             fn count(&mut self, var: WasmResource<Variant>, $v: $m::Elem) -> AnyResult<u32> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "count"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?.count($e1) as _)
+                Ok(this.get_value::<$t>(var)?.count($e1) as _)
             }
 
             fn find(
@@ -185,7 +186,8 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<Option<u32>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "find"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?
+                Ok(this
+                    .get_value::<$t>(var)?
                     .find($e1, from.map(|v| v as _))
                     .map(|v| v as _))
             }
@@ -198,7 +200,8 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<Option<u32>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "rfind"))?;
-                Ok(from_var_any::<$t>(this.get_var_borrow(var)?)?
+                Ok(this
+                    .get_value::<$t>(var)?
                     .rfind($e1, from.map(|v| v as _))
                     .map(|v| v as _))
             }
@@ -211,7 +214,7 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<WasmResource<Variant>> {
                 let this = self.as_mut();
                 site_context!(this.filter.pass("godot:core", $s, "subarray"))?;
-                let v: $t = from_var_any(this.get_var_borrow(var)?)?;
+                let v: $t = this.get_value(var)?;
                 this.set_into_var(v.subarray(begin as _, end as _))
             }
         }

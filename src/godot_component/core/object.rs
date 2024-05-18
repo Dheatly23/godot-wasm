@@ -3,7 +3,6 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
-use crate::godot_util::from_var_any;
 use crate::site_context;
 
 impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
@@ -20,15 +19,14 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     fn instance_id(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "instance-id"))?;
-        this.get_var_borrow(var)
-            .and_then(from_var_any::<Gd<Object>>)
+        this.get_value::<Gd<Object>>(var)
             .map(|v| v.instance_id().to_i64())
     }
 
     fn get_class(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "get-class"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
         this.set_into_var(o.get_class())
     }
 
@@ -39,8 +37,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<bool> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "is-class"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let c: GString = from_var_any(this.get_var_borrow(class)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
+        let c: GString = this.get_value(class)?;
         Ok(o.is_class(c))
     }
 
@@ -50,7 +48,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "get-script"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
         this.set_var(o.get_script())
     }
 
@@ -62,21 +60,21 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
         site_context!(this
             .filter
             .pass("godot:core", "object", "get-property-list"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
         this.set_into_var(o.get_property_list())
     }
 
     fn get_method_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "get-method-list"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
         this.set_into_var(o.get_method_list())
     }
 
     fn get_signal_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "get-signal-list"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
         this.set_into_var(o.get_signal_list())
     }
 
@@ -87,8 +85,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<bool> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "has-method"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        Ok(o.has_method(from_var_any(this.get_var_borrow(name)?)?))
+        let o: Gd<Object> = this.get_value(var)?;
+        Ok(o.has_method(this.get_value(name)?))
     }
 
     fn has_signal(
@@ -98,8 +96,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<bool> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "has-signal"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        Ok(o.has_signal(from_var_any(this.get_var_borrow(name)?)?))
+        let o: Gd<Object> = this.get_value(var)?;
+        Ok(o.has_signal(this.get_value(name)?))
     }
 
     fn call(
@@ -110,8 +108,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "call"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let name: StringName = from_var_any(this.get_var_borrow(name)?)?;
+        let mut o: Gd<Object> = this.get_value(var)?;
+        let name: StringName = this.get_value(name)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -127,9 +125,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "callv"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let name: StringName = from_var_any(this.get_var_borrow(name)?)?;
-        let args: VariantArray = from_var_any(this.get_var_borrow(args)?)?;
+        let mut o: Gd<Object> = this.get_value(var)?;
+        let name: StringName = this.get_value(name)?;
+        let args: VariantArray = this.get_value(args)?;
         this.set_var(o.callv(name, args))
     }
 
@@ -141,8 +139,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "call-deferred"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let name: StringName = from_var_any(this.get_var_borrow(name)?)?;
+        let mut o: Gd<Object> = this.get_value(var)?;
+        let name: StringName = this.get_value(name)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -159,14 +157,11 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> ErrorRes {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "connect"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
+        let mut o: Gd<Object> = this.get_value(var)?;
         wrap_error(
-            o.connect_ex(
-                from_var_any(this.get_var_borrow(name)?)?,
-                from_var_any(this.get_var_borrow(callable)?)?,
-            )
-            .flags(flags)
-            .done(),
+            o.connect_ex(this.get_value(name)?, this.get_value(callable)?)
+                .flags(flags)
+                .done(),
         )
     }
 
@@ -178,11 +173,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<()> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "disconnect"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        o.disconnect(
-            from_var_any(this.get_var_borrow(name)?)?,
-            from_var_any(this.get_var_borrow(callable)?)?,
-        );
+        let mut o: Gd<Object> = this.get_value(var)?;
+        o.disconnect(this.get_value(name)?, this.get_value(callable)?);
         Ok(())
     }
 
@@ -194,11 +186,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<bool> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "is-connected"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        Ok(o.is_connected(
-            from_var_any(this.get_var_borrow(name)?)?,
-            from_var_any(this.get_var_borrow(callable)?)?,
-        ))
+        let o: Gd<Object> = this.get_value(var)?;
+        Ok(o.is_connected(this.get_value(name)?, this.get_value(callable)?))
     }
 
     fn emit_signal(
@@ -209,8 +198,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> ErrorRes {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "emit-signal"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let name: StringName = from_var_any(this.get_var_borrow(name)?)?;
+        let mut o: Gd<Object> = this.get_value(var)?;
+        let name: StringName = this.get_value(name)?;
         let args = args
             .into_iter()
             .map(|v| this.maybe_get_var(v))
@@ -225,8 +214,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "get"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let name: StringName = from_var_any(this.get_var_borrow(name)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
+        let name: StringName = this.get_value(name)?;
         this.set_var(o.get(name))
     }
 
@@ -238,11 +227,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<()> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "set"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        o.set(
-            from_var_any(this.get_var_borrow(name)?)?,
-            this.maybe_get_var(val)?,
-        );
+        let mut o: Gd<Object> = this.get_value(var)?;
+        o.set(this.get_value(name)?, this.maybe_get_var(val)?);
         Ok(())
     }
 
@@ -254,11 +240,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<()> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "set-deferred"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        o.set_deferred(
-            from_var_any(this.get_var_borrow(name)?)?,
-            this.maybe_get_var(val)?,
-        );
+        let mut o: Gd<Object> = this.get_value(var)?;
+        o.set_deferred(this.get_value(name)?, this.maybe_get_var(val)?);
         Ok(())
     }
 
@@ -268,8 +251,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
         name: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         let this = self.as_mut();
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let name: NodePath = from_var_any(this.get_var_borrow(name)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
+        let name: NodePath = this.get_value(name)?;
         this.set_var(o.get_indexed(name))
     }
 
@@ -281,11 +264,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<()> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "get-indexed"))?;
-        let mut o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        o.set_indexed(
-            from_var_any(this.get_var_borrow(name)?)?,
-            this.maybe_get_var(val)?,
-        );
+        let mut o: Gd<Object> = this.get_value(var)?;
+        o.set_indexed(this.get_value(name)?, this.maybe_get_var(val)?);
         Ok(())
     }
 
@@ -294,7 +274,7 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
         site_context!(this
             .filter
             .pass("godot:core", "object", "can-translate-messages"))?;
-        Ok(from_var_any::<Gd<Object>>(this.get_var_borrow(var)?)?.can_translate_messages())
+        Ok(this.get_value::<Gd<Object>>(var)?.can_translate_messages())
     }
 
     fn set_message_translation(&mut self, var: WasmResource<Variant>, val: bool) -> AnyResult<()> {
@@ -302,7 +282,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
         site_context!(this
             .filter
             .pass("godot:core", "object", "set-message-translation"))?;
-        from_var_any::<Gd<Object>>(this.get_var_borrow(var)?)?.set_message_translation(val);
+        this.get_value::<Gd<Object>>(var)?
+            .set_message_translation(val);
         Ok(())
     }
 
@@ -314,12 +295,10 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "tr"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let m: StringName = from_var_any(this.get_var_borrow(msg)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
+        let m: StringName = this.get_value(msg)?;
         let r = if let Some(ctx) = ctx {
-            o.tr_ex(m)
-                .context(from_var_any(this.get_var_borrow(ctx)?)?)
-                .done()
+            o.tr_ex(m).context(this.get_value(ctx)?).done()
         } else {
             o.tr(m)
         };
@@ -336,13 +315,11 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::object::Host for T {
     ) -> AnyResult<WasmResource<Variant>> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:core", "object", "tr-n"))?;
-        let o: Gd<Object> = from_var_any(this.get_var_borrow(var)?)?;
-        let m: StringName = from_var_any(this.get_var_borrow(msg)?)?;
-        let p: StringName = from_var_any(this.get_var_borrow(plural)?)?;
+        let o: Gd<Object> = this.get_value(var)?;
+        let m: StringName = this.get_value(msg)?;
+        let p: StringName = this.get_value(plural)?;
         let r = if let Some(ctx) = ctx {
-            o.tr_n_ex(m, p, n)
-                .context(from_var_any(this.get_var_borrow(ctx)?)?)
-                .done()
+            o.tr_n_ex(m, p, n).context(this.get_value(ctx)?).done()
         } else {
             o.tr_n(m, p, n)
         };
