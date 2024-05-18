@@ -12,6 +12,13 @@ interface engine {
     is-printing-error-messages: func() -> bool;
     get-time-scale: func() -> f64;
 
+    set-max-fps: func(v: s32);
+    set-max-physics-steps-per-frame: func(v: s32);
+    set-physics-jitter-fix: func(v: f64);
+    set-physics-ticks-per-second: func(v: s32);
+    set-print-error-messages: func(v: bool);
+    set-time-scale: func(v: f64);
+
     get-architecture-name: func() -> godot-var;
     get-author-info: func() -> godot-var;
     get-copyright-info: func() -> godot-var;

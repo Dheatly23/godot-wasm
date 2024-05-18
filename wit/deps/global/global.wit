@@ -2,6 +2,7 @@ package godot:global@0.1.0;
 
 interface globalscope {
     use godot:core/core@0.1.0.{godot-var, error-res};
+    use godot:core/typeis@0.1.0.{variant-type};
 
     // Printing
     print: func(s: string);
@@ -24,6 +25,8 @@ interface globalscope {
     is-instance-id-valid: func(id: u64) -> bool;
 
     is-same: func(a: borrow<godot-var>, b: borrow<godot-var>) -> bool;
+
+    type-convert: func(v: borrow<godot-var>, t: variant-type) -> godot-var;
 
     // RNG
     rand-from-seed: func(seed: u64) -> godot-var;

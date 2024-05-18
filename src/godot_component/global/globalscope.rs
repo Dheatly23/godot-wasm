@@ -4,6 +4,7 @@ use godot::engine::{ResourceLoader, ResourceSaver};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
+use crate::godot_component::bindgen::godot::core::typeis::VariantType as CompVarType;
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
 use crate::godot_util::from_var_any;
 use crate::site_context;
@@ -147,6 +148,60 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:global", "globalscope", "is-same"))?;
         Ok(is_same(this.get_var(a)?, this.get_var(b)?))
+    }
+
+    fn type_convert(
+        &mut self,
+        v: WasmResource<Variant>,
+        t: CompVarType,
+    ) -> AnyResult<WasmResource<Variant>> {
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "globalscope", "type-convert"))?;
+        let v = this.get_var(v)?;
+        let t = match t {
+            CompVarType::Bool => VariantType::Bool,
+            CompVarType::Int => VariantType::Int,
+            CompVarType::Float => VariantType::Float,
+            CompVarType::String => VariantType::String,
+            CompVarType::Vector2 => VariantType::Vector2,
+            CompVarType::Vector2i => VariantType::Vector2i,
+            CompVarType::Rect2 => VariantType::Rect2,
+            CompVarType::Rect2i => VariantType::Rect2i,
+            CompVarType::Vector3 => VariantType::Vector3,
+            CompVarType::Vector3i => VariantType::Vector3i,
+            CompVarType::Transform2d => VariantType::Transform2D,
+            CompVarType::Vector4 => VariantType::Vector4,
+            CompVarType::Vector4i => VariantType::Vector4i,
+            CompVarType::Plane => VariantType::Plane,
+            CompVarType::Quaternion => VariantType::Quaternion,
+            CompVarType::Aabb => VariantType::Aabb,
+            CompVarType::Basis => VariantType::Basis,
+            CompVarType::Transform3d => VariantType::Transform3D,
+            CompVarType::Projection => VariantType::Projection,
+            CompVarType::Color => VariantType::Color,
+            CompVarType::Stringname => VariantType::StringName,
+            CompVarType::Nodepath => VariantType::NodePath,
+            CompVarType::Rid => VariantType::Rid,
+            CompVarType::Object => VariantType::Object,
+            CompVarType::Callable => VariantType::Callable,
+            CompVarType::Signal => VariantType::Signal,
+            CompVarType::Dictionary => VariantType::Dictionary,
+            CompVarType::Array => VariantType::Array,
+            CompVarType::ByteArray => VariantType::PackedByteArray,
+            CompVarType::Int32Array => VariantType::PackedInt32Array,
+            CompVarType::Int64Array => VariantType::PackedInt64Array,
+            CompVarType::Float32Array => VariantType::PackedFloat32Array,
+            CompVarType::Float64Array => VariantType::PackedFloat64Array,
+            CompVarType::StringArray => VariantType::PackedStringArray,
+            CompVarType::Vector2Array => VariantType::PackedVector2Array,
+            CompVarType::Vector3Array => VariantType::PackedVector3Array,
+            CompVarType::ColorArray => VariantType::PackedColorArray,
+        } as i64;
+        let r = type_convert(v, t);
+        assert!(!r.is_nil(), "Value should be nonnull");
+        this.set_var(r).map(|v| v.unwrap())
     }
 
     fn rand_from_seed(&mut self, seed: u64) -> AnyResult<WasmResource<Variant>> {

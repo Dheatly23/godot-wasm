@@ -20,6 +20,13 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         Ok(Engine::singleton().get_max_fps())
     }
 
+    fn set_max_fps(&mut self, v: i32) -> AnyResult<()> {
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:global", "engine", "set-max-fps"))?;
+        Engine::singleton().set_max_fps(v);
+        Ok(())
+    }
+
     fn get_max_physics_steps_per_frame(&mut self) -> AnyResult<i32> {
         let this = self.as_mut();
         site_context!(this.filter.pass(
@@ -30,12 +37,32 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         Ok(Engine::singleton().get_max_physics_steps_per_frame())
     }
 
+    fn set_max_physics_steps_per_frame(&mut self, v: i32) -> AnyResult<()> {
+        let this = self.as_mut();
+        site_context!(this.filter.pass(
+            "godot:global",
+            "engine",
+            "set-max-physics-steps-per-frame"
+        ))?;
+        Engine::singleton().set_max_physics_steps_per_frame(v);
+        Ok(())
+    }
+
     fn get_physics_jitter_fix(&mut self) -> AnyResult<f64> {
         let this = self.as_mut();
         site_context!(this
             .filter
             .pass("godot:global", "engine", "get-physics-jitter-fix"))?;
         Ok(Engine::singleton().get_physics_jitter_fix())
+    }
+
+    fn set_physics_jitter_fix(&mut self, v: f64) -> AnyResult<()> {
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "engine", "set-physics-jitter-fix"))?;
+        Engine::singleton().set_physics_jitter_fix(v);
+        Ok(())
     }
 
     fn get_physics_ticks_per_second(&mut self) -> AnyResult<i32> {
@@ -46,6 +73,15 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         Ok(Engine::singleton().get_physics_ticks_per_second())
     }
 
+    fn set_physics_ticks_per_second(&mut self, v: i32) -> AnyResult<()> {
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "engine", "set-physics-ticks-per-second"))?;
+        Engine::singleton().set_physics_ticks_per_second(v);
+        Ok(())
+    }
+
     fn is_printing_error_messages(&mut self) -> AnyResult<bool> {
         let this = self.as_mut();
         site_context!(this
@@ -54,10 +90,26 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::engine::Host for T {
         Ok(Engine::singleton().is_printing_error_messages())
     }
 
+    fn set_print_error_messages(&mut self, v: bool) -> AnyResult<()> {
+        let this = self.as_mut();
+        site_context!(this
+            .filter
+            .pass("godot:global", "engine", "set-print-error-messages"))?;
+        Engine::singleton().set_print_error_messages(v);
+        Ok(())
+    }
+
     fn get_time_scale(&mut self) -> AnyResult<f64> {
         let this = self.as_mut();
         site_context!(this.filter.pass("godot:global", "engine", "get-time-scale"))?;
         Ok(Engine::singleton().get_time_scale())
+    }
+
+    fn set_time_scale(&mut self, v: f64) -> AnyResult<()> {
+        let this = self.as_mut();
+        site_context!(this.filter.pass("godot:global", "engine", "set-time-scale"))?;
+        Engine::singleton().set_time_scale(v);
+        Ok(())
     }
 
     fn get_architecture_name(&mut self) -> AnyResult<WasmResource<Variant>> {
