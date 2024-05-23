@@ -2,39 +2,44 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
+use crate::filter_macro;
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
-use crate::site_context;
 
-impl<T: AsMut<GodotCtx>> bindgen::godot::core::signal::Host for T {
+filter_macro! {method [
+    from_object_signal -> "from-object-signal",
+    object -> "object",
+    name -> "name",
+    connect -> "connect",
+    disconnect -> "disconnect",
+    is_connected -> "is-connected",
+    emit -> "emit",
+]}
+
+impl bindgen::godot::core::signal::Host for GodotCtx {
     fn from_object_signal(
         &mut self,
         obj: WasmResource<Variant>,
         signal: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:core", "signal", "from-object-signal"))?;
-        let o: Gd<Object> = this.get_value(obj)?;
-        let s: StringName = this.get_value(signal)?;
-        this.set_into_var(Signal::from_object_signal(&o, s))
+        filter_macro!(filter self.filter.as_ref(), godot_core, signal, from_object_signal)?;
+        let o: Gd<Object> = self.get_value(obj)?;
+        let s: StringName = self.get_value(signal)?;
+        self.set_into_var(Signal::from_object_signal(&o, s))
     }
 
     fn object(&mut self, var: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "signal", "object"))?;
-        let v: Signal = this.get_value(var)?;
+        filter_macro!(filter self.filter.as_ref(), godot_core, signal, object)?;
+        let v: Signal = self.get_value(var)?;
         match v.object() {
-            Some(v) => this.set_into_var(v).map(Some),
+            Some(v) => self.set_into_var(v).map(Some),
             None => Ok(None),
         }
     }
 
     fn name(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "signal", "name"))?;
-        let v: Signal = this.get_value(var)?;
-        this.set_into_var(v.name())
+        filter_macro!(filter self.filter.as_ref(), godot_core, signal, name)?;
+        let v: Signal = self.get_value(var)?;
+        self.set_into_var(v.name())
     }
 
     fn connect(
@@ -43,10 +48,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::signal::Host for T {
         callable: WasmResource<Variant>,
         flags: u32,
     ) -> ErrorRes {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "signal", "connect"))?;
-        let v: Signal = this.get_value(var)?;
-        wrap_error(v.connect(this.get_value(callable)?, flags as _))
+        filter_macro!(filter self.filter.as_ref(), godot_core, signal, connect)?;
+        let v: Signal = self.get_value(var)?;
+        wrap_error(v.connect(self.get_value(callable)?, flags as _))
     }
 
     fn disconnect(
@@ -54,10 +58,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::signal::Host for T {
         var: WasmResource<Variant>,
         callable: WasmResource<Variant>,
     ) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "signal", "disconnect"))?;
-        let v: Signal = this.get_value(var)?;
-        v.disconnect(this.get_value(callable)?);
+        filter_macro!(filter self.filter.as_ref(), godot_core, signal, disconnect)?;
+        let v: Signal = self.get_value(var)?;
+        v.disconnect(self.get_value(callable)?);
         Ok(())
     }
 
@@ -66,10 +69,9 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::signal::Host for T {
         var: WasmResource<Variant>,
         callable: WasmResource<Variant>,
     ) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "signal", "is-connected"))?;
-        let v: Signal = this.get_value(var)?;
-        Ok(v.is_connected(this.get_value(callable)?))
+        filter_macro!(filter self.filter.as_ref(), godot_core, signal, is_connected)?;
+        let v: Signal = self.get_value(var)?;
+        Ok(v.is_connected(self.get_value(callable)?))
     }
 
     fn emit(
@@ -77,12 +79,11 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::core::signal::Host for T {
         var: WasmResource<Variant>,
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "signal", "emit"))?;
-        let v: Signal = this.get_value(var)?;
+        filter_macro!(filter self.filter.as_ref(), godot_core, signal, emit)?;
+        let v: Signal = self.get_value(var)?;
         let args = args
             .into_iter()
-            .map(|v| this.maybe_get_var(v))
+            .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<Vec<_>>>()?;
         v.emit(&args);
         Ok(())

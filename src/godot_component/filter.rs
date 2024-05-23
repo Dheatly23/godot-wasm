@@ -1,7 +1,8 @@
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::error::Error;
+use std::fmt;
+use std::fmt::Write as _;
+use std::ops::{Bound, Range, RangeBounds};
 
-use anyhow::{bail, Result as AnyResult};
 use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use nom::branch::alt;
@@ -11,51 +12,365 @@ use nom::combinator::{map, opt};
 use nom::sequence::{delimited, pair, preceded, separated_pair};
 use nom::{Err as NomErr, IResult};
 
-use crate::godot_util::VariantDispatch;
 use crate::rw_struct::{CharSlice, SingleError};
 
-#[derive(Default)]
-pub struct Filter(SubFilter<SubFilter<SubFilter<bool>>>);
-struct SubFilter<T> {
-    children: HashMap<Rc<str>, T>,
-    default: bool,
+#[derive(Debug, Clone)]
+pub struct FilterFlags<const N: usize>([u8; N]);
+
+#[derive(Debug, Clone, Copy)]
+pub struct FilterFlagsRef<'a, const N: usize> {
+    r: &'a FilterFlags<N>,
+    o: usize,
+    l: usize,
 }
 
-impl<T> Default for SubFilter<T> {
+#[derive(Debug)]
+pub struct FilterFlagsMut<'a, const N: usize> {
+    r: &'a mut FilterFlags<N>,
+    o: usize,
+    l: usize,
+}
+
+impl<const N: usize> Default for FilterFlags<N> {
     fn default() -> Self {
-        Self {
-            children: HashMap::default(),
-            default: true,
+        Self([255; N])
+    }
+}
+
+fn rebound(o: usize, l: usize, bs: Bound<&usize>, be: Bound<&usize>) -> Option<(usize, usize)> {
+    let a = match bs {
+        Bound::Unbounded => 0,
+        Bound::Included(&v) => v,
+        Bound::Excluded(&v) => v.checked_add(1)?,
+    };
+    let b = match be {
+        Bound::Unbounded => l,
+        Bound::Included(&v) => v.checked_add(1)?,
+        Bound::Excluded(&v) => v,
+    };
+
+    if a > b || b > l {
+        None
+    } else if a == b {
+        Some((0, 0))
+    } else {
+        Some((o + a, b - a))
+    }
+}
+
+#[allow(dead_code)]
+impl<const N: usize> FilterFlags<N> {
+    #[inline]
+    pub fn as_ref<'a>(&'a self) -> FilterFlagsRef<'a, N> {
+        FilterFlagsRef {
+            r: self,
+            o: 0,
+            l: N * 8,
+        }
+    }
+
+    #[inline]
+    pub fn as_mut<'a>(&'a mut self) -> FilterFlagsMut<'a, N> {
+        FilterFlagsMut {
+            r: self,
+            o: 0,
+            l: N * 8,
+        }
+    }
+
+    #[inline]
+    pub fn slice<'a>(&'a self, i: impl RangeBounds<usize>) -> Option<FilterFlagsRef<'a, N>> {
+        self.as_ref().slice(i)
+    }
+
+    #[inline]
+    pub fn slice_mut<'a>(
+        &'a mut self,
+        i: impl RangeBounds<usize>,
+    ) -> Option<FilterFlagsMut<'a, N>> {
+        self.as_mut().into_slice_mut(i)
+    }
+
+    pub fn get(&self, i: usize) -> bool {
+        let (i, r) = (i / 8, i % 8);
+        match self.0.get(i) {
+            Some(&v) => v & (1 << r) != 0,
+            None => false,
+        }
+    }
+
+    pub fn set(&mut self, i: usize, v: bool) {
+        let (i, r) = (i / 8, i % 8);
+        if let Some(p) = self.0.get_mut(i) {
+            if v {
+                *p |= 1 << r;
+            } else {
+                *p &= !(1 << r);
+            }
+        }
+    }
+
+    pub fn fill(&mut self, Range { start, end }: Range<usize>, v: bool) {
+        let (is, rs) = (start / 8, start % 8);
+        let (ie, re) = (end / 8, end % 8);
+        for i in is..=ie {
+            let Some(p) = self.0.get_mut(i) else { continue };
+            if i == is {
+                if v {
+                    *p |= 255 << rs;
+                } else {
+                    *p &= !(255 << rs);
+                }
+            } else if i == ie {
+                if v {
+                    *p |= !(255 << re);
+                } else {
+                    *p &= 255 << rs;
+                }
+            } else {
+                *p = if v { 255 } else { 0 };
+            }
         }
     }
 }
 
-// SAFETY: No Rc-ed value gets leaked outside.
-unsafe impl Send for Filter {}
-unsafe impl Sync for Filter {}
-
-impl Filter {
-    pub fn filter(&self, module: &str, interface: &str, method: &str) -> bool {
-        match self.0.children.get(module) {
-            Some(f) => match f.children.get(interface) {
-                Some(f) => match f.children.get(method) {
-                    Some(&v) => v,
-                    None => f.default,
-                },
-                None => f.default,
-            },
-            None => self.0.default,
-        }
+#[allow(dead_code)]
+impl<'a, const N: usize> FilterFlagsRef<'a, N> {
+    pub fn slice(&self, i: impl RangeBounds<usize>) -> Option<Self> {
+        let Self { r, o, l } = *self;
+        let (o, l) = rebound(o, l, i.start_bound(), i.end_bound())?;
+        Some(Self { r, o, l })
     }
 
-    pub fn pass(&self, module: &str, interface: &str, method: &str) -> AnyResult<()> {
-        if self.filter(module, interface, method) {
-            Ok(())
-        } else {
-            bail!("Calling {module}.{interface}.{method} is blocked!")
+    pub fn get(&self, i: usize) -> bool {
+        match i.checked_add(self.o) {
+            Some(v) if i < self.l => self.r.get(v),
+            _ => false,
         }
     }
 }
+
+#[allow(dead_code)]
+impl<'a, const N: usize> FilterFlagsMut<'a, N> {
+    pub fn slice<'b>(&'b self, i: impl RangeBounds<usize>) -> Option<FilterFlagsRef<'b, N>> {
+        let (o, l) = rebound(self.o, self.l, i.start_bound(), i.end_bound())?;
+        Some(FilterFlagsRef { r: &*self.r, o, l })
+    }
+
+    pub fn into_slice(self, i: impl RangeBounds<usize>) -> Option<FilterFlagsRef<'a, N>> {
+        let (o, l) = rebound(self.o, self.l, i.start_bound(), i.end_bound())?;
+        Some(FilterFlagsRef { r: &*self.r, o, l })
+    }
+
+    pub fn slice_mut<'b>(
+        &'b mut self,
+        i: impl RangeBounds<usize>,
+    ) -> Option<FilterFlagsMut<'b, N>> {
+        let r = &mut *self.r;
+        let (o, l) = rebound(self.o, self.l, i.start_bound(), i.end_bound())?;
+        Some(FilterFlagsMut { r, o, l })
+    }
+
+    pub fn into_slice_mut(self, i: impl RangeBounds<usize>) -> Option<Self> {
+        let (o, l) = rebound(self.o, self.l, i.start_bound(), i.end_bound())?;
+        Some(FilterFlagsMut { r: self.r, o, l })
+    }
+
+    pub fn get(&self, i: usize) -> bool {
+        match i.checked_add(self.o) {
+            Some(v) if i < self.l => self.r.get(v),
+            _ => false,
+        }
+    }
+
+    pub fn set(&mut self, i: usize, v: bool) {
+        match i.checked_add(self.o) {
+            Some(t) if i < self.l => self.r.set(t, v),
+            _ => (),
+        }
+    }
+
+    pub fn fill(&mut self, i: Range<usize>, v: bool) {
+        let s = match i.start.checked_add(self.o) {
+            Some(t) if i.start < self.l => t,
+            _ => return,
+        };
+        let e = match i.end.checked_add(self.o) {
+            Some(t) if i.end < self.l => t,
+            _ => self.o + self.l,
+        };
+        self.r.fill(s..e, v);
+    }
+
+    pub fn fill_all(&mut self, v: bool) {
+        self.r.fill(self.o..self.o + self.l, v);
+    }
+}
+
+impl<'a, const N: usize> From<&'a FilterFlags<N>> for FilterFlagsRef<'a, N> {
+    fn from(v: &'a FilterFlags<N>) -> Self {
+        v.as_ref()
+    }
+}
+
+impl<'a, const N: usize> From<&'a mut FilterFlags<N>> for FilterFlagsMut<'a, N> {
+    fn from(v: &'a mut FilterFlags<N>) -> Self {
+        v.as_mut()
+    }
+}
+
+#[macro_export]
+macro_rules! filter_macro {
+    (#c) => {
+        pub const filter_len: usize = 0;
+    };
+    (#c <$s:ident>) => {
+        pub const filter_len: usize = $s + 1;
+    };
+    (#c $(<$s:ident>)? $i0:ident) => {
+        pub const $i0: usize = $($s + 1 +)? 0;
+        pub const filter_len: usize = $i0 + 1;
+    };
+    (#c $(<$s:ident>)? $i0:ident, $i1:ident) => {
+        pub const $i0: usize = $($s + 1 +)? 0;
+        pub const $i1: usize = $($s + 1 +)? 1;
+        pub const filter_len: usize = $i1 + 1;
+    };
+    (#c $(<$s:ident>)? $i0:ident, $i1:ident, $i2:ident) => {
+        pub const $i0: usize = $($s + 1 +)? 0;
+        pub const $i1: usize = $($s + 1 +)? 1;
+        pub const $i2: usize = $($s + 1 +)? 2;
+        pub const filter_len: usize = $i2 + 1;
+    };
+    (#c $(<$s:ident>)? $i0:ident, $i1:ident, $i2:ident, $i3:ident) => {
+        pub const $i0: usize = $($s + 1 +)? 0;
+        pub const $i1: usize = $($s + 1 +)? 1;
+        pub const $i2: usize = $($s + 1 +)? 2;
+        pub const $i3: usize = $($s + 1 +)? 3;
+        pub const filter_len: usize = $i3 + 1;
+    };
+    (#c $(<$s:ident>)? $i0:ident, $i1:ident, $i2:ident, $i3:ident, $i4:ident $(, $i:ident)*) => {
+        pub const $i0: usize = $($s + 1 +)? 0;
+        pub const $i1: usize = $($s + 1 +)? 1;
+        pub const $i2: usize = $($s + 1 +)? 2;
+        pub const $i3: usize = $($s + 1 +)? 3;
+        pub const $i4: usize = $($s + 1 +)? 4;
+        $crate::filter_macro!{#c <$i4> $($i),*}
+    };
+    (#cp) => {
+        pub const filter_len: usize = 0;
+    };
+    (#cp <$s:ident>) => {
+        pub const filter_len: usize = $s.0 + $s.1;
+    };
+    (#cp $(<$s:ident>)? $i0:ident) => {
+        pub const $i0: (usize, usize) = ($($s.0 + $s.1 +)? 0, super::$i0::indices::filter_len);
+        pub const filter_len: usize = $i0.0 + $i0.1;
+    };
+    (#cp $(<$s:ident>)? $i0:ident, $i1:ident) => {
+        pub const $i0: (usize, usize) = ($($s.0 + $s.1 +)? 0, super::$i0::indices::filter_len);
+        pub const $i1: (usize, usize) = ($i0.0 + $i0.1, super::$i1::indices::filter_len);
+        pub const filter_len: usize = $i1.0 + $i1.1;
+    };
+    (#cp $(<$s:ident>)? $i0:ident, $i1:ident, $i2:ident) => {
+        pub const $i0: (usize, usize) = ($($s.0 + $s.1 +)? 0, super::$i0::indices::filter_len);
+        pub const $i1: (usize, usize) = ($i0.0 + $i0.1, super::$i1::indices::filter_len);
+        pub const $i2: (usize, usize) = ($i1.0 + $i1.1, super::$i2::indices::filter_len);
+        pub const filter_len: usize = $i2.0 + $i2.1;
+    };
+    (#cp $(<$s:ident>)? $i0:ident, $i1:ident, $i2:ident, $i3:ident) => {
+        pub const $i0: (usize, usize) = ($($s.0 + $s.1 +)? 0, super::$i0::indices::filter_len);
+        pub const $i1: (usize, usize) = ($i0.0 + $i0.1, super::$i1::indices::filter_len);
+        pub const $i2: (usize, usize) = ($i1.0 + $i1.1, super::$i2::indices::filter_len);
+        pub const $i3: (usize, usize) = ($i2.0 + $i2.1, super::$i3::indices::filter_len);
+        pub const filter_len: usize = $i3.0 + $i3.1;
+    };
+    (#cp $(<$s:ident>)? $i0:ident, $i1:ident, $i2:ident, $i3:ident, $i4:ident $(, $i:ident)*) => {
+        pub const $i0: (usize, usize) = ($($s.0 + $s.1 +)? 0, super::$i0::indices::filter_len);
+        pub const $i1: (usize, usize) = ($i0.0 + $i0.1, super::$i1::indices::filter_len);
+        pub const $i2: (usize, usize) = ($i1.0 + $i1.1, super::$i2::indices::filter_len);
+        pub const $i3: (usize, usize) = ($i2.0 + $i2.1, super::$i3::indices::filter_len);
+        pub const $i4: (usize, usize) = ($i3.0 + $i3.1, super::$i4::indices::filter_len);
+        $crate::filter_macro!{#cp <$i4> $($i),*}
+    };
+    (filter $e:expr, $module:ident, $interface:ident, $method:ident) => {
+        $crate::site_context!($crate::godot_component::filter_data::run_filter(
+            $e,
+            $crate::godot_component::filter_data::indices::$module.0 +
+            $crate::godot_component::filter_data::$module::indices::$interface.0 +
+            $crate::godot_component::filter_data::$module::$interface::indices::$method,
+        ))
+    };
+    ($t:ident [$($i:ident -> $s:literal),* $(,)?]) => {
+        pub mod filter_data {
+            #[allow(non_upper_case_globals)]
+            pub mod indices {
+                $crate::filter_macro!{#c $($i),*}
+            }
+
+            pub fn parse_filter<const N: usize>(mut filter: $crate::godot_component::filter::FilterFlagsMut<'_, N>, item: $crate::godot_component::filter::FilterItem<'_>) {
+                match item.$t {
+                    None => filter.fill_all(item.allow),
+                    $(Some($s) => filter.set(indices::$i, item.allow),)*
+                    _ => (),
+                }
+            }
+
+            pub fn run_filter<const N: usize>(filter: $crate::godot_component::filter::FilterFlagsRef<'_, N>, i: usize) -> Result<(), $crate::godot_component::filter::FilterItem<'static>> {
+                if filter.get(i) {
+                    Ok(())
+                }
+                $(else if i == indices::$i {
+                    Err($crate::godot_component::filter::FilterItem {
+                        $t: Some($s),
+                        ..$crate::godot_component::filter::FilterItem::default()
+                    })
+                })*
+                else {
+                    Err($crate::godot_component::filter::FilterItem::default())
+                }
+            }
+        }
+    };
+    ($t:ident [$($i:ident <$($p:ident)::+> -> $s:literal),* $(,)?]) => {
+        pub mod filter_data {
+            $(pub use super::$($p::)+filter_data as $i;)*
+            #[allow(non_upper_case_globals)]
+            pub mod indices {
+                $crate::filter_macro!{#cp $($i),*}
+            }
+
+            pub fn parse_filter<const N: usize>(mut filter: $crate::godot_component::filter::FilterFlagsMut<'_, N>, item: $crate::godot_component::filter::FilterItem<'_>) {
+                match item.$t {
+                    None => filter.fill_all(item.allow),
+                    $(Some($s) => $i::parse_filter(filter.into_slice_mut(indices::$i.0..indices::$i.0 + indices::$i.1).unwrap(), item),)*
+                    _ => (),
+                }
+            }
+
+            pub fn run_filter<const N: usize>(filter: $crate::godot_component::filter::FilterFlagsRef<'_, N>, i: usize) -> Result<(), $crate::godot_component::filter::FilterItem<'static>> {
+                $(if i < indices::$i.0 + indices::$i.1 {
+                    match $i::run_filter(filter, i) {
+                        Err(e) => Err($crate::godot_component::filter::FilterItem {
+                            $t: Some($s),
+                            ..e
+                        }),
+                        v => v,
+                    }
+                } else)*
+                {
+                    Err($crate::godot_component::filter::FilterItem::default())
+                }
+            }
+        }
+    };
+}
+
+use crate::godot_component::filter_data::indices::filter_len as ENDPOINT;
+use crate::godot_component::filter_data::parse_filter;
+const DATA_LEN: usize = (ENDPOINT + 7) / 8;
+
+pub type Filter = FilterFlags<DATA_LEN>;
 
 impl GodotConvert for Filter {
     type Via = Dictionary;
@@ -83,86 +398,137 @@ impl FromGodot for Filter {
 }
 
 fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
-    let mut interner: HashMap<Box<[char]>, Rc<str>> = HashMap::new();
-    let mut intern = move |s: Variant| {
-        let s = s.stringify();
-        // SAFETY: Should be safe with Godot 4.1+
-        let v = unsafe { s.chars_unchecked() };
-        if let Some(r) = interner.get(v) {
-            return r.clone();
+    let f = |s: &mut String, k: Variant| -> Result<(), ConvertError> {
+        s.clear();
+        if k.get_type() == VariantType::StringName {
+            write!(s, "{}", k.to::<StringName>())
+        } else {
+            write!(s, "{}", k.try_to::<GString>()?)
         }
-        let r: Rc<str> = v.iter().collect::<String>().into();
-        interner.insert(v.into(), r.clone());
-        r
+        .map_err(|e| ConvertError::with_error_value(e, k))
     };
-
-    let mut filter = SubFilter::default();
+    let mut ret = Filter::default();
+    let mut fi = ret.slice_mut(..ENDPOINT).unwrap();
+    let mut module = String::new();
+    let mut interface = String::new();
+    let mut method = String::new();
     for (k, v) in d.iter_shared() {
-        let k = intern(k);
-        if &*k == "*" {
-            filter.default = v.try_to()?;
+        f(&mut module, k)?;
+        if module == "*" {
+            parse_filter(
+                fi.slice_mut(..).unwrap(),
+                FilterItem {
+                    allow: v.try_to()?,
+                    ..FilterItem::default()
+                },
+            );
             continue;
         }
 
-        let v = match VariantDispatch::from(&v) {
-            VariantDispatch::Bool(v) => SubFilter {
-                default: v,
-                ..SubFilter::default()
-            },
-            VariantDispatch::Dictionary(v) => {
-                let mut filter = SubFilter::default();
-                for (k, v) in v.iter_shared() {
-                    let k = intern(k);
-                    if &*k == "*" {
-                        filter.default = v.try_to()?;
-                        continue;
-                    }
+        if v.get_type() == VariantType::Bool {
+            parse_filter(
+                fi.slice_mut(..).unwrap(),
+                FilterItem {
+                    allow: v.to(),
+                    module: Some(&module),
+                    ..FilterItem::default()
+                },
+            );
+            continue;
+        }
 
-                    let v = match VariantDispatch::from(&v) {
-                        VariantDispatch::Bool(v) => SubFilter {
-                            default: v,
-                            ..SubFilter::default()
+        for (k, v) in v.try_to::<Dictionary>()?.iter_shared() {
+            f(&mut interface, k)?;
+            if interface == "*" {
+                parse_filter(
+                    fi.slice_mut(..).unwrap(),
+                    FilterItem {
+                        allow: v.try_to()?,
+                        module: Some(&module),
+                        ..FilterItem::default()
+                    },
+                );
+                continue;
+            }
+
+            if v.get_type() == VariantType::Bool {
+                parse_filter(
+                    fi.slice_mut(..).unwrap(),
+                    FilterItem {
+                        allow: v.to(),
+                        module: Some(&module),
+                        interface: Some(&interface),
+                        ..FilterItem::default()
+                    },
+                );
+                continue;
+            }
+
+            for (k, v) in v.try_to::<Dictionary>()?.iter_shared() {
+                f(&mut method, k)?;
+                let allow = v.try_to::<bool>()?;
+                if method == "*" {
+                    parse_filter(
+                        fi.slice_mut(..).unwrap(),
+                        FilterItem {
+                            allow,
+                            module: Some(&module),
+                            interface: Some(&interface),
+                            ..FilterItem::default()
                         },
-                        VariantDispatch::Dictionary(v) => {
-                            let mut filter = SubFilter::default();
-                            for (k, v) in v.iter_shared() {
-                                let v = v.try_to::<bool>()?;
-                                let k = intern(k);
-                                if &*k == "*" {
-                                    filter.default = v;
-                                } else {
-                                    filter.children.insert(k, v);
-                                }
-                            }
-
-                            filter
-                        }
-                        _ => return Err(ConvertError::new(format!("Unknown value {v}"))),
-                    };
-                    filter.children.insert(k, v);
+                    );
+                    continue;
                 }
 
-                filter
+                parse_filter(
+                    fi.slice_mut(..).unwrap(),
+                    FilterItem {
+                        allow,
+                        module: Some(&module),
+                        interface: Some(&interface),
+                        method: Some(&method),
+                    },
+                );
             }
-            _ => return Err(ConvertError::new(format!("Unknown value {v}"))),
-        };
-        filter.children.insert(k, v);
+        }
     }
 
-    Ok(Filter(filter))
+    Ok(ret)
 }
 
-enum FilterItem<T> {
-    Any,
-    Module(T),
-    Interface(T, T),
-    Method(T, T, T),
+#[derive(Default, Clone, Copy)]
+pub struct FilterItem<'a> {
+    pub allow: bool,
+    pub module: Option<&'a str>,
+    pub interface: Option<&'a str>,
+    pub method: Option<&'a str>,
 }
+
+impl<'a> fmt::Debug for FilterItem<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        static UNKNOWN: &str = "<unknown>";
+        write!(
+            f,
+            "Calling {}.{}.{} is blocked!",
+            self.module.unwrap_or(UNKNOWN),
+            self.interface.unwrap_or(UNKNOWN),
+            self.method.unwrap_or(UNKNOWN)
+        )
+    }
+}
+
+impl<'a> fmt::Display for FilterItem<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as fmt::Debug>::fmt(self, f)
+    }
+}
+
+impl<'a> Error for FilterItem<'a> {}
 
 #[allow(clippy::type_complexity)]
 fn parse_line(
     i: CharSlice<'_>,
-) -> IResult<CharSlice<'_>, Option<(FilterItem<&[char]>, bool)>, SingleError<CharSlice<'_>>> {
+) -> IResult<CharSlice<'_>, Option<([Option<&'_ [char]>; 3], bool)>, SingleError<CharSlice<'_>>> {
     let f = |c: char| c.is_alphanumeric() || matches!(c, ':' | '-');
 
     map(
@@ -172,7 +538,7 @@ fn parse_line(
                 alt((map(tag("deny"), |_| false), map(tag("allow"), |_| true))),
                 char_(' '),
                 alt((
-                    map(char_('*'), |_| FilterItem::Any),
+                    map(char_('*'), |_| [None; 3]),
                     map(
                         pair(
                             take_while1(f),
@@ -191,12 +557,12 @@ fn parse_line(
                             )),
                         ),
                         |v| match v {
-                            (module, None) => FilterItem::Module(module.0),
+                            (module, None) => [Some(module.0), None, None],
                             (module, Some((interface, None))) => {
-                                FilterItem::Interface(module.0, interface.0)
+                                [Some(module.0), Some(interface.0), None]
                             }
                             (module, Some((interface, Some(method)))) => {
-                                FilterItem::Method(module.0, interface.0, method.0)
+                                [Some(module.0), Some(interface.0), Some(method.0)]
                             }
                         },
                     ),
@@ -212,54 +578,48 @@ fn parse_script(s: &GString) -> Result<Filter, NomErr<SingleError<String>>> {
     // SAFETY: Externalize char safety to Godot
     let mut s = unsafe { CharSlice(s.chars_unchecked()) };
 
-    let mut interner = HashSet::new();
-    let mut cache = String::new();
-    let mut intern = move |s: &[char]| {
-        cache.clear();
-        cache.extend(s);
-        match interner.get(&*cache) {
-            None => {
-                let r = <Rc<str>>::from(&*cache);
-                interner.insert(r.clone());
-                r
-            }
-            Some(v) => v.clone(),
-        }
-    };
-
     let mut ret = Filter::default();
+    let mut f = ret.slice_mut(..ENDPOINT).unwrap();
+    let mut module = String::new();
+    let mut interface = String::new();
+    let mut method = String::new();
     while !s.0.is_empty() {
         let (s_, v) = parse_line(s).map_err(|e| e.map(SingleError::into_owned))?;
         s = s_;
 
-        let Some((f, v)) = v else { continue };
-        match f {
-            FilterItem::Any => ret.0.default = v,
-            FilterItem::Module(module) => {
-                ret.0.children.entry(intern(module)).or_default().default = v
-            }
-            FilterItem::Interface(module, interface) => {
-                ret.0
-                    .children
-                    .entry(intern(module))
-                    .or_default()
-                    .children
-                    .entry(intern(interface))
-                    .or_default()
-                    .default = v
-            }
-            FilterItem::Method(module, interface, method) => {
-                ret.0
-                    .children
-                    .entry(intern(module))
-                    .or_default()
-                    .children
-                    .entry(intern(interface))
-                    .or_default()
-                    .children
-                    .insert(intern(method), v);
-            }
-        }
+        let Some((t, allow)) = v else {
+            continue;
+        };
+        let module = if let Some(t) = t[0] {
+            module.clear();
+            module.extend(t);
+            Some(&*module)
+        } else {
+            None
+        };
+        let interface = if let Some(t) = t[1] {
+            interface.clear();
+            interface.extend(t);
+            Some(&*interface)
+        } else {
+            None
+        };
+        let method = if let Some(t) = t[2] {
+            method.clear();
+            method.extend(t);
+            Some(&*method)
+        } else {
+            None
+        };
+        parse_filter(
+            f.slice_mut(..).unwrap(),
+            FilterItem {
+                module,
+                interface,
+                method,
+                allow,
+            },
+        );
     }
 
     Ok(ret)

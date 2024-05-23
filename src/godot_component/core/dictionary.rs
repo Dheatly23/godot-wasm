@@ -2,66 +2,78 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-use crate::site_context;
+use crate::filter_macro;
 
-impl<T: AsMut<crate::godot_component::GodotCtx>>
-    crate::godot_component::bindgen::godot::core::dictionary::Host for T
+filter_macro! {method [
+    empty -> "empty",
+    len -> "len",
+    is_empty -> "is-empty",
+    clear -> "clear",
+    duplicate -> "duplicate",
+    get -> "get",
+    has -> "has",
+    has_all -> "has-all",
+    insert -> "insert",
+    remove -> "remove",
+    extend -> "extend",
+    keys -> "keys",
+    values -> "values",
+    extend_list -> "extend-list",
+    from_list -> "from-list",
+    into_list -> "into-list",
+]}
+
+impl crate::godot_component::bindgen::godot::core::dictionary::Host
+    for crate::godot_component::GodotCtx
 {
     fn empty(&mut self) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "empty"))?;
-        this.set_into_var(Dictionary::new())
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, empty)?;
+        self.set_into_var(Dictionary::new())
     }
 
     fn from_list(
         &mut self,
         val: Vec<(Option<WasmResource<Variant>>, Option<WasmResource<Variant>>)>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "from-list"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, from_list)?;
         let v = val
             .into_iter()
-            .map(|(k, v)| Ok((this.maybe_get_var(k)?, this.maybe_get_var(v)?)))
+            .map(|(k, v)| Ok((self.maybe_get_var(k)?, self.maybe_get_var(v)?)))
             .collect::<AnyResult<Dictionary>>()?;
-        this.set_into_var(v)
+        self.set_into_var(v)
     }
 
     fn into_list(
         &mut self,
         var: WasmResource<Variant>,
     ) -> AnyResult<Vec<(Option<WasmResource<Variant>>, Option<WasmResource<Variant>>)>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "into-list"))?;
-        let v: Dictionary = this.get_value(var)?;
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, into_list)?;
+        let v: Dictionary = self.get_value(var)?;
         v.iter_shared()
-            .map(|(k, v)| Ok((this.set_var(k)?, this.set_var(v)?)))
+            .map(|(k, v)| Ok((self.set_var(k)?, self.set_var(v)?)))
             .collect()
     }
 
     fn len(&mut self, var: WasmResource<Variant>) -> AnyResult<u32> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "len"))?;
-        Ok(this.get_value::<Dictionary>(var)?.len() as _)
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, len)?;
+        Ok(self.get_value::<Dictionary>(var)?.len() as _)
     }
 
     fn is_empty(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "is-empty"))?;
-        Ok(this.get_value::<Dictionary>(var)?.is_empty())
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, is_empty)?;
+        Ok(self.get_value::<Dictionary>(var)?.is_empty())
     }
 
     fn clear(&mut self, var: WasmResource<Variant>) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "clear"))?;
-        this.get_value::<Dictionary>(var)?.clear();
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, clear)?;
+        self.get_value::<Dictionary>(var)?.clear();
         Ok(())
     }
 
     fn duplicate(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "duplicate"))?;
-        let r = this.get_value::<Dictionary>(var)?.duplicate_shallow();
-        this.set_into_var(r)
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, duplicate)?;
+        let r = self.get_value::<Dictionary>(var)?.duplicate_shallow();
+        self.set_into_var(r)
     }
 
     fn get(
@@ -69,11 +81,10 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "get"))?;
-        let v: Dictionary = this.get_value(var)?;
-        match v.get(this.maybe_get_var(key)?) {
-            Some(v) => this.set_var(v).map(Some),
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, get)?;
+        let v: Dictionary = self.get_value(var)?;
+        match v.get(self.maybe_get_var(key)?) {
+            Some(v) => self.set_var(v).map(Some),
             None => Ok(None),
         }
     }
@@ -83,11 +94,10 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "has"))?;
-        Ok(this
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, has)?;
+        Ok(self
             .get_value::<Dictionary>(var)?
-            .contains_key(this.maybe_get_var(key)?))
+            .contains_key(self.maybe_get_var(key)?))
     }
 
     fn has_all(
@@ -95,11 +105,10 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         key: WasmResource<Variant>,
     ) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "has-all"))?;
-        Ok(this
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, has_all)?;
+        Ok(self
             .get_value::<Dictionary>(var)?
-            .contains_all_keys(this.get_value(key)?))
+            .contains_all_keys(self.get_value(key)?))
     }
 
     fn insert(
@@ -108,11 +117,10 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         key: Option<WasmResource<Variant>>,
         val: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "insert"))?;
-        let mut v: Dictionary = this.get_value(var)?;
-        match v.insert(this.maybe_get_var(key)?, this.maybe_get_var(val)?) {
-            Some(v) => this.set_var(v).map(Some),
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, insert)?;
+        let mut v: Dictionary = self.get_value(var)?;
+        match v.insert(self.maybe_get_var(key)?, self.maybe_get_var(val)?) {
+            Some(v) => self.set_var(v).map(Some),
             None => Ok(None),
         }
     }
@@ -122,11 +130,10 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         key: Option<WasmResource<Variant>>,
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "remove"))?;
-        let mut v: Dictionary = this.get_value(var)?;
-        match v.remove(this.maybe_get_var(key)?) {
-            Some(v) => this.set_var(v).map(Some),
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, remove)?;
+        let mut v: Dictionary = self.get_value(var)?;
+        match v.remove(self.maybe_get_var(key)?) {
+            Some(v) => self.set_var(v).map(Some),
             None => Ok(None),
         }
     }
@@ -137,25 +144,22 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         other: WasmResource<Variant>,
         overwrite: bool,
     ) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "extend"))?;
-        let mut v: Dictionary = this.get_value(var)?;
-        v.extend_dictionary(this.get_value(other)?, overwrite);
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, extend)?;
+        let mut v: Dictionary = self.get_value(var)?;
+        v.extend_dictionary(self.get_value(other)?, overwrite);
         Ok(())
     }
 
     fn keys(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "keys"))?;
-        let v: Dictionary = this.get_value(var)?;
-        this.set_into_var(v.keys_array())
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, keys)?;
+        let v: Dictionary = self.get_value(var)?;
+        self.set_into_var(v.keys_array())
     }
 
     fn values(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "values"))?;
-        let v: Dictionary = this.get_value(var)?;
-        this.set_into_var(v.values_array())
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, values)?;
+        let v: Dictionary = self.get_value(var)?;
+        self.set_into_var(v.values_array())
     }
 
     fn extend_list(
@@ -163,12 +167,11 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         val: Vec<(Option<WasmResource<Variant>>, Option<WasmResource<Variant>>)>,
     ) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "dictionary", "extend-list"))?;
-        let mut var: Dictionary = this.get_value(var)?;
+        filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, extend_list)?;
+        let mut var: Dictionary = self.get_value(var)?;
 
         for (k, v) in val.into_iter() {
-            var.insert(this.maybe_get_var(k)?, this.maybe_get_var(v)?);
+            var.insert(self.maybe_get_var(k)?, self.maybe_get_var(v)?);
         }
 
         Ok(())

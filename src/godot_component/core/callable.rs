@@ -2,15 +2,27 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
-use crate::site_context;
+use crate::filter_macro;
 
-impl<T: AsMut<crate::godot_component::GodotCtx>>
-    crate::godot_component::bindgen::godot::core::callable::Host for T
+filter_macro! {method [
+    invalid -> "invalid",
+    from_object_method -> "from-object-method",
+    is_custom -> "is-custom",
+    is_valid -> "is-valid",
+    object -> "object",
+    method_name -> "method-name",
+    call -> "call",
+    callv -> "callv",
+    bind -> "bind",
+    bindv -> "bindv",
+]}
+
+impl crate::godot_component::bindgen::godot::core::callable::Host
+    for crate::godot_component::GodotCtx
 {
     fn invalid(&mut self) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "invalid"))?;
-        this.set_into_var(Callable::invalid())
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, invalid)?;
+        self.set_into_var(Callable::invalid())
     }
 
     fn from_object_method(
@@ -18,42 +30,35 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         obj: WasmResource<Variant>,
         method: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:core", "callable", "from-object-method"))?;
-        let o: Gd<Object> = this.get_value(obj)?;
-        let m: StringName = this.get_value(method)?;
-        this.set_into_var(Callable::from_object_method(&o, m))
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, from_object_method)?;
+        let o: Gd<Object> = self.get_value(obj)?;
+        let m: StringName = self.get_value(method)?;
+        self.set_into_var(Callable::from_object_method(&o, m))
     }
 
     fn is_custom(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "is-custom"))?;
-        Ok(this.get_value::<Callable>(var)?.is_custom())
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, is_custom)?;
+        Ok(self.get_value::<Callable>(var)?.is_custom())
     }
 
     fn is_valid(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "is-valid"))?;
-        Ok(this.get_value::<Callable>(var)?.is_valid())
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, is_valid)?;
+        Ok(self.get_value::<Callable>(var)?.is_valid())
     }
 
     fn object(&mut self, var: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "object"))?;
-        let v: Callable = this.get_value(var)?;
-        v.object().map(|v| this.set_into_var(v)).transpose()
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, object)?;
+        let v: Callable = self.get_value(var)?;
+        v.object().map(|v| self.set_into_var(v)).transpose()
     }
 
     fn method_name(
         &mut self,
         var: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "method-name"))?;
-        let v: Callable = this.get_value(var)?;
-        v.method_name().map(|v| this.set_into_var(v)).transpose()
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, method_name)?;
+        let v: Callable = self.get_value(var)?;
+        v.method_name().map(|v| self.set_into_var(v)).transpose()
     }
 
     fn call(
@@ -61,14 +66,13 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "call"))?;
-        let v: Callable = this.get_value(var)?;
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, call)?;
+        let v: Callable = self.get_value(var)?;
         let args = args
             .into_iter()
-            .map(|v| this.maybe_get_var(v))
+            .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<VariantArray>>()?;
-        this.set_var(v.callv(args))
+        self.set_var(v.callv(args))
     }
 
     fn callv(
@@ -76,11 +80,10 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         args: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "callv"))?;
-        let v: Callable = this.get_value(var)?;
-        let args: VariantArray = this.get_value(args)?;
-        this.set_var(v.callv(args))
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, callv)?;
+        let v: Callable = self.get_value(var)?;
+        let args: VariantArray = self.get_value(args)?;
+        self.set_var(v.callv(args))
     }
 
     fn bind(
@@ -88,14 +91,13 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         args: Vec<Option<WasmResource<Variant>>>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "bind"))?;
-        let v: Callable = this.get_value(var)?;
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, bind)?;
+        let v: Callable = self.get_value(var)?;
         let args = args
             .into_iter()
-            .map(|v| this.maybe_get_var(v))
+            .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<VariantArray>>()?;
-        this.set_into_var(v.bindv(args))
+        self.set_into_var(v.bindv(args))
     }
 
     fn bindv(
@@ -103,10 +105,9 @@ impl<T: AsMut<crate::godot_component::GodotCtx>>
         var: WasmResource<Variant>,
         args: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "callable", "bindv"))?;
-        let v: Callable = this.get_value(var)?;
-        let args: VariantArray = this.get_value(args)?;
-        this.set_into_var(v.bindv(args))
+        filter_macro!(filter self.filter.as_ref(), godot_core, callable, bindv)?;
+        let v: Callable = self.get_value(var)?;
+        let args: VariantArray = self.get_value(args)?;
+        self.set_into_var(v.bindv(args))
     }
 }

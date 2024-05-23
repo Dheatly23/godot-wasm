@@ -12,7 +12,25 @@ use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
 
 use crate::godot_util::{from_var_any, ErrorWrapper, SendSyncWrapper};
-use crate::{bail_with_site, site_context};
+use crate::{bail_with_site, filter_macro};
+
+filter_macro! {module [
+    godot_core <core> -> "godot:core",
+    godot_reflection <reflection_filter> -> "godot:reflection",
+    godot_global <global> -> "godot:global",
+]}
+
+mod reflection_filter {
+    crate::filter_macro! {interface [
+        this <this_filter> -> "this",
+    ]}
+
+    mod this_filter {
+        crate::filter_macro! {method [
+            get_this -> "get-this",
+        ]}
+    }
+}
 
 #[derive(Default)]
 pub struct GodotCtx {
@@ -113,6 +131,7 @@ pub mod bindgen {
         ownership: Borrowing {
             duplicate_if_necessary: false
         },
+        trappable_imports: true,
         with: {
             "godot:core/core/godot-var": GVar,
         },
@@ -177,79 +196,75 @@ fn wrap_error(e: Error) -> ErrorRes {
     }
 }
 
-impl<T: AsMut<GodotCtx>> bindgen::godot::core::core::HostGodotVar for T {
+impl bindgen::godot::core::core::HostGodotVar for GodotCtx {
     fn drop(&mut self, rep: WasmResource<Variant>) -> AnyResult<()> {
-        self.as_mut().get_var(rep)?;
+        self.get_var(rep)?;
         Ok(())
     }
 
     fn clone(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        let v = this.get_var(var)?;
-        Ok(WasmResource::new_own(this.try_insert(v)?))
+        let v = self.get_var(var)?;
+        Ok(WasmResource::new_own(self.try_insert(v)?))
     }
 }
 
-impl<T: AsMut<GodotCtx>> bindgen::godot::core::core::Host for T {
+impl bindgen::godot::core::core::Host for GodotCtx {
     fn var_equals(
         &mut self,
         a: WasmResource<Variant>,
         b: WasmResource<Variant>,
     ) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "core", "var-equals"))?;
-        Ok(this.get_var(a)? == this.get_var(b)?)
+        filter_macro!(filter self.filter.as_ref(), godot_core, core, var_equals)?;
+        Ok(self.get_var(a)? == self.get_var(b)?)
     }
 
     fn var_hash(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "core", "var-hash"))?;
-        Ok(this.get_var(var)?.hash())
+        filter_macro!(filter self.filter.as_ref(), godot_core, core, var_hash)?;
+        Ok(self.get_var(var)?.hash())
     }
 
     fn var_stringify(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:core", "core", "var-stringify"))?;
-        Ok(this.get_var(var)?.to_string())
+        filter_macro!(filter self.filter.as_ref(), godot_core, core, var_stringify)?;
+        Ok(self.get_var(var)?.to_string())
     }
 }
 
-impl<T: AsMut<GodotCtx>> bindgen::godot::reflection::this::Host for T {
+impl bindgen::godot::reflection::this::Host for GodotCtx {
     fn get_this(&mut self) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:reflection", "this", "get-this"))?;
-        let Some(id) = this.inst_id else {
+        filter_macro!(filter self.filter.as_ref(), godot_reflection, this, get_this)?;
+        let Some(id) = self.inst_id else {
             bail_with_site!("Self instance ID is not set")
         };
 
-        this.set_into_var(<Gd<Object>>::try_from_instance_id(id).map_err(|e| e.into_erased())?)
+        self.set_into_var(<Gd<Object>>::try_from_instance_id(id).map_err(|e| e.into_erased())?)
     }
 }
 
-pub fn add_to_linker<T, U: AsMut<GodotCtx>>(
+pub fn add_to_linker<T, U: AsMut<GodotCtx> + 'static>(
     linker: &mut Linker<T>,
     f: impl Fn(&mut T) -> &mut U + Send + Sync + Copy + 'static,
 ) -> AnyResult<()> {
-    bindgen::godot::core::core::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::typeis::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::primitive::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::byte_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::int32_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::int64_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::float32_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::float64_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::vector2_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::color_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::string_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::dictionary::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::object::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::callable::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::signal::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::core::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::typeis::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::primitive::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::byte_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::int32_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::int64_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::float32_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::float64_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::vector2_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::color_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::string_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::dictionary::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::object::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::callable::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::signal::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
 
-    bindgen::godot::global::globalscope::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::global::classdb::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::global::globalscope::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::global::classdb::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::global::engine::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
 
-    bindgen::godot::reflection::this::add_to_linker(&mut *linker, f)
+    bindgen::godot::reflection::this::add_to_linker(&mut *linker, move |v| f(v).as_mut())
 }

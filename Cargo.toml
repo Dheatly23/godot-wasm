@@ -25,7 +25,7 @@ nom = "^7.1"
 anyhow = { version = "^1.0", features = ["backtrace"] }
 slab = { version = "^0.4", optional = true }
 #wasi-common = { version = "^18.0", optional = true }
-wasmparser = { version = "~0.202", optional = true }
+wasmparser = { version = "~0.207", optional = true }
 bytes = { version = "^1.5", optional = true }
 wat = { version = "~1", optional = true }
 cap-std = { version = "^3.0", optional = true }
@@ -39,7 +39,7 @@ git = "https://github.com/godot-rust/gdext"
 rev = "27b0054a296ebabebe80f2db3ec4f3c09d519b4b"
 
 [dependencies.wasmtime]
-version = "^20.0"
+version = "^21.0"
 default-features = false
 features = [
   "runtime",
@@ -52,7 +52,7 @@ features = [
 ]
 
 [dependencies.wasmtime-wasi]
-version = "^20.0"
+version = "^21.0"
 optional = true
 default-features = false
 features = [

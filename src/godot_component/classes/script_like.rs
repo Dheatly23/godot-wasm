@@ -26,6 +26,7 @@ bindgen!({
     ownership: Borrowing {
         duplicate_if_necessary: false
     },
+    trappable_imports: true,
     with: {
         "godot": crate::godot_component::bindgen::godot,
     },

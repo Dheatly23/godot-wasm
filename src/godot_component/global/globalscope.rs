@@ -4,48 +4,66 @@ use godot::engine::{ResourceLoader, ResourceSaver};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
+use crate::filter_macro;
 use crate::godot_component::bindgen::godot::core::typeis::VariantType as CompVarType;
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
-use crate::site_context;
 
-impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
+filter_macro! {method [
+    print -> "print",
+    print_rich -> "print-rich",
+    printerr -> "printerr",
+    push_error -> "push-error",
+    push_warning -> "push-warning",
+    bytes_to_var -> "bytes-to-var",
+    bytes_to_var_with_objects -> "bytes-to-var-with-objects",
+    var_to_bytes -> "var-to-bytes",
+    var_to_bytes_with_objects -> "var-to-bytes-with-objects",
+    var_to_str -> "var-to-str",
+    str_to_var -> "str-to-var",
+    weakref -> "weakref",
+    is_instance_valid -> "is-instance-valid",
+    is_instance_id_valid -> "is-instance-id-valid",
+    is_same -> "is-same",
+    type_convert -> "type-convert",
+    rand_from_seed -> "rand-from-seed",
+    randf -> "randf",
+    randf_range -> "randf-range",
+    randfn -> "randfn",
+    randi -> "randi",
+    randi_range -> "randi-range",
+    randomize -> "randomize",
+    seed -> "seed",
+    load -> "load",
+    save -> "save",
+]}
+
+impl bindgen::godot::global::globalscope::Host for GodotCtx {
     fn print(&mut self, s: String) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "print"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, print)?;
         godot::engine::utilities::print(s.to_variant(), &[]);
         Ok(())
     }
 
     fn print_rich(&mut self, s: String) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "print-rich"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, print_rich)?;
         godot::engine::utilities::print_rich(s.to_variant(), &[]);
         Ok(())
     }
 
     fn printerr(&mut self, s: String) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "printerr"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, printerr)?;
         printerr(s.to_variant(), &[]);
         Ok(())
     }
 
     fn push_error(&mut self, s: String) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "push-error"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, push_error)?;
         push_error(s.to_variant(), &[]);
         Ok(())
     }
 
     fn push_warning(&mut self, s: String) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "push-warning"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, push_warning)?;
         push_warning(s.to_variant(), &[]);
         Ok(())
     }
@@ -54,99 +72,69 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         &mut self,
         b: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "bytes-to-var"))?;
-        let v = bytes_to_var(this.get_value(b)?);
-        this.set_var(v)
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, bytes_to_var)?;
+        let v = bytes_to_var(self.get_value(b)?);
+        self.set_var(v)
     }
 
     fn bytes_to_var_with_objects(
         &mut self,
         b: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass(
-            "godot:global",
-            "globalscope",
-            "bytes-to-var-with-objects"
-        ))?;
-        let v = bytes_to_var_with_objects(this.get_value(b)?);
-        this.set_var(v)
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, bytes_to_var_with_objects)?;
+        let v = bytes_to_var_with_objects(self.get_value(b)?);
+        self.set_var(v)
     }
 
     fn var_to_bytes(
         &mut self,
         v: Option<WasmResource<Variant>>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "var-to-bytes"))?;
-        let b = var_to_bytes(this.maybe_get_var(v)?);
-        this.set_into_var(b)
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_bytes)?;
+        let b = var_to_bytes(self.maybe_get_var(v)?);
+        self.set_into_var(b)
     }
 
     fn var_to_bytes_with_objects(
         &mut self,
         v: Option<WasmResource<Variant>>,
     ) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass(
-            "godot:global",
-            "globalscope",
-            "var-to-bytes-with-objects"
-        ))?;
-        let b = var_to_bytes_with_objects(this.maybe_get_var(v)?);
-        this.set_into_var(b)
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_bytes_with_objects)?;
+        let b = var_to_bytes_with_objects(self.maybe_get_var(v)?);
+        self.set_into_var(b)
     }
 
     fn var_to_str(&mut self, v: Option<WasmResource<Variant>>) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "var-to-str"))?;
-        let s = var_to_str(this.maybe_get_var(v)?);
-        this.set_into_var(s)
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_str)?;
+        let s = var_to_str(self.maybe_get_var(v)?);
+        self.set_into_var(s)
     }
 
     fn str_to_var(&mut self, s: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "str-to-var"))?;
-        let v = str_to_var(this.get_value(s)?);
-        this.set_var(v)
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, str_to_var)?;
+        let v = str_to_var(self.get_value(s)?);
+        self.set_var(v)
     }
 
     fn weakref(&mut self, v: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "weakref"))?;
-        let v = weakref(this.get_var(v)?);
-        this.set_var(v)
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, weakref)?;
+        let v = weakref(self.get_var(v)?);
+        self.set_var(v)
     }
 
     fn is_instance_valid(&mut self, v: WasmResource<Variant>) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "is-instance-valid"))?;
-        Ok(is_instance_valid(this.get_var(v)?))
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, is_instance_valid)?;
+        Ok(is_instance_valid(self.get_var(v)?))
     }
 
     fn is_instance_id_valid(&mut self, id: u64) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "is-instance-id-valid"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, is_instance_id_valid)?;
         Ok(is_instance_id_valid(id as _))
     }
 
     fn is_same(&mut self, a: WasmResource<Variant>, b: WasmResource<Variant>) -> AnyResult<bool> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "is-same"))?;
-        Ok(is_same(this.get_var(a)?, this.get_var(b)?))
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, is_same)?;
+        Ok(is_same(self.get_var(a)?, self.get_var(b)?))
     }
 
     fn type_convert(
@@ -154,11 +142,8 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         v: WasmResource<Variant>,
         t: CompVarType,
     ) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "type-convert"))?;
-        let v = this.get_var(v)?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, type_convert)?;
+        let v = self.get_var(v)?;
         let t = match t {
             CompVarType::Bool => VariantType::Bool,
             CompVarType::Int => VariantType::Int,
@@ -200,80 +185,64 @@ impl<T: AsMut<GodotCtx>> bindgen::godot::global::globalscope::Host for T {
         } as i64;
         let r = type_convert(v, t);
         assert!(!r.is_nil(), "Value should be nonnull");
-        this.set_var(r).map(|v| v.unwrap())
+        self.set_var(r).map(|v| v.unwrap())
     }
 
     fn rand_from_seed(&mut self, seed: u64) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "rand-from-seed"))?;
-        this.set_into_var(rand_from_seed(seed as _))
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, rand_from_seed)?;
+        self.set_into_var(rand_from_seed(seed as _))
     }
 
     fn randf(&mut self) -> AnyResult<f64> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "randf"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, randf)?;
         Ok(randf())
     }
 
     fn randf_range(&mut self, from: f64, to: f64) -> AnyResult<f64> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "randf-range"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, randf_range)?;
         Ok(randf_range(from, to))
     }
 
     fn randfn(&mut self, mean: f64, deviation: f64) -> AnyResult<f64> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "randfn"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, randfn)?;
         Ok(randfn(mean, deviation))
     }
 
     fn randi(&mut self) -> AnyResult<i64> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "randi"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, randi)?;
         Ok(randi())
     }
 
     fn randi_range(&mut self, from: i64, to: i64) -> AnyResult<i64> {
-        let this = self.as_mut();
-        site_context!(this
-            .filter
-            .pass("godot:global", "globalscope", "randi-range"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, randi_range)?;
         Ok(randi_range(from, to))
     }
 
     fn randomize(&mut self) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "randomize"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, randomize)?;
         randomize();
         Ok(())
     }
 
     fn seed(&mut self, s: u64) -> AnyResult<()> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "seed"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, seed)?;
         seed(s as _);
         Ok(())
     }
 
     fn load(&mut self, path: String) -> AnyResult<WasmResource<Variant>> {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "load"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, load)?;
         match ResourceLoader::singleton().load((&path).into()) {
-            Some(v) => this.set_into_var(v),
+            Some(v) => self.set_into_var(v),
             None => bail!("Cannot load resource {path}"),
         }
     }
 
     fn save(&mut self, res: WasmResource<Variant>, path: String) -> ErrorRes {
-        let this = self.as_mut();
-        site_context!(this.filter.pass("godot:global", "globalscope", "save"))?;
+        filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, save)?;
         wrap_error(
             ResourceSaver::singleton()
-                .save_ex(this.get_value(res)?)
+                .save_ex(self.get_value(res)?)
                 .path((&path).into())
                 .done(),
         )
