@@ -244,27 +244,38 @@ pub fn add_to_linker<T, U: AsMut<GodotCtx> + 'static>(
     linker: &mut Linker<T>,
     f: impl Fn(&mut T) -> &mut U + Send + Sync + Copy + 'static,
 ) -> AnyResult<()> {
-    bindgen::godot::core::core::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::typeis::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::primitive::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::byte_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::int32_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::int64_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::float32_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::float64_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::vector2_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::color_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::string_array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::array::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::dictionary::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::object::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::callable::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::core::signal::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    fn g<T, U, F>(
+        f: F,
+    ) -> impl for<'a> Fn(&'a mut T) -> &'a mut GodotCtx + Send + Sync + Copy + 'static
+    where
+        U: AsMut<GodotCtx> + 'static,
+        F: Fn(&mut T) -> &mut U + Send + Sync + Copy + 'static,
+    {
+        move |v| f(v).as_mut()
+    }
+    let f = g(f);
 
-    bindgen::godot::global::globalscope::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::global::classdb::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
-    bindgen::godot::global::engine::add_to_linker(&mut *linker, move |v| f(v).as_mut())?;
+    bindgen::godot::core::core::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::typeis::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::primitive::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::byte_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::int32_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::int64_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::float32_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::float64_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::vector2_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::color_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::string_array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::array::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::dictionary::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::object::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::callable::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::signal::add_to_linker(&mut *linker, f)?;
 
-    bindgen::godot::reflection::this::add_to_linker(&mut *linker, move |v| f(v).as_mut())
+    bindgen::godot::global::globalscope::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::global::classdb::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::global::engine::add_to_linker(&mut *linker, f)?;
+
+    bindgen::godot::reflection::this::add_to_linker(&mut *linker, f)
 }
