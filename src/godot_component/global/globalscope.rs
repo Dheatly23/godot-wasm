@@ -1,4 +1,5 @@
 use anyhow::{bail, Result as AnyResult};
+use godot::engine::global::*;
 use godot::engine::utilities::*;
 use godot::engine::{ResourceLoader, ResourceSaver};
 use godot::prelude::*;
@@ -6,7 +7,109 @@ use wasmtime::component::Resource as WasmResource;
 
 use crate::filter_macro;
 use crate::godot_component::bindgen::godot::core::typeis::VariantType as CompVarType;
-use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
+use crate::godot_component::bindgen::godot::global::globalscope;
+use crate::godot_component::{wrap_error, ErrorRes, GodotCtx};
+
+pub fn from_joy_axis(v: globalscope::JoyAxis) -> JoyAxis {
+    match v {
+        globalscope::JoyAxis::LeftX => JoyAxis::LEFT_X,
+        globalscope::JoyAxis::LeftY => JoyAxis::LEFT_Y,
+        globalscope::JoyAxis::RightX => JoyAxis::RIGHT_X,
+        globalscope::JoyAxis::RightY => JoyAxis::RIGHT_Y,
+        globalscope::JoyAxis::TriggerLeft => JoyAxis::TRIGGER_LEFT,
+        globalscope::JoyAxis::TriggerRight => JoyAxis::TRIGGER_RIGHT,
+    }
+}
+
+pub fn from_joy_button(v: globalscope::JoyButton) -> JoyButton {
+    match v {
+        globalscope::JoyButton::A => JoyButton::A,
+        globalscope::JoyButton::B => JoyButton::B,
+        globalscope::JoyButton::X => JoyButton::X,
+        globalscope::JoyButton::Y => JoyButton::Y,
+        globalscope::JoyButton::Back => JoyButton::BACK,
+        globalscope::JoyButton::Guide => JoyButton::GUIDE,
+        globalscope::JoyButton::Start => JoyButton::START,
+        globalscope::JoyButton::LeftStick => JoyButton::LEFT_STICK,
+        globalscope::JoyButton::RightStick => JoyButton::RIGHT_STICK,
+        globalscope::JoyButton::LeftShoulder => JoyButton::LEFT_SHOULDER,
+        globalscope::JoyButton::RightShoulder => JoyButton::RIGHT_SHOULDER,
+        globalscope::JoyButton::DpadUp => JoyButton::DPAD_UP,
+        globalscope::JoyButton::DpadDown => JoyButton::DPAD_DOWN,
+        globalscope::JoyButton::DpadLeft => JoyButton::DPAD_LEFT,
+        globalscope::JoyButton::DpadRight => JoyButton::DPAD_RIGHT,
+        globalscope::JoyButton::Misc1 => JoyButton::MISC1,
+        globalscope::JoyButton::Paddle1 => JoyButton::PADDLE1,
+        globalscope::JoyButton::Paddle2 => JoyButton::PADDLE2,
+        globalscope::JoyButton::Paddle3 => JoyButton::PADDLE3,
+        globalscope::JoyButton::Paddle4 => JoyButton::PADDLE4,
+        globalscope::JoyButton::Touchpad => JoyButton::TOUCHPAD,
+    }
+}
+
+pub fn from_mouse_button(v: globalscope::MouseButton) -> MouseButton {
+    match v {
+        globalscope::MouseButton::None => MouseButton::NONE,
+        globalscope::MouseButton::Left => MouseButton::LEFT,
+        globalscope::MouseButton::Right => MouseButton::RIGHT,
+        globalscope::MouseButton::Middle => MouseButton::MIDDLE,
+        globalscope::MouseButton::WheelUp => MouseButton::WHEEL_UP,
+        globalscope::MouseButton::WheelDown => MouseButton::WHEEL_DOWN,
+        globalscope::MouseButton::WheelLeft => MouseButton::WHEEL_LEFT,
+        globalscope::MouseButton::WheelRight => MouseButton::WHEEL_RIGHT,
+        globalscope::MouseButton::Xbutton1 => MouseButton::XBUTTON1,
+        globalscope::MouseButton::Xbutton2 => MouseButton::XBUTTON2,
+    }
+}
+
+#[allow(dead_code)]
+pub fn from_mouse_button_mask(v: globalscope::MouseButtonMask) -> MouseButtonMask {
+    (if v.contains(globalscope::MouseButtonMask::LEFT) {
+        MouseButtonMask::LEFT
+    } else {
+        MouseButtonMask::default()
+    }) | (if v.contains(globalscope::MouseButtonMask::RIGHT) {
+        MouseButtonMask::RIGHT
+    } else {
+        MouseButtonMask::default()
+    }) | (if v.contains(globalscope::MouseButtonMask::MIDDLE) {
+        MouseButtonMask::MIDDLE
+    } else {
+        MouseButtonMask::default()
+    }) | (if v.contains(globalscope::MouseButtonMask::MB_XBUTTON1) {
+        MouseButtonMask::MB_XBUTTON1
+    } else {
+        MouseButtonMask::default()
+    }) | (if v.contains(globalscope::MouseButtonMask::MB_XBUTTON2) {
+        MouseButtonMask::MB_XBUTTON2
+    } else {
+        MouseButtonMask::default()
+    })
+}
+
+pub fn to_mouse_button_mask(v: MouseButtonMask) -> globalscope::MouseButtonMask {
+    (if v.is_set(MouseButtonMask::LEFT) {
+        globalscope::MouseButtonMask::LEFT
+    } else {
+        globalscope::MouseButtonMask::empty()
+    }) | (if v.is_set(MouseButtonMask::RIGHT) {
+        globalscope::MouseButtonMask::RIGHT
+    } else {
+        globalscope::MouseButtonMask::empty()
+    }) | (if v.is_set(MouseButtonMask::MIDDLE) {
+        globalscope::MouseButtonMask::MIDDLE
+    } else {
+        globalscope::MouseButtonMask::empty()
+    }) | (if v.is_set(MouseButtonMask::MB_XBUTTON1) {
+        globalscope::MouseButtonMask::MB_XBUTTON1
+    } else {
+        globalscope::MouseButtonMask::empty()
+    }) | (if v.is_set(MouseButtonMask::MB_XBUTTON2) {
+        globalscope::MouseButtonMask::MB_XBUTTON2
+    } else {
+        globalscope::MouseButtonMask::empty()
+    })
+}
 
 filter_macro! {method [
     print -> "print",
@@ -37,7 +140,7 @@ filter_macro! {method [
     save -> "save",
 ]}
 
-impl bindgen::godot::global::globalscope::Host for GodotCtx {
+impl globalscope::Host for GodotCtx {
     fn print(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, print)?;
         godot::engine::utilities::print(s.to_variant(), &[]);

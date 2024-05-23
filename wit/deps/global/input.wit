@@ -1,0 +1,88 @@
+package godot:global@0.1.0;
+
+interface input {
+    use godot:core/core@0.1.0.{godot-var, int, real};
+    use godot:core/primitive@0.1.0.{vector3, vector2};
+    use globalscope.{joy-axis, joy-button, mouse-button, mouse-button-mask};
+
+    enum mouse-mode {
+        visible,
+        hidden,
+        captured,
+        confined,
+        confined-hidden,
+    }
+
+    enum cursor-shape {
+        arrow,
+        ibeam,
+        pointing-hand,
+        cross,
+        wait,
+        busy,
+        drag,
+        can-drop,
+        forbidden,
+        vsize,
+        hsize,
+        bdiagsize,
+        fdiagsize,
+        move,
+        vsplit,
+        hsplit,
+        help,
+    }
+
+    singleton: func() -> godot-var;
+
+    get-mouse-mode: func() -> mouse-mode;
+    set-mouse-mode: func(v: mouse-mode);
+    is-using-accumulated-input: func() -> bool;
+    set-use-accumulated-input: func(v: bool);
+
+    action-press: func(action: borrow<godot-var>, strength: real);
+    action-release: func(action: borrow<godot-var>);
+    add-joy-mapping: func(mapping: borrow<godot-var>, update-existing: bool);
+    flush-buffered-events: func();
+    get-accelerometer: func() -> vector3;
+    get-action-raw-strength: func(action: borrow<godot-var>, exact-match: bool) -> real;
+    get-action-strength: func(action: borrow<godot-var>, exact-match: bool) -> real;
+    get-axis: func(negative-action: borrow<godot-var>, positive-action: borrow<godot-var>) -> real;
+    get-connected-joypads: func() -> godot-var;
+    get-current-cursor-shape: func() -> cursor-shape;
+    get-gravity: func() -> vector3;
+    get-gyroscope: func() -> vector3;
+    get-joy-axis: func(device: int, axis: joy-axis) -> real;
+    get-joy-guid: func(device: int) -> godot-var;
+    get-joy-info: func(device: int) -> godot-var;
+    get-joy-name: func(device: int) -> godot-var;
+    get-joy-vibration-duration: func(device: int) -> real;
+    get-joy-vibration-strength: func(device: int) -> vector2;
+    get-last-mouse-velocity: func() -> vector2;
+    get-magnetometer: func() -> vector3;
+    get-mouse-button-mask: func() -> mouse-button-mask;
+    get-vector: func(negative-x: borrow<godot-var>, positive-x: borrow<godot-var>, negative-y: borrow<godot-var>, positive-y: borrow<godot-var>, deadzone: real) -> vector2;
+    is-action-just-pressed: func(action: borrow<godot-var>, exact-match: bool) -> bool;
+    is-action-just-released: func(action: borrow<godot-var>, exact-match: bool) -> bool;
+    is-action-pressed: func(action: borrow<godot-var>, exact-match: bool) -> bool;
+    is-anything-pressed: func() -> bool;
+    is-joy-button-pressed: func(device: int, button: joy-button) -> bool;
+    is-joy-known: func(device: int) -> bool;
+    is-key-label-pressed: func(keycode: int) -> bool;
+    is-key-pressed: func(keycode: int) -> bool;
+    is-mouse-button-pressed: func(button: mouse-button) -> bool;
+    is-physical-key-pressed: func(keycode: int) -> bool;
+    parse-input-even: func(event: borrow<godot-var>);
+    remove-joy-mapping: func(guid: borrow<godot-var>);
+    set-accelerometer: func(value: vector3);
+    set-custom-mouse-cursor: func(image: borrow<godot-var>, shape: cursor-shape, hotspot: vector2);
+    set-default-cursor-shape: func(shape: cursor-shape);
+    set-gravity: func(value: vector3);
+    set-gyroscope: func(value: vector3);
+    set-magnetometer: func(value: vector3);
+    should-ignore-device: func(vendor-id: int, product-id: int) -> bool;
+    start-joy-vibration: func(device: int, weak-magnitude: real, strong-magnitude: real, duration: real);
+    stop-joy-vibration: func(device: int);
+    vibrate-handheld: func(duration: int);
+    warp-mouse: func(position: vector2);
+}

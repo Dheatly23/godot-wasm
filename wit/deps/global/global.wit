@@ -4,6 +4,60 @@ interface globalscope {
     use godot:core/core@0.1.0.{godot-var, error-res};
     use godot:core/typeis@0.1.0.{variant-type};
 
+    enum joy-button {
+        a,
+        b,
+        x,
+        y,
+        back,
+        guide,
+        start,
+        left-stick,
+        right-stick,
+        left-shoulder,
+        right-shoulder,
+        dpad-up,
+        dpad-down,
+        dpad-left,
+        dpad-right,
+        misc1,
+        paddle1,
+        paddle2,
+        paddle3,
+        paddle4,
+        touchpad,
+    }
+
+    enum joy-axis {
+        left-x,
+        left-y,
+        right-x,
+        right-y,
+        trigger-left,
+        trigger-right,
+    }
+
+    enum mouse-button {
+        none,
+        left,
+        right,
+        middle,
+        wheel-up,
+        wheel-down,
+        wheel-left,
+        wheel-right,
+        xbutton1,
+        xbutton2,
+    }
+
+    flags mouse-button-mask {
+        left,
+        right,
+        middle,
+        mb-xbutton1,
+        mb-xbutton2,
+    }
+
     // Printing
     print: func(s: string);
     print-rich: func(s: string);
@@ -47,4 +101,5 @@ world imports {
     import globalscope;
     import classdb;
     import engine;
+    import input;
 }
