@@ -1,6 +1,5 @@
 use std::error::Error;
-use std::fmt;
-use std::fmt::Write as _;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult, Write as _};
 use std::ops::{Bound, Range, RangeBounds};
 
 use godot::builtin::meta::{ConvertError, GodotConvert};
@@ -79,15 +78,15 @@ impl<const N: usize> FilterFlags<N> {
     }
 
     #[inline]
-    pub fn slice<'a>(&'a self, i: impl RangeBounds<usize>) -> Option<FilterFlagsRef<'a, N>> {
+    pub fn slice<'a>(&'a self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsRef<'a, N> {
         self.as_ref().slice(i)
     }
 
     #[inline]
     pub fn slice_mut<'a>(
         &'a mut self,
-        i: impl RangeBounds<usize>,
-    ) -> Option<FilterFlagsMut<'a, N>> {
+        i: impl RangeBounds<usize> + Debug,
+    ) -> FilterFlagsMut<'a, N> {
         self.as_mut().into_slice_mut(i)
     }
 
@@ -136,10 +135,12 @@ impl<const N: usize> FilterFlags<N> {
 
 #[allow(dead_code)]
 impl<'a, const N: usize> FilterFlagsRef<'a, N> {
-    pub fn slice(&self, i: impl RangeBounds<usize>) -> Option<Self> {
+    pub fn slice(&self, i: impl RangeBounds<usize> + Debug) -> Self {
         let Self { r, o, l } = *self;
-        let (o, l) = rebound(o, l, i.start_bound(), i.end_bound())?;
-        Some(Self { r, o, l })
+        let Some((o, l)) = rebound(o, l, i.start_bound(), i.end_bound()) else {
+            panic!("Index {i:?} out of bounds (length: {l})")
+        };
+        Self { r, o, l }
     }
 
     pub fn get(&self, i: usize) -> bool {
@@ -152,28 +153,36 @@ impl<'a, const N: usize> FilterFlagsRef<'a, N> {
 
 #[allow(dead_code)]
 impl<'a, const N: usize> FilterFlagsMut<'a, N> {
-    pub fn slice<'b>(&'b self, i: impl RangeBounds<usize>) -> Option<FilterFlagsRef<'b, N>> {
-        let (o, l) = rebound(self.o, self.l, i.start_bound(), i.end_bound())?;
-        Some(FilterFlagsRef { r: &*self.r, o, l })
+    pub fn slice<'b>(&'b self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsRef<'b, N> {
+        let Some((o, l)) = rebound(self.o, self.l, i.start_bound(), i.end_bound()) else {
+            panic!("Index {:?} out of bounds (length: {})", i, self.l)
+        };
+        FilterFlagsRef { r: &*self.r, o, l }
     }
 
-    pub fn into_slice(self, i: impl RangeBounds<usize>) -> Option<FilterFlagsRef<'a, N>> {
-        let (o, l) = rebound(self.o, self.l, i.start_bound(), i.end_bound())?;
-        Some(FilterFlagsRef { r: &*self.r, o, l })
+    pub fn into_slice(self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsRef<'a, N> {
+        let Some((o, l)) = rebound(self.o, self.l, i.start_bound(), i.end_bound()) else {
+            panic!("Index {:?} out of bounds (length: {})", i, self.l)
+        };
+        FilterFlagsRef { r: &*self.r, o, l }
     }
 
     pub fn slice_mut<'b>(
         &'b mut self,
-        i: impl RangeBounds<usize>,
-    ) -> Option<FilterFlagsMut<'b, N>> {
+        i: impl RangeBounds<usize> + Debug,
+    ) -> FilterFlagsMut<'b, N> {
         let r = &mut *self.r;
-        let (o, l) = rebound(self.o, self.l, i.start_bound(), i.end_bound())?;
-        Some(FilterFlagsMut { r, o, l })
+        let Some((o, l)) = rebound(self.o, self.l, i.start_bound(), i.end_bound()) else {
+            panic!("Index {:?} out of bounds (length: {})", i, self.l)
+        };
+        FilterFlagsMut { r, o, l }
     }
 
-    pub fn into_slice_mut(self, i: impl RangeBounds<usize>) -> Option<Self> {
-        let (o, l) = rebound(self.o, self.l, i.start_bound(), i.end_bound())?;
-        Some(FilterFlagsMut { r: self.r, o, l })
+    pub fn into_slice_mut(self, i: impl RangeBounds<usize> + Debug) -> Self {
+        let Some((o, l)) = rebound(self.o, self.l, i.start_bound(), i.end_bound()) else {
+            panic!("Index {:?} out of bounds (length: {})", i, self.l)
+        };
+        FilterFlagsMut { r: self.r, o, l }
     }
 
     pub fn get(&self, i: usize) -> bool {
@@ -343,7 +352,7 @@ macro_rules! filter_macro {
             pub fn parse_filter<const N: usize>(mut filter: $crate::godot_component::filter::FilterFlagsMut<'_, N>, item: $crate::godot_component::filter::FilterItem<'_>) {
                 match item.$t {
                     None => filter.fill_all(item.allow),
-                    $(Some($s) => $i::parse_filter(filter.into_slice_mut(indices::$i.0..indices::$i.0 + indices::$i.1).unwrap(), item),)*
+                    $(Some($s) => $i::parse_filter(filter.into_slice_mut(indices::$i.0..indices::$i.0 + indices::$i.1), item),)*
                     _ => (),
                 }
             }
@@ -408,7 +417,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
         .map_err(|e| ConvertError::with_error_value(e, k))
     };
     let mut ret = Filter::default();
-    let mut fi = ret.slice_mut(..ENDPOINT).unwrap();
+    let mut fi = ret.slice_mut(..ENDPOINT);
     let mut module = String::new();
     let mut interface = String::new();
     let mut method = String::new();
@@ -416,7 +425,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
         f(&mut module, k)?;
         if module == "*" {
             parse_filter(
-                fi.slice_mut(..).unwrap(),
+                fi.slice_mut(..),
                 FilterItem {
                     allow: v.try_to()?,
                     ..FilterItem::default()
@@ -427,7 +436,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
 
         if v.get_type() == VariantType::Bool {
             parse_filter(
-                fi.slice_mut(..).unwrap(),
+                fi.slice_mut(..),
                 FilterItem {
                     allow: v.to(),
                     module: Some(&module),
@@ -441,7 +450,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
             f(&mut interface, k)?;
             if interface == "*" {
                 parse_filter(
-                    fi.slice_mut(..).unwrap(),
+                    fi.slice_mut(..),
                     FilterItem {
                         allow: v.try_to()?,
                         module: Some(&module),
@@ -453,7 +462,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
 
             if v.get_type() == VariantType::Bool {
                 parse_filter(
-                    fi.slice_mut(..).unwrap(),
+                    fi.slice_mut(..),
                     FilterItem {
                         allow: v.to(),
                         module: Some(&module),
@@ -469,7 +478,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
                 let allow = v.try_to::<bool>()?;
                 if method == "*" {
                     parse_filter(
-                        fi.slice_mut(..).unwrap(),
+                        fi.slice_mut(..),
                         FilterItem {
                             allow,
                             module: Some(&module),
@@ -481,7 +490,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
                 }
 
                 parse_filter(
-                    fi.slice_mut(..).unwrap(),
+                    fi.slice_mut(..),
                     FilterItem {
                         allow,
                         module: Some(&module),
@@ -504,8 +513,8 @@ pub struct FilterItem<'a> {
     pub method: Option<&'a str>,
 }
 
-impl<'a> fmt::Debug for FilterItem<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl<'a> Debug for FilterItem<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         static UNKNOWN: &str = "<unknown>";
         write!(
             f,
@@ -517,9 +526,9 @@ impl<'a> fmt::Debug for FilterItem<'a> {
     }
 }
 
-impl<'a> fmt::Display for FilterItem<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        <Self as fmt::Debug>::fmt(self, f)
+impl<'a> Display for FilterItem<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        <Self as Debug>::fmt(self, f)
     }
 }
 
@@ -579,7 +588,7 @@ fn parse_script(s: &GString) -> Result<Filter, NomErr<SingleError<String>>> {
     let mut s = unsafe { CharSlice(s.chars_unchecked()) };
 
     let mut ret = Filter::default();
-    let mut f = ret.slice_mut(..ENDPOINT).unwrap();
+    let mut f = ret.slice_mut(..ENDPOINT);
     let mut module = String::new();
     let mut interface = String::new();
     let mut method = String::new();
@@ -612,7 +621,7 @@ fn parse_script(s: &GString) -> Result<Filter, NomErr<SingleError<String>>> {
             None
         };
         parse_filter(
-            f.slice_mut(..).unwrap(),
+            f.slice_mut(..),
             FilterItem {
                 module,
                 interface,
