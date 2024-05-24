@@ -102,4 +102,5 @@ world imports {
     import classdb;
     import engine;
     import input;
+    import input-map;
 }

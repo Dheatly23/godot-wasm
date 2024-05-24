@@ -1,0 +1,21 @@
+package godot:global@0.1.0;
+
+interface input-map {
+    use godot:core/core@0.1.0.{godot-var, real};
+
+    singleton: func() -> godot-var;
+
+    action-add-event: func(action: borrow<godot-var>, event: borrow<godot-var>);
+    action-erase-event: func(action: borrow<godot-var>, event: borrow<godot-var>);
+    action-erase-events: func(action: borrow<godot-var>);
+    action-get-deadzone: func(action: borrow<godot-var>) -> real;
+    action-get-events: func(action: borrow<godot-var>) -> godot-var;
+    action-has-event: func(action: borrow<godot-var>, event: borrow<godot-var>) -> bool;
+    action-set-deadzone: func(action: borrow<godot-var>, deadzone: real);
+    add-action: func(action: borrow<godot-var>, deadzone: real);
+    erase-action: func(action: borrow<godot-var>);
+    event-is-action: func(event: borrow<godot-var>, action: borrow<godot-var>, exact-match: bool) -> bool;
+    get-actions: func() -> godot-var;
+    has-action: func(action: borrow<godot-var>) -> bool;
+    load-from-project-settings: func();
+}
