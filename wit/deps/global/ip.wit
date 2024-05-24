@@ -1,0 +1,32 @@
+package godot:global@0.1.0;
+
+interface ip {
+    use godot:core/core@0.1.0.{godot-var, int};
+
+    enum resolver-status {
+        none,
+        waiting,
+        done,
+        error,
+    }
+
+    enum %type {
+        none,
+        ipv4,
+        ipv6,
+        any,
+    }
+
+    singleton: func() -> godot-var;
+
+    clear-cache: func(hostname: borrow<godot-var>);
+    erase-resolve-item: func(id: int);
+    get-local-addresses: func() -> godot-var;
+    get-local-interfaces: func() -> godot-var;
+    get-resolve-item-address: func(id: int) -> godot-var;
+    get-resolve-item-addresses: func(id: int) -> godot-var;
+    get-resolve-item-status: func(id: int) -> resolver-status;
+    resolve-hostname: func(host: borrow<godot-var>, ip-type: %type) -> godot-var;
+    resolve-hostname-addresses: func(host: borrow<godot-var>, ip-type: %type) -> godot-var;
+    resolve-hostname-queue-item: func(host: borrow<godot-var>, ip-type: %type) -> int;
+}

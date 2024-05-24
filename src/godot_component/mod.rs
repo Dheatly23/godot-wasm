@@ -278,6 +278,7 @@ pub fn add_to_linker<T, U: AsMut<GodotCtx> + 'static>(
     bindgen::godot::global::engine::add_to_linker(&mut *linker, f)?;
     bindgen::godot::global::input::add_to_linker(&mut *linker, f)?;
     bindgen::godot::global::input_map::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::global::ip::add_to_linker(&mut *linker, f)?;
 
     bindgen::godot::reflection::this::add_to_linker(&mut *linker, f)
 }

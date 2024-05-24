@@ -103,4 +103,5 @@ world imports {
     import engine;
     import input;
     import input-map;
+    import ip;
 }
