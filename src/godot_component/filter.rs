@@ -60,7 +60,7 @@ fn rebound(o: usize, l: usize, bs: Bound<&usize>, be: Bound<&usize>) -> Option<(
 #[allow(dead_code)]
 impl<const N: usize> FilterFlags<N> {
     #[inline]
-    pub fn as_ref<'a>(&'a self) -> FilterFlagsRef<'a, N> {
+    pub fn as_ref(&self) -> FilterFlagsRef<'_, N> {
         FilterFlagsRef {
             r: self,
             o: 0,
@@ -69,7 +69,7 @@ impl<const N: usize> FilterFlags<N> {
     }
 
     #[inline]
-    pub fn as_mut<'a>(&'a mut self) -> FilterFlagsMut<'a, N> {
+    pub fn as_mut(&mut self) -> FilterFlagsMut<'_, N> {
         FilterFlagsMut {
             r: self,
             o: 0,
@@ -78,15 +78,15 @@ impl<const N: usize> FilterFlags<N> {
     }
 
     #[inline]
-    pub fn slice<'a>(&'a self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsRef<'a, N> {
+    pub fn slice(&self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsRef<'_, N> {
         self.as_ref().slice(i)
     }
 
     #[inline]
-    pub fn slice_mut<'a>(
-        &'a mut self,
+    pub fn slice_mut(
+        &mut self,
         i: impl RangeBounds<usize> + Debug,
-    ) -> FilterFlagsMut<'a, N> {
+    ) -> FilterFlagsMut<'_, N> {
         self.as_mut().into_slice_mut(i)
     }
 
@@ -153,7 +153,7 @@ impl<'a, const N: usize> FilterFlagsRef<'a, N> {
 
 #[allow(dead_code)]
 impl<'a, const N: usize> FilterFlagsMut<'a, N> {
-    pub fn slice<'b>(&'b self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsRef<'b, N> {
+    pub fn slice(&self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsRef<'_, N> {
         let Some((o, l)) = rebound(self.o, self.l, i.start_bound(), i.end_bound()) else {
             panic!("Index {:?} out of bounds (length: {})", i, self.l)
         };
@@ -167,10 +167,10 @@ impl<'a, const N: usize> FilterFlagsMut<'a, N> {
         FilterFlagsRef { r: &*self.r, o, l }
     }
 
-    pub fn slice_mut<'b>(
-        &'b mut self,
+    pub fn slice_mut(
+        &mut self,
         i: impl RangeBounds<usize> + Debug,
-    ) -> FilterFlagsMut<'b, N> {
+    ) -> FilterFlagsMut<'_, N> {
         let r = &mut *self.r;
         let Some((o, l)) = rebound(self.o, self.l, i.start_bound(), i.end_bound()) else {
             panic!("Index {:?} out of bounds (length: {})", i, self.l)
