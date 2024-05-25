@@ -528,10 +528,9 @@ where
         let _scope;
         // SAFETY: Context should be destroyed after function call
         unsafe {
-            let p = &mut guard_.data_mut().as_mut().mutex_raw as *mut _;
-            let mut v = self.store.raw() as *const _;
-            ptr::swap(p, &mut v);
-            _scope = guard(p, move |p| {
+            let p = &mut guard_.data_mut().as_mut().mutex_raw;
+            let v = mem::replace(p, self.store.raw() as *const _);
+            _scope = guard(p as *mut _, move |p| {
                 *p = v;
             });
         }
