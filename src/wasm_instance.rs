@@ -1248,7 +1248,7 @@ impl WasmInstance {
     }
 
     #[func]
-    fn get_array(&self, i: i64, n: i64, t: i32) -> Variant {
+    fn get_array(&self, i: i64, n: i64, t: VariantType) -> Variant {
         fn f<const N: usize, T, R>(
             s: &[u8],
             i: usize,
@@ -1276,7 +1276,7 @@ impl WasmInstance {
         option_to_variant(self.get_memory(|store, mem| {
             let (i, n) = (i as usize, n as usize);
             let data = mem.data(&store);
-            match site_context!(VariantType::try_from_godot(t).map_err(|e| e.into_erased()))? {
+            match t {
                 VariantType::PackedByteArray => {
                     let e = i + n;
                     let Some(s) = data.get(i..e) else {
@@ -1318,7 +1318,7 @@ impl WasmInstance {
                         a: f32::from_le_bytes(s[12..].try_into().unwrap()),
                     })
                 }
-                t => bail_with_site!("Unsupported type ID {t:?}"),
+                _ => bail_with_site!("Unsupported type ID {t:?}"),
             }
         }))
     }
