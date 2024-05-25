@@ -1325,20 +1325,14 @@ impl WasmInstance {
 
     #[func]
     fn read_struct(&self, format: GString, p: i64) -> Variant {
-        option_to_variant(self.get_memory(|store, mem| {
-            // SAFETY: Externalize char safety to Godot
-            let f = unsafe { format.chars_unchecked() };
-            read_struct(mem.data(store), p as _, f)
-        }))
+        option_to_variant(
+            self.get_memory(|store, mem| read_struct(mem.data(store), p as _, format.chars())),
+        )
     }
 
     #[func]
     fn write_struct(&self, format: GString, p: i64, arr: VariantArray) -> i64 {
-        self.get_memory(|store, mem| {
-            // SAFETY: Externalize char safety to Godot
-            let f = unsafe { format.chars_unchecked() };
-            write_struct(mem.data_mut(store), p as _, f, arr)
-        })
-        .unwrap_or_default() as _
+        self.get_memory(|store, mem| write_struct(mem.data_mut(store), p as _, format.chars(), arr))
+            .unwrap_or_default() as _
     }
 }

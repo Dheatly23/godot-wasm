@@ -131,7 +131,7 @@ impl crate::godot_component::bindgen::godot::core::array::Host
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, array, get)?;
         let v: VariantArray = self.get_value(var)?;
-        let Some(r) = v.try_get(ix as _) else {
+        let Some(r) = v.get(ix as _) else {
             bail!("index {ix} out of bound")
         };
         self.set_var(r)

@@ -211,8 +211,7 @@ impl GodotConvert for ExternBindingType {
 
 impl FromGodot for ExternBindingType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
-        // SAFETY: Eh whatevers, if it blows up i assume no responsibility
-        let chars = unsafe { via.chars_unchecked() };
+        let chars = via.chars();
 
         match chars {
             [] | ['n', 'o', 'n', 'e'] | ['n', 'o', '_', 'b', 'i', 'n', 'd', 'i', 'n', 'g'] => {
@@ -266,8 +265,7 @@ impl GodotConvert for PipeBindingType {
 #[cfg(feature = "wasi")]
 impl FromGodot for PipeBindingType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
-        // SAFETY: Eh whatevers, if it blows up i assume no responsibility
-        let chars = unsafe { via.chars_unchecked() };
+        let chars = via.chars();
 
         match chars {
             [] | ['u', 'n', 'b', 'o', 'u', 'n', 'd'] => Ok(Self::Unbound),
@@ -314,8 +312,7 @@ impl GodotConvert for PipeBufferType {
 #[cfg(feature = "wasi")]
 impl FromGodot for PipeBufferType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
-        // SAFETY: Eh whatevers, if it blows up i assume no responsibility
-        let chars = unsafe { via.chars_unchecked() };
+        let chars = via.chars();
 
         match chars {
             [] | ['u', 'n', 'b', 'u', 'f', 'f', 'e', 'r', 'e', 'd'] => Ok(Self::Unbuffered),

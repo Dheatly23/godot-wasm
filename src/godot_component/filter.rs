@@ -584,8 +584,7 @@ fn parse_line(
 }
 
 fn parse_script(s: &GString) -> Result<Filter, NomErr<SingleError<String>>> {
-    // SAFETY: Externalize char safety to Godot
-    let mut s = unsafe { CharSlice(s.chars_unchecked()) };
+    let mut s = CharSlice(s.chars());
 
     let mut ret = Filter::default();
     let mut f = ret.slice_mut(..ENDPOINT);

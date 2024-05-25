@@ -15,9 +15,7 @@ func_registry! {
     len => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let v = site_context!(from_var_any::<GString>(&externref_to_variant(ctx, v)?))?;
 
-        // SAFETY: Externalize the safety of it
-        let v = unsafe { v.chars_unchecked() };
-        Ok(v.iter().map(|c| c.len_utf8()).sum::<usize>() as _)
+        Ok(v.chars().iter().map(|c| c.len_utf8()).sum::<usize>() as _)
     },
     read => |mut ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, p: u32| -> AnyResult<u32> {
         let v = site_context!(from_var_any::<GString>(&externref_to_variant(&ctx, v)?))?;

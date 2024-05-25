@@ -17,7 +17,7 @@ func_registry! {
     },
     get => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
-        variant_to_externref(ctx, v.get(i as _))
+        variant_to_externref(ctx, v.get(i as _).unwrap_or_default())
     },
     set => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
         let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;

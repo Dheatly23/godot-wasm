@@ -16,9 +16,7 @@ func_registry! {
             &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
         ))?;
 
-        // SAFETY: Externalize the safety of it
-        let v = unsafe { v.chars_unchecked() };
-        Ok(v.iter().map(|c| c.len_utf8()).sum::<usize>() as _)
+        Ok(v.chars().iter().map(|c| c.len_utf8()).sum::<usize>() as _)
     },
     read => |mut ctx: Caller<'_, T>, i: u32, p: u32| -> Result<u32, Error> {
         let v = site_context!(from_var_any::<GString>(

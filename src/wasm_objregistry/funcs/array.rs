@@ -23,7 +23,7 @@ func_registry! {
     get => |mut ctx: Caller<'_, T>, v: u32, i: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;
         let v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
-        Ok(reg.register(v.try_get(i as _).unwrap_or_default()) as _)
+        Ok(reg.register(v.get(i as _).unwrap_or_default()) as _)
     },
     set => |ctx: Caller<'_, T>, v: u32, i: u32, x: u32| -> Result<(), Error> {
         let reg = ctx.data().as_ref().get_registry()?;
@@ -60,7 +60,7 @@ func_registry! {
 
         let mut ret = 0u32;
         for (i, p) in (from as usize..to as usize).zip(ps.chunks_mut(4)) {
-            let v = reg.register(v.try_get(i as _).unwrap_or_default()) as u32;
+            let v = reg.register(v.get(i as _).unwrap_or_default()) as u32;
 
             p.copy_from_slice(&v.to_le_bytes());
             ret += 1;
