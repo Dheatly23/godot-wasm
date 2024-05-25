@@ -14,6 +14,7 @@ use nom::{
     InputTakeAtPosition, Needed, Offset, Slice,
 };
 
+use crate::godot_util::from_var_any;
 use crate::{bail_with_site, site_context};
 
 #[derive(Clone)]
@@ -832,7 +833,7 @@ pub fn write_struct(
         for _ in 0..n {
             let Some(v) = a
                 .next()
-                .map(|v| site_context!(v.try_to::<T>().map_err(|e| e.into_erased())))
+                .map(|v| site_context!(from_var_any::<T>(v)))
                 .transpose()?
             else {
                 bail_with_site!("Input array too small")

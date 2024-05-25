@@ -14,7 +14,8 @@ use godot::prelude::*;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{
-    AsContextMut, Caller, Extern, Func, FuncType, Linker, RootScope, Store, ValRaw, ValType,
+    AsContextMut, Caller, Extern, Func, FuncType, HeapType, Linker, RootScope, Store, ValRaw,
+    ValType,
 };
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, RefType};
@@ -213,10 +214,11 @@ pub unsafe fn to_raw(mut _store: impl AsContextMut, t: ValType, v: &Variant) -> 
             _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
         }),
         #[cfg(feature = "object-registry-extern")]
-        ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
+        ValType::Ref(r) if matches!(r.heap_type(), HeapType::Extern) => {
             ValRaw::externref(match variant_to_externref(&mut _store, v.clone())? {
                 Some(v) => v.to_raw(_store)?,
-                None => 0,
+                None if r.is_nullable() => 0,
+                None => bail_with_site!("Converting null into non-nullable WASM type"),
             })
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
@@ -239,7 +241,7 @@ pub unsafe fn from_raw(mut _store: impl AsContextMut, t: ValType, v: ValRaw) -> 
                 .to_variant()
         }
         #[cfg(feature = "object-registry-extern")]
-        ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => {
+        ValType::Ref(r) if matches!(r.heap_type(), HeapType::Extern) => {
             let v = ExternRef::from_raw(&mut _store, v.get_externref());
             return externref_to_variant(_store, v);
         }

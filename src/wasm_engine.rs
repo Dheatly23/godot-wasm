@@ -14,7 +14,7 @@ use parking_lot::{Condvar, Mutex, Once};
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
 
-use crate::godot_util::{variant_to_option, PhantomProperty, VariantDispatch};
+use crate::godot_util::{from_var_any, variant_to_option, PhantomProperty, VariantDispatch};
 use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::from_signature;
 #[cfg(feature = "epoch-timeout")]
@@ -229,8 +229,8 @@ impl WasmModule {
                 .iter_shared()
                 .map(|(k, v)| -> AnyResult<_> {
                     Ok((
-                        site_context!(k.try_to::<String>().map_err(|e| e.into_erased()))?,
-                        site_context!(v.try_to::<Gd<WasmModule>>().map_err(|e| e.into_erased()))?,
+                        site_context!(from_var_any::<String>(k))?,
+                        site_context!(from_var_any::<Gd<WasmModule>>(v))?,
                     ))
                 })
                 .collect::<AnyResult<_>>()?;

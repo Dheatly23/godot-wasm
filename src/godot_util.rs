@@ -67,7 +67,10 @@ pub fn variant_to_option<T: FromGodot>(v: Variant) -> AnyResult<Option<T>> {
     if v.is_nil() {
         Ok(None)
     } else {
-        v.try_to().map(Some).map_err(|e| e.into_erased().into())
+        match v.try_to() {
+            Ok(v) => Ok(Some(v)),
+            Err(e) => Err(e.into_erased().into()),
+        }
     }
 }
 
