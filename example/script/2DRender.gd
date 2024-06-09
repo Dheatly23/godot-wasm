@@ -25,12 +25,12 @@ func __selected(index):
 					results = [],
 					callable = __log,
 				},
-			},
-			"rand": {
-				params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
-				results = [],
-				object = self,
-				method = "__rand",
+				"rand": {
+					params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
+					results = [],
+					object = self,
+					method = "__rand",
+				},
 			},
 		},
 		{
