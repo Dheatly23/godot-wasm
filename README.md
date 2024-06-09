@@ -49,7 +49,7 @@ To build the addon:
 4. Copy addon in `out/addons/godot_wasm` to your project
 
 Extra build arguments can be added with
-environment variable `BUILD_EXTRA_ARGS`, separated by semicolon.
+environment variable `BUILD_EXTRA_ARGS`, separated by spaces.
 
 ### Cross-Compilation
 Cross-compilation is not always possible.

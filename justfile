@@ -2,7 +2,7 @@ set shell := ["nu", "-c"]
 
 features := ""
 profile := "debug"
-extra_args := ""
+extra_args := env('BUILD_EXTRA_ARGS', "")
 
 addon_path := "./out/addons/godot_wasm"
 
