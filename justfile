@@ -49,7 +49,7 @@ deploy-example: deploy-addon && deploy-wasm
 
 build-wasm:
   @ls ./example/wasm \
-  | filter {|f| $f.type == "dir" and $f.name !~ ".cargo$"} \
+  | filter {|f| $f.type == "dir" and $f.name !~ "\\.cargo$"} \
   | get name \
   | path basename \
   | each {|v| \
