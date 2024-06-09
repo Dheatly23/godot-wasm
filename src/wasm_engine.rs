@@ -491,11 +491,11 @@ impl WasmModule {
                     Some(v) => Dictionary::from_variant(&v),
                     None => {
                         let v = Dictionary::new();
-                        ret.insert(i.module(), v.clone());
+                        ret.set(i.module(), v.clone());
                         v
                     }
                 };
-                v.insert(
+                v.set(
                     i.name(),
                     [(params_str.clone(), p), (results_str.clone(), r)]
                         .into_iter()

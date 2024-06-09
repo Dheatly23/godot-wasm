@@ -1276,7 +1276,7 @@ impl WasmInstance {
             let (i, n) = (i as usize, n as usize);
             let data = mem.data(&store);
             match t {
-                VariantType::PackedByteArray => {
+                VariantType::PACKED_BYTE_ARRAY => {
                     let e = i + n;
                     let Some(s) = data.get(i..e) else {
                         bail_with_site!("Index out of range ({i}..{e})");
@@ -1284,32 +1284,32 @@ impl WasmInstance {
 
                     Ok(PackedByteArray::from(s).to_variant())
                 }
-                VariantType::PackedInt32Array => {
+                VariantType::PACKED_INT32_ARRAY => {
                     f::<4, _, PackedInt32Array>(data, i, n, |s| i32::from_le_bytes(*s))
                 }
-                VariantType::PackedInt64Array => {
+                VariantType::PACKED_INT64_ARRAY => {
                     f::<8, _, PackedInt64Array>(data, i, n, |s| i64::from_le_bytes(*s))
                 }
-                VariantType::PackedFloat32Array => {
+                VariantType::PACKED_FLOAT32_ARRAY => {
                     f::<4, _, PackedFloat32Array>(data, i, n, |s| f32::from_le_bytes(*s))
                 }
-                VariantType::PackedFloat64Array => {
+                VariantType::PACKED_FLOAT64_ARRAY => {
                     f::<8, _, PackedFloat64Array>(data, i, n, |s| f64::from_le_bytes(*s))
                 }
-                VariantType::PackedVector2Array => {
+                VariantType::PACKED_VECTOR2_ARRAY => {
                     f::<8, _, PackedVector2Array>(data, i, n, |s| Vector2 {
                         x: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(s[4..].try_into().unwrap()),
                     })
                 }
-                VariantType::PackedVector3Array => {
+                VariantType::PACKED_VECTOR3_ARRAY => {
                     f::<12, _, PackedVector3Array>(data, i, n, |s| Vector3 {
                         x: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(s[4..8].try_into().unwrap()),
                         z: f32::from_le_bytes(s[8..].try_into().unwrap()),
                     })
                 }
-                VariantType::PackedColorArray => {
+                VariantType::PACKED_COLOR_ARRAY => {
                     f::<16, _, PackedColorArray>(data, i, n, |s| Color {
                         r: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         g: f32::from_le_bytes(s[4..8].try_into().unwrap()),

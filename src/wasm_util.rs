@@ -411,8 +411,8 @@ fn process_func(dict: Dictionary) -> AnyResult<(FuncType, CallableEnum)> {
         CallableEnum::ObjectMethod(
             site_context!(from_var_any(object))?,
             match method.get_type() {
-                VariantType::String => method.to::<GString>().into(),
-                VariantType::StringName => method.to(),
+                VariantType::STRING => method.to::<GString>().into(),
+                VariantType::STRING_NAME => method.to(),
                 _ => bail_with_site!("Unknown method name {method}"),
             },
         )

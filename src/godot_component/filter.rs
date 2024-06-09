@@ -83,10 +83,7 @@ impl<const N: usize> FilterFlags<N> {
     }
 
     #[inline]
-    pub fn slice_mut(
-        &mut self,
-        i: impl RangeBounds<usize> + Debug,
-    ) -> FilterFlagsMut<'_, N> {
+    pub fn slice_mut(&mut self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsMut<'_, N> {
         self.as_mut().into_slice_mut(i)
     }
 
@@ -167,10 +164,7 @@ impl<'a, const N: usize> FilterFlagsMut<'a, N> {
         FilterFlagsRef { r: &*self.r, o, l }
     }
 
-    pub fn slice_mut(
-        &mut self,
-        i: impl RangeBounds<usize> + Debug,
-    ) -> FilterFlagsMut<'_, N> {
+    pub fn slice_mut(&mut self, i: impl RangeBounds<usize> + Debug) -> FilterFlagsMut<'_, N> {
         let r = &mut *self.r;
         let Some((o, l)) = rebound(self.o, self.l, i.start_bound(), i.end_bound()) else {
             panic!("Index {:?} out of bounds (length: {})", i, self.l)
