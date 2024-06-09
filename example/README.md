@@ -6,8 +6,8 @@ Before you can run any of it, initialize it first.
 ## Initialization
 
 Due to issues, the addons are NOT included in repository. You must build it
-yourself, or use `cargo make deploy-example` to do it automatically. It also
-builds the webassembly modules.
+yourself, or use `just profile=release features=all deploy-example` to do it automatically.
+It also builds the WebAssembly modules too, so make sure you have the target installed.
 
 ## Content
 
@@ -23,7 +23,7 @@ there to open it. There are many examples to choose from:
   Example of using host functions to make a callback from WebAssembly.
   The host expose a write function to send a text to logger. You can
   modify the rust module (`host-bindings`) and recompile
-  (`cargo make deploy_wasm`) to change it's output.
+  (`just profile=release deploy-wasm`) to change it's output.
 
 * Double Pendulum
 
