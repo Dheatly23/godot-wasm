@@ -1,6 +1,8 @@
 set shell := ["nu", "-c"]
 
+features := ""
 profile := "debug"
+extra_args := ""
 
 addon_path := "./out/addons/godot_wasm"
 
@@ -32,7 +34,7 @@ build package target *args:
   cargo build -p {{package}} --target {{target}} --profile {{build_profile}} {{args}}
 
 # Deploy executable to addon
-deploy-addon: (build "godot-wasm" target_triple)
+deploy-addon: (build "godot-wasm" target_triple "--features" features extra_args)
   @mkdir -v {{output_path}}; \
   ls "{{target_path}}" \
   | where name =~ "(lib)?godot_wasm\\.(dll|dylib|so)$" \
@@ -44,9 +46,11 @@ deploy-addon: (build "godot-wasm" target_triple)
     cp $f.from $f.to \
   }; null
 
+# Deploy example
 deploy-example: deploy-addon && deploy-wasm
   cp -r -v ./out/addons ./example
 
+# Build WASM example code
 build-wasm:
   @ls ./example/wasm \
   | filter {|f| $f.type == "dir" and $f.name !~ "\\.cargo$"} \
@@ -57,6 +61,7 @@ build-wasm:
     cargo build -p $v --target wasm32-unknown-unknown --profile {{build_profile}} --config "./example/wasm/.cargo/config.toml"; null \
   }; null
 
+# Deploy WASM example code
 deploy-wasm: build-wasm
   @let cmds = [[cmd closure]; \
     ["wasm-snip" {|f| ^wasm-snip --snip-rust-panicking-code $f -o $f}] \
