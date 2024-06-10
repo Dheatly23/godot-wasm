@@ -37,14 +37,14 @@ build package target *args:
 deploy-addon: (build "godot-wasm" target_triple "--features" features extra_args)
   @mkdir -v {{output_path}}; \
   ls "{{target_path}}" \
-  | where name =~ "(lib)?godot_wasm\\.(dll|dylib|so)$" \
+  | where ($it.name | path basename) =~ "^(lib)?godot_wasm\\.(dll|dylib|so)$" \
   | select name size \
   | rename from \
-  | insert to {get from | path dirname -r "{{output_path}}"} \
+  | insert to {$in.from | path dirname -r "{{output_path}}"} \
   | each {|f| \
     print $"Copy from: ($f.from)" $"Copy to: ($f.to)" $"Size: ($f.size)"; \
     cp $f.from $f.to \
-  }; null
+  } | ignore
 
 # Deploy example
 deploy-example: deploy-addon && deploy-wasm
@@ -53,13 +53,13 @@ deploy-example: deploy-addon && deploy-wasm
 # Build WASM example code
 build-wasm:
   @ls ./example/wasm \
-  | filter {|f| $f.type == "dir" and $f.name !~ "\\.cargo$"} \
+  | update name {path basename} \
+  | where type == "dir" and name != ".cargo" \
   | get name \
-  | path basename \
   | each {|v| \
     print $"Building ($v)"; \
-    cargo build -p $v --target wasm32-unknown-unknown --profile {{build_profile}} --config "./example/wasm/.cargo/config.toml"; null \
-  }; null
+    cargo build -p $v --target wasm32-unknown-unknown --profile {{build_profile}} --config "./example/wasm/.cargo/config.toml" \
+  } | ignore
 
 # Deploy WASM example code
 deploy-wasm: build-wasm
@@ -68,10 +68,10 @@ deploy-wasm: build-wasm
     ["wasm-opt" {|f| ^wasm-opt -Oz $f -o $f}] \
   ] | filter {which $in.cmd | is-not-empty}; \
   ls "{{"./target/wasm32-unknown-unknown" / target_profile}}" \
-  | where name =~ "\\.wasm$" \
+  | where ($it.name | str ends-with ".wasm") \
   | select name size \
   | rename from \
-  | insert to {get from | path dirname -r "./example/wasm"} \
+  | insert to {$in.from | path dirname -r "./example/wasm"} \
   | each {|f| \
     print $"Copy from: ($f.from)" $"Copy to: ($f.to)" $"Size: ($f.size)"; \
     cp $f.from $f.to; \
@@ -80,4 +80,4 @@ deploy-wasm: build-wasm
       do $c.closure $f.to \
     }; \
     print $"Final size: (ls $f.to | $in.0.size)"; \
-  }; null
+  } | ignore
