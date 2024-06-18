@@ -71,12 +71,12 @@ macro_rules! impl_packed_array {
 
             fn contains(&mut self, var: WasmResource<Variant>, val: $m::Elem) -> AnyResult<bool> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, contains)?;
-                Ok(self.get_value::<$t>(var)?.contains(val))
+                Ok(self.get_value::<$t>(var)?.contains(&val))
             }
 
             fn count(&mut self, var: WasmResource<Variant>, val: $m::Elem) -> AnyResult<u32> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, count)?;
-                Ok(self.get_value::<$t>(var)?.count(val) as _)
+                Ok(self.get_value::<$t>(var)?.count(&val) as _)
             }
 
             fn find(
@@ -86,7 +86,7 @@ macro_rules! impl_packed_array {
                 from: Option<u32>,
             ) -> AnyResult<Option<u32>> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, find)?;
-                self.get_value::<$t>(var).map(|v| v.find(val, from.map(|v| v as _)).map(|v| v as _))
+                self.get_value::<$t>(var).map(|v| v.find(&val, from.map(|v| v as _)).map(|v| v as _))
             }
 
             fn rfind(
@@ -96,7 +96,7 @@ macro_rules! impl_packed_array {
                 from: Option<u32>,
             ) -> AnyResult<Option<u32>> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, rfind)?;
-                self.get_value::<$t>(var).map(|v| v.rfind(val, from.map(|v| v as _)).map(|v| v as _))
+                self.get_value::<$t>(var).map(|v| v.rfind(&val, from.map(|v| v as _)).map(|v| v as _))
             }
 
             fn subarray(
@@ -177,12 +177,12 @@ macro_rules! impl_packed_array {
 
             fn contains(&mut self, var: WasmResource<Variant>, $v: $m::Elem) -> AnyResult<bool> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, contains)?;
-                Ok(self.get_value::<$t>(var)?.contains($e1))
+                Ok(self.get_value::<$t>(var)?.contains(&($e1)))
             }
 
             fn count(&mut self, var: WasmResource<Variant>, $v: $m::Elem) -> AnyResult<u32> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, count)?;
-                Ok(self.get_value::<$t>(var)?.count($e1) as _)
+                Ok(self.get_value::<$t>(var)?.count(&($e1)) as _)
             }
 
             fn find(
@@ -192,7 +192,7 @@ macro_rules! impl_packed_array {
                 from: Option<u32>,
             ) -> AnyResult<Option<u32>> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, find)?;
-                self.get_value::<$t>(var).map(|v| v.find($e1, from.map(|v| v as _)).map(|v| v as _))
+                self.get_value::<$t>(var).map(|v| v.find(&($e1), from.map(|v| v as _)).map(|v| v as _))
             }
 
             fn rfind(
@@ -202,7 +202,7 @@ macro_rules! impl_packed_array {
                 from: Option<u32>,
             ) -> AnyResult<Option<u32>> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, rfind)?;
-                self.get_value::<$t>(var).map(|v| v.rfind($e1, from.map(|v| v as _)).map(|v| v as _))
+                self.get_value::<$t>(var).map(|v| v.rfind(&($e1), from.map(|v| v as _)).map(|v| v as _))
             }
 
             fn subarray(

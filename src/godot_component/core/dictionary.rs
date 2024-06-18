@@ -171,7 +171,7 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         let mut var: Dictionary = self.get_value(var)?;
 
         for (k, v) in val.into_iter() {
-            var.insert(self.maybe_get_var(k)?, self.maybe_get_var(v)?);
+            var.set(self.maybe_get_var(k)?, self.maybe_get_var(v)?);
         }
 
         Ok(())

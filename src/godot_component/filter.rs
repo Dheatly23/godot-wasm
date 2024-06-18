@@ -383,7 +383,7 @@ impl FromGodot for Filter {
     fn try_from_variant(v: &Variant) -> Result<Self, ConvertError> {
         if v.is_nil() {
             Ok(Self::default())
-        } else if v.get_type() == VariantType::String {
+        } else if v.get_type() == VariantType::STRING {
             let v = v.try_to()?;
             parse_script(&v).map_err(|e| ConvertError::with_error_value(e, v))
         } else {
@@ -403,7 +403,7 @@ impl FromGodot for Filter {
 fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
     let f = |s: &mut String, k: Variant| -> Result<(), ConvertError> {
         s.clear();
-        if k.get_type() == VariantType::StringName {
+        if k.get_type() == VariantType::STRING_NAME {
             write!(s, "{}", k.to::<StringName>())
         } else {
             write!(s, "{}", k.try_to::<GString>()?)
@@ -428,7 +428,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
             continue;
         }
 
-        if v.get_type() == VariantType::Bool {
+        if v.get_type() == VariantType::BOOL {
             parse_filter(
                 fi.slice_mut(..),
                 FilterItem {
@@ -454,7 +454,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
                 continue;
             }
 
-            if v.get_type() == VariantType::Bool {
+            if v.get_type() == VariantType::BOOL {
                 parse_filter(
                     fi.slice_mut(..),
                     FilterItem {

@@ -1,7 +1,6 @@
 use anyhow::{bail, Result as AnyResult};
-use godot::engine::global::*;
-use godot::engine::utilities::*;
 use godot::engine::{ResourceLoader, ResourceSaver};
+use godot::global::*;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
@@ -143,31 +142,31 @@ filter_macro! {method [
 impl globalscope::Host for GodotCtx {
     fn print(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, print)?;
-        godot::engine::utilities::print(s.to_variant(), &[]);
+        print(&[s.to_variant()]);
         Ok(())
     }
 
     fn print_rich(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, print_rich)?;
-        godot::engine::utilities::print_rich(s.to_variant(), &[]);
+        print_rich(&[s.to_variant()]);
         Ok(())
     }
 
     fn printerr(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, printerr)?;
-        printerr(s.to_variant(), &[]);
+        printerr(&[s.to_variant()]);
         Ok(())
     }
 
     fn push_error(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, push_error)?;
-        push_error(s.to_variant(), &[]);
+        push_error(&[s.to_variant()]);
         Ok(())
     }
 
     fn push_warning(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, push_warning)?;
-        push_warning(s.to_variant(), &[]);
+        push_warning(&[s.to_variant()]);
         Ok(())
     }
 
@@ -248,45 +247,45 @@ impl globalscope::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, type_convert)?;
         let v = self.get_var(v)?;
         let t = match t {
-            CompVarType::Bool => VariantType::Bool,
-            CompVarType::Int => VariantType::Int,
-            CompVarType::Float => VariantType::Float,
-            CompVarType::String => VariantType::String,
-            CompVarType::Vector2 => VariantType::Vector2,
-            CompVarType::Vector2i => VariantType::Vector2i,
-            CompVarType::Rect2 => VariantType::Rect2,
-            CompVarType::Rect2i => VariantType::Rect2i,
-            CompVarType::Vector3 => VariantType::Vector3,
-            CompVarType::Vector3i => VariantType::Vector3i,
-            CompVarType::Transform2d => VariantType::Transform2D,
-            CompVarType::Vector4 => VariantType::Vector4,
-            CompVarType::Vector4i => VariantType::Vector4i,
-            CompVarType::Plane => VariantType::Plane,
-            CompVarType::Quaternion => VariantType::Quaternion,
-            CompVarType::Aabb => VariantType::Aabb,
-            CompVarType::Basis => VariantType::Basis,
-            CompVarType::Transform3d => VariantType::Transform3D,
-            CompVarType::Projection => VariantType::Projection,
-            CompVarType::Color => VariantType::Color,
-            CompVarType::Stringname => VariantType::StringName,
-            CompVarType::Nodepath => VariantType::NodePath,
-            CompVarType::Rid => VariantType::Rid,
-            CompVarType::Object => VariantType::Object,
-            CompVarType::Callable => VariantType::Callable,
-            CompVarType::Signal => VariantType::Signal,
-            CompVarType::Dictionary => VariantType::Dictionary,
-            CompVarType::Array => VariantType::Array,
-            CompVarType::ByteArray => VariantType::PackedByteArray,
-            CompVarType::Int32Array => VariantType::PackedInt32Array,
-            CompVarType::Int64Array => VariantType::PackedInt64Array,
-            CompVarType::Float32Array => VariantType::PackedFloat32Array,
-            CompVarType::Float64Array => VariantType::PackedFloat64Array,
-            CompVarType::StringArray => VariantType::PackedStringArray,
-            CompVarType::Vector2Array => VariantType::PackedVector2Array,
-            CompVarType::Vector3Array => VariantType::PackedVector3Array,
-            CompVarType::ColorArray => VariantType::PackedColorArray,
-        } as i64;
-        let r = type_convert(v, t);
+            CompVarType::Bool => VariantType::BOOL,
+            CompVarType::Int => VariantType::INT,
+            CompVarType::Float => VariantType::FLOAT,
+            CompVarType::String => VariantType::STRING,
+            CompVarType::Vector2 => VariantType::VECTOR2,
+            CompVarType::Vector2i => VariantType::VECTOR2I,
+            CompVarType::Rect2 => VariantType::RECT2,
+            CompVarType::Rect2i => VariantType::RECT2I,
+            CompVarType::Vector3 => VariantType::VECTOR3,
+            CompVarType::Vector3i => VariantType::VECTOR3I,
+            CompVarType::Transform2d => VariantType::TRANSFORM2D,
+            CompVarType::Vector4 => VariantType::VECTOR4,
+            CompVarType::Vector4i => VariantType::VECTOR4I,
+            CompVarType::Plane => VariantType::PLANE,
+            CompVarType::Quaternion => VariantType::QUATERNION,
+            CompVarType::Aabb => VariantType::AABB,
+            CompVarType::Basis => VariantType::BASIS,
+            CompVarType::Transform3d => VariantType::TRANSFORM3D,
+            CompVarType::Projection => VariantType::PROJECTION,
+            CompVarType::Color => VariantType::COLOR,
+            CompVarType::Stringname => VariantType::STRING_NAME,
+            CompVarType::Nodepath => VariantType::NODE_PATH,
+            CompVarType::Rid => VariantType::RID,
+            CompVarType::Object => VariantType::OBJECT,
+            CompVarType::Callable => VariantType::CALLABLE,
+            CompVarType::Signal => VariantType::SIGNAL,
+            CompVarType::Dictionary => VariantType::DICTIONARY,
+            CompVarType::Array => VariantType::ARRAY,
+            CompVarType::ByteArray => VariantType::PACKED_BYTE_ARRAY,
+            CompVarType::Int32Array => VariantType::PACKED_INT32_ARRAY,
+            CompVarType::Int64Array => VariantType::PACKED_INT64_ARRAY,
+            CompVarType::Float32Array => VariantType::PACKED_FLOAT32_ARRAY,
+            CompVarType::Float64Array => VariantType::PACKED_FLOAT64_ARRAY,
+            CompVarType::StringArray => VariantType::PACKED_STRING_ARRAY,
+            CompVarType::Vector2Array => VariantType::PACKED_VECTOR2_ARRAY,
+            CompVarType::Vector3Array => VariantType::PACKED_VECTOR3_ARRAY,
+            CompVarType::ColorArray => VariantType::PACKED_COLOR_ARRAY,
+        };
+        let r = type_convert(v, t.ord().into());
         assert!(!r.is_nil(), "Value should be nonnull");
         self.set_var(r).map(|v| v.unwrap())
     }

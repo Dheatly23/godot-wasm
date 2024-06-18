@@ -107,6 +107,7 @@ where
 }
 
 // Keep until gdext implement this
+#[allow(dead_code)]
 #[derive(Clone)]
 pub enum VariantDispatch {
     Nil,

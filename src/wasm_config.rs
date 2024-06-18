@@ -47,9 +47,8 @@ pub struct Config {
     pub wasi_stderr_buffer: PipeBufferType,
     #[cfg(feature = "wasi")]
     pub wasi_stdin_data: Option<PackedByteArray>,
-    #[cfg(feature = "wasi")]
-    pub wasi_stdin_file: Option<String>,
-
+    //#[cfg(feature = "wasi")]
+    //pub wasi_stdin_file: Option<String>,
     pub extern_bind: ExternBindingType,
 }
 
@@ -159,9 +158,8 @@ impl Config {
                 .unwrap_or_default(),
             #[cfg(feature = "wasi")]
             wasi_stdin_data: get_field(&dict, ["wasi.stdin.inputData", "wasi.stdin_data"])?,
-            #[cfg(feature = "wasi")]
-            wasi_stdin_file: get_field(&dict, ["wasi.stdin.inputFile", "wasi.stdin_file"])?,
-
+            //#[cfg(feature = "wasi")]
+            //wasi_stdin_file: get_field(&dict, ["wasi.stdin.inputFile", "wasi.stdin_file"])?,
             extern_bind: get_field(&dict, ["extern.bindMode", "godot.extern_binding"])?
                 .unwrap_or_default(),
         })

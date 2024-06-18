@@ -50,229 +50,230 @@ impl typeis::Host for crate::godot_component::GodotCtx {
     fn var_type(&mut self, var: WasmResource<Variant>) -> AnyResult<typeis::VariantType> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, var_type)?;
         Ok(match self.get_var_borrow(var)?.get_type() {
-            VariantType::Bool => typeis::VariantType::Bool,
-            VariantType::Int => typeis::VariantType::Int,
-            VariantType::Float => typeis::VariantType::Float,
-            VariantType::String => typeis::VariantType::String,
-            VariantType::Vector2 => typeis::VariantType::Vector2,
-            VariantType::Vector2i => typeis::VariantType::Vector2i,
-            VariantType::Rect2 => typeis::VariantType::Rect2,
-            VariantType::Rect2i => typeis::VariantType::Rect2i,
-            VariantType::Vector3 => typeis::VariantType::Vector3,
-            VariantType::Vector3i => typeis::VariantType::Vector3i,
-            VariantType::Transform2D => typeis::VariantType::Transform2d,
-            VariantType::Vector4 => typeis::VariantType::Vector4,
-            VariantType::Vector4i => typeis::VariantType::Vector4i,
-            VariantType::Plane => typeis::VariantType::Plane,
-            VariantType::Quaternion => typeis::VariantType::Quaternion,
-            VariantType::Aabb => typeis::VariantType::Aabb,
-            VariantType::Basis => typeis::VariantType::Basis,
-            VariantType::Transform3D => typeis::VariantType::Transform3d,
-            VariantType::Projection => typeis::VariantType::Projection,
-            VariantType::Color => typeis::VariantType::Color,
-            VariantType::StringName => typeis::VariantType::Stringname,
-            VariantType::NodePath => typeis::VariantType::Nodepath,
-            VariantType::Rid => typeis::VariantType::Rid,
-            VariantType::Object => typeis::VariantType::Object,
-            VariantType::Callable => typeis::VariantType::Callable,
-            VariantType::Signal => typeis::VariantType::Signal,
-            VariantType::Dictionary => typeis::VariantType::Dictionary,
-            VariantType::Array => typeis::VariantType::Array,
-            VariantType::PackedByteArray => typeis::VariantType::ByteArray,
-            VariantType::PackedInt32Array => typeis::VariantType::Int32Array,
-            VariantType::PackedInt64Array => typeis::VariantType::Int64Array,
-            VariantType::PackedFloat32Array => typeis::VariantType::Float32Array,
-            VariantType::PackedFloat64Array => typeis::VariantType::Float64Array,
-            VariantType::PackedStringArray => typeis::VariantType::StringArray,
-            VariantType::PackedVector2Array => typeis::VariantType::Vector2Array,
-            VariantType::PackedVector3Array => typeis::VariantType::Vector3Array,
-            VariantType::PackedColorArray => typeis::VariantType::ColorArray,
-            VariantType::Nil => unreachable!("Variant must not be nil"),
+            VariantType::BOOL => typeis::VariantType::Bool,
+            VariantType::INT => typeis::VariantType::Int,
+            VariantType::FLOAT => typeis::VariantType::Float,
+            VariantType::STRING => typeis::VariantType::String,
+            VariantType::VECTOR2 => typeis::VariantType::Vector2,
+            VariantType::VECTOR2I => typeis::VariantType::Vector2i,
+            VariantType::RECT2 => typeis::VariantType::Rect2,
+            VariantType::RECT2I => typeis::VariantType::Rect2i,
+            VariantType::VECTOR3 => typeis::VariantType::Vector3,
+            VariantType::VECTOR3I => typeis::VariantType::Vector3i,
+            VariantType::TRANSFORM2D => typeis::VariantType::Transform2d,
+            VariantType::VECTOR4 => typeis::VariantType::Vector4,
+            VariantType::VECTOR4I => typeis::VariantType::Vector4i,
+            VariantType::PLANE => typeis::VariantType::Plane,
+            VariantType::QUATERNION => typeis::VariantType::Quaternion,
+            VariantType::AABB => typeis::VariantType::Aabb,
+            VariantType::BASIS => typeis::VariantType::Basis,
+            VariantType::TRANSFORM3D => typeis::VariantType::Transform3d,
+            VariantType::PROJECTION => typeis::VariantType::Projection,
+            VariantType::COLOR => typeis::VariantType::Color,
+            VariantType::STRING_NAME => typeis::VariantType::Stringname,
+            VariantType::NODE_PATH => typeis::VariantType::Nodepath,
+            VariantType::RID => typeis::VariantType::Rid,
+            VariantType::OBJECT => typeis::VariantType::Object,
+            VariantType::CALLABLE => typeis::VariantType::Callable,
+            VariantType::SIGNAL => typeis::VariantType::Signal,
+            VariantType::DICTIONARY => typeis::VariantType::Dictionary,
+            VariantType::ARRAY => typeis::VariantType::Array,
+            VariantType::PACKED_BYTE_ARRAY => typeis::VariantType::ByteArray,
+            VariantType::PACKED_INT32_ARRAY => typeis::VariantType::Int32Array,
+            VariantType::PACKED_INT64_ARRAY => typeis::VariantType::Int64Array,
+            VariantType::PACKED_FLOAT32_ARRAY => typeis::VariantType::Float32Array,
+            VariantType::PACKED_FLOAT64_ARRAY => typeis::VariantType::Float64Array,
+            VariantType::PACKED_STRING_ARRAY => typeis::VariantType::StringArray,
+            VariantType::PACKED_VECTOR2_ARRAY => typeis::VariantType::Vector2Array,
+            VariantType::PACKED_VECTOR3_ARRAY => typeis::VariantType::Vector3Array,
+            VariantType::PACKED_COLOR_ARRAY => typeis::VariantType::ColorArray,
+            VariantType::NIL => unreachable!("Variant must not be nil"),
+            t => unreachable!("Unhandleable type {t:?}"),
         })
     }
 
     fn is_bool(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_bool)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Bool)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::BOOL)
     }
 
     fn is_int(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_int)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Int)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::INT)
     }
 
     fn is_float(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_float)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Float)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::FLOAT)
     }
 
     fn is_string(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_string)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::String)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::STRING)
     }
 
     fn is_vector2(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_vector2)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Vector2)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::VECTOR2)
     }
 
     fn is_vector2i(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_vector2i)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Vector2i)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::VECTOR2I)
     }
 
     fn is_rect2(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_rect2)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Rect2)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::RECT2)
     }
 
     fn is_rect2i(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_rect2i)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Rect2i)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::RECT2I)
     }
 
     fn is_vector3(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_vector3)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Vector3)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::VECTOR3)
     }
 
     fn is_vector3i(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_vector3i)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Vector3i)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::VECTOR3I)
     }
 
     fn is_transform2d(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_transform2d)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Transform2D)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::TRANSFORM2D)
     }
 
     fn is_vector4(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_vector4)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Vector4)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::VECTOR4)
     }
 
     fn is_vector4i(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_vector4i)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Vector4i)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::VECTOR4I)
     }
 
     fn is_plane(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_plane)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Plane)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PLANE)
     }
 
     fn is_quaternion(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_quaternion)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Quaternion)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::QUATERNION)
     }
 
     fn is_aabb(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_aabb)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Aabb)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::AABB)
     }
 
     fn is_basis(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_basis)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Basis)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::BASIS)
     }
 
     fn is_transform3d(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_transform3d)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Transform3D)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::TRANSFORM3D)
     }
 
     fn is_projection(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_projection)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Projection)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PROJECTION)
     }
 
     fn is_color(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_color)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Color)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::COLOR)
     }
 
     fn is_stringname(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_stringname)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::StringName)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::STRING_NAME)
     }
 
     fn is_nodepath(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_nodepath)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::NodePath)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::NODE_PATH)
     }
 
     fn is_rid(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_rid)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Rid)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::RID)
     }
 
     fn is_object(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_object)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Object)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::OBJECT)
     }
 
     fn is_callable(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_callable)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Callable)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::CALLABLE)
     }
 
     fn is_signal(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_signal)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Signal)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::SIGNAL)
     }
 
     fn is_dictionary(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_dictionary)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Dictionary)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::DICTIONARY)
     }
 
     fn is_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::Array)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::ARRAY)
     }
 
     fn is_byte_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_byte_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedByteArray)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_BYTE_ARRAY)
     }
 
     fn is_int32_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_int32_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedInt32Array)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_INT32_ARRAY)
     }
 
     fn is_int64_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_int64_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedInt64Array)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_INT64_ARRAY)
     }
 
     fn is_float32_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_float32_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedFloat32Array)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_FLOAT32_ARRAY)
     }
 
     fn is_float64_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_float64_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedFloat64Array)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_FLOAT64_ARRAY)
     }
 
     fn is_string_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_string_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedStringArray)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_STRING_ARRAY)
     }
 
     fn is_vector2_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_vector2_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedVector2Array)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_VECTOR2_ARRAY)
     }
 
     fn is_vector3_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_vector3_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedVector3Array)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_VECTOR3_ARRAY)
     }
 
     fn is_color_array(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, typeis, is_color_array)?;
-        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PackedColorArray)
+        Ok(self.get_var_borrow(var)?.get_type() == VariantType::PACKED_COLOR_ARRAY)
     }
 }

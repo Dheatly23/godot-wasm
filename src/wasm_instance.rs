@@ -650,7 +650,9 @@ impl WasmInstance {
             // SAFETY: Nobody else can access memory
             #[allow(mutable_transmutes)]
             unsafe {
-                *mem::transmute::<_, &mut Option<Memory>>(&self.memory) = match &ret.instance {
+                *mem::transmute::<&std::option::Option<wasmtime::Memory>, &mut Option<Memory>>(
+                    &self.memory,
+                ) = match &ret.instance {
                     InstanceType::Core(inst) => inst.get_memory(ret.store.get_mut(), MEMORY_EXPORT),
                     #[allow(unreachable_patterns)]
                     _ => None,
@@ -1013,7 +1015,9 @@ impl WasmInstance {
                 // SAFETY: Nobody else can access memory
                 #[allow(mutable_transmutes)]
                 unsafe {
-                    *mem::transmute::<_, &mut Option<Memory>>(&self.memory) = match &m.instance {
+                    *mem::transmute::<&std::option::Option<wasmtime::Memory>, &mut Option<Memory>>(
+                        &self.memory,
+                    ) = match &m.instance {
                         InstanceType::Core(inst) => inst.get_memory(store, &name.to_string()),
                         #[allow(unreachable_patterns)]
                         _ => None,
