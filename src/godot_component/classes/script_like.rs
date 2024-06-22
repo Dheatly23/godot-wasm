@@ -3,7 +3,7 @@ use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use wasmtime::component::{bindgen, Linker, Resource as WasmResource};
+use wasmtime::component::{Linker, Resource as WasmResource};
 use wasmtime::Store;
 
 use crate::godot_component::filter::Filter;
@@ -18,19 +18,21 @@ use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
 use crate::wasm_util::config_store_epoch;
 use crate::{bail_with_site, site_context};
 
-bindgen!({
-    path: "wit",
-    world: "godot-wasm:script/script",
-    tracing: false,
-    async: false,
-    ownership: Borrowing {
-        duplicate_if_necessary: false
-    },
-    trappable_imports: true,
-    with: {
-        "godot": crate::godot_component::bindgen::godot,
-    },
-});
+pub mod bindgen {
+    wasmtime::component::bindgen!({
+        path: "wit",
+        world: "godot-wasm:script/script",
+        tracing: false,
+        async: false,
+        ownership: Borrowing {
+            duplicate_if_necessary: false
+        },
+        trappable_imports: true,
+        with: {
+            "godot": crate::godot_component::bindgen::godot,
+        },
+    });
+}
 
 #[derive(Default)]
 struct ScriptConfig {
@@ -78,7 +80,7 @@ pub struct WasmScriptLike {
 
 pub struct WasmScriptLikeData {
     instance: InstanceData<WasmScriptLikeStore>,
-    bindings: Script,
+    bindings: bindgen::Script,
 }
 
 pub struct WasmScriptLikeStore {
@@ -147,7 +149,8 @@ impl WasmScriptLike {
         let mut linker = <Linker<WasmScriptLikeStore>>::new(&ENGINE);
         site_context!(add_to_linker(&mut linker, |v| v))?;
 
-        let (bindings, instance) = site_context!(Script::instantiate(&mut store, &comp, &linker))?;
+        let (bindings, instance) =
+            site_context!(bindgen::Script::instantiate(&mut store, &comp, &linker))?;
 
         Ok(WasmScriptLikeData {
             instance: InstanceData {
