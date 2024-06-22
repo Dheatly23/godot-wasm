@@ -44,20 +44,19 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
 ## Building
 To build the addon:
 1. Clone this repository
-2. Install `cargo-make` (see installation guide [here](https://crates.io/crates/cargo-make))
-3. Run `cargo make deploy`
+2. Install [`just`](https://github.com/casey/just) and [`nushell`](https://github.com/nushell/nushell).
+3. Run `just profile=release deploy-addon`
 4. Copy addon in `out/addons/godot_wasm` to your project
 
 Extra build arguments can be added with
-environment variable `BUILD_EXTRA_ARGS`, separated by semicolon.
+environment variable `BUILD_EXTRA_ARGS`, separated by spaces.
 
 ### Cross-Compilation
-To cross-compile, we use WSL (Windows) and [cross](https://crates.io/crates/cross) (Linux).
-By default, it is disabled.
-To enable it, set environment variable `USE_WSL` or `USE_CROSS`.
-
-Note: It may be broken at the moment, so feel free to submit an issue.
-Only Linux → Windows and Windows → Linux is currently supported.
+Cross-compilation is not always possible.
+You might be able to do it with WSL (Windows)
+or [cross](https://crates.io/crates/cross) (Linux), but result may vary.
+It's recommended to **not** use `just`,
+instead directly run `cargo build` with the correct arguments.
 
 ## Using the Library
 After adding it to your Godot project, there are many classes added by the library:
