@@ -33,8 +33,8 @@ clippy_lints := "-D warnings"
 
 # Invoke cargo build
 [group('Cargo')]
-build package target *args:
-  cargo build -p {{package}} --target {{target}} --profile {{build_profile}} {{args}}
+build package target features *args:
+  cargo build -p {{package}} --target {{target}} --profile {{build_profile}} -F "{{features}}" {{args}}
 
 # Invoke cargo fmt
 [group('Cargo')]
@@ -53,7 +53,7 @@ clippy *args:
 
 # Deploy executable to addon
 [group('Deploy')]
-deploy-addon: (build "godot-wasm" target_triple "-F" features extra_args)
+deploy-addon: (build "godot-wasm" target_triple features extra_args)
   @mkdir -v {{output_path}}; \
   ls "{{target_path}}" \
   | where ($it.name | path basename) =~ "^(lib)?godot_wasm\\.(dll|dylib|so)$" \
