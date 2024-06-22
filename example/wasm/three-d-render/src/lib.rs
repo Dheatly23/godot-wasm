@@ -1,7 +1,7 @@
 mod double_joint;
 mod wave;
 
-use std::ptr::null;
+use std::ptr::{addr_of, addr_of_mut, null};
 
 use glam::f32::*;
 
@@ -108,9 +108,9 @@ pub extern "C" fn init(index: u64) {
 pub extern "C" fn process(delta: f64) -> *const ExportState {
     unsafe {
         T += delta;
-        if let Some(rp) = &mut RENDER {
+        if let Some(rp) = &mut *addr_of_mut!(RENDER) {
             rp.step(T as _, delta as _);
-            rp.render(&mut STATE);
+            rp.render(&mut *addr_of_mut!(STATE));
         };
         STATE_EXPORT = ExportState {
             vertex_ptr: STATE.vertex.as_ptr(),
@@ -126,6 +126,6 @@ pub extern "C" fn process(delta: f64) -> *const ExportState {
             index_ptr: STATE.index.as_ptr(),
             index_cnt: STATE.index.len(),
         };
-        &STATE_EXPORT as _
+        addr_of!(STATE_EXPORT)
     }
 }

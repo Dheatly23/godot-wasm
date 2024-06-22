@@ -3,7 +3,7 @@ mod mandelbrot;
 
 use std::cell::RefCell;
 use std::fmt::{Arguments, Write as _};
-use std::ptr::null;
+use std::ptr::{addr_of, addr_of_mut, null};
 
 use getrandom::{register_custom_getrandom, Error as RandError};
 
@@ -169,9 +169,9 @@ pub extern "C" fn init(index: u64) {
 pub extern "C" fn process(delta: f64) -> *const ExportState {
     unsafe {
         T += delta;
-        if let Some(rp) = &mut RENDER {
+        if let Some(rp) = &mut *addr_of_mut!(RENDER) {
             rp.step(T as _, delta as _);
-            rp.render(&mut STATE);
+            rp.render(&mut *addr_of_mut!(STATE));
         };
         STATE_EXPORT = ExportState {
             width: STATE.width,
@@ -179,7 +179,7 @@ pub extern "C" fn process(delta: f64) -> *const ExportState {
             colors_ptr: STATE.colors.as_ptr(),
             colors_cnt: STATE.colors.len(),
         };
-        &STATE_EXPORT as _
+        addr_of!(STATE_EXPORT)
     }
 }
 
@@ -193,7 +193,7 @@ pub extern "C" fn click(x: f64, y: f64, button: u32) {
     };
 
     unsafe {
-        if let Some(rp) = &mut RENDER {
+        if let Some(rp) = &mut *addr_of_mut!(RENDER) {
             rp.click(x as _, y as _, button);
         };
     }

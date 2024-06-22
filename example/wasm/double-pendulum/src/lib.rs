@@ -1,6 +1,7 @@
 mod deriv_trait;
 
 use std::ops;
+use std::ptr::addr_of;
 
 const G: f64 = 9.8;
 
@@ -85,7 +86,7 @@ pub extern "C" fn process(mut delta: f64) -> *const f64 {
         STATE = s;
         T = t;
         OUTPUT = [s.theta1, s.w1, s.theta2, s.w2];
-        &OUTPUT as _
+        addr_of!(OUTPUT[0])
     }
 }
 

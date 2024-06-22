@@ -1,6 +1,8 @@
 mod board;
 mod robot;
 
+use std::ptr::addr_of_mut;
+
 use board::*;
 use robot::{DummyRobot, Robot};
 
@@ -17,7 +19,7 @@ pub extern "C" fn init(w: u64, h: u64) {
 
 #[no_mangle]
 pub extern "C" fn make_move(player: u64) -> u64 {
-    let board = unsafe { &mut BOARD };
+    let board = unsafe { &mut *addr_of_mut!(BOARD) };
 
     let mut x = player as usize;
     let mut y = board.get_move(x).expect("Invalid move");
