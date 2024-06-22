@@ -29,12 +29,31 @@ output_path := addon_path / "bin" / target_triple
 
 default: deploy-addon
 
+clippy_lints := "-D warnings"
+
 # Invoke cargo build
+[group('Cargo')]
 build package target *args:
   cargo build -p {{package}} --target {{target}} --profile {{build_profile}} {{args}}
 
+# Invoke cargo fmt
+[group('Cargo')]
+fmt *args:
+  cargo fmt {{args}}
+
+# Invoke cargo check
+[group('Cargo')]
+check *args:
+  cargo check {{args}}
+
+# Invoke cargo clippy
+[group('Cargo')]
+clippy *args:
+  cargo clippy {{args}} -- {{clippy_lints}}
+
 # Deploy executable to addon
-deploy-addon: (build "godot-wasm" target_triple "--features" features extra_args)
+[group('Deploy')]
+deploy-addon: (build "godot-wasm" target_triple "-F" features extra_args)
   @mkdir -v {{output_path}}; \
   ls "{{target_path}}" \
   | where ($it.name | path basename) =~ "^(lib)?godot_wasm\\.(dll|dylib|so)$" \
@@ -47,10 +66,13 @@ deploy-addon: (build "godot-wasm" target_triple "--features" features extra_args
   } | ignore
 
 # Deploy example
+[group('Deploy')]
+[group('Example')]
 deploy-example: deploy-addon && deploy-wasm
   cp -r -v ./out/addons ./example
 
 # Build WASM example code
+[group('Example')]
 build-wasm:
   @ls ./example/wasm \
   | update name {path basename} \
@@ -62,6 +84,8 @@ build-wasm:
   } | ignore
 
 # Deploy WASM example code
+[group('Deploy')]
+[group('Example')]
 deploy-wasm: build-wasm
   @let cmds = [[cmd closure]; \
     ["wasm-snip" {|f| ^wasm-snip --snip-rust-panicking-code $f -o $f}] \
@@ -81,3 +105,7 @@ deploy-wasm: build-wasm
     }; \
     print $"Final size: (ls $f.to | $in.0.size)"; \
   } | ignore
+
+# Check compilation with multiple configs
+[group('Checks')]
+compile-test: (fmt "--all" "--check") (check) (clippy) (check "--all-features") (clippy "--all-features") (check "--no-default-features") (clippy "--no-default-features")
