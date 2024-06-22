@@ -49,6 +49,9 @@ pub struct Config {
     pub wasi_stdin_data: Option<PackedByteArray>,
     //#[cfg(feature = "wasi")]
     //pub wasi_stdin_file: Option<String>,
+
+    // Not worth cfg() it
+    #[allow(dead_code)]
     pub extern_bind: ExternBindingType,
 }
 

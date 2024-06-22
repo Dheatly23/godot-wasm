@@ -14,11 +14,10 @@ use godot::prelude::*;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{
-    AsContextMut, Caller, Extern, Func, FuncType, HeapType, Linker, RootScope, Store, ValRaw,
-    ValType,
+    AsContextMut, Caller, Extern, Func, FuncType, Linker, RootScope, Store, ValRaw, ValType,
 };
 #[cfg(feature = "object-registry-extern")]
-use wasmtime::{ExternRef, RefType};
+use wasmtime::{ExternRef, HeapType, RefType};
 
 use crate::godot_util::{from_var_any, SendSyncWrapper, VariantDispatch};
 use crate::wasm_config::Config;
