@@ -344,11 +344,9 @@ macro_rules! filter_macro {
             }
 
             pub fn parse_filter<const N: usize>(mut filter: $crate::godot_component::filter::FilterFlagsMut<'_, N>, item: $crate::godot_component::filter::FilterItem<'_>) {
-                match item.$t {
-                    None => filter.fill_all(item.allow),
-                    $(Some($s) => $i::parse_filter(filter.into_slice_mut(indices::$i.0..indices::$i.0 + indices::$i.1), item),)*
-                    _ => (),
-                }
+                $(if let None | Some($s) = item.$t {
+                    $i::parse_filter(filter.slice_mut(indices::$i.0..indices::$i.0 + indices::$i.1), item)
+                })*
             }
 
             pub fn run_filter<const N: usize>(filter: $crate::godot_component::filter::FilterFlagsRef<'_, N>, i: usize) -> Result<(), $crate::godot_component::filter::FilterItem<'static>> {
