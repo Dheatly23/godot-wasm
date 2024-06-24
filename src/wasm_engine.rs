@@ -88,10 +88,13 @@ impl Drop for EpochThreadHandle {
 pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
     let mut config = Config::new();
     config
-        .cranelift_opt_level(wasmtime::OptLevel::SpeedAndSize)
+        .cranelift_opt_level(wasmtime::OptLevel::Speed)
         .cranelift_nan_canonicalization(cfg!(feature = "deterministic-wasm"))
         .epoch_interruption(true)
+        .debug_info(true)
         .wasm_reference_types(true)
+        .wasm_function_references(true)
+        .wasm_gc(true)
         .wasm_simd(true)
         .wasm_relaxed_simd(true)
         .relaxed_simd_deterministic(cfg!(feature = "deterministic-wasm"))

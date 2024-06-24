@@ -49,6 +49,7 @@ features = [
   "gc",
   "demangle",
   "addr2line",
+  "debug-builtins",
 ]
 
 [dependencies.wasmtime-wasi]
@@ -93,7 +94,6 @@ wasi-preview2 = [
   "dep:bytes",
   "wasi",
   "component-model",
-  "wasmtime/component-model",
 #  "wasmtime-wasi/preview2",
 #  "wasmtime-wasi/preview1-on-preview2",
 ]
