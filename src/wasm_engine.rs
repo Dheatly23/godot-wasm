@@ -103,6 +103,8 @@ pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
         .wasm_multi_value(true)
         .wasm_multi_memory(true)
         .wasm_memory64(true);
+    #[cfg(feature = "wasm-threads")]
+    config.wasm_threads(true);
     #[cfg(feature = "component-model")]
     config.wasm_component_model(true);
 

@@ -1,5 +1,7 @@
 #[cfg(feature = "wasi")]
 use std::any::Any;
+#[cfg(feature = "wasm-threads")]
+use std::cell::UnsafeCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
 #[cfg(feature = "wasi")]
@@ -21,6 +23,8 @@ use wasmtime::component::ResourceTable;
 use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
 use wasmtime::ResourceLimiter;
+#[cfg(feature = "wasm-threads")]
+use wasmtime::SharedMemory;
 use wasmtime::{
     AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, Store, StoreContextMut,
 };
@@ -59,12 +63,18 @@ use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{config_store_common, raw_call, HostModuleCache, MEMORY_EXPORT};
 use crate::{bail_with_site, site_context};
 
+enum MemoryType {
+    Memory(Memory),
+    #[cfg(feature = "wasm-threads")]
+    SharedMemory(SharedMemory),
+}
+
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
 pub struct WasmInstance {
     base: Base<RefCounted>,
     data: OnceCell<InstanceData<StoreData>>,
-    memory: Option<Memory>,
+    memory: Option<MemoryType>,
 
     #[var(get = get_module)]
     #[allow(dead_code)]
@@ -648,12 +658,16 @@ impl WasmInstance {
             )?;
 
             // SAFETY: Nobody else can access memory
-            #[allow(mutable_transmutes)]
             unsafe {
-                *mem::transmute::<&std::option::Option<wasmtime::Memory>, &mut Option<Memory>>(
-                    &self.memory,
-                ) = match &ret.instance {
-                    InstanceType::Core(inst) => inst.get_memory(ret.store.get_mut(), MEMORY_EXPORT),
+                *(ptr::addr_of!(self.memory) as *mut Option<MemoryType>) = match &ret.instance {
+                    InstanceType::Core(inst) => {
+                        match inst.get_export(ret.store.get_mut(), MEMORY_EXPORT) {
+                            Some(Extern::Memory(mem)) => Some(MemoryType::Memory(mem)),
+                            #[cfg(feature = "wasm-threads")]
+                            Some(Extern::SharedMemory(mem)) => Some(MemoryType::SharedMemory(mem)),
+                            _ => None,
+                        }
+                    }
                     #[allow(unreachable_patterns)]
                     _ => None,
                 };
@@ -672,11 +686,18 @@ impl WasmInstance {
 
     fn get_memory<F, R>(&self, f: F) -> Option<R>
     where
-        for<'a> F: FnOnce(StoreContextMut<'a, StoreData>, Memory) -> AnyResult<R>,
+        for<'a> F: FnOnce(&'a mut [u8]) -> AnyResult<R>,
     {
         self.unwrap_data(|m| {
-            m.acquire_store(|_, store| match self.memory {
-                Some(mem) => f(store, mem),
+            m.acquire_store(|_, store| match &self.memory {
+                Some(MemoryType::Memory(mem)) => f(mem.data_mut(store)),
+                #[cfg(feature = "wasm-threads")]
+                Some(MemoryType::SharedMemory(mem)) => {
+                    // SAFETY: Externalize concurrent access to user
+                    #[allow(mutable_transmutes)]
+                    let s = unsafe { mem::transmute::<&[UnsafeCell<u8>], &mut [u8]>(mem.data()) };
+                    f(s)
+                }
                 None => bail_with_site!("No memory exported"),
             })
         })
@@ -686,12 +707,9 @@ impl WasmInstance {
     where
         F: FnOnce(&[u8]) -> AnyResult<R>,
     {
-        self.get_memory(|store, mem| {
-            let data = mem.data(&store);
-            match data.get(i..i + n) {
-                Some(s) => f(s),
-                None => bail_with_site!("Index out of bound {}-{}", i, i + n),
-            }
+        self.get_memory(|data| match data.get(i..i + n) {
+            Some(s) => f(s),
+            None => bail_with_site!("Index out of bound {}-{}", i, i + n),
         })
     }
 
@@ -699,12 +717,9 @@ impl WasmInstance {
     where
         for<'a> F: FnOnce(&'a mut [u8]) -> AnyResult<R>,
     {
-        self.get_memory(|mut store, mem| {
-            let data = mem.data_mut(&mut store);
-            match data.get_mut(i..i + n) {
-                Some(s) => f(s),
-                None => bail_with_site!("Index out of bound {}-{}", i, i + n),
-            }
+        self.get_memory(|data| match data.get_mut(i..i + n) {
+            Some(s) => f(s),
+            None => bail_with_site!("Index out of bound {}-{}", i, i + n),
         })
     }
 }
@@ -1013,12 +1028,15 @@ impl WasmInstance {
         self.unwrap_data(|m| {
             m.acquire_store(|m, store| {
                 // SAFETY: Nobody else can access memory
-                #[allow(mutable_transmutes)]
                 unsafe {
-                    *mem::transmute::<&std::option::Option<wasmtime::Memory>, &mut Option<Memory>>(
-                        &self.memory,
-                    ) = match &m.instance {
-                        InstanceType::Core(inst) => inst.get_memory(store, &name.to_string()),
+                    *(ptr::addr_of!(self.memory) as *mut Option<MemoryType>) = match &m.instance {
+                        InstanceType::Core(inst) => match inst.get_export(store, &name.to_string())
+                        {
+                            Some(Extern::Memory(mem)) => Some(MemoryType::Memory(mem)),
+                            #[cfg(feature = "wasm-threads")]
+                            Some(Extern::SharedMemory(mem)) => Some(MemoryType::SharedMemory(mem)),
+                            _ => None,
+                        },
                         #[allow(unreachable_patterns)]
                         _ => None,
                     };
@@ -1063,7 +1081,7 @@ impl WasmInstance {
 
     #[func]
     fn memory_size(&self) -> i64 {
-        self.get_memory(|store, mem| Ok(mem.data_size(store) as i64))
+        self.get_memory(|data| Ok(data.len() as i64))
             .unwrap_or_default()
     }
 
@@ -1197,9 +1215,8 @@ impl WasmInstance {
             Ok(())
         }
 
-        self.get_memory(|mut store, mem| {
+        self.get_memory(|data| {
             let i = i as usize;
-            let data = mem.data_mut(&mut store);
             match VariantDispatch::from(&v) {
                 VariantDispatch::PackedByteArray(v) => {
                     let s = v.as_slice();
@@ -1276,9 +1293,9 @@ impl WasmInstance {
             .to_variant())
         }
 
-        option_to_variant(self.get_memory(|store, mem| {
+        option_to_variant(self.get_memory(|data| {
+            let data = &*data;
             let (i, n) = (i as usize, n as usize);
-            let data = mem.data(&store);
             match t {
                 VariantType::PACKED_BYTE_ARRAY => {
                     let e = i + n;
@@ -1328,14 +1345,12 @@ impl WasmInstance {
 
     #[func]
     fn read_struct(&self, format: GString, p: i64) -> Variant {
-        option_to_variant(
-            self.get_memory(|store, mem| read_struct(mem.data(store), p as _, format.chars())),
-        )
+        option_to_variant(self.get_memory(|data| read_struct(data, p as _, format.chars())))
     }
 
     #[func]
     fn write_struct(&self, format: GString, p: i64, arr: VariantArray) -> i64 {
-        self.get_memory(|store, mem| write_struct(mem.data_mut(store), p as _, format.chars(), arr))
+        self.get_memory(|data| write_struct(data, p as _, format.chars(), arr))
             .unwrap_or_default() as _
     }
 }
