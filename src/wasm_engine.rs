@@ -1,15 +1,16 @@
 use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::{Debug, Display, Error as FmtError, Formatter};
 use std::path::PathBuf;
 #[cfg(feature = "epoch-timeout")]
-use std::{sync::Arc, thread, time};
+use std::{thread, time};
 
 use anyhow::{bail, Result as AnyResult};
 use cfg_if::cfg_if;
 use godot::classes::FileAccess;
 use godot::prelude::*;
-use once_cell::sync::{Lazy, OnceCell};
-#[cfg(feature = "epoch-timeout")]
-use parking_lot::{Condvar, Mutex, Once};
+use once_cell::sync::OnceCell;
+use parking_lot::RwLock;
 #[cfg(feature = "component-model")]
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
@@ -21,98 +22,124 @@ use crate::wasm_util::from_signature;
 use crate::wasm_util::EPOCH_INTERVAL;
 use crate::{bail_with_site, site_context};
 
-#[cfg(feature = "epoch-timeout")]
-#[derive(Default)]
-pub struct EpochThreadHandle {
-    inner: Arc<EpochThreadHandleInner>,
-    once: Once,
+cfg_if! {
+    if #[cfg(feature = "epoch-timeout")] {
+        type EngineData = (Engine, Option<thread::JoinHandle<()>>);
+    } else {
+        type EngineData = Engine;
+    }
 }
 
-#[cfg(feature = "epoch-timeout")]
-#[derive(Default)]
-pub struct EpochThreadHandleInner {
-    mutex: Mutex<(bool, Option<thread::JoinHandle<()>>)>,
-    cond: Condvar,
+static ENGINE: RwLock<Option<EngineData>> = RwLock::new(None);
+
+pub fn get_engine() -> Result<Engine, EngineUninitError> {
+    cfg_if! {
+        if #[cfg(feature = "epoch-timeout")] {
+            ENGINE.read().as_ref().map(|(e, _)| e.clone()).ok_or(EngineUninitError)
+        } else {
+            ENGINE.read().clone().ok_or(EngineUninitError)
+        }
+    }
 }
 
-#[cfg(feature = "epoch-timeout")]
-impl EpochThreadHandle {
-    pub fn spawn_thread<F>(&self, f: F)
-    where
-        F: Fn() + 'static + Send,
-    {
-        self.once.call_once(move || {
-            let mut guard = self.inner.mutex.lock();
-            let (t, h) = &mut *guard;
-            *t = false;
+pub fn init_engine() {
+    let mut guard = ENGINE.write();
+    if guard.is_none() {
+        eprintln!("Initializing godot-wasm engine");
+        let mut config = Config::new();
+        config
+            .cranelift_opt_level(wasmtime::OptLevel::Speed)
+            .cranelift_nan_canonicalization(cfg!(feature = "deterministic-wasm"))
+            .epoch_interruption(true)
+            .debug_info(true)
+            .wasm_reference_types(true)
+            .wasm_function_references(true)
+            .wasm_gc(true)
+            .wasm_simd(true)
+            .wasm_relaxed_simd(true)
+            .relaxed_simd_deterministic(cfg!(feature = "deterministic-wasm"))
+            .wasm_tail_call(true)
+            .wasm_bulk_memory(true)
+            .wasm_multi_value(true)
+            .wasm_multi_memory(true)
+            .wasm_memory64(true);
+        #[cfg(feature = "wasm-threads")]
+        config.wasm_threads(true);
+        #[cfg(feature = "component-model")]
+        config.wasm_component_model(true);
 
-            let inner = self.inner.clone();
-            *h = Some(thread::spawn(move || {
-                let mut timeout = time::Instant::now();
-                let mut guard = inner.mutex.lock();
-                while !guard.0 {
-                    while timeout.elapsed() >= EPOCH_INTERVAL {
-                        f();
-                        timeout += EPOCH_INTERVAL;
-                    }
-                    inner.cond.wait_until(&mut guard, timeout + EPOCH_INTERVAL);
+        let e = Engine::new(&config).unwrap();
+        cfg_if! {
+            if #[cfg(feature = "epoch-timeout")] {
+                *guard = Some((e, None));
+            } else {
+                *guard = Some(e);
+            }
+        }
+    }
+}
+
+pub fn deinit_engine() {
+    cfg_if! {
+        if #[cfg(feature = "epoch-timeout")] {
+            if let Some((engine, Some(handle))) = ENGINE.write().take() {
+                // Make sure epoch will time out.
+                for _ in 0..100 {
+                    engine.increment_epoch();
                 }
-            }));
-        });
-    }
-
-    pub fn stop_thread(&self) {
-        let handle;
-
-        {
-            let mut guard = self.inner.mutex.lock();
-            let (t, h) = &mut *guard;
-            *t = true;
-            handle = h.take();
-        }
-
-        self.inner.cond.notify_all();
-        if let Some(handle) = handle {
-            handle.join().unwrap();
+                drop(engine);
+                eprintln!("Deinitializing godot-wasm engine");
+                handle.join().unwrap();
+            }
+        } else {
+            *ENGINE.write() = None;
         }
     }
 }
 
 #[cfg(feature = "epoch-timeout")]
-impl Drop for EpochThreadHandle {
-    fn drop(&mut self) {
-        self.stop_thread();
+pub fn start_epoch() -> Result<(), EngineUninitError> {
+    let mut guard = ENGINE.write();
+    let (_, handle) = guard.as_mut().ok_or(EngineUninitError)?;
+    if handle.is_none() {
+        *handle = Some(thread::spawn(|| {
+            let mut timeout = time::Instant::now();
+            loop {
+                thread::sleep(
+                    (timeout + EPOCH_INTERVAL).saturating_duration_since(time::Instant::now()),
+                );
+                let Some(guard) = ENGINE.try_read() else {
+                    break;
+                };
+                let Some((engine, _)) = guard.as_ref() else {
+                    break;
+                };
+                let t = time::Instant::now();
+                while timeout < t {
+                    engine.increment_epoch();
+                    timeout += EPOCH_INTERVAL;
+                }
+            }
+        }));
+    }
+    Ok(())
+}
+
+pub struct EngineUninitError;
+
+impl Debug for EngineUninitError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        write!(f, "engine is not yet initialized")
     }
 }
 
-pub static ENGINE: Lazy<Engine> = Lazy::new(|| {
-    let mut config = Config::new();
-    config
-        .cranelift_opt_level(wasmtime::OptLevel::Speed)
-        .cranelift_nan_canonicalization(cfg!(feature = "deterministic-wasm"))
-        .epoch_interruption(true)
-        .debug_info(true)
-        .wasm_reference_types(true)
-        .wasm_function_references(true)
-        .wasm_gc(true)
-        .wasm_simd(true)
-        .wasm_relaxed_simd(true)
-        .relaxed_simd_deterministic(cfg!(feature = "deterministic-wasm"))
-        .wasm_tail_call(true)
-        .wasm_bulk_memory(true)
-        .wasm_multi_value(true)
-        .wasm_multi_memory(true)
-        .wasm_memory64(true);
-    #[cfg(feature = "wasm-threads")]
-    config.wasm_threads(true);
-    #[cfg(feature = "component-model")]
-    config.wasm_component_model(true);
+impl Display for EngineUninitError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+        <Self as Debug>::fmt(self, f)
+    }
+}
 
-    Engine::new(&config).unwrap()
-});
-
-#[cfg(feature = "epoch-timeout")]
-pub static EPOCH: Lazy<EpochThreadHandle> = Lazy::new(EpochThreadHandle::default);
+impl Error for EngineUninitError {}
 
 #[derive(GodotClass)]
 #[class(base=Resource, init, tool)]
@@ -205,16 +232,16 @@ impl WasmModule {
                 let bytes = site_context!(wat::parse_bytes(bytes))?;
                 if wasmparser::Parser::is_component(&bytes) {
                     Ok(ModuleType::Component(site_context!(
-                        Component::from_binary(&ENGINE, &bytes,)
+                        Component::from_binary(&get_engine()?, &bytes,)
                     )?))
                 } else {
                     Ok(ModuleType::Core(site_context!(Module::from_binary(
-                        &ENGINE, &bytes
+                        &get_engine()?, &bytes
                     ))?))
                 }
             } else {
                 Ok(ModuleType::Core(site_context!(Module::new(
-                    &ENGINE, bytes
+                    &get_engine()?, bytes
                 ))?))
             }
         }
@@ -294,16 +321,17 @@ impl WasmModule {
 
     fn _deserialize(&self, data: PackedByteArray, imports: Option<Dictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
+            let engine = site_context!(get_engine())?;
             let data = data.as_slice();
             // SAFETY: Assume the supplied data is safe to deserialize.
             let module = unsafe {
-                match ENGINE.detect_precompiled(data) {
+                match engine.detect_precompiled(data) {
                     Some(Precompiled::Module) => {
-                        ModuleType::Core(site_context!(Module::deserialize(&ENGINE, data))?)
+                        ModuleType::Core(site_context!(Module::deserialize(&engine, data))?)
                     }
                     #[cfg(feature = "component-model")]
                     Some(Precompiled::Component) => {
-                        ModuleType::Component(site_context!(Component::deserialize(&ENGINE, data))?)
+                        ModuleType::Component(site_context!(Component::deserialize(&engine, data))?)
                     }
                     _ => bail_with_site!("Unsupported data content"),
                 }
@@ -327,16 +355,17 @@ impl WasmModule {
 
     fn _deserialize_file(&self, path: String, imports: Option<Dictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
+            let engine = site_context!(get_engine())?;
             let path = PathBuf::from(path);
             // SAFETY: Assume the supplied file is safe to deserialize.
             let module = unsafe {
-                match site_context!(ENGINE.detect_precompiled_file(&path))? {
+                match site_context!(engine.detect_precompiled_file(&path))? {
                     Some(Precompiled::Module) => {
-                        ModuleType::Core(site_context!(Module::deserialize_file(&ENGINE, path))?)
+                        ModuleType::Core(site_context!(Module::deserialize_file(&engine, path))?)
                     }
                     #[cfg(feature = "component-model")]
                     Some(Precompiled::Component) => ModuleType::Component(site_context!(
-                        Component::deserialize_file(&ENGINE, path)
+                        Component::deserialize_file(&engine, path)
                     )?),
                     _ => bail_with_site!("Unsupported data content"),
                 }

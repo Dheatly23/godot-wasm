@@ -14,7 +14,7 @@ use crate::godot_component::filter::Filter;
 use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
-use crate::wasm_engine::{WasmModule, ENGINE};
+use crate::wasm_engine::WasmModule;
 #[cfg(feature = "memory-limiter")]
 use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
@@ -158,7 +158,7 @@ fn instantiate(
         None
     };
     let mut store = Store::new(
-        &ENGINE,
+        comp.engine(),
         StoreData {
             inner_lock: InnerLock::default(),
 
@@ -183,7 +183,7 @@ fn instantiate(
     #[cfg(feature = "memory-limiter")]
     store.limiter(|data| &mut data.memory_limits);
 
-    let mut linker = <Linker<StoreData>>::new(&ENGINE);
+    let mut linker = <Linker<StoreData>>::new(store.engine());
     add_to_linker_sync(&mut linker)?;
     #[cfg(feature = "godot-component")]
     godot_add_to_linker(&mut linker, |v| {

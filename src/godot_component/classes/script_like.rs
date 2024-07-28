@@ -10,7 +10,7 @@ use crate::godot_component::filter::Filter;
 use crate::godot_component::{add_to_linker, GodotCtx};
 use crate::godot_util::PhantomProperty;
 use crate::wasm_config::Config;
-use crate::wasm_engine::{WasmModule, ENGINE};
+use crate::wasm_engine::WasmModule;
 #[cfg(feature = "memory-limiter")]
 use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
@@ -124,7 +124,7 @@ impl WasmScriptLike {
         let mut godot_ctx = GodotCtx::new(inst_id);
         godot_ctx.filter = filter;
         let mut store = Store::new(
-            &ENGINE,
+            comp.engine(),
             WasmScriptLikeStore {
                 inner_lock: InnerLock::default(),
 
@@ -146,7 +146,7 @@ impl WasmScriptLike {
         #[cfg(feature = "memory-limiter")]
         store.limiter(|data| &mut data.memory_limits);
 
-        let mut linker = <Linker<WasmScriptLikeStore>>::new(&ENGINE);
+        let mut linker = <Linker<WasmScriptLikeStore>>::new(store.engine());
         site_context!(add_to_linker(&mut linker, |v| v))?;
 
         let (bindings, instance) =

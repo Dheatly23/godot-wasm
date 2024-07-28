@@ -21,18 +21,18 @@ use wasmtime::{ExternRef, HeapType, RefType};
 
 use crate::godot_util::{from_var_any, SendSyncWrapper, VariantDispatch};
 use crate::wasm_config::Config;
-use crate::wasm_engine::ENGINE;
+use crate::wasm_engine::get_engine;
 #[cfg(feature = "epoch-timeout")]
-use crate::wasm_engine::EPOCH;
+use crate::wasm_engine::start_epoch;
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 #[cfg(feature = "memory-limiter")]
 use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::StoreData;
 
-#[cfg(all(feature = "epoch-timeout", not(feature = "more-precise-timer")))]
-pub const EPOCH_MULTIPLIER: u64 = 1000;
 #[cfg(all(feature = "epoch-timeout", feature = "more-precise-timer"))]
+pub const EPOCH_MULTIPLIER: u64 = 1000;
+#[cfg(all(feature = "epoch-timeout", not(feature = "more-precise-timer")))]
 pub const EPOCH_MULTIPLIER: u64 = 50;
 #[cfg(feature = "epoch-timeout")]
 pub const EPOCH_DEADLINE: u64 = 5u64.saturating_mul(EPOCH_MULTIPLIER);
@@ -175,7 +175,7 @@ pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
         _ => bail_with_site!("Unconvertible value {results}"),
     };
 
-    Ok(FuncType::new(&ENGINE, p, r))
+    Ok(FuncType::new(&site_context!(get_engine())?, p, r))
 }
 
 // Mark this unsafe for future proofing
@@ -426,11 +426,11 @@ pub struct HostModuleCache<T> {
 }
 
 impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
-    pub fn new(host: Dictionary) -> Self {
-        Self {
-            cache: Linker::new(&ENGINE),
+    pub fn new(host: Dictionary) -> AnyResult<Self> {
+        Ok(Self {
+            cache: Linker::new(&site_context!(get_engine())?),
             host,
-        }
+        })
     }
 
     pub fn get_extern<S: AsContextMut<Data = T>>(
@@ -460,19 +460,15 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
 }
 
 #[cfg(feature = "epoch-timeout")]
-fn increment_epoch() {
-    ENGINE.increment_epoch()
-}
-
-#[cfg(feature = "epoch-timeout")]
-pub fn config_store_epoch<T>(store: &mut Store<T>, config: &Config) {
+pub fn config_store_epoch<T>(store: &mut Store<T>, config: &Config) -> AnyResult<()> {
     if config.with_epoch {
         store.epoch_deadline_trap();
-        EPOCH.spawn_thread(increment_epoch);
+        site_context!(start_epoch())?;
     } else {
         store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
     }
     store.set_epoch_deadline(config.epoch_timeout);
+    Ok(())
 }
 
 pub fn config_store_common<T>(_store: &mut Store<T>, _config: &Config) -> AnyResult<()>
@@ -481,7 +477,7 @@ where
 {
     #[cfg(feature = "epoch-timeout")]
     {
-        config_store_epoch(&mut *_store, _config);
+        config_store_epoch(&mut *_store, _config)?;
         let data = _store.data_mut().as_mut();
         data.epoch_timeout = if _config.with_epoch {
             _config.epoch_timeout

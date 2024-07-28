@@ -51,7 +51,7 @@ use crate::wasm_config::Config;
 use crate::wasm_config::ExternBindingType;
 #[cfg(feature = "wasi")]
 use crate::wasm_config::{PipeBindingType, PipeBufferType};
-use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, ENGINE};
+use crate::wasm_engine::{get_engine, ModuleData, ModuleType, WasmModule};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
@@ -410,7 +410,7 @@ where
                 None => WasiContext::init_ctx_no_context(&mut builder, config),
             }?;
             *wasi_ctx = MaybeWasi::Preview1(builder.build_p1());
-            let mut r = <Linker<T>>::new(&ENGINE);
+            let mut r = <Linker<T>>::new(store.engine());
             add_to_linker_sync(&mut r, |data| match &mut data.as_mut().wasi_ctx {
                 MaybeWasi::Preview1(v) => v,
                 _ => panic!("WASI Preview 1 context required, but none supplied"),
@@ -429,7 +429,7 @@ where
             store: store.as_context_mut(),
             config,
             insts: HashMap::new(),
-            host: host.map(HostModuleCache::new),
+            host: host.map(HostModuleCache::new).transpose()?,
             #[cfg(feature = "object-registry-compat")]
             objregistry_funcs: ObjregistryFuncs::default(),
             #[cfg(feature = "object-registry-extern")]
@@ -642,7 +642,7 @@ impl WasmInstance {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let mut ret = InstanceData::instantiate(
                 self.base().instance_id(),
-                Store::new(&ENGINE, StoreData::default()),
+                Store::new(&site_context!(get_engine())?, StoreData::default()),
                 &match config {
                     Some(v) => match Config::try_from_variant(&v) {
                         Ok(v) => v,
