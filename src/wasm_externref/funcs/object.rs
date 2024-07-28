@@ -1,5 +1,5 @@
 use anyhow::Result as AnyResult;
-use godot::engine::global::Error as GError;
+use godot::global::Error as GError;
 use godot::prelude::*;
 use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut, TypedFunc};
 

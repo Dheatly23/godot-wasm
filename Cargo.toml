@@ -36,10 +36,10 @@ camino = { version = "^1.1", optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "cd31a83d80edc7529ab2ef450d4c59d983913c19"
+rev = "bf678564e528d995378032e2e8d9053537d1e5f5"
 
 [dependencies.wasmtime]
-version = "^22.0"
+version = "^23.0"
 default-features = false
 features = [
   "runtime",
@@ -53,7 +53,7 @@ features = [
 ]
 
 [dependencies.wasmtime-wasi]
-version = "^22.0"
+version = "^23.0"
 optional = true
 default-features = false
 features = [

@@ -1,7 +1,6 @@
 #[cfg(feature = "wasi")]
 use std::collections::HashMap;
 
-use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 
 #[cfg(feature = "epoch-timeout")]

@@ -3,7 +3,6 @@
 use std::mem::{size_of, size_of_val};
 
 use anyhow::Result as AnyResult;
-use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use wasmtime::{Caller, Extern, ExternRef, Func, Rooted, StoreContextMut};
 

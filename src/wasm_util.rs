@@ -8,7 +8,7 @@ use std::time;
 
 use anyhow::{Error, Result as AnyResult};
 
-use godot::engine::WeakRef;
+use godot::classes::WeakRef;
 use godot::prelude::*;
 
 #[cfg(feature = "epoch-timeout")]

@@ -5,7 +5,7 @@ use std::{sync::Arc, thread, time};
 
 use anyhow::{bail, Result as AnyResult};
 use cfg_if::cfg_if;
-use godot::engine::FileAccess;
+use godot::classes::FileAccess;
 use godot::prelude::*;
 use once_cell::sync::{Lazy, OnceCell};
 #[cfg(feature = "epoch-timeout")]

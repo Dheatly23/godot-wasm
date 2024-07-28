@@ -5,8 +5,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
 use anyhow::Result as AnyResult;
-use godot::builtin::meta::GodotConvert;
-use godot::engine::global::Error as GError;
+use godot::global::Error as GError;
 use godot::prelude::*;
 use godot::register::property::PropertyHintInfo;
 
