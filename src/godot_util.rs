@@ -195,6 +195,41 @@ impl From<&'_ Variant> for VariantDispatch {
     }
 }
 
+/// Helper trait for common PackedArray operations.
+pub trait PackedArrayLike: Default {
+    type Elem;
+
+    fn resize(&mut self, size: usize);
+    fn as_mut_slice(&mut self) -> &mut [Self::Elem];
+}
+
+macro_rules! impl_packed_array {
+    ($($t:ty : $el:ty),* $(,)?) => {$(
+        impl PackedArrayLike for $t {
+            type Elem = $el;
+
+            fn resize(&mut self, size: usize) {
+                self.resize(size);
+            }
+
+            fn as_mut_slice(&mut self) -> &mut [$el] {
+                self.as_mut_slice()
+            }
+        }
+    )*};
+}
+
+impl_packed_array! {
+    PackedByteArray : u8,
+    PackedInt32Array : i32,
+    PackedInt64Array : i64,
+    PackedFloat32Array : f32,
+    PackedFloat64Array : f64,
+    PackedVector2Array : Vector2,
+    PackedVector3Array : Vector3,
+    PackedColorArray : Color,
+}
+
 pub struct ErrorWrapper {
     error: GError,
     msg: Option<String>,

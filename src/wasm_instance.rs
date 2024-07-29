@@ -36,7 +36,8 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 #[cfg(feature = "wasi")]
 use crate::godot_util::gstring_from_maybe_utf8;
 use crate::godot_util::{
-    option_to_variant, variant_to_option, PhantomProperty, SendSyncWrapper, VariantDispatch,
+    option_to_variant, variant_to_option, PackedArrayLike, PhantomProperty, SendSyncWrapper,
+    VariantDispatch,
 };
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
@@ -1336,7 +1337,7 @@ impl WasmInstance {
         ) -> AnyResult<()> {
             let e = i + s.len() * N;
             let Some(d) = d.get_mut(i..e) else {
-                bail_with_site!("Index out of range ({}..{})", i, e);
+                bail_with_site!("Index out of range ({i}..{e})");
             };
 
             s.par_iter()
@@ -1353,7 +1354,7 @@ impl WasmInstance {
                     let s = v.as_slice();
                     let e = i + s.len();
                     let Some(d) = data.get_mut(i..e) else {
-                        bail_with_site!("Index out of range ({}..{})", i, e);
+                        bail_with_site!("Index out of range ({i}..{e})");
                     };
 
                     d.copy_from_slice(s);
@@ -1373,23 +1374,23 @@ impl WasmInstance {
                 }
                 VariantDispatch::PackedVector2Array(v) => {
                     f::<8, _>(data, i, v.as_slice(), |s, d| {
-                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[4..]).unwrap() = s.y.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[4..]).unwrap() = s.y.to_le_bytes();
                     })
                 }
                 VariantDispatch::PackedVector3Array(v) => {
                     f::<12, _>(data, i, v.as_slice(), |s, d| {
-                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.y.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[8..]).unwrap() = s.z.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[4..8]).unwrap() = s.y.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[8..]).unwrap() = s.z.to_le_bytes();
                     })
                 }
                 VariantDispatch::PackedColorArray(v) => {
                     f::<16, _>(data, i, v.as_slice(), |s, d| {
-                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.r.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.g.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[8..12]).unwrap() = s.b.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[12..]).unwrap() = s.a.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[..4]).unwrap() = s.r.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[4..8]).unwrap() = s.g.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[8..12]).unwrap() = s.b.to_le_bytes();
+                        *<&mut _>::try_from(&mut d[12..]).unwrap() = s.a.to_le_bytes();
                     })
                 }
                 _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
@@ -1401,28 +1402,28 @@ impl WasmInstance {
     /// Reads a `PackedArray`. Does not support `PackedStringArray`.
     #[func]
     fn get_array(&self, i: i64, n: i64, t: VariantType) -> Variant {
-        fn f<const N: usize, T, R>(
+        fn f<const N: usize, R>(
             s: &[u8],
             i: usize,
             n: usize,
-            f: impl Fn(&[u8; N]) -> T + Send + Sync,
+            f: impl Fn(&[u8; N]) -> R::Elem + Send + Sync,
         ) -> AnyResult<Variant>
         where
-            T: Send,
-            for<'a> R: From<&'a [T]>,
-            R: ToGodot,
+            R: PackedArrayLike + ToGodot,
+            R::Elem: Send,
         {
             let e = i + n * N;
             let Some(s) = s.get(i..e) else {
                 bail_with_site!("Index out of range ({i}..{e})");
             };
 
-            Ok(R::from(
-                &s.par_chunks_exact(N)
-                    .map(|s| f(s.try_into().unwrap()))
-                    .collect::<Vec<_>>(),
-            )
-            .to_variant())
+            let mut r = R::default();
+            r.resize(n);
+            s.par_chunks_exact(N)
+                .zip(r.as_mut_slice())
+                .for_each(|(s, d)| *d = f(s.try_into().unwrap()));
+
+            Ok(r.to_variant())
         }
 
         option_to_variant(self.get_memory(|data| {
@@ -1438,32 +1439,32 @@ impl WasmInstance {
                     Ok(PackedByteArray::from(s).to_variant())
                 }
                 VariantType::PACKED_INT32_ARRAY => {
-                    f::<4, _, PackedInt32Array>(data, i, n, |s| i32::from_le_bytes(*s))
+                    f::<4, PackedInt32Array>(data, i, n, |s| i32::from_le_bytes(*s))
                 }
                 VariantType::PACKED_INT64_ARRAY => {
-                    f::<8, _, PackedInt64Array>(data, i, n, |s| i64::from_le_bytes(*s))
+                    f::<8, PackedInt64Array>(data, i, n, |s| i64::from_le_bytes(*s))
                 }
                 VariantType::PACKED_FLOAT32_ARRAY => {
-                    f::<4, _, PackedFloat32Array>(data, i, n, |s| f32::from_le_bytes(*s))
+                    f::<4, PackedFloat32Array>(data, i, n, |s| f32::from_le_bytes(*s))
                 }
                 VariantType::PACKED_FLOAT64_ARRAY => {
-                    f::<8, _, PackedFloat64Array>(data, i, n, |s| f64::from_le_bytes(*s))
+                    f::<8, PackedFloat64Array>(data, i, n, |s| f64::from_le_bytes(*s))
                 }
                 VariantType::PACKED_VECTOR2_ARRAY => {
-                    f::<8, _, PackedVector2Array>(data, i, n, |s| Vector2 {
+                    f::<8, PackedVector2Array>(data, i, n, |s| Vector2 {
                         x: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(s[4..].try_into().unwrap()),
                     })
                 }
                 VariantType::PACKED_VECTOR3_ARRAY => {
-                    f::<12, _, PackedVector3Array>(data, i, n, |s| Vector3 {
+                    f::<12, PackedVector3Array>(data, i, n, |s| Vector3 {
                         x: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         y: f32::from_le_bytes(s[4..8].try_into().unwrap()),
                         z: f32::from_le_bytes(s[8..].try_into().unwrap()),
                     })
                 }
                 VariantType::PACKED_COLOR_ARRAY => {
-                    f::<16, _, PackedColorArray>(data, i, n, |s| Color {
+                    f::<16, PackedColorArray>(data, i, n, |s| Color {
                         r: f32::from_le_bytes(s[..4].try_into().unwrap()),
                         g: f32::from_le_bytes(s[4..8].try_into().unwrap()),
                         b: f32::from_le_bytes(s[8..12].try_into().unwrap()),
