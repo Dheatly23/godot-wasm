@@ -71,11 +71,69 @@ enum MemoryType {
 
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
+/// Class for WebAssembly instance.
+///
+/// Instantiate `WasmModule` to be able to call into WebAssembly.
+/// Unlike `WasmModule`, `WasmInstance` can't be serialized.
+///
+/// ## Struct Format String
+///
+/// The format string used for `read_struct()` and `write_struct()` is defined as a list of items.
+/// Each item contains a type, optionally preceded by a repetition count.
+/// The valid types are as follows:
+///
+/// | String | Godot Type | Byte Length | Description |
+/// |:------:|:----------:|:-----------:|:------------|
+/// | `x` | | 1 | Padding byte, will not be read/written. Padding bytes are not automatically added. |
+/// | `b` | `int` | 1 | Signed 8-bit number |
+/// | `B` | `int` | 1 | Unsigned 8-bit number |
+/// | `h` | `int` | 2 | Signed 16-bit number |
+/// | `H` | `int` | 2 | Unsigned 16-bit number |
+/// | `i` | `int` | 4 | Signed 32-bit number |
+/// | `I` | `int` | 4 | Unsigned 32-bit number |
+/// | `l` | `int` | 8 | Signed 64-bit number |
+/// | `L` | `int` | 8 | Unsigned 64-bit number |
+/// | `f` | `float` | 4 | 32-bit floating-point number |
+/// | `d` | `float` | 8 | 64-bit floating-point number |
+/// | `v2f` | `Vector2` | 8 | 2D vector as 2 32-bit floating-point number |
+/// | `v2d` | `Vector2` | 16 | 2D vector as 2 64-bit floating-point number |
+/// | `v2i` | `Vector2i` | 8 | 2D vector as 2 32-bit signed integer number |
+/// | `v2l` | `Vector2i` | 16 | 2D vector as 2 64-bit signed integer number |
+/// | `v3f` | `Vector3` | 12 | 3D vector as a 3 32-bit floating-point number |
+/// | `v3d` | `Vector3` | 24 | 3D vector as a 3 64-bit floating-point number |
+/// | `v3i` | `Vector3i` | 12 | 3D vector as a 3 32-bit signed integer number |
+/// | `v3l` | `Vector3i` | 24 | 3D vector as a 3 64-bit signed integer number |
+/// | `v4f` | `Vector4` | 12 | 4D vector as a 4 32-bit floating-point number |
+/// | `v4d` | `Vector4` | 24 | 4D vector as a 4 64-bit floating-point number |
+/// | `v4i` | `Vector4i` | 12 | 4D vector as a 4 32-bit signed integer number |
+/// | `v4l` | `Vector4i` | 24 | 4D vector as a 4 64-bit signed integer number |
+/// | `pf` | `Plane` | 16 | Plane represented as abcd 32-bit floating-point number |
+/// | `pd` | `Plane` | 32 | Plane represented as abcd 64-bit floating-point number |
+/// | `qf` | `Quat` | 16 | Quaternion represented as xyzw 32-bit floating-point number |
+/// | `qd` | `Quat` | 32 | Quaternion represented as xyzw 64-bit floating-point number |
+/// | `Cf` | `Color` | 16 | Color represented as rgba 32-bit floating-point number |
+/// | `Cd` | `Color` | 32 | Color represented as rgba 64-bit floating-point number |
+/// | `Cb` | `Color` | 4 | Color represented as rgba 8-bit integer |
+/// | `rf` | `Rect2` | 16 | Rect2 represented as 4 32-bit floating-point number |
+/// | `rd` | `Rect2` | 32 | Rect2 represented as 4 64-bit floating-point number |
+/// | `ri` | `Rect2i` | 16 | Rect2i represented as 4 32-bit signed integer number |
+/// | `rl` | `Rect2i` | 32 | Rect2i represented as 4 64-bit signed integer number |
+/// | `af` | `Aabb` | 24 | Aabb represented as 6 32-bit floating-point number |
+/// | `ad` | `Aabb` | 48 | Aabb represented as 6 64-bit floating-point number |
+/// | `mf` | `Basis` | 36 | Basis represented as 9 row-major 32-bit floating-point number |
+/// | `md` | `Basis` | 72 | Basis represented as 9 row-major 64-bit floating-point number |
+/// | `Mf` | `Projection` | 64 | Projection represented as 16 column-major 32-bit floating-point number |
+/// | `Md` | `Projection` | 128 | Projection represented as 16 column-major 64-bit floating-point number |
+/// | `tf` | `Transform2D` | 24 | 2D transform represented as 6 32-bit floating-point number |
+/// | `td` | `Transform2D` | 48 | 2D transform represented as 6 64-bit floating-point number |
+/// | `Tf` | `Transform2D` | 48 | 3D transform represented as 12 32-bit floating-point number |
+/// | `Td` | `Transform2D` | 96 | 3D transform represented as 12 64-bit floating-point number |
 pub struct WasmInstance {
     base: Base<RefCounted>,
     data: OnceCell<InstanceData<StoreData>>,
     memory: Option<MemoryType>,
 
+    /// Reference to the module that is used to instantiate this object.
     #[var(get = get_module)]
     #[allow(dead_code)]
     module: PhantomProperty<Option<Gd<WasmModule>>>,
@@ -812,17 +870,45 @@ impl RustCallable for WasmCallable {
 
 #[godot_api]
 impl WasmInstance {
+    /// Emitted if an error happened. Use it to handle errors.
     #[signal]
     fn error_happened(message: GString);
+    /// Emitted whenever WASI stdout is written. Only usable with WASI.
     #[signal]
     fn stdout_emit(message: Variant);
+    /// Emitted whenever WASI stderr is written. Only usable with WASI.
     #[signal]
     fn stderr_emit(message: Variant);
+    /// Emitted whenever WASI stdin is tried to be read. Only usable with WASI.
     #[signal]
     fn stdin_request();
 
-    /// Initialize and loads module.
-    /// MUST be called for the first time and only once.
+    /// Initialize and instantiates module.
+    ///
+    /// **⚠ MUST BE CALLED FOR THE FIRST TIME AND ONLY ONCE.**
+    ///
+    /// Returns itself if succeed, `null` otherwise.
+    ///
+    /// Arguments:
+    /// - `module` : `WasmModule` to be instantiated.
+    /// - `host` : Dictionary containing host module and functions to be bound.
+    ///   It's value is a struct of the following:
+    ///   - `params` : Array of parameter types.
+    ///   - `results` : Array of result types.
+    ///   - `callable` : `Callable` to be bound. Prefer this over object-method.
+    ///   - `object` : Object to be bound.
+    ///   - `method` : Method to be bound.
+    /// - `config` : Configuration option.
+    ///
+    /// Usage:
+    /// ```
+    /// var module := WasmModule.new().initialize("...", {})
+    /// var instance := WasmInstance.new().initialize(module, {}, {})
+    ///
+    /// if instance == null:
+    ///   # Cannot instantiate module
+    ///   pass
+    /// ```
     #[func]
     fn initialize(
         &self,
@@ -843,11 +929,19 @@ impl WasmInstance {
         }
     }
 
+    /// Gets the module used to instantiate this object.
     #[func]
     fn get_module(&self) -> Option<Gd<WasmModule>> {
         self.unwrap_data(|m| Ok(m.module.clone()))
     }
 
+    /// Calls into WASM.
+    ///
+    /// Arguments:
+    /// - `name` : Name of the exported function.
+    /// - `args` : Array of parameters.
+    ///
+    /// Returns an array of results, or `null` if failed.
     #[func]
     fn call_wasm(&self, name: StringName, args: VariantArray) -> Variant {
         self.unwrap_data(move |m| {
@@ -871,6 +965,12 @@ impl WasmInstance {
         .unwrap_or_default()
     }
 
+    /// Binds WASM function into a `Callable`.
+    ///
+    /// Arguments:
+    /// - `name` : Name of the exported function.
+    ///
+    /// Returns a `Callable` that can be used to call into WASM.
     #[func]
     fn bind_wasm_callable(&self, name: StringName) -> Callable {
         self.unwrap_data(|m| {
@@ -890,7 +990,8 @@ impl WasmInstance {
         .unwrap_or_else(Callable::invalid)
     }
 
-    /// Emit trap when returning from host. Only used for host binding.
+    /// Emits trap when returning from host. Should only be used from imported host functions.
+    ///
     /// Returns previous error message, if any.
     #[func]
     fn signal_error(&self, msg: GString) -> Variant {
@@ -904,7 +1005,8 @@ impl WasmInstance {
         )
     }
 
-    /// Cancel effect of signal_error.
+    /// Cancels effect of `signal_error`.
+    ///
     /// Returns previous error message, if any.
     #[func]
     fn signal_error_cancel(&self) -> Variant {
@@ -916,6 +1018,7 @@ impl WasmInstance {
         )
     }
 
+    /// Resets epoch timeout. Should only be used from imported host functions.
     #[func]
     fn reset_epoch(&self) {
         cfg_if! {
@@ -934,6 +1037,7 @@ impl WasmInstance {
         }
     }
 
+    /// Registers value and returns it's index. Only usable with object registry.
     #[func]
     fn register_object(&self, _obj: Variant) -> Variant {
         cfg_if! {
@@ -951,6 +1055,7 @@ impl WasmInstance {
         }
     }
 
+    /// Gets registered value in index. Only usable with object registry.
     #[func]
     fn registry_get(&self, _ix: i64) -> Variant {
         cfg_if! {
@@ -970,6 +1075,7 @@ impl WasmInstance {
         }
     }
 
+    /// Sets registered value in index. Only usable with object registry.
     #[func]
     fn registry_set(&self, _ix: i64, _obj: Variant) -> Variant {
         cfg_if! {
@@ -995,6 +1101,7 @@ impl WasmInstance {
         }
     }
 
+    /// Unregister and returns value in index. Only usable with object registry.
     #[func]
     fn unregister_object(&self, _ix: i64) -> Variant {
         cfg_if! {
@@ -1017,12 +1124,18 @@ impl WasmInstance {
         }
     }
 
+    /// Returns `true` if exported memory exists.
     #[func]
     fn has_memory(&self) -> bool {
         self.unwrap_data(|m| m.acquire_store(|_, _| Ok(self.memory.is_some())))
             .unwrap_or_default()
     }
 
+    /// Sets custom exported memory name.
+    ///
+    /// Returns `true` if memory exists.
+    ///
+    /// Default exported memory name is `"memory"`.
     #[func]
     fn memory_set_name(&self, name: GString) -> bool {
         self.unwrap_data(|m| {
@@ -1047,6 +1160,7 @@ impl WasmInstance {
         .unwrap_or_default()
     }
 
+    /// Inserts a line to stdin. Only usable with WASI.
     #[func]
     fn stdin_add_line(&self, _line: GString) {
         cfg_if! {
@@ -1063,6 +1177,7 @@ impl WasmInstance {
         }
     }
 
+    /// Closes stdin. Only usable with WASI.
     #[func]
     fn stdin_close(&self) {
         cfg_if! {
@@ -1079,18 +1194,21 @@ impl WasmInstance {
         }
     }
 
+    /// Returns memory size.
     #[func]
     fn memory_size(&self) -> i64 {
         self.get_memory(|data| Ok(data.len() as i64))
             .unwrap_or_default()
     }
 
+    /// Reads a chunk of memory.
     #[func]
     fn memory_read(&self, i: i64, n: i64) -> PackedByteArray {
         self.read_memory(i as _, n as _, |s| Ok(PackedByteArray::from(s)))
             .unwrap_or_default()
     }
 
+    /// Writes a chunk of memory.
     #[func]
     fn memory_write(&self, i: i64, a: PackedByteArray) -> bool {
         let a = a.to_vec();
@@ -1101,6 +1219,7 @@ impl WasmInstance {
         .is_some()
     }
 
+    /// Reads an unsigned 8-bit integer.
     #[func]
     fn get_8(&self, i: i64) -> i64 {
         self.read_memory(i as _, 1, |s| Ok(s[0]))
@@ -1108,6 +1227,7 @@ impl WasmInstance {
             .into()
     }
 
+    /// Writes an unsigned 8-bit integer.
     #[func]
     fn put_8(&self, i: i64, v: i64) -> bool {
         self.write_memory(i as _, 1, |s| {
@@ -1117,6 +1237,7 @@ impl WasmInstance {
         .is_some()
     }
 
+    /// Reads an unsigned 16-bit integer.
     #[func]
     fn get_16(&self, i: i64) -> i64 {
         self.read_memory(i as _, 2, |s| Ok(u16::from_le_bytes(s.try_into().unwrap())))
@@ -1124,6 +1245,7 @@ impl WasmInstance {
             .into()
     }
 
+    /// Writes an unsigned 16-bit integer.
     #[func]
     fn put_16(&self, i: i64, v: i64) -> bool {
         self.write_memory(i as _, 2, |s| {
@@ -1133,6 +1255,7 @@ impl WasmInstance {
         .is_some()
     }
 
+    /// Reads an unsigned 32-bit integer.
     #[func]
     fn get_32(&self, i: i64) -> i64 {
         self.read_memory(i as _, 4, |s| Ok(u32::from_le_bytes(s.try_into().unwrap())))
@@ -1140,6 +1263,7 @@ impl WasmInstance {
             .into()
     }
 
+    /// Writes an unsigned 32-bit integer.
     #[func]
     fn put_32(&self, i: i64, v: i64) -> bool {
         self.write_memory(i as _, 4, |s| {
@@ -1149,12 +1273,14 @@ impl WasmInstance {
         .is_some()
     }
 
+    /// Reads a signed 64-bit integer.
     #[func]
     fn get_64(&self, i: i64) -> i64 {
         self.read_memory(i as _, 8, |s| Ok(i64::from_le_bytes(s.try_into().unwrap())))
             .unwrap_or_default()
     }
 
+    /// Writes a signed 64-bit integer.
     #[func]
     fn put_64(&self, i: i64, v: i64) -> bool {
         self.write_memory(i as _, 8, |s| {
@@ -1164,6 +1290,7 @@ impl WasmInstance {
         .is_some()
     }
 
+    /// Reads a 32-bit floating-point number.
     #[func]
     fn get_float(&self, i: i64) -> f64 {
         self.read_memory(i as _, 4, |s| Ok(f32::from_le_bytes(s.try_into().unwrap())))
@@ -1171,6 +1298,7 @@ impl WasmInstance {
             .into()
     }
 
+    /// Writes a 32-bit floating-point number.
     #[func]
     fn put_float(&self, i: i64, v: f64) -> bool {
         self.write_memory(i as _, 4, |s| {
@@ -1180,12 +1308,14 @@ impl WasmInstance {
         .is_some()
     }
 
+    /// Reads a 64-bit floating-point number.
     #[func]
     fn get_double(&self, i: i64) -> f64 {
         self.read_memory(i as _, 8, |s| Ok(f64::from_le_bytes(s.try_into().unwrap())))
             .unwrap_or_default()
     }
 
+    /// Writes a 64-bit floating-point number.
     #[func]
     fn put_double(&self, i: i64, v: f64) -> bool {
         self.write_memory(i as _, 8, |s| {
@@ -1195,6 +1325,7 @@ impl WasmInstance {
         .is_some()
     }
 
+    /// Writes a `PackedArray`. Does not support `PackedStringArray`.
     #[func]
     fn put_array(&self, i: i64, v: Variant) -> bool {
         fn f<const N: usize, T: Sync>(
@@ -1267,6 +1398,7 @@ impl WasmInstance {
         .is_some()
     }
 
+    /// Reads a `PackedArray`. Does not support `PackedStringArray`.
     #[func]
     fn get_array(&self, i: i64, n: i64, t: VariantType) -> Variant {
         fn f<const N: usize, T, R>(
@@ -1343,11 +1475,13 @@ impl WasmInstance {
         }))
     }
 
+    /// Reads a structured data.
     #[func]
     fn read_struct(&self, format: GString, p: i64) -> Variant {
         option_to_variant(self.get_memory(|data| read_struct(data, p as _, format.chars())))
     }
 
+    /// Writes a structured data.
     #[func]
     fn write_struct(&self, format: GString, p: i64, arr: VariantArray) -> i64 {
         self.get_memory(|data| write_struct(data, p as _, format.chars(), arr))

@@ -144,19 +144,41 @@ impl Error for EngineUninitError {}
 
 #[derive(GodotClass)]
 #[class(base=Resource, init, tool)]
+/// Class for WebAssembly module.
+///
+/// This class load and compile WebAssembly binary into memory.
+/// You only need to do it once since instantiation is very cheap.
+/// It inherits `Resource` and can be (de)serialized.
+/// **However,** be careful deserializing from untrusted source as compiled module
+/// has _minimal_ validation and can be **exploited** to run arbitrary code.
+///
+/// It is also a `tool` class, allowing editor code can use WebAssembly too.
+///
+/// 📌 Use `initialize()` to properly initialize object.
+/// **Uninitialized object should not be used.**
+/// ```
 pub struct WasmModule {
     base: Base<Resource>,
     data: OnceCell<ModuleData>,
 
+    /// Property is `true` if module is a core module.
     #[var(get = get_is_core_module, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     is_core_module: PhantomProperty<bool>,
+
+    /// Property is `true` if module is a component.
     #[var(get = get_is_component, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     is_component: PhantomProperty<bool>,
+
+    /// Name of the module, if any.
     #[var(get = get_name, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     name: PhantomProperty<GString>,
+
+    /// **⚠ THIS PROPERTY IS HIDDEN AND SHOULD NOT BE USED DIRECTLY**
+    ///
+    /// Serialized module data. It is only used for storage only and should not be used in code.
     #[var(get = serialize, set = deserialize_bytes, usage_flags = [STORAGE, INTERNAL])]
     #[allow(dead_code)]
     bytes_data: PhantomProperty<PackedByteArray>,
@@ -392,7 +414,27 @@ impl WasmModule {
 #[godot_api]
 impl WasmModule {
     /// Initialize and loads module.
-    /// MUST be called for the first time and only once.
+    ///
+    /// **⚠ MUST BE CALLED FOR THE FIRST TIME AND ONLY ONCE.**
+    ///
+    /// Returns itself if succeed, `null` otherwise.
+    ///
+    /// Arguments:
+    /// - `data` : Can be one of these things:
+    ///   - `PackedByteArray` containing WASM binary or WAT text data.
+    ///   - `String` containing WAT text data.
+    ///   - `FileAccess` with WASM file open.
+    ///   - `WasmModule` (for cloning without recompiling).
+    /// - `import` : Maps name to other `WasmModule` to used as imports. Currently does not work with component.
+    ///
+    /// Usage:
+    /// ```
+    /// var module := WasmModule.new().initialize("...", {})
+    ///
+    /// if module == null:
+    ///   # Cannot compile module
+    ///   pass
+    /// ```
     #[func]
     fn initialize(&self, data: Variant, imports: Dictionary) -> Option<Gd<WasmModule>> {
         if self._initialize(data, Some(imports)) {
@@ -402,17 +444,20 @@ impl WasmModule {
         }
     }
 
+    /// Gets the module name, if exists.
     #[func]
     fn get_name(&self) -> GString {
         self.unwrap_data(|m| Ok(m.name.clone())).unwrap_or_default()
     }
 
+    /// Returns `true` if module is a core module.
     #[func]
     fn get_is_core_module(&self) -> bool {
         self.unwrap_data(|m| Ok(matches!(m.module, ModuleType::Core(_))))
             .unwrap_or_default()
     }
 
+    /// Returns `true` if module is a component.
     #[func]
     fn get_is_component(&self) -> bool {
         cfg_if! {
@@ -424,6 +469,7 @@ impl WasmModule {
         }
     }
 
+    /// Gets all the module it imported.
     #[func]
     fn get_imported_modules(&self) -> VariantArray {
         self.unwrap_data(|m| {
@@ -434,6 +480,9 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
+    /// Deserialize compiled module data.
+    ///
+    /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
     fn deserialize(&self, data: PackedByteArray, imports: Dictionary) -> Option<Gd<WasmModule>> {
         if self._deserialize(data, Some(imports)) {
@@ -443,6 +492,9 @@ impl WasmModule {
         }
     }
 
+    /// Deserialize file containing compiled module data.
+    ///
+    /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
     fn deserialize_file(&self, path: GString, imports: Dictionary) -> Option<Gd<WasmModule>> {
         if self._deserialize_file(path.to_string(), Some(imports)) {
@@ -452,11 +504,19 @@ impl WasmModule {
         }
     }
 
+    /// Deserialize compiled module data.
+    ///
+    /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
     fn deserialize_bytes(&self, data: PackedByteArray) {
         self._deserialize(data, None);
     }
 
+    /// Serialize compiled module data.
+    ///
+    /// Serialized data is very fast to load as no compilation step is needed.
+    /// But the data can only be deserialized with the same godot-wasm binary.
+    /// Whenever you upgrade module, make sure to reimport all `WasmModule`.
     #[func]
     fn serialize(&self) -> PackedByteArray {
         self.unwrap_data(|m| {
@@ -474,7 +534,12 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
-    /// Gets exported functions
+    /// Gets exported functions.
+    ///
+    /// The resulting dictionary is the function name as it's key,
+    /// with the value is a struct of the following:
+    /// - `params` : Array of parameter types.
+    /// - `results` : Array of result types.
     #[func]
     fn get_exports(&self) -> Dictionary {
         self.unwrap_data(|m| {
@@ -497,7 +562,12 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
-    /// Gets host imports signature
+    /// Gets host imports signature.
+    ///
+    /// The resulting value is a mapping of module name, then function names,
+    /// of the following struct:
+    /// - `params` : Array of parameter types.
+    /// - `results` : Array of result types.
     #[func]
     fn get_host_imports(&self) -> Dictionary {
         self.unwrap_data(|m| {
@@ -543,6 +613,7 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
+    /// Returns `true` if exported function extsts.
     #[func]
     fn has_function(&self, name: StringName) -> bool {
         self.unwrap_data(|m| {
@@ -554,6 +625,7 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
+    /// Gets the signature of exported function.
     #[func]
     fn get_signature(&self, name: StringName) -> Dictionary {
         self.unwrap_data(|m| {
@@ -574,6 +646,9 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
+    /// Gets statistics about memories and tables required to instantiate this module (without imports).
+    ///
+    /// You can use this for minimal checks against resource exhaustion.
     #[func]
     fn get_resources_required(&self) -> Variant {
         self.unwrap_data(|m| {
@@ -611,6 +686,9 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
+    /// Gets statistics about memories and tables required to instantiate this module.
+    ///
+    /// You can use this for minimal checks against resource exhaustion.
     #[func]
     fn get_total_resources_required(&self) -> Variant {
         fn f(module: &ModuleData) -> Option<ResourcesRequired> {
@@ -664,7 +742,9 @@ impl WasmModule {
         .unwrap_or_default()
     }
 
-    // Instantiate module
+    /// Instantiate module.
+    ///
+    /// See `WasmInstance.initialize` for more info.
     #[func]
     fn instantiate(&self, host: Variant, config: Variant) -> Option<Gd<WasmInstance>> {
         let Ok(host) = variant_to_option::<Dictionary>(host) else {
