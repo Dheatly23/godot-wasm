@@ -1,6 +1,6 @@
 use std::borrow::Borrow;
 use std::cell::UnsafeCell;
-use std::mem::MaybeUninit;
+use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
 #[cfg(feature = "epoch-timeout")]
@@ -262,14 +262,16 @@ where
     It: IntoIterator,
     It::Item: Borrow<Variant>,
 {
-    struct F(MaybeUninit<Vec<ValRaw>>);
+    struct F(ManuallyDrop<Vec<ValRaw>>);
 
     impl Drop for F {
         fn drop(&mut self) {
-            let mut t = unsafe { self.0.assume_init_read() };
+            // SAFETY: The container will be forgotten.
+            let mut t = unsafe { ManuallyDrop::take(&mut self.0) };
             t.clear();
-            let _ = CALLVEC.try_with(move |v| unsafe {
-                let o = &mut *v.get();
+            let _ = CALLVEC.try_with(move |v| {
+                // SAFETY: The cell contains valid thread-local value.
+                let o = unsafe { &mut *v.get() };
                 if t.capacity() > o.capacity() {
                     *o = t;
                 }
@@ -280,17 +282,17 @@ where
     impl Deref for F {
         type Target = Vec<ValRaw>;
         fn deref(&self) -> &Vec<ValRaw> {
-            unsafe { self.0.assume_init_ref() }
+            &self.0
         }
     }
 
     impl DerefMut for F {
         fn deref_mut(&mut self) -> &mut Vec<ValRaw> {
-            unsafe { self.0.assume_init_mut() }
+            &mut self.0
         }
     }
 
-    let mut v = CALLVEC.with(|v| F(MaybeUninit::new(ptr::replace(v.get(), Vec::new()))));
+    let mut v = CALLVEC.with(|v| F(ManuallyDrop::new(ptr::replace(v.get(), Vec::new()))));
     v.clear();
 
     let mut ctx = RootScope::new(ctx);

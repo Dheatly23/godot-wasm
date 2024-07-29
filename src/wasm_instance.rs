@@ -945,7 +945,7 @@ impl WasmInstance {
     /// Returns an array of results, or `null` if failed.
     #[func]
     fn call_wasm(&self, name: StringName, args: VariantArray) -> Variant {
-        self.unwrap_data(move |m| {
+        option_to_variant(self.unwrap_data(move |m| {
             m.acquire_store(move |m, mut store| {
                 let name = name.to_string();
                 let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &name) {
@@ -960,10 +960,9 @@ impl WasmInstance {
                     store.set_epoch_deadline(v);
                 }
 
-                unsafe { raw_call(store, &f, &ty, args.iter_shared()).map(|v| v.to_variant()) }
+                unsafe { raw_call(store, &f, &ty, args.iter_shared()) }
             })
-        })
-        .unwrap_or_default()
+        }))
     }
 
     /// Binds WASM function into a `Callable`.
