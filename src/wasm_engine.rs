@@ -81,6 +81,7 @@ pub fn init_engine() {
 }
 
 pub fn deinit_engine() {
+    eprintln!("Deinitializing godot-wasm engine");
     cfg_if! {
         if #[cfg(feature = "epoch-timeout")] {
             if let Some((engine, Some(handle))) = ENGINE.write().take() {
@@ -89,7 +90,6 @@ pub fn deinit_engine() {
                     engine.increment_epoch();
                 }
                 drop(engine);
-                eprintln!("Deinitializing godot-wasm engine");
                 handle.join().unwrap();
             }
         } else {
