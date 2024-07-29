@@ -46,7 +46,7 @@ var instance: WasmInstance = null
 #	)
 
 func __log(msg: String) -> void:
-	emit_signal("message_emitted", msg)
+	message_emitted.emit(msg)
 
 # Non threadpool version
 func _ready():
@@ -63,7 +63,7 @@ func _ready():
 		},
 	}, {})
 
-	call_deferred("__cb")
+	__cb.call_deferred()
 
 func __cb():
 	if instance == null:

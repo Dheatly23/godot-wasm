@@ -33,7 +33,7 @@ var instance: WasmInstance = null
 func _ready():
 	instance = wasm_file.instantiate({}, {})
 
-	call_deferred("__cb")
+	__cb.call_deferred()
 
 func __cb():
 	if instance == null:
@@ -49,4 +49,4 @@ func __cb():
 	#instance.call_wasm("test", [3, 4, 1])
 
 func __log(msg: String) -> void:
-	emit_signal("message_emitted", msg)
+	message_emitted.emit(msg)

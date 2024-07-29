@@ -41,15 +41,22 @@ func _hide_menu():
 
 func _ready():
 	var box := $SidebarMenu/Panel/Scroller/VBox
+	var button: Button
 
 	for i in range(len(names)):
-		var button := Button.new()
+		button = Button.new()
 
 		button.text = names[i]
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.connect("pressed", Callable(self,"__load_scene").bind(names[i], scenes[i]))
+		button.pressed.connect(__load_scene.bind(names[i], scenes[i]))
 
 		box.add_child(button)
+
+	button = Button.new()
+	button.text = "Exit"
+	button.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	button.pressed.connect(__quit)
+	box.add_child(button)
 
 func _process(_delta):
 	var shown: bool = detector \
@@ -64,14 +71,20 @@ func _process(_delta):
 		_hide_menu()
 	is_shown = shown
 
-func __load_scene(name: String, scene: PackedScene) -> void:
+func __load_scene(scene_name: String, scene: PackedScene):
 	if child_scene != null:
 		view.remove_child(child_scene)
 		child_scene.queue_free()
 
 	logger.clear_log()
-	logger.add_text("Loading example: %s" % [name])
+	logger.add_text("Loading example: %s" % [scene_name])
 
 	child_scene = scene.instantiate(PackedScene.GEN_EDIT_STATE_DISABLED)
-	child_scene.connect("message_emitted", Callable(logger,"add_text"))
+	if child_scene.has_signal("message_emitted"):
+		child_scene.message_emitted.connect(logger.add_text)
 	view.add_child(child_scene)
+
+func __quit():
+	var tree := get_tree()
+	tree.root.propagate_notification(NOTIFICATION_WM_CLOSE_REQUEST)
+	tree.quit()

@@ -137,7 +137,7 @@ func _update_pendulum() -> void:
 func _ready():
 	instance = wasm_file.instantiate({}, {})
 
-	call_deferred("__setup")
+	__setup.call_deferred()
 
 func _process(delta):
 	if instance == null:
