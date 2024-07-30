@@ -2,7 +2,6 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult, Write as _};
 use std::ops::{Bound, Range, RangeBounds};
 
-use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while1};

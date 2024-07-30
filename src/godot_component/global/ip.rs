@@ -1,6 +1,6 @@
 use anyhow::Result as AnyResult;
-use godot::engine::ip::{ResolverStatus, Type};
-use godot::engine::Ip;
+use godot::classes::ip::{ResolverStatus, Type};
+use godot::classes::Ip;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 

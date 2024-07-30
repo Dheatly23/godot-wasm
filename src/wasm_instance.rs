@@ -149,7 +149,9 @@ pub struct InstanceData<T> {
     pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
 }
 
+#[allow(dead_code)]
 pub enum InstanceType {
+    NoInstance,
     Core(InstanceWasm),
     #[cfg(feature = "component-model")]
     Component(InstanceComp),
@@ -157,11 +159,10 @@ pub enum InstanceType {
 
 impl InstanceType {
     pub fn get_core(&self) -> AnyResult<&InstanceWasm> {
-        #[allow(irrefutable_let_patterns)]
         if let Self::Core(m) = self {
             Ok(m)
         } else {
-            bail!("Instance is a component")
+            bail!("Instance is not a core instance")
         }
     }
 
@@ -171,7 +172,7 @@ impl InstanceType {
         if let Self::Component(m) = self {
             Ok(m)
         } else {
-            bail!("Instance is a component")
+            bail!("Instance is not a component")
         }
     }
 }

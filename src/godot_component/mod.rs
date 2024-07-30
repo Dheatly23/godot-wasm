@@ -6,7 +6,7 @@ mod global;
 use std::borrow::Cow;
 
 use anyhow::{bail, Result as AnyResult};
-use godot::engine::global::Error;
+use godot::global::Error;
 use godot::prelude::*;
 use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
@@ -89,6 +89,10 @@ impl GodotCtx {
 
     pub fn get_value<T: FromGodot>(&mut self, res: WasmResource<Variant>) -> AnyResult<T> {
         self.get_var_borrow(res).and_then(from_var_any)
+    }
+
+    pub fn get_object<T: GodotClass>(&mut self, res: WasmResource<Variant>) -> AnyResult<Gd<T>> {
+        self.get_value(res)
     }
 
     pub fn try_insert(&mut self, var: Variant) -> AnyResult<u32> {

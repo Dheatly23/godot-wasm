@@ -1,5 +1,4 @@
 use anyhow::Result as AnyResult;
-use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -142,20 +141,19 @@ impl WasmScriptLike {
             },
         );
         #[cfg(feature = "epoch-timeout")]
-        config_store_epoch(&mut store, &config);
+        config_store_epoch(&mut store, &config)?;
         #[cfg(feature = "memory-limiter")]
         store.limiter(|data| &mut data.memory_limits);
 
         let mut linker = <Linker<WasmScriptLikeStore>>::new(store.engine());
         site_context!(add_to_linker(&mut linker, |v| v))?;
 
-        let (bindings, instance) =
-            site_context!(bindgen::Script::instantiate(&mut store, &comp, &linker))?;
+        let bindings = site_context!(bindgen::Script::instantiate(&mut store, &comp, &linker))?;
 
         Ok(WasmScriptLikeData {
             instance: InstanceData {
                 store: Mutex::new(store),
-                instance: InstanceType::Component(instance),
+                instance: InstanceType::NoInstance,
                 module,
 
                 wasi_stdin: None,

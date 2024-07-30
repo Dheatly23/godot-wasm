@@ -1,5 +1,5 @@
 use anyhow::Result as AnyResult;
-use godot::engine::ClassDb;
+use godot::classes::ClassDb;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
@@ -215,8 +215,8 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         name: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_property)?;
-        let r =
-            ClassDb::singleton().class_get_property(self.get_value(object)?, self.get_value(name)?);
+        let r = ClassDb::singleton()
+            .class_get_property(self.get_object::<Object>(object)?, self.get_value(name)?);
         self.set_var(r)
     }
 
@@ -228,7 +228,7 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
     ) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_set_property)?;
         wrap_error(ClassDb::singleton().class_set_property(
-            self.get_value(object)?,
+            self.get_object::<Object>(object)?,
             self.get_value(name)?,
             self.maybe_get_var(value)?,
         ))

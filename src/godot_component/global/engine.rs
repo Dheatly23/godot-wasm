@@ -1,5 +1,5 @@
 use anyhow::Result as AnyResult;
-use godot::engine::Engine;
+use godot::classes::{Engine, ScriptLanguage};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
@@ -236,12 +236,16 @@ impl bindgen::godot::global::engine::Host for GodotCtx {
 
     fn register_script_language(&mut self, lang: WasmResource<Variant>) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, register_script_language)?;
-        wrap_error(Engine::singleton().register_script_language(self.get_value(lang)?))
+        wrap_error(
+            Engine::singleton().register_script_language(self.get_object::<ScriptLanguage>(lang)?),
+        )
     }
 
     fn unregister_script_language(&mut self, lang: WasmResource<Variant>) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, unregister_script_language)?;
-        wrap_error(Engine::singleton().register_script_language(self.get_value(lang)?))
+        wrap_error(
+            Engine::singleton().register_script_language(self.get_object::<ScriptLanguage>(lang)?),
+        )
     }
 
     fn register_singleton(
@@ -250,7 +254,8 @@ impl bindgen::godot::global::engine::Host for GodotCtx {
         inst: WasmResource<Variant>,
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, register_singleton)?;
-        Engine::singleton().register_singleton(self.get_value(name)?, self.get_value(inst)?);
+        Engine::singleton()
+            .register_singleton(self.get_value(name)?, self.get_object::<Object>(inst)?);
         Ok(())
     }
 

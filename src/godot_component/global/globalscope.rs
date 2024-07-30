@@ -1,5 +1,5 @@
 use anyhow::{bail, Result as AnyResult};
-use godot::engine::{ResourceLoader, ResourceSaver};
+use godot::classes::{ResourceLoader, ResourceSaver};
 use godot::global::*;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
@@ -344,7 +344,7 @@ impl globalscope::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, save)?;
         wrap_error(
             ResourceSaver::singleton()
-                .save_ex(self.get_value(res)?)
+                .save_ex(self.get_object::<Resource>(res)?)
                 .path((&path).into())
                 .done(),
         )

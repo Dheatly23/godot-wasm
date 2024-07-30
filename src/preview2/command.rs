@@ -1,5 +1,4 @@
 use anyhow::Error;
-use godot::builtin::meta::{ConvertError, GodotConvert};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -179,7 +178,7 @@ fn instantiate(
         },
     );
     #[cfg(feature = "epoch-timeout")]
-    config_store_epoch(&mut store, &config);
+    config_store_epoch(&mut store, &config)?;
     #[cfg(feature = "memory-limiter")]
     store.limiter(|data| &mut data.memory_limits);
 
@@ -192,12 +191,12 @@ fn instantiate(
             .expect("Godot component is enabled, but no context is provided")
     })?;
 
-    let (bindings, instance) = Command::instantiate(&mut store, &comp, &linker)?;
+    let bindings = Command::instantiate(&mut store, &comp, &linker)?;
 
     Ok(CommandData {
         instance: InstanceData {
             store: Mutex::new(store),
-            instance: InstanceType::Component(instance),
+            instance: InstanceType::NoInstance,
             module,
 
             wasi_stdin: None,

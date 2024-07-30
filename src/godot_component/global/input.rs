@@ -1,7 +1,7 @@
 use anyhow::Result as AnyResult;
-use godot::engine::global::Key;
-use godot::engine::input::{CursorShape, MouseMode};
-use godot::engine::Input;
+use godot::classes::input::{CursorShape, MouseMode};
+use godot::classes::{Input, InputEvent};
+use godot::global::Key;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
@@ -368,7 +368,7 @@ impl input::Host for crate::godot_component::GodotCtx {
 
     fn parse_input_even(&mut self, v: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, parse_input_even)?;
-        Input::singleton().parse_input_event(self.get_value(v)?);
+        Input::singleton().parse_input_event(self.get_object::<InputEvent>(v)?);
         Ok(())
     }
 
@@ -395,7 +395,7 @@ impl input::Host for crate::godot_component::GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, set_custom_mouse_cursor)?;
         Input::singleton()
-            .set_custom_mouse_cursor_ex(self.get_value(i)?)
+            .set_custom_mouse_cursor_ex(self.get_object::<Resource>(i)?)
             .shape(from_cursor_shape(s))
             .hotspot(Vector2 { x, y })
             .done();

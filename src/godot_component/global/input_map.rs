@@ -1,5 +1,5 @@
 use anyhow::Result as AnyResult;
-use godot::engine::InputMap;
+use godot::classes::{InputEvent, InputMap};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
@@ -36,7 +36,8 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
         e: WasmResource<Variant>,
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_add_event)?;
-        InputMap::singleton().action_add_event(self.get_value(a)?, self.get_value(e)?);
+        InputMap::singleton()
+            .action_add_event(self.get_value(a)?, self.get_object::<InputEvent>(e)?);
         Ok(())
     }
 
@@ -46,7 +47,8 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
         e: WasmResource<Variant>,
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_erase_event)?;
-        InputMap::singleton().action_erase_event(self.get_value(a)?, self.get_value(e)?);
+        InputMap::singleton()
+            .action_erase_event(self.get_value(a)?, self.get_object::<InputEvent>(e)?);
         Ok(())
     }
 
@@ -73,7 +75,8 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
         e: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_has_event)?;
-        Ok(InputMap::singleton().action_has_event(self.get_value(a)?, self.get_value(e)?))
+        Ok(InputMap::singleton()
+            .action_has_event(self.get_value(a)?, self.get_object::<InputEvent>(e)?))
     }
 
     fn action_set_deadzone(&mut self, a: WasmResource<Variant>, v: f32) -> AnyResult<()> {
@@ -105,7 +108,7 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, event_is_action)?;
         Ok(InputMap::singleton()
-            .event_is_action_ex(self.get_value(e)?, self.get_value(a)?)
+            .event_is_action_ex(self.get_object::<InputEvent>(e)?, self.get_value(a)?)
             .exact_match(m)
             .done())
     }
