@@ -360,16 +360,16 @@ where
         }
 
         let mut ri = ty.results();
-        if ri.len() == 0 {
+        let rl = ri.len();
+        if rl == 0 {
         } else if let Ok(r) = r.try_to::<VariantArray>() {
-            let rl = ri.len();
             for (t, (i, o)) in ri.zip(args.iter_mut().enumerate()) {
                 let Some(v) = r.get(i) else {
                     bail_with_site!("Too few return value (expected {rl}, got {i})")
                 };
                 *o = unsafe { to_raw(&mut ctx, t, &v)? };
             }
-        } else if ri.len() == 1 {
+        } else if rl == 1 {
             args[0] = unsafe { to_raw(&mut ctx, ri.next().unwrap(), &r)? };
         } else {
             bail_with_site!("Unconvertible return value {}", r);

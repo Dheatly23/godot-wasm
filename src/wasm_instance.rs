@@ -809,41 +809,40 @@ impl Hash for WasmCallable {
 }
 
 impl fmt::Debug for WasmCallable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "WasmCallable {{ object: {:?}, name: {:?}, type: {:?}, func: {:?} }}",
-            *self.this, self.name, self.ty, self.f,
-        )
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self { this, name, ty, f } = self;
+
+        fmt.debug_struct("WasmCallable")
+            .field("object", &**this)
+            .field("name", name)
+            .field("type", ty)
+            .field("func", f)
+            .finish()
     }
 }
 
 impl fmt::Display for WasmCallable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn write_iter<I: fmt::Display>(
+            it: impl IntoIterator<Item = I>,
+            f: &mut fmt::Formatter<'_>,
+        ) -> fmt::Result {
+            let mut start = true;
+            for v in it {
+                if !start {
+                    f.write_str(", ")?;
+                }
+                start = false;
+                v.fmt(f)?;
+            }
+            Ok(())
+        }
+
         write!(f, "WasmCallable({:?}.{}<(", *self.this, self.name)?;
 
-        let mut start = true;
-        for v in self.ty.params() {
-            let s = if start {
-                start = false;
-                ", "
-            } else {
-                ""
-            };
-            write!(f, "{s}{v}")?;
-        }
-
+        write_iter(self.ty.params(), f)?;
         write!(f, "), (")?;
-        start = true;
-        for v in self.ty.results() {
-            let s = if start {
-                start = false;
-                ", "
-            } else {
-                ""
-            };
-            write!(f, "{s}{v}")?;
-        }
+        write_iter(self.ty.results(), f)?;
 
         write!(f, ")>)")
     }
@@ -851,21 +850,22 @@ impl fmt::Display for WasmCallable {
 
 impl RustCallable for WasmCallable {
     fn invoke(&mut self, args: &[&Variant]) -> Result<Variant, ()> {
-        let ty = &self.ty;
-        let f = &self.f;
-        let f = move |_: &'_ _, #[allow(unused_mut)] mut store: StoreContextMut<'_, StoreData>| {
-            #[cfg(feature = "epoch-timeout")]
-            if let v @ 1.. = store.data().epoch_timeout {
-                store.set_epoch_deadline(v);
-            }
+        let Self { ty, f, this, .. } = self;
 
-            unsafe { raw_call(store, f, ty, args.iter().copied()).map(|v| v.to_variant()) }
-        };
+        let r = this.bind().unwrap_data(|m| {
+            m.acquire_store(|_, #[allow(unused_mut)] mut store| {
+                #[cfg(feature = "epoch-timeout")]
+                if let v @ 1.. = store.data().epoch_timeout {
+                    store.set_epoch_deadline(v);
+                }
 
-        self.this
-            .bind()
-            .unwrap_data(move |m| m.acquire_store(f))
-            .ok_or(())
+                unsafe { raw_call(store, f, ty, args.iter().copied()) }
+            })
+        });
+        match r {
+            Some(v) => Ok(v.to_variant()),
+            None => Err(()),
+        }
     }
 }
 
@@ -950,8 +950,8 @@ impl WasmInstance {
                 let name = name.to_string();
                 let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &name) {
                     Some(Extern::Func(f)) => f,
-                    Some(_) => bail_with_site!("Export {} is not a function", &name),
-                    None => bail_with_site!("Export {} does not exists", &name),
+                    Some(_) => bail_with_site!("Export {name} is not a function"),
+                    None => bail_with_site!("Export {name} does not exists"),
                 };
                 let ty = f.ty(&store);
 
@@ -978,8 +978,8 @@ impl WasmInstance {
                 let n = name.to_string();
                 let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &n) {
                     Some(Extern::Func(f)) => f,
-                    Some(_) => bail_with_site!("Export {} is not a function", &n),
-                    None => bail_with_site!("Export {} does not exists", &n),
+                    Some(_) => bail_with_site!("Export {n} is not a function"),
+                    None => bail_with_site!("Export {n} does not exists"),
                 };
                 let ty = f.ty(&store);
 
@@ -995,14 +995,15 @@ impl WasmInstance {
     /// Returns previous error message, if any.
     #[func]
     fn signal_error(&self, msg: GString) -> Variant {
-        option_to_variant(
-            self.unwrap_data(|m| {
-                m.acquire_store(|_, mut store| {
-                    Ok(store.data_mut().error_signal.replace(msg.to_string()))
-                })
+        option_to_variant(self.unwrap_data(|m| {
+            m.acquire_store(|_, mut store| {
+                Ok(store
+                    .data_mut()
+                    .error_signal
+                    .replace(msg.to_string())
+                    .unwrap_or_default())
             })
-            .flatten(),
-        )
+        }))
     }
 
     /// Cancels effect of `signal_error`.
@@ -1010,12 +1011,11 @@ impl WasmInstance {
     /// Returns previous error message, if any.
     #[func]
     fn signal_error_cancel(&self) -> Variant {
-        option_to_variant(
-            self.unwrap_data(|m| {
-                m.acquire_store(|_, mut store| Ok(store.data_mut().error_signal.take()))
+        option_to_variant(self.unwrap_data(|m| {
+            m.acquire_store(|_, mut store| {
+                Ok(store.data_mut().error_signal.take().unwrap_or_default())
             })
-            .flatten(),
-        )
+        }))
     }
 
     /// Resets epoch timeout. Should only be used from imported host functions.
