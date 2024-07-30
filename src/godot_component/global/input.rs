@@ -366,7 +366,7 @@ impl input::Host for crate::godot_component::GodotCtx {
         Ok(Input::singleton().is_physical_key_pressed(from_key(k)?))
     }
 
-    fn parse_input_even(&mut self, v: WasmResource<Variant>) -> AnyResult<()> {
+    fn parse_input_event(&mut self, v: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, parse_input_even)?;
         Input::singleton().parse_input_event(self.get_object::<InputEvent>(v)?);
         Ok(())

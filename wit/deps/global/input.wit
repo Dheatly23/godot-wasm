@@ -72,7 +72,7 @@ interface input {
     is-key-pressed: func(keycode: int) -> bool;
     is-mouse-button-pressed: func(button: mouse-button) -> bool;
     is-physical-key-pressed: func(keycode: int) -> bool;
-    parse-input-even: func(event: borrow<godot-var>);
+    parse-input-event: func(event: borrow<godot-var>);
     remove-joy-mapping: func(guid: borrow<godot-var>);
     set-accelerometer: func(value: vector3);
     set-custom-mouse-cursor: func(image: borrow<godot-var>, shape: cursor-shape, hotspot: vector2);
