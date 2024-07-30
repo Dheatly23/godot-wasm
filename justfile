@@ -34,7 +34,7 @@ clippy_lints := "-D warnings"
 # Invoke cargo build
 [group('Cargo')]
 build package target features *args:
-  cargo build -p {{package}} --target {{target}} --profile {{build_profile}} -F "{{features}}" {{args}}
+  cargo build -p {{package}} --target {{target}} --profile {{build_profile}} -F {{quote(features)}} {{args}}
 
 # Invoke cargo fmt
 [group('Cargo')]
@@ -70,6 +70,12 @@ deploy-addon: (build "godot-wasm" target_triple features extra_args)
 [group('Example')]
 deploy-example: deploy-addon && deploy-wasm
   cp -r -v ./out/addons ./example
+
+# Deploy example without WASM compile
+[group('Deploy')]
+[group('Example')]
+deploy-example-nowasm: deploy-addon
+  cp -r -v ./out/addons/godot_wasm/bin ./example/addons/godot_wasm/bin
 
 # Build WASM example code
 [group('Example')]
