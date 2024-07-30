@@ -53,7 +53,7 @@ clippy *args:
 # Deploy executable to addon
 [group('Deploy')]
 deploy-addon: (build "godot-wasm" target_triple features extra_args)
-  ls "{{target_path}}" \
+  @ls "{{target_path}}" \
   | where ($it.name | path basename) =~ "^(lib)?godot_wasm\\.(dll|dylib|so)$" \
   | select name size \
   | rename from \
