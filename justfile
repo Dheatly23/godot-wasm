@@ -25,7 +25,6 @@ target_triple := target_arch + if os() == "windows" {
 }
 
 target_path := "./target" / target_triple / target_profile
-output_path := addon_path / "bin" / target_triple
 
 default: deploy-addon
 
@@ -54,12 +53,11 @@ clippy *args:
 # Deploy executable to addon
 [group('Deploy')]
 deploy-addon: (build "godot-wasm" target_triple features extra_args)
-  @mkdir -v {{output_path}}; \
   ls "{{target_path}}" \
   | where ($it.name | path basename) =~ "^(lib)?godot_wasm\\.(dll|dylib|so)$" \
   | select name size \
   | rename from \
-  | insert to {$in.from | path dirname -r "{{output_path}}"} \
+  | insert to {$in.from | split row -n 2 "." | insert 1 "{{target_triple}}" | insert 1 "{{target_profile}}" | str join "." | path dirname -r "{{addon_path / "bin"}}"} \
   | each {|f| \
     print $"Copy from: ($f.from)" $"Copy to: ($f.to)" $"Size: ($f.size)"; \
     cp $f.from $f.to \
@@ -75,7 +73,7 @@ deploy-example: deploy-addon && deploy-wasm
 [group('Deploy')]
 [group('Example')]
 deploy-example-nowasm: deploy-addon
-  cp -r -v ./out/addons/godot_wasm/bin ./example/addons/godot_wasm/bin
+  cp -r -v ./out/addons/godot_wasm/bin ./example/addons/godot_wasm
 
 # Build WASM example code
 [group('Example')]
