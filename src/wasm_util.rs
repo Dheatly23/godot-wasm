@@ -50,13 +50,13 @@ pub const FILE_DIR: u32 = 2;
 pub const FILE_LINK: u32 = 3;
 */
 
-pub const TYPE_I32: u32 = 1;
-pub const TYPE_I64: u32 = 2;
-pub const TYPE_F32: u32 = 3;
-pub const TYPE_F64: u32 = 4;
+pub const TYPE_I32: i64 = 1;
+pub const TYPE_I64: i64 = 2;
+pub const TYPE_F32: i64 = 3;
+pub const TYPE_F64: i64 = 4;
 #[cfg(feature = "object-registry-extern")]
-pub const TYPE_VARIANT: u32 = 6;
-pub const TYPE_V128: u32 = 7;
+pub const TYPE_VARIANT: i64 = 6;
+pub const TYPE_V128: i64 = 7;
 
 #[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
@@ -136,14 +136,26 @@ pub fn from_signature(sig: &FuncType) -> AnyResult<(PackedByteArray, PackedByteA
         } as _)
     }
 
-    Ok((
-        sig.params().map(f).collect::<Result<_, _>>()?,
-        sig.results().map(f).collect::<Result<_, _>>()?,
-    ))
+    let p = sig.params();
+    let r = sig.results();
+    let mut v = Vec::with_capacity(p.len().max(r.len()));
+
+    for i in p {
+        v.push(f(i)?);
+    }
+    let params = PackedByteArray::from(&*v);
+
+    v.clear();
+    for i in r {
+        v.push(f(i)?);
+    }
+    let results = PackedByteArray::from(&*v);
+
+    Ok((params, results))
 }
 
 pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
-    fn f(it: impl Iterator<Item = Result<u32, Error>>) -> AnyResult<Vec<ValType>> {
+    fn f(it: impl Iterator<Item = Result<i64, Error>>) -> AnyResult<Vec<ValType>> {
         it.map(|i| {
             Ok(match i? {
                 TYPE_I32 => ValType::I32,
@@ -160,20 +172,20 @@ pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
     }
 
     let p = match VariantDispatch::from(&params) {
-        VariantDispatch::Array(v) => f(v.iter_shared().map(|v| site_context!(from_var_any(v))))?,
-        VariantDispatch::PackedByteArray(v) => f(v.as_slice().iter().map(|&v| Ok(v as u32)))?,
-        VariantDispatch::PackedInt32Array(v) => f(v.as_slice().iter().map(|&v| Ok(v as u32)))?,
-        VariantDispatch::PackedInt64Array(v) => f(v.as_slice().iter().map(|&v| Ok(v as u32)))?,
+        VariantDispatch::Array(v) => f(v.iter_shared().map(|v| site_context!(from_var_any(v)))),
+        VariantDispatch::PackedByteArray(v) => f(v.as_slice().iter().map(|&v| Ok(v as _))),
+        VariantDispatch::PackedInt32Array(v) => f(v.as_slice().iter().map(|&v| Ok(v as _))),
+        VariantDispatch::PackedInt64Array(v) => f(v.as_slice().iter().map(|&v| Ok(v))),
         _ => bail_with_site!("Unconvertible value {params}"),
-    };
+    }?;
 
     let r = match VariantDispatch::from(&results) {
-        VariantDispatch::Array(v) => f(v.iter_shared().map(|v| site_context!(from_var_any(v))))?,
-        VariantDispatch::PackedByteArray(v) => f(v.as_slice().iter().map(|&v| Ok(v as u32)))?,
-        VariantDispatch::PackedInt32Array(v) => f(v.as_slice().iter().map(|&v| Ok(v as u32)))?,
-        VariantDispatch::PackedInt64Array(v) => f(v.as_slice().iter().map(|&v| Ok(v as u32)))?,
+        VariantDispatch::Array(v) => f(v.iter_shared().map(|v| site_context!(from_var_any(v)))),
+        VariantDispatch::PackedByteArray(v) => f(v.as_slice().iter().map(|&v| Ok(v as _))),
+        VariantDispatch::PackedInt32Array(v) => f(v.as_slice().iter().map(|&v| Ok(v as _))),
+        VariantDispatch::PackedInt64Array(v) => f(v.as_slice().iter().map(|&v| Ok(v))),
         _ => bail_with_site!("Unconvertible value {results}"),
-    };
+    }?;
 
     Ok(FuncType::new(&site_context!(get_engine())?, p, r))
 }
