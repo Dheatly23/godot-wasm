@@ -204,7 +204,7 @@ impl ModuleType {
         if let Self::Core(m) = self {
             Ok(m)
         } else {
-            bail!("Module is a component")
+            bail!("Module is not a core module")
         }
     }
 
@@ -213,7 +213,7 @@ impl ModuleType {
         if let Self::Component(m) = self {
             Ok(m)
         } else {
-            bail!("Module is a component")
+            bail!("Module is not a component")
         }
     }
 }
