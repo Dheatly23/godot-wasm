@@ -1,8 +1,8 @@
 use std::borrow::Borrow;
-use std::cell::UnsafeCell;
-use std::mem::ManuallyDrop;
+use std::cell::{Cell, UnsafeCell};
 use std::ops::{Deref, DerefMut};
-use std::ptr;
+use std::rc::Rc;
+use std::slice;
 #[cfg(feature = "epoch-timeout")]
 use std::time;
 
@@ -260,8 +260,82 @@ pub unsafe fn from_raw(mut _store: impl AsContextMut, t: ValType, v: ValRaw) -> 
     })
 }
 
+struct ParamCache {
+    len: Cell<usize>,
+    data: Box<[ValRaw]>,
+}
+
+struct ParamCacheGuard<'a> {
+    len: &'a Cell<usize>,
+    old_len: usize,
+    data: &'a mut [ValRaw],
+}
+
+impl<'a> Drop for ParamCacheGuard<'a> {
+    fn drop(&mut self) {
+        let v = self.len.replace(self.len.get() - self.data.len());
+        debug_assert_eq!(v, self.old_len);
+    }
+}
+
+impl<'a> Deref for ParamCacheGuard<'a> {
+    type Target = [ValRaw];
+    fn deref(&self) -> &[ValRaw] {
+        &*self.data
+    }
+}
+
+impl<'a> DerefMut for ParamCacheGuard<'a> {
+    fn deref_mut(&mut self) -> &mut [ValRaw] {
+        &mut *self.data
+    }
+}
+
+impl ParamCache {
+    fn get(this: &mut Rc<Self>, n: usize) -> Rc<Self> {
+        if this.len.get() + n > this.data.len() {
+            let mut l = this.data.len() * 2;
+            while l < n {
+                l *= 2;
+            }
+            let o = Rc::new(Self {
+                len: Cell::new(0),
+                data: vec![ValRaw::i32(0); l].into(),
+            });
+            *this = o.clone();
+            o
+        } else {
+            this.clone()
+        }
+    }
+
+    fn get_data(&self, n: usize) -> ParamCacheGuard<'_> {
+        let len = self.len.get();
+        assert!(
+            len + n <= self.data.len(),
+            "n is too large! (len: {}, n: {}, cap: {})",
+            len,
+            n,
+            self.data.len()
+        );
+        let v = self.len.replace(len + n);
+        debug_assert_eq!(v, len);
+        ParamCacheGuard {
+            len: &self.len,
+            old_len: len + n,
+            // SAFETY: We have exclusive right to that portion of data.
+            data: unsafe {
+                slice::from_raw_parts_mut(self.data.as_ptr().add(len) as *mut ValRaw, n)
+            },
+        }
+    }
+}
+
 thread_local! {
-    static CALLVEC: UnsafeCell<Vec<ValRaw>> = const { UnsafeCell::new(Vec::new()) };
+    static PARAM_CACHE: UnsafeCell<Rc<ParamCache>> = UnsafeCell::new(Rc::new(ParamCache {
+        len: Cell::new(0),
+        data: vec![ValRaw::i32(0); 64].into(),
+    }));
 }
 
 pub unsafe fn raw_call<It>(
@@ -274,47 +348,19 @@ where
     It: IntoIterator,
     It::Item: Borrow<Variant>,
 {
-    struct F(ManuallyDrop<Vec<ValRaw>>);
+    let pi = ty.params();
+    let ri = ty.results();
+    let pl = pi.len();
+    let l = pl.max(ri.len());
 
-    impl Drop for F {
-        fn drop(&mut self) {
-            // SAFETY: The container will be forgotten.
-            let mut t = unsafe { ManuallyDrop::take(&mut self.0) };
-            t.clear();
-            let _ = CALLVEC.try_with(move |v| {
-                // SAFETY: The cell contains valid thread-local value.
-                let o = unsafe { &mut *v.get() };
-                if t.capacity() > o.capacity() {
-                    *o = t;
-                }
-            });
-        }
-    }
-
-    impl Deref for F {
-        type Target = Vec<ValRaw>;
-        fn deref(&self) -> &Vec<ValRaw> {
-            &self.0
-        }
-    }
-
-    impl DerefMut for F {
-        fn deref_mut(&mut self) -> &mut Vec<ValRaw> {
-            &mut self.0
-        }
-    }
-
-    let mut v = CALLVEC.with(|v| F(ManuallyDrop::new(ptr::replace(v.get(), Vec::new()))));
-    v.clear();
+    let v = PARAM_CACHE.with(|v| {
+        // SAFETY: We have exclusive right to value.
+        unsafe { ParamCache::get(&mut *v.get(), l) }
+    });
+    let mut v = v.get_data(l);
 
     let mut ctx = RootScope::new(ctx);
     ctx.as_context_mut().gc();
-
-    let pi = ty.params();
-    let ri = ty.results();
-
-    let pl = pi.len();
-    v.resize(pl.max(ri.len()), ValRaw::i32(0));
 
     let mut args = args.into_iter();
     for (p, (i, o)) in pi.zip(v.iter_mut().enumerate()) {
