@@ -875,325 +875,286 @@ pub fn write_struct(
             DataType::Float => f::<4, f32>(&mut r, n, |s, d| *s = d.to_le_bytes()),
             DataType::Double => f::<8, f64>(&mut r, n, |s, d| *s = d.to_le_bytes()),
             DataType::Vector2(VectorSubtype::Float) => f::<8, Vector2>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..]).unwrap() = d.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..]).unwrap() = d.y.to_le_bytes();
             }),
             DataType::Vector2(VectorSubtype::Double) => f::<16, Vector2>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..]).unwrap() = (d.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..]).unwrap() = (d.y as f64).to_le_bytes();
             }),
             DataType::Vector2(VectorSubtype::Int) => f::<8, Vector2>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = (d.x as i32).to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..]).unwrap() = (d.y as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = (d.x as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..]).unwrap() = (d.y as i32).to_le_bytes();
             }),
             DataType::Vector2(VectorSubtype::Long) => f::<16, Vector2>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.x as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..]).unwrap() = (d.y as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.x as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..]).unwrap() = (d.y as i64).to_le_bytes();
             }),
             DataType::Vector3(VectorSubtype::Float) => f::<12, Vector3>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..]).unwrap() = d.z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..]).unwrap() = d.z.to_le_bytes();
             }),
             DataType::Vector3(VectorSubtype::Double) => f::<24, Vector3>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() = (d.y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..]).unwrap() = (d.z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..]).unwrap() = (d.z as f64).to_le_bytes();
             }),
             DataType::Vector3(VectorSubtype::Int) => f::<12, Vector3>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = (d.x as i32).to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = (d.y as i32).to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..]).unwrap() = (d.z as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = (d.x as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = (d.y as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..]).unwrap() = (d.z as i32).to_le_bytes();
             }),
             DataType::Vector3(VectorSubtype::Long) => f::<24, Vector3>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.x as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() = (d.y as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..]).unwrap() = (d.z as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.x as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.y as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..]).unwrap() = (d.z as i64).to_le_bytes();
             }),
             DataType::Vector4(VectorSubtype::Float) => f::<16, Vector4>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = d.w.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..]).unwrap() = d.w.to_le_bytes();
             }),
             DataType::Vector4(VectorSubtype::Double) => f::<32, Vector4>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() = (d.y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() = (d.z as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() = (d.w as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..]).unwrap() = (d.w as f64).to_le_bytes();
             }),
             DataType::Vector4(VectorSubtype::Int) => f::<16, Vector4i>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = d.w.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..]).unwrap() = d.w.to_le_bytes();
             }),
             DataType::Vector4(VectorSubtype::Long) => f::<32, Vector4i>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.x as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() = (d.y as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() = (d.z as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() = (d.w as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.x as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.y as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.z as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..]).unwrap() = (d.w as i64).to_le_bytes();
             }),
             DataType::Plane(FloatSubtype::Float) => f::<16, Plane>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.normal.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.normal.y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.normal.z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = d.d.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.normal.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.normal.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.normal.z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..]).unwrap() = d.d.to_le_bytes();
             }),
             DataType::Plane(FloatSubtype::Double) => f::<32, Plane>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.normal.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
-                    (d.normal.y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
-                    (d.normal.z as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() = (d.d as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.normal.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.normal.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.normal.z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..]).unwrap() = (d.d as f64).to_le_bytes();
             }),
             DataType::Quaternion(FloatSubtype::Float) => f::<16, Quaternion>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = d.w.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..]).unwrap() = d.w.to_le_bytes();
             }),
             DataType::Quaternion(FloatSubtype::Double) => f::<32, Quaternion>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() = (d.y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() = (d.z as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() = (d.w as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..]).unwrap() = (d.w as f64).to_le_bytes();
             }),
             DataType::Color(ColorSubtype::Float) => f::<16, Color>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.r.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.g.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.b.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = d.a.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.r.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.g.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.b.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..]).unwrap() = d.a.to_le_bytes();
             }),
             DataType::Color(ColorSubtype::Double) => f::<32, Color>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.r as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() = (d.g as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() = (d.b as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() = (d.a as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.r as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.g as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.b as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..]).unwrap() = (d.a as f64).to_le_bytes();
             }),
             DataType::Color(ColorSubtype::Byte) => f::<4, Color>(&mut r, n, |s, d| {
                 *s = [
-                    (d.r * 255.) as u8,
-                    (d.g * 255.) as u8,
-                    (d.b * 255.) as u8,
-                    (d.a * 255.) as u8,
+                    (d.r * 255.).round() as _,
+                    (d.g * 255.).round() as _,
+                    (d.b * 255.).round() as _,
+                    (d.a * 255.).round() as _,
                 ];
             }),
             DataType::Rect2(VectorSubtype::Float) => f::<16, Rect2>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.position.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.position.y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.size.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = d.size.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.position.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.position.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.size.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..]).unwrap() = d.size.y.to_le_bytes();
             }),
             DataType::Rect2(VectorSubtype::Double) => f::<32, Rect2>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
-                    (d.position.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
-                    (d.position.y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
-                    (d.size.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() = (d.size.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.position.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.position.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.size.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..]).unwrap() = (d.size.y as f64).to_le_bytes();
             }),
             DataType::Rect2(VectorSubtype::Int) => f::<16, Rect2>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() =
-                    (d.position.x as i32).to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() =
-                    (d.position.y as i32).to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = (d.size.x as i32).to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..]).unwrap() = (d.size.y as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = (d.position.x as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = (d.position.y as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = (d.size.x as i32).to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..]).unwrap() = (d.size.y as i32).to_le_bytes();
             }),
             DataType::Rect2(VectorSubtype::Long) => f::<32, Rect2>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
-                    (d.position.x as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
-                    (d.position.y as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
-                    (d.size.x as i64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..]).unwrap() = (d.size.y as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.position.x as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.position.y as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.size.x as i64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..]).unwrap() = (d.size.y as i64).to_le_bytes();
             }),
             DataType::Aabb(FloatSubtype::Float) => f::<24, Aabb>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.position.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.position.y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.position.z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() = d.size.x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() = d.size.y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[20..]).unwrap() = d.size.z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.position.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.position.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.position.z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..16]).unwrap() = d.size.x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..20]).unwrap() = d.size.y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[20..]).unwrap() = d.size.z.to_le_bytes();
             }),
             DataType::Aabb(FloatSubtype::Double) => f::<48, Aabb>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
-                    (d.position.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
-                    (d.position.y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
-                    (d.position.z as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..32]).unwrap() =
-                    (d.size.x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[32..40]).unwrap() =
-                    (d.size.y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[40..]).unwrap() = (d.size.z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.position.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.position.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.position.z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..32]).unwrap() = (d.size.x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[32..40]).unwrap() = (d.size.y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[40..]).unwrap() = (d.size.z as f64).to_le_bytes();
             }),
             DataType::Basis(FloatSubtype::Float) => f::<36, Basis>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.rows[0].x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.rows[0].y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.rows[0].z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() = d.rows[1].x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() = d.rows[1].y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[20..24]).unwrap() = d.rows[1].z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[24..28]).unwrap() = d.rows[2].x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[28..32]).unwrap() = d.rows[2].y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[32..]).unwrap() = d.rows[2].z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.rows[0].x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.rows[0].y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.rows[0].z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..16]).unwrap() = d.rows[1].x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..20]).unwrap() = d.rows[1].y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[20..24]).unwrap() = d.rows[1].z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..28]).unwrap() = d.rows[2].x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[28..32]).unwrap() = d.rows[2].y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[32..]).unwrap() = d.rows[2].z.to_le_bytes();
             }),
             DataType::Basis(FloatSubtype::Double) => f::<72, Basis>(&mut r, n, |s, d| {
-                *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
-                    (d.rows[0].x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
-                    (d.rows[0].y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
-                    (d.rows[0].z as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[24..32]).unwrap() =
-                    (d.rows[1].x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[32..40]).unwrap() =
-                    (d.rows[1].y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[40..48]).unwrap() =
-                    (d.rows[1].z as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[48..56]).unwrap() =
-                    (d.rows[2].x as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[56..64]).unwrap() =
-                    (d.rows[2].y as f64).to_le_bytes();
-                *<&mut [u8; 8]>::try_from(&mut s[64..]).unwrap() =
-                    (d.rows[2].z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.rows[0].x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.rows[0].y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.rows[0].z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..32]).unwrap() = (d.rows[1].x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[32..40]).unwrap() = (d.rows[1].y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[40..48]).unwrap() = (d.rows[1].z as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[48..56]).unwrap() = (d.rows[2].x as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[56..64]).unwrap() = (d.rows[2].y as f64).to_le_bytes();
+                *<&mut _>::try_from(&mut s[64..]).unwrap() = (d.rows[2].z as f64).to_le_bytes();
             }),
             DataType::Projection(FloatSubtype::Float) => f::<64, Projection>(&mut r, n, |s, d| {
-                *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.cols[0].x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.cols[0].y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.cols[0].z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() = d.cols[0].w.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() = d.cols[1].x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[20..24]).unwrap() = d.cols[1].y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[24..28]).unwrap() = d.cols[1].z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[28..32]).unwrap() = d.cols[1].w.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[32..36]).unwrap() = d.cols[2].x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[36..40]).unwrap() = d.cols[2].y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[40..44]).unwrap() = d.cols[2].z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[44..48]).unwrap() = d.cols[2].w.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[48..52]).unwrap() = d.cols[3].x.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[52..56]).unwrap() = d.cols[3].y.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[56..60]).unwrap() = d.cols[3].z.to_le_bytes();
-                *<&mut [u8; 4]>::try_from(&mut s[60..]).unwrap() = d.cols[3].w.to_le_bytes();
+                *<&mut _>::try_from(&mut s[..4]).unwrap() = d.cols[0].x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.cols[0].y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.cols[0].z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[12..16]).unwrap() = d.cols[0].w.to_le_bytes();
+                *<&mut _>::try_from(&mut s[16..20]).unwrap() = d.cols[1].x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[20..24]).unwrap() = d.cols[1].y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[24..28]).unwrap() = d.cols[1].z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[28..32]).unwrap() = d.cols[1].w.to_le_bytes();
+                *<&mut _>::try_from(&mut s[32..36]).unwrap() = d.cols[2].x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[36..40]).unwrap() = d.cols[2].y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[40..44]).unwrap() = d.cols[2].z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[44..48]).unwrap() = d.cols[2].w.to_le_bytes();
+                *<&mut _>::try_from(&mut s[48..52]).unwrap() = d.cols[3].x.to_le_bytes();
+                *<&mut _>::try_from(&mut s[52..56]).unwrap() = d.cols[3].y.to_le_bytes();
+                *<&mut _>::try_from(&mut s[56..60]).unwrap() = d.cols[3].z.to_le_bytes();
+                *<&mut _>::try_from(&mut s[60..]).unwrap() = d.cols[3].w.to_le_bytes();
             }),
             DataType::Projection(FloatSubtype::Double) => {
                 f::<128, Projection>(&mut r, n, |s, d| {
-                    *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
-                        (d.cols[0].x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
+                    *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.cols[0].x as f64).to_le_bytes();
+                    *<&mut _>::try_from(&mut s[8..16]).unwrap() =
                         (d.cols[0].y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
+                    *<&mut _>::try_from(&mut s[16..24]).unwrap() =
                         (d.cols[0].z as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[24..32]).unwrap() =
+                    *<&mut _>::try_from(&mut s[24..32]).unwrap() =
                         (d.cols[0].w as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[32..40]).unwrap() =
+                    *<&mut _>::try_from(&mut s[32..40]).unwrap() =
                         (d.cols[1].x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[40..48]).unwrap() =
+                    *<&mut _>::try_from(&mut s[40..48]).unwrap() =
                         (d.cols[1].y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[48..56]).unwrap() =
+                    *<&mut _>::try_from(&mut s[48..56]).unwrap() =
                         (d.cols[1].z as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[56..64]).unwrap() =
+                    *<&mut _>::try_from(&mut s[56..64]).unwrap() =
                         (d.cols[1].w as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[64..72]).unwrap() =
+                    *<&mut _>::try_from(&mut s[64..72]).unwrap() =
                         (d.cols[2].x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[72..80]).unwrap() =
+                    *<&mut _>::try_from(&mut s[72..80]).unwrap() =
                         (d.cols[2].y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[80..88]).unwrap() =
+                    *<&mut _>::try_from(&mut s[80..88]).unwrap() =
                         (d.cols[2].z as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[88..96]).unwrap() =
+                    *<&mut _>::try_from(&mut s[88..96]).unwrap() =
                         (d.cols[2].w as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[96..104]).unwrap() =
+                    *<&mut _>::try_from(&mut s[96..104]).unwrap() =
                         (d.cols[3].x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[104..112]).unwrap() =
+                    *<&mut _>::try_from(&mut s[104..112]).unwrap() =
                         (d.cols[3].y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[112..120]).unwrap() =
+                    *<&mut _>::try_from(&mut s[112..120]).unwrap() =
                         (d.cols[3].z as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[120..]).unwrap() =
+                    *<&mut _>::try_from(&mut s[120..]).unwrap() =
                         (d.cols[3].w as f64).to_le_bytes();
                 })
             }
             DataType::Transform2D(FloatSubtype::Float) => {
                 f::<24, Transform2D>(&mut r, n, |s, d| {
-                    *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() = d.a.x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() = d.a.y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() = d.b.x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() = d.b.y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() = d.origin.x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[20..]).unwrap() = d.origin.y.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[..4]).unwrap() = d.a.x.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.a.y.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.b.x.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[12..16]).unwrap() = d.b.y.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[16..20]).unwrap() = d.origin.x.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[20..]).unwrap() = d.origin.y.to_le_bytes();
                 })
             }
             DataType::Transform2D(FloatSubtype::Double) => {
                 f::<48, Transform2D>(&mut r, n, |s, d| {
-                    *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() = (d.a.x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
-                        (d.a.y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
-                        (d.b.x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[24..32]).unwrap() =
-                        (d.b.y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[32..40]).unwrap() =
+                    *<&mut _>::try_from(&mut s[..8]).unwrap() = (d.a.x as f64).to_le_bytes();
+                    *<&mut _>::try_from(&mut s[8..16]).unwrap() = (d.a.y as f64).to_le_bytes();
+                    *<&mut _>::try_from(&mut s[16..24]).unwrap() = (d.b.x as f64).to_le_bytes();
+                    *<&mut _>::try_from(&mut s[24..32]).unwrap() = (d.b.y as f64).to_le_bytes();
+                    *<&mut _>::try_from(&mut s[32..40]).unwrap() =
                         (d.origin.x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[40..]).unwrap() =
-                        (d.origin.y as f64).to_le_bytes();
+                    *<&mut _>::try_from(&mut s[40..]).unwrap() = (d.origin.y as f64).to_le_bytes();
                 })
             }
             DataType::Transform3D(FloatSubtype::Float) => {
                 f::<48, Transform3D>(&mut r, n, |s, d| {
-                    *<&mut [u8; 4]>::try_from(&mut s[..4]).unwrap() =
-                        d.basis.rows[0].x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[4..8]).unwrap() =
-                        d.basis.rows[0].y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[8..12]).unwrap() =
-                        d.basis.rows[0].z.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[12..16]).unwrap() =
-                        d.basis.rows[1].x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[16..20]).unwrap() =
-                        d.basis.rows[1].y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[20..24]).unwrap() =
-                        d.basis.rows[1].z.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[24..28]).unwrap() =
-                        d.basis.rows[2].x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[28..32]).unwrap() =
-                        d.basis.rows[2].y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[32..36]).unwrap() =
-                        d.basis.rows[2].z.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[36..40]).unwrap() = d.origin.x.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[40..44]).unwrap() = d.origin.y.to_le_bytes();
-                    *<&mut [u8; 4]>::try_from(&mut s[44..]).unwrap() = d.origin.z.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[..4]).unwrap() = d.basis.rows[0].x.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[4..8]).unwrap() = d.basis.rows[0].y.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[8..12]).unwrap() = d.basis.rows[0].z.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[12..16]).unwrap() = d.basis.rows[1].x.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[16..20]).unwrap() = d.basis.rows[1].y.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[20..24]).unwrap() = d.basis.rows[1].z.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[24..28]).unwrap() = d.basis.rows[2].x.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[28..32]).unwrap() = d.basis.rows[2].y.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[32..36]).unwrap() = d.basis.rows[2].z.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[36..40]).unwrap() = d.origin.x.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[40..44]).unwrap() = d.origin.y.to_le_bytes();
+                    *<&mut _>::try_from(&mut s[44..]).unwrap() = d.origin.z.to_le_bytes();
                 })
             }
             DataType::Transform3D(FloatSubtype::Double) => {
                 f::<96, Transform3D>(&mut r, n, |s, d| {
-                    *<&mut [u8; 8]>::try_from(&mut s[..8]).unwrap() =
+                    *<&mut _>::try_from(&mut s[..8]).unwrap() =
                         (d.basis.rows[0].x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[8..16]).unwrap() =
+                    *<&mut _>::try_from(&mut s[8..16]).unwrap() =
                         (d.basis.rows[0].y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[16..24]).unwrap() =
+                    *<&mut _>::try_from(&mut s[16..24]).unwrap() =
                         (d.basis.rows[0].z as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[24..32]).unwrap() =
+                    *<&mut _>::try_from(&mut s[24..32]).unwrap() =
                         (d.basis.rows[1].x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[32..40]).unwrap() =
+                    *<&mut _>::try_from(&mut s[32..40]).unwrap() =
                         (d.basis.rows[1].y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[40..48]).unwrap() =
+                    *<&mut _>::try_from(&mut s[40..48]).unwrap() =
                         (d.basis.rows[1].z as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[48..56]).unwrap() =
+                    *<&mut _>::try_from(&mut s[48..56]).unwrap() =
                         (d.basis.rows[2].x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[56..64]).unwrap() =
+                    *<&mut _>::try_from(&mut s[56..64]).unwrap() =
                         (d.basis.rows[2].y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[64..72]).unwrap() =
+                    *<&mut _>::try_from(&mut s[64..72]).unwrap() =
                         (d.basis.rows[2].z as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[72..80]).unwrap() =
+                    *<&mut _>::try_from(&mut s[72..80]).unwrap() =
                         (d.origin.x as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[80..88]).unwrap() =
+                    *<&mut _>::try_from(&mut s[80..88]).unwrap() =
                         (d.origin.y as f64).to_le_bytes();
-                    *<&mut [u8; 8]>::try_from(&mut s[88..]).unwrap() =
-                        (d.origin.z as f64).to_le_bytes();
+                    *<&mut _>::try_from(&mut s[88..]).unwrap() = (d.origin.z as f64).to_le_bytes();
                 })
             }
         }?;
