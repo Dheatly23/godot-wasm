@@ -1,0 +1,8 @@
+[gd_scene load_steps=3 format=3 uid="uid://dmaak2r8t62f1"]
+
+[ext_resource type="Script" path="res://script/RecursiveHost.gd" id="1_7mkih"]
+[ext_resource type="WasmModule" uid="uid://bo4qtpm6p47hy" path="res://wasm/recursive.wat" id="2_sn45c"]
+
+[node name="Root" type="Node"]
+script = ExtResource("1_7mkih")
+wasm_file = ExtResource("2_sn45c")
