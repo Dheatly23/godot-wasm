@@ -25,7 +25,7 @@ nom = "^7.1"
 anyhow = { version = "^1.0", features = ["backtrace"] }
 slab = { version = "^0.4", optional = true }
 #wasi-common = { version = "^18.0", optional = true }
-wasmparser = { version = "^0.209", optional = true }
+wasmparser = { version = "^0.212", optional = true }
 bytes = { version = "^1.5", optional = true }
 wat = { version = "~1", optional = true }
 cap-std = { version = "^3.0", optional = true }
@@ -36,7 +36,7 @@ camino = { version = "^1.1", optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "bf678564e528d995378032e2e8d9053537d1e5f5"
+rev = "b4ffe6fa8641d4b6846bf3829f25bb3ab8f68c64"
 
 [dependencies.wasmtime]
 version = "^23.0"
