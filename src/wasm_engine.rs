@@ -319,7 +319,7 @@ impl WasmModule {
                     .try_cast::<FileAccess>()
                     .map_err(|v| v.try_cast::<WasmModule>())
                 {
-                    Ok(v) => Self::load_module(&v.get_buffer(v.get_length() as _).to_vec())?,
+                    Ok(v) => Self::load_module(v.get_buffer(v.get_length() as _).as_slice())?,
                     Err(Ok(v)) => v.bind().get_data()?.module.clone(),
                     Err(Err(v)) => bail_with_site!("Unknown module value {}", v),
                 },

@@ -1212,9 +1212,9 @@ impl WasmInstance {
     /// Writes a chunk of memory.
     #[func]
     fn memory_write(&self, i: i64, a: PackedByteArray) -> bool {
-        let a = a.to_vec();
+        let a = a.as_slice();
         self.write_memory(i as _, a.len(), |s| {
-            s.copy_from_slice(&a);
+            s.copy_from_slice(a);
             Ok(())
         })
         .is_some()
