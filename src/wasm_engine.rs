@@ -548,7 +548,7 @@ impl WasmModule {
             let results_str = StringName::from(c"results");
             for i in site_context!(m.module.get_core())?.exports() {
                 if let ExternType::Func(f) = i.ty() {
-                    let (p, r) = from_signature(&f)?;
+                    let (p, r) = from_signature(&f);
                     ret.set(
                         i.name(),
                         [(params_str.clone(), p), (results_str.clone(), r)]
@@ -591,7 +591,7 @@ impl WasmModule {
                     }
                 }
 
-                let (p, r) = from_signature(&f)?;
+                let (p, r) = from_signature(&f);
                 let mut v = match ret.get(i.module()) {
                     Some(v) => Dictionary::from_variant(&v),
                     None => {
@@ -635,7 +635,7 @@ impl WasmModule {
                 bail_with_site!("No function named {}", name);
             };
 
-            let (p, r) = from_signature(&f)?;
+            let (p, r) = from_signature(&f);
             Ok([
                 (StringName::from(c"params"), p),
                 (StringName::from(c"results"), r),

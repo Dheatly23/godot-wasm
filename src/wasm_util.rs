@@ -58,6 +58,7 @@ pub const TYPE_F64: i64 = 4;
 #[cfg(feature = "object-registry-extern")]
 pub const TYPE_VARIANT: i64 = 6;
 pub const TYPE_V128: i64 = 7;
+pub const TYPE_UNKNOWN: i64 = -1;
 
 #[cfg(feature = "object-registry-compat")]
 pub const OBJREGISTRY_MODULE: &str = "godot_object_v1";
@@ -123,9 +124,9 @@ macro_rules! func_registry{
     };
 }
 
-pub fn from_signature(sig: &FuncType) -> AnyResult<(PackedByteArray, PackedByteArray)> {
-    fn f(v: ValType) -> Result<u8, Error> {
-        Ok(match v {
+pub fn from_signature(sig: &FuncType) -> (PackedByteArray, PackedByteArray) {
+    fn f(v: ValType) -> u8 {
+        (match v {
             ValType::I32 => TYPE_I32,
             ValType::I64 => TYPE_I64,
             ValType::F32 => TYPE_F32,
@@ -133,26 +134,22 @@ pub fn from_signature(sig: &FuncType) -> AnyResult<(PackedByteArray, PackedByteA
             ValType::V128 => TYPE_V128,
             #[cfg(feature = "object-registry-extern")]
             ValType::Ref(r) if RefType::eq(&r, &RefType::EXTERNREF) => TYPE_VARIANT,
-            _ => bail_with_site!("Unconvertible value type {v}"),
-        } as _)
+            _ => TYPE_UNKNOWN,
+        }) as _
     }
 
     let p = sig.params();
     let r = sig.results();
     let mut v = Vec::with_capacity(p.len().max(r.len()));
 
-    for i in p {
-        v.push(f(i)?);
-    }
+    v.extend(p.map(f));
     let params = PackedByteArray::from(&*v);
 
     v.clear();
-    for i in r {
-        v.push(f(i)?);
-    }
+    v.extend(r.map(f));
     let results = PackedByteArray::from(&*v);
 
-    Ok((params, results))
+    (params, results)
 }
 
 pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
