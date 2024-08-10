@@ -37,7 +37,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 use crate::godot_util::gstring_from_maybe_utf8;
 use crate::godot_util::{
     option_to_variant, variant_to_option, PackedArrayLike, PhantomProperty, SendSyncWrapper,
-    VariantDispatch,
+    StructPacking,
 };
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
@@ -62,7 +62,7 @@ use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
 use crate::wasm_util::{config_store_common, raw_call, HostModuleCache, MEMORY_EXPORT};
-use crate::{bail_with_site, site_context};
+use crate::{bail_with_site, site_context, variant_dispatch};
 
 enum MemoryType {
     Memory(Memory),
@@ -1349,8 +1349,8 @@ impl WasmInstance {
 
         self.get_memory(|data| {
             let i = i as usize;
-            match VariantDispatch::from(&v) {
-                VariantDispatch::PackedByteArray(v) => {
+            variant_dispatch!(v {
+                PACKED_BYTE_ARRAY => {
                     let s = v.as_slice();
                     let e = i + s.len();
                     let Some(d) = data.get_mut(i..e) else {
@@ -1359,42 +1359,16 @@ impl WasmInstance {
 
                     d.copy_from_slice(s);
                     Ok(())
-                }
-                VariantDispatch::PackedInt32Array(v) => {
-                    f::<4, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
-                }
-                VariantDispatch::PackedInt64Array(v) => {
-                    f::<8, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
-                }
-                VariantDispatch::PackedFloat32Array(v) => {
-                    f::<4, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
-                }
-                VariantDispatch::PackedFloat64Array(v) => {
-                    f::<8, _>(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes())
-                }
-                VariantDispatch::PackedVector2Array(v) => {
-                    f::<8, _>(data, i, v.as_slice(), |s, d| {
-                        *<&mut _>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
-                        *<&mut _>::try_from(&mut d[4..]).unwrap() = s.y.to_le_bytes();
-                    })
-                }
-                VariantDispatch::PackedVector3Array(v) => {
-                    f::<12, _>(data, i, v.as_slice(), |s, d| {
-                        *<&mut _>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
-                        *<&mut _>::try_from(&mut d[4..8]).unwrap() = s.y.to_le_bytes();
-                        *<&mut _>::try_from(&mut d[8..]).unwrap() = s.z.to_le_bytes();
-                    })
-                }
-                VariantDispatch::PackedColorArray(v) => {
-                    f::<16, _>(data, i, v.as_slice(), |s, d| {
-                        *<&mut _>::try_from(&mut d[..4]).unwrap() = s.r.to_le_bytes();
-                        *<&mut _>::try_from(&mut d[4..8]).unwrap() = s.g.to_le_bytes();
-                        *<&mut _>::try_from(&mut d[8..12]).unwrap() = s.b.to_le_bytes();
-                        *<&mut _>::try_from(&mut d[12..]).unwrap() = s.a.to_le_bytes();
-                    })
-                }
+                },
+                PACKED_INT32_ARRAY => f(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes()),
+                PACKED_INT64_ARRAY => f(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes()),
+                PACKED_FLOAT32_ARRAY => f(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes()),
+                PACKED_FLOAT64_ARRAY => f(data, i, v.as_slice(), |s, d| *d = s.to_le_bytes()),
+                PACKED_VECTOR2_ARRAY => f(data, i, v.as_slice(), <_ as StructPacking<f32>>::write_array),
+                PACKED_VECTOR3_ARRAY => f(data, i, v.as_slice(), <_ as StructPacking<f32>>::write_array),
+                PACKED_COLOR_ARRAY => f(data, i, v.as_slice(), <_ as StructPacking<f32>>::write_array),
                 _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
-            }
+            })
         })
         .is_some()
     }
@@ -1451,25 +1425,13 @@ impl WasmInstance {
                     f::<8, PackedFloat64Array>(data, i, n, |s| f64::from_le_bytes(*s))
                 }
                 VariantType::PACKED_VECTOR2_ARRAY => {
-                    f::<8, PackedVector2Array>(data, i, n, |s| Vector2 {
-                        x: f32::from_le_bytes(s[..4].try_into().unwrap()),
-                        y: f32::from_le_bytes(s[4..].try_into().unwrap()),
-                    })
+                    f::<8, PackedVector2Array>(data, i, n, <_ as StructPacking<f32>>::read_array)
                 }
                 VariantType::PACKED_VECTOR3_ARRAY => {
-                    f::<12, PackedVector3Array>(data, i, n, |s| Vector3 {
-                        x: f32::from_le_bytes(s[..4].try_into().unwrap()),
-                        y: f32::from_le_bytes(s[4..8].try_into().unwrap()),
-                        z: f32::from_le_bytes(s[8..].try_into().unwrap()),
-                    })
+                    f::<12, PackedVector3Array>(data, i, n, <_ as StructPacking<f32>>::read_array)
                 }
                 VariantType::PACKED_COLOR_ARRAY => {
-                    f::<16, PackedColorArray>(data, i, n, |s| Color {
-                        r: f32::from_le_bytes(s[..4].try_into().unwrap()),
-                        g: f32::from_le_bytes(s[4..8].try_into().unwrap()),
-                        b: f32::from_le_bytes(s[8..12].try_into().unwrap()),
-                        a: f32::from_le_bytes(s[12..].try_into().unwrap()),
-                    })
+                    f::<16, PackedColorArray>(data, i, n, <_ as StructPacking<f32>>::read_array)
                 }
                 _ => bail_with_site!("Unsupported type ID {t:?}"),
             }

@@ -15,12 +15,12 @@ use parking_lot::RwLock;
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
 
-use crate::godot_util::{from_var_any, variant_to_option, PhantomProperty, VariantDispatch};
+use crate::godot_util::{from_var_any, variant_to_option, PhantomProperty};
 use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::from_signature;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
-use crate::{bail_with_site, site_context};
+use crate::{bail_with_site, site_context, variant_dispatch};
 
 cfg_if! {
     if #[cfg(feature = "epoch-timeout")] {
@@ -312,10 +312,10 @@ impl WasmModule {
 
     fn _initialize(&self, data: Variant, imports: Option<Dictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
-            let module = match VariantDispatch::from(&data) {
-                VariantDispatch::PackedByteArray(v) => Self::load_module(v.as_slice())?,
-                VariantDispatch::String(v) => Self::load_module(v.to_string().as_bytes())?,
-                VariantDispatch::Object(v) => match v
+            let module = variant_dispatch!(data {
+                PACKED_BYTE_ARRAY => Self::load_module(data.as_slice())?,
+                STRING => Self::load_module(data.to_string().as_bytes())?,
+                OBJECT => match data
                     .try_cast::<FileAccess>()
                     .map_err(|v| v.try_cast::<WasmModule>())
                 {
@@ -324,7 +324,7 @@ impl WasmModule {
                     Err(Err(v)) => bail_with_site!("Unknown module value {}", v),
                 },
                 _ => bail_with_site!("Unknown module value {}", data),
-            };
+            });
 
             let imports = Self::process_deps_map(&module, imports)?;
 

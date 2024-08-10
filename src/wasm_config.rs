@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use godot::prelude::*;
 
 #[cfg(feature = "epoch-timeout")]
-use crate::godot_util::VariantDispatch;
+use crate::variant_dispatch;
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
 #[cfg(feature = "epoch-timeout")]
@@ -70,19 +70,16 @@ fn get_field<T: FromGodot>(
 #[cfg(feature = "epoch-timeout")]
 fn compute_epoch(v: Option<Variant>) -> Result<u64, ConvertError> {
     const DEFAULT: u64 = EPOCH_DEADLINE.saturating_mul(EPOCH_MULTIPLIER);
-    match v.as_ref().map(VariantDispatch::from) {
-        None | Some(VariantDispatch::Nil) => Ok(DEFAULT),
-        Some(VariantDispatch::Int(v)) => Ok(v
-            .try_into()
-            .unwrap_or(0u64)
-            .saturating_mul(EPOCH_MULTIPLIER)),
-        Some(VariantDispatch::Float(v)) => Ok((v * (EPOCH_MULTIPLIER as f64)).trunc() as _),
-        _ => Err(match v {
-            Some(v) => ConvertError::with_error_value("Unknown value", v),
-            None => ConvertError::with_error("Empty value"),
+    Ok(match v {
+        None => DEFAULT,
+        Some(v) => variant_dispatch!(v {
+            NIL => DEFAULT,
+            INT => (v as u64).saturating_mul(EPOCH_MULTIPLIER),
+            FLOAT => (v * (EPOCH_MULTIPLIER as f64)).trunc() as _,
+            _ => return Err(ConvertError::with_error_value("Unknown value", v)),
         }),
     }
-    .map(|i| i.max(1))
+    .max(1))
 }
 
 #[cfg(feature = "wasi")]

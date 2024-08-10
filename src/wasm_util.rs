@@ -19,7 +19,8 @@ use wasmtime::{
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, HeapType, RefType};
 
-use crate::godot_util::{from_var_any, SendSyncWrapper, VariantDispatch};
+use crate::godot_util::{from_var_any, SendSyncWrapper};
+use crate::variant_dispatch;
 use crate::wasm_config::Config;
 use crate::wasm_engine::get_engine;
 #[cfg(feature = "epoch-timeout")]
@@ -171,21 +172,21 @@ pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
         .collect()
     }
 
-    let p = match VariantDispatch::from(&params) {
-        VariantDispatch::Array(v) => f(v.iter_shared().map(|v| site_context!(from_var_any(v)))),
-        VariantDispatch::PackedByteArray(v) => f(v.as_slice().iter().map(|&v| Ok(v as _))),
-        VariantDispatch::PackedInt32Array(v) => f(v.as_slice().iter().map(|&v| Ok(v as _))),
-        VariantDispatch::PackedInt64Array(v) => f(v.as_slice().iter().map(|&v| Ok(v))),
+    let p = variant_dispatch!(params {
+        ARRAY => f(params.iter_shared().map(|v| site_context!(from_var_any(v)))),
+        PACKED_BYTE_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v as _))),
+        PACKED_INT32_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v as _))),
+        PACKED_INT64_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v))),
         _ => bail_with_site!("Unconvertible value {params}"),
-    }?;
+    })?;
 
-    let r = match VariantDispatch::from(&results) {
-        VariantDispatch::Array(v) => f(v.iter_shared().map(|v| site_context!(from_var_any(v)))),
-        VariantDispatch::PackedByteArray(v) => f(v.as_slice().iter().map(|&v| Ok(v as _))),
-        VariantDispatch::PackedInt32Array(v) => f(v.as_slice().iter().map(|&v| Ok(v as _))),
-        VariantDispatch::PackedInt64Array(v) => f(v.as_slice().iter().map(|&v| Ok(v))),
+    let r = variant_dispatch!(results {
+        ARRAY => f(results.iter_shared().map(|v| site_context!(from_var_any(v)))),
+        PACKED_BYTE_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v as _))),
+        PACKED_INT32_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v as _))),
+        PACKED_INT64_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v))),
         _ => bail_with_site!("Unconvertible value {results}"),
-    }?;
+    })?;
 
     Ok(FuncType::new(&site_context!(get_engine())?, p, r))
 }
@@ -197,33 +198,33 @@ pub unsafe fn to_raw(mut _store: impl AsContextMut, t: ValType, v: &Variant) -> 
         ValType::I64 => ValRaw::i64(site_context!(from_var_any(v))?),
         ValType::F32 => ValRaw::f32(site_context!(from_var_any::<f32>(v))?.to_bits()),
         ValType::F64 => ValRaw::f64(site_context!(from_var_any::<f64>(v))?.to_bits()),
-        ValType::V128 => ValRaw::v128(match VariantDispatch::from(v) {
-            VariantDispatch::Int(v) => v as u128,
-            VariantDispatch::PackedByteArray(v) => {
+        ValType::V128 => ValRaw::v128(variant_dispatch!(v {
+            INT => v as u128,
+            PACKED_BYTE_ARRAY => {
                 let Some(s) = v.as_slice().get(..16) else {
                     bail_with_site!("Value too short for 128-bit integer")
                 };
                 u128::from_le_bytes(s.try_into().unwrap())
-            }
-            VariantDispatch::PackedInt32Array(v) => {
+            },
+            PACKED_INT32_ARRAY => {
                 let Some(s) = v.as_slice().get(..4) else {
                     bail_with_site!("Value too short for 128-bit integer")
                 };
                 s[0] as u128 | (s[1] as u128) << 32 | (s[2] as u128) << 64 | (s[3] as u128) << 96
-            }
-            VariantDispatch::PackedInt64Array(v) => {
+            },
+            PACKED_INT64_ARRAY => {
                 let Some(s) = v.as_slice().get(..2) else {
                     bail_with_site!("Value too short for 128-bit integer")
                 };
                 s[0] as u128 | (s[1] as u128) << 64
-            }
-            VariantDispatch::Array(v) => {
+            },
+            ARRAY => {
                 let v0 = site_context!(from_var_any::<u64>(v.get(0).unwrap_or_default()))?;
                 let v1 = site_context!(from_var_any::<u64>(v.get(1).unwrap_or_default()))?;
                 v0 as u128 | (v1 as u128) << 64
-            }
+            },
             _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
-        }),
+        })),
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r) if matches!(r.heap_type(), HeapType::Extern) => {
             ValRaw::externref(match variant_to_externref(&mut _store, v.clone())? {

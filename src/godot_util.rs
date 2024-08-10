@@ -105,6 +105,56 @@ where
     }
 }
 
+#[macro_export]
+macro_rules! variant_dispatch {
+    ($v:ident { $($t:tt => $e:expr),* $(,)? }) => {
+        match $v.get_type() {
+            $($crate::variant_dispatch!(#p $t) => $crate::variant_dispatch!(#el $v $t $e)),*
+        }
+    };
+    (#p _) => { _ };
+    (#p $t:ident) => { godot::builtin::VariantType::$t };
+    (#el $v:ident _ $e:expr) => { $e };
+    (#el $v:ident NIL $e:expr) => { $e };
+    (#el $v:ident BOOL $e:expr) => {{ let $v: bool = $v.to(); $e }};
+    (#el $v:ident INT $e:expr) => {{ let $v: i64 = $v.to(); $e }};
+    (#el $v:ident FLOAT $e:expr) => {{ let $v: f64 = $v.to(); $e }};
+    (#el $v:ident STRING $e:expr) => {{ let $v: godot::builtin::GString = $v.to(); $e }};
+    (#el $v:ident VECTOR2 $e:expr) => {{ let $v: godot::builtin::Vector2 = $v.to(); $e }};
+    (#el $v:ident VECTOR2I $e:expr) => {{ let $v: godot::builtin::Vector2i = $v.to(); $e }};
+    (#el $v:ident RECT2 $e:expr) => {{ let $v: godot::builtin::Rect2 = $v.to(); $e }};
+    (#el $v:ident RECT2I $e:expr) => {{ let $v: godot::builtin::Rect2i = $v.to(); $e }};
+    (#el $v:ident VECTOR3 $e:expr) => {{ let $v: godot::builtin::Vector3 = $v.to(); $e }};
+    (#el $v:ident VECTOR3I $e:expr) => {{ let $v: godot::builtin::Vector3i = $v.to(); $e }};
+    (#el $v:ident TRANSFORM2D $e:expr) => {{ let $v: godot::builtin::Transform2D = $v.to(); $e }};
+    (#el $v:ident VECTOR4 $e:expr) => {{ let $v: godot::builtin::Vector4 = $v.to(); $e }};
+    (#el $v:ident VECTOR4I $e:expr) => {{ let $v: godot::builtin::Vector4i = $v.to(); $e }};
+    (#el $v:ident PLANE $e:expr) => {{ let $v: godot::builtin::Plane = $v.to(); $e }};
+    (#el $v:ident QUATERNION $e:expr) => {{ let $v: godot::builtin::Quaternion = $v.to(); $e }};
+    (#el $v:ident AABB $e:expr) => {{ let $v: godot::builtin::Aabb = $v.to(); $e }};
+    (#el $v:ident BASIS $e:expr) => {{ let $v: godot::builtin::Basis = $v.to(); $e }};
+    (#el $v:ident TRANSFORM3D $e:expr) => {{ let $v: godot::builtin::Transform3D = $v.to(); $e }};
+    (#el $v:ident PROJECTION $e:expr) => {{ let $v: godot::builtin::Projection = $v.to(); $e }};
+    (#el $v:ident COLOR $e:expr) => {{ let $v: godot::builtin::Color = $v.to(); $e }};
+    (#el $v:ident STRING_NAME $e:expr) => {{ let $v: godot::builtin::StringName = $v.to(); $e }};
+    (#el $v:ident NODE_PATH $e:expr) => {{ let $v: godot::builtin::NodePath = $v.to(); $e }};
+    (#el $v:ident RID $e:expr) => {{ let $v: godot::builtin::Rid = $v.to(); $e }};
+    (#el $v:ident OBJECT $e:expr) => {{ let $v: godot::obj::Gd<godot::classes::Object> = $v.to(); $e }};
+    (#el $v:ident CALLABLE $e:expr) => {{ let $v: godot::builtin::Callable = $v.to(); $e }};
+    (#el $v:ident SIGNAL $e:expr) => {{ let $v: godot::builtin::Signal = $v.to(); $e }};
+    (#el $v:ident DICTIONARY $e:expr) => {{ let $v: godot::builtin::Dictionary = $v.to(); $e }};
+    (#el $v:ident ARRAY $e:expr) => {{ let $v: godot::builtin::VariantArray = $v.to(); $e }};
+    (#el $v:ident PACKED_BYTE_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedByteArray = $v.to(); $e }};
+    (#el $v:ident PACKED_INT32_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedInt32Array = $v.to(); $e }};
+    (#el $v:ident PACKED_INT64_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedInt64Array = $v.to(); $e }};
+    (#el $v:ident PACKED_FLOAT32_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedFloat32Array = $v.to(); $e }};
+    (#el $v:ident PACKED_FLOAT64_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedFloat64Array = $v.to(); $e }};
+    (#el $v:ident PACKED_STRING_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedStringArray = $v.to(); $e }};
+    (#el $v:ident PACKED_VECTOR2_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedVector2Array = $v.to(); $e }};
+    (#el $v:ident PACKED_VECTOR3_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedVector3Array = $v.to(); $e }};
+    (#el $v:ident PACKED_COLOR_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedColorArray = $v.to(); $e }};
+}
+
 // Keep until gdext implement this
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -290,5 +340,668 @@ impl ErrorWrapper {
             error,
             msg: Some(msg),
         }
+    }
+}
+
+/// Helper trait for byte array packing.
+pub trait StructPacking<ValType> {
+    type Arr;
+
+    fn read_array(arr: &Self::Arr) -> Self;
+    fn write_array(&self, arr: &mut Self::Arr);
+}
+
+impl StructPacking<f32> for Vector2 {
+    type Arr = [u8; 4 * 2];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: real::from_f32(f32::from_le_bytes(a[..4].try_into().unwrap())),
+            y: real::from_f32(f32::from_le_bytes(a[4..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [self.x.as_f32().to_le_bytes(), self.y.as_f32().to_le_bytes()].as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f64> for Vector2 {
+    type Arr = [u8; 8 * 2];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: real::from_f64(f64::from_le_bytes(a[..8].try_into().unwrap())),
+            y: real::from_f64(f64::from_le_bytes(a[8..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [self.x.as_f64().to_le_bytes(), self.y.as_f64().to_le_bytes()].as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<i32> for Vector2i {
+    type Arr = [u8; 4 * 2];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: i32::from_le_bytes(a[..4].try_into().unwrap()),
+            y: i32::from_le_bytes(a[4..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice([self.x.to_le_bytes(), self.y.to_le_bytes()].as_flattened());
+    }
+}
+
+impl StructPacking<i64> for Vector2i {
+    type Arr = [u8; 8 * 2];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: i64::from_le_bytes(a[..8].try_into().unwrap()) as _,
+            y: i64::from_le_bytes(a[8..].try_into().unwrap()) as _,
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [(self.x as i64).to_le_bytes(), (self.y as i64).to_le_bytes()].as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f32> for Vector3 {
+    type Arr = [u8; 4 * 3];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: real::from_f32(f32::from_le_bytes(a[..4].try_into().unwrap())),
+            y: real::from_f32(f32::from_le_bytes(a[4..8].try_into().unwrap())),
+            z: real::from_f32(f32::from_le_bytes(a[8..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.x.as_f32().to_le_bytes(),
+                self.y.as_f32().to_le_bytes(),
+                self.z.as_f32().to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f64> for Vector3 {
+    type Arr = [u8; 8 * 3];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: real::from_f64(f64::from_le_bytes(a[..8].try_into().unwrap())),
+            y: real::from_f64(f64::from_le_bytes(a[8..16].try_into().unwrap())),
+            z: real::from_f64(f64::from_le_bytes(a[16..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.x.as_f64().to_le_bytes(),
+                self.y.as_f64().to_le_bytes(),
+                self.z.as_f64().to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<i32> for Vector3i {
+    type Arr = [u8; 4 * 3];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: i32::from_le_bytes(a[..4].try_into().unwrap()),
+            y: i32::from_le_bytes(a[4..8].try_into().unwrap()),
+            z: i32::from_le_bytes(a[8..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.x.to_le_bytes(),
+                self.y.to_le_bytes(),
+                self.z.to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<i64> for Vector3i {
+    type Arr = [u8; 8 * 3];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: i64::from_le_bytes(a[..8].try_into().unwrap()) as _,
+            y: i64::from_le_bytes(a[8..16].try_into().unwrap()) as _,
+            z: i64::from_le_bytes(a[16..].try_into().unwrap()) as _,
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                (self.x as i64).to_le_bytes(),
+                (self.y as i64).to_le_bytes(),
+                (self.z as i64).to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f32> for Vector4 {
+    type Arr = [u8; 4 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: real::from_f32(f32::from_le_bytes(a[..4].try_into().unwrap())),
+            y: real::from_f32(f32::from_le_bytes(a[4..8].try_into().unwrap())),
+            z: real::from_f32(f32::from_le_bytes(a[8..12].try_into().unwrap())),
+            w: real::from_f32(f32::from_le_bytes(a[12..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.x.as_f32().to_le_bytes(),
+                self.y.as_f32().to_le_bytes(),
+                self.z.as_f32().to_le_bytes(),
+                self.w.as_f32().to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f64> for Vector4 {
+    type Arr = [u8; 8 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: real::from_f64(f64::from_le_bytes(a[..8].try_into().unwrap())),
+            y: real::from_f64(f64::from_le_bytes(a[8..16].try_into().unwrap())),
+            z: real::from_f64(f64::from_le_bytes(a[16..24].try_into().unwrap())),
+            w: real::from_f64(f64::from_le_bytes(a[24..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.x.as_f64().to_le_bytes(),
+                self.y.as_f64().to_le_bytes(),
+                self.z.as_f64().to_le_bytes(),
+                self.w.as_f64().to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<i32> for Vector4i {
+    type Arr = [u8; 4 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: i32::from_le_bytes(a[..4].try_into().unwrap()),
+            y: i32::from_le_bytes(a[4..8].try_into().unwrap()),
+            z: i32::from_le_bytes(a[8..12].try_into().unwrap()),
+            w: i32::from_le_bytes(a[12..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.x.to_le_bytes(),
+                self.y.to_le_bytes(),
+                self.z.to_le_bytes(),
+                self.w.to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<i64> for Vector4i {
+    type Arr = [u8; 8 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: i64::from_le_bytes(a[..8].try_into().unwrap()) as _,
+            y: i64::from_le_bytes(a[8..16].try_into().unwrap()) as _,
+            z: i64::from_le_bytes(a[16..24].try_into().unwrap()) as _,
+            w: i64::from_le_bytes(a[24..].try_into().unwrap()) as _,
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                (self.x as i64).to_le_bytes(),
+                (self.y as i64).to_le_bytes(),
+                (self.z as i64).to_le_bytes(),
+                (self.w as i64).to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f32> for Plane {
+    type Arr = [u8; 4 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            normal: <_ as StructPacking<f32>>::read_array(a[..12].try_into().unwrap()),
+            d: real::from_f32(f32::from_le_bytes(a[12..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.normal, (&mut a[..12]).try_into().unwrap());
+        *<&mut _>::try_from(&mut a[12..]).unwrap() = self.d.as_f32().to_le_bytes();
+    }
+}
+
+impl StructPacking<f64> for Plane {
+    type Arr = [u8; 8 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            normal: <_ as StructPacking<f64>>::read_array(a[..24].try_into().unwrap()),
+            d: real::from_f64(f64::from_le_bytes(a[24..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f64>>::write_array(&self.normal, (&mut a[..24]).try_into().unwrap());
+        *<&mut _>::try_from(&mut a[24..]).unwrap() = self.d.as_f64().to_le_bytes();
+    }
+}
+
+impl StructPacking<f32> for Quaternion {
+    type Arr = [u8; 4 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: real::from_f32(f32::from_le_bytes(a[..4].try_into().unwrap())),
+            y: real::from_f32(f32::from_le_bytes(a[4..8].try_into().unwrap())),
+            z: real::from_f32(f32::from_le_bytes(a[8..12].try_into().unwrap())),
+            w: real::from_f32(f32::from_le_bytes(a[12..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.x.as_f32().to_le_bytes(),
+                self.y.as_f32().to_le_bytes(),
+                self.z.as_f32().to_le_bytes(),
+                self.w.as_f32().to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f64> for Quaternion {
+    type Arr = [u8; 8 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            x: real::from_f64(f64::from_le_bytes(a[..8].try_into().unwrap())),
+            y: real::from_f64(f64::from_le_bytes(a[8..16].try_into().unwrap())),
+            z: real::from_f64(f64::from_le_bytes(a[16..24].try_into().unwrap())),
+            w: real::from_f64(f64::from_le_bytes(a[24..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.x.as_f64().to_le_bytes(),
+                self.y.as_f64().to_le_bytes(),
+                self.z.as_f64().to_le_bytes(),
+                self.w.as_f64().to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f32> for Color {
+    type Arr = [u8; 4 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            r: real::from_f32(f32::from_le_bytes(a[..4].try_into().unwrap())),
+            g: real::from_f32(f32::from_le_bytes(a[4..8].try_into().unwrap())),
+            b: real::from_f32(f32::from_le_bytes(a[8..12].try_into().unwrap())),
+            a: real::from_f32(f32::from_le_bytes(a[12..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.r.as_f32().to_le_bytes(),
+                self.g.as_f32().to_le_bytes(),
+                self.b.as_f32().to_le_bytes(),
+                self.a.as_f32().to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<f64> for Color {
+    type Arr = [u8; 8 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            r: real::from_f64(f64::from_le_bytes(a[..8].try_into().unwrap())),
+            g: real::from_f64(f64::from_le_bytes(a[8..16].try_into().unwrap())),
+            b: real::from_f64(f64::from_le_bytes(a[16..24].try_into().unwrap())),
+            a: real::from_f64(f64::from_le_bytes(a[24..].try_into().unwrap())),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        a.copy_from_slice(
+            [
+                self.r.as_f64().to_le_bytes(),
+                self.g.as_f64().to_le_bytes(),
+                self.b.as_f64().to_le_bytes(),
+                self.a.as_f64().to_le_bytes(),
+            ]
+            .as_flattened(),
+        );
+    }
+}
+
+impl StructPacking<u8> for Color {
+    type Arr = [u8; 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self::from_rgba8(a[0], a[1], a[2], a[3])
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        *a = [
+            (self.r * 255.).round() as _,
+            (self.g * 255.).round() as _,
+            (self.b * 255.).round() as _,
+            (self.a * 255.).round() as _,
+        ];
+    }
+}
+
+impl StructPacking<f32> for Rect2 {
+    type Arr = [u8; 4 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            position: <_ as StructPacking<f32>>::read_array(a[..8].try_into().unwrap()),
+            size: <_ as StructPacking<f32>>::read_array(a[8..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.position, (&mut a[..8]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.size, (&mut a[8..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f64> for Rect2 {
+    type Arr = [u8; 8 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            position: <_ as StructPacking<f64>>::read_array(a[..16].try_into().unwrap()),
+            size: <_ as StructPacking<f64>>::read_array(a[16..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f64>>::write_array(&self.position, (&mut a[..16]).try_into().unwrap());
+        <_ as StructPacking<f64>>::write_array(&self.size, (&mut a[16..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<i32> for Rect2i {
+    type Arr = [u8; 4 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            position: <_ as StructPacking<i32>>::read_array(a[..8].try_into().unwrap()),
+            size: <_ as StructPacking<i32>>::read_array(a[8..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<i32>>::write_array(&self.position, (&mut a[..8]).try_into().unwrap());
+        <_ as StructPacking<i32>>::write_array(&self.size, (&mut a[8..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<i64> for Rect2i {
+    type Arr = [u8; 8 * 4];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            position: <_ as StructPacking<i64>>::read_array(a[..16].try_into().unwrap()),
+            size: <_ as StructPacking<i64>>::read_array(a[16..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<i64>>::write_array(&self.position, (&mut a[..16]).try_into().unwrap());
+        <_ as StructPacking<i64>>::write_array(&self.size, (&mut a[16..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f32> for Aabb {
+    type Arr = [u8; 4 * 6];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            position: <_ as StructPacking<f32>>::read_array(a[..12].try_into().unwrap()),
+            size: <_ as StructPacking<f32>>::read_array(a[12..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.position, (&mut a[..12]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.size, (&mut a[12..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f64> for Aabb {
+    type Arr = [u8; 8 * 6];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            position: <_ as StructPacking<f64>>::read_array(a[..24].try_into().unwrap()),
+            size: <_ as StructPacking<f64>>::read_array(a[24..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f64>>::write_array(&self.position, (&mut a[..24]).try_into().unwrap());
+        <_ as StructPacking<f64>>::write_array(&self.size, (&mut a[24..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f32> for Basis {
+    type Arr = [u8; 4 * 9];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            rows: [
+                <_ as StructPacking<f32>>::read_array(a[..12].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[12..24].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[24..].try_into().unwrap()),
+            ],
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.rows[0], (&mut a[..12]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.rows[1], (&mut a[12..24]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.rows[2], (&mut a[24..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f64> for Basis {
+    type Arr = [u8; 8 * 9];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            rows: [
+                <_ as StructPacking<f32>>::read_array(a[..24].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[24..48].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[48..].try_into().unwrap()),
+            ],
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.rows[0], (&mut a[..24]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.rows[1], (&mut a[24..48]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.rows[2], (&mut a[48..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f32> for Projection {
+    type Arr = [u8; 4 * 16];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            cols: [
+                <_ as StructPacking<f32>>::read_array(a[..16].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[16..32].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[32..48].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[48..].try_into().unwrap()),
+            ],
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.cols[0], (&mut a[..16]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.cols[1], (&mut a[16..32]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.cols[2], (&mut a[32..48]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.cols[3], (&mut a[48..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f64> for Projection {
+    type Arr = [u8; 8 * 16];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            cols: [
+                <_ as StructPacking<f32>>::read_array(a[..32].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[32..64].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[64..96].try_into().unwrap()),
+                <_ as StructPacking<f32>>::read_array(a[96..].try_into().unwrap()),
+            ],
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.cols[0], (&mut a[..32]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.cols[1], (&mut a[32..64]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.cols[2], (&mut a[64..96]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.cols[3], (&mut a[96..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f32> for Transform2D {
+    type Arr = [u8; 4 * 6];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            a: <_ as StructPacking<f32>>::read_array(a[..8].try_into().unwrap()),
+            b: <_ as StructPacking<f32>>::read_array(a[8..16].try_into().unwrap()),
+            origin: <_ as StructPacking<f32>>::read_array(a[16..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.a, (&mut a[..8]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.b, (&mut a[8..16]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.origin, (&mut a[16..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f64> for Transform2D {
+    type Arr = [u8; 8 * 6];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            a: <_ as StructPacking<f64>>::read_array(a[..16].try_into().unwrap()),
+            b: <_ as StructPacking<f64>>::read_array(a[16..32].try_into().unwrap()),
+            origin: <_ as StructPacking<f64>>::read_array(a[32..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f64>>::write_array(&self.a, (&mut a[..16]).try_into().unwrap());
+        <_ as StructPacking<f64>>::write_array(&self.b, (&mut a[16..32]).try_into().unwrap());
+        <_ as StructPacking<f64>>::write_array(&self.origin, (&mut a[32..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f32> for Transform3D {
+    type Arr = [u8; 4 * 12];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            basis: <_ as StructPacking<f32>>::read_array(a[..36].try_into().unwrap()),
+            origin: <_ as StructPacking<f32>>::read_array(a[36..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f32>>::write_array(&self.basis, (&mut a[..36]).try_into().unwrap());
+        <_ as StructPacking<f32>>::write_array(&self.origin, (&mut a[36..]).try_into().unwrap());
+    }
+}
+
+impl StructPacking<f64> for Transform3D {
+    type Arr = [u8; 8 * 12];
+
+    fn read_array(a: &Self::Arr) -> Self {
+        Self {
+            basis: <_ as StructPacking<f64>>::read_array(a[..72].try_into().unwrap()),
+            origin: <_ as StructPacking<f64>>::read_array(a[72..].try_into().unwrap()),
+        }
+    }
+
+    fn write_array(&self, a: &mut Self::Arr) {
+        <_ as StructPacking<f64>>::write_array(&self.basis, (&mut a[..72]).try_into().unwrap());
+        <_ as StructPacking<f64>>::write_array(&self.origin, (&mut a[72..]).try_into().unwrap());
     }
 }
