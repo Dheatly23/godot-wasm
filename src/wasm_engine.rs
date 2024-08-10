@@ -509,7 +509,9 @@ impl WasmModule {
     /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
     fn deserialize_bytes(&self, data: PackedByteArray) {
-        self._deserialize(data, None);
+        if self._deserialize(data.clone(), None) {
+            let _ = self._bytes_data.set(data);
+        }
     }
 
     /// Serialize compiled module data.
@@ -519,19 +521,18 @@ impl WasmModule {
     /// Whenever you upgrade module, make sure to reimport all `WasmModule`.
     #[func]
     fn serialize(&self) -> PackedByteArray {
-        self.unwrap_data(|m| {
-            self._bytes_data.get_or_try_init(|| {
-                Ok(PackedByteArray::from(
-                    &match &m.module {
-                        ModuleType::Core(m) => m.serialize(),
-                        #[cfg(feature = "component-model")]
-                        ModuleType::Component(m) => m.serialize(),
-                    }?[..],
-                ))
+        self._bytes_data
+            .get_or_try_init(|| {
+                self.unwrap_data(|m| match &m.module {
+                    ModuleType::Core(m) => m.serialize(),
+                    #[cfg(feature = "component-model")]
+                    ModuleType::Component(m) => m.serialize(),
+                })
+                .map(PackedByteArray::from)
+                .ok_or(())
             })
-        })
-        .cloned()
-        .unwrap_or_default()
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Gets exported functions.
