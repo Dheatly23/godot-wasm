@@ -1,14 +1,70 @@
 mod double_joint;
+mod maze;
 mod wave;
 
+use std::cell::RefCell;
+use std::fmt::{Arguments, Write as _};
 use std::ptr::{addr_of, addr_of_mut, null};
 
+use getrandom::{register_custom_getrandom, Error as RandError};
 use glam::f32::*;
+
+#[link(wasm_import_module = "host")]
+extern "C" {
+    #[link_name = "log"]
+    fn _log(p: *const u8, n: usize);
+    #[link_name = "rand"]
+    fn _rand(p: *mut u8, n: usize);
+}
+
+fn custom_rand(buf: &mut [u8]) -> Result<(), RandError> {
+    // SAFETY: Wraps extern call
+    unsafe { _rand(buf.as_mut_ptr(), buf.len()) }
+    Ok(())
+}
+
+register_custom_getrandom!(custom_rand);
+
+#[allow(dead_code)]
+pub(crate) fn log(s: &str) {
+    // SAFETY: Wraps extern call
+    unsafe { _log(s.as_ptr(), s.len()) }
+}
+
+#[allow(dead_code)]
+static mut TEMP_STR: RefCell<String> = RefCell::new(String::new());
+
+#[allow(dead_code)]
+pub(crate) fn print_log(args: Arguments) {
+    // SAFETY: Wraps static mut
+    let mut guard = unsafe { TEMP_STR.borrow_mut() };
+    guard.clear();
+    guard.write_fmt(args).unwrap();
+    log(&guard);
+}
+
+#[macro_export]
+macro_rules! log {
+    ($($t:tt)*) => {
+        if cfg!(debug_assertions) {
+            $crate::print_log(format_args!($($t)*));
+        }
+    };
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    Unknown,
+}
 
 trait Renderable {
     fn new() -> Self;
     fn render(&self, state: &mut State);
     fn step(&mut self, time: f32, delta: f32);
+    fn click(&mut self, _origin: Vec3, _norm: Vec3, _button: MouseButton) {}
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -46,16 +102,66 @@ pub struct ExportState {
     pub index_cnt: usize,
 }
 
+#[repr(C)]
+pub struct ConfigItem {
+    str_ptr: *const u8,
+    str_len: usize,
+}
+
+impl ConfigItem {
+    const fn from_str(s: &'static str) -> Self {
+        Self {
+            str_ptr: s.as_ptr(),
+            str_len: s.len(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct Config {
+    cfg_ptr: *const ConfigItem,
+    cfg_len: usize,
+}
+
+impl Config {
+    const fn from_cfg(s: &'static [ConfigItem]) -> Self {
+        Self {
+            cfg_ptr: s.as_ptr(),
+            cfg_len: s.len(),
+        }
+    }
+}
+
 enum RenderData {
     Wave(wave::Wave),
     DoubleJoint(double_joint::DoubleJoint),
+    Maze(maze::Maze),
 }
 
 impl RenderData {
+    fn config() -> *const Config {
+        static mut CFG: Config = Config::from_cfg(&[
+            ConfigItem::from_str("Wave"),
+            ConfigItem::from_str("Double Joint"),
+            ConfigItem::from_str("Maze"),
+        ]);
+        addr_of!(CFG)
+    }
+
+    fn new(ix: u64) -> Option<Self> {
+        match ix {
+            0 => Some(Self::Wave(<_>::new())),
+            1 => Some(Self::DoubleJoint(<_>::new())),
+            2 => Some(Self::Maze(<_>::new())),
+            _ => None,
+        }
+    }
+
     fn render(&self, state: &mut State) {
         match self {
             Self::Wave(v) => v.render(state),
             Self::DoubleJoint(v) => v.render(state),
+            Self::Maze(v) => v.render(state),
         }
     }
 
@@ -63,6 +169,15 @@ impl RenderData {
         match self {
             Self::Wave(v) => v.step(time, delta),
             Self::DoubleJoint(v) => v.step(time, delta),
+            Self::Maze(v) => v.step(time, delta),
+        }
+    }
+
+    fn click(&mut self, origin: Vec3, norm: Vec3, button: MouseButton) {
+        match self {
+            Self::Wave(v) => v.click(origin, norm, button),
+            Self::DoubleJoint(v) => v.click(origin, norm, button),
+            Self::Maze(v) => v.click(origin, norm, button),
         }
     }
 }
@@ -93,14 +208,15 @@ static mut STATE_EXPORT: ExportState = ExportState {
 static mut T: f64 = 0.0;
 
 #[no_mangle]
+pub extern "C" fn config() -> *const Config {
+    RenderData::config()
+}
+
+#[no_mangle]
 pub extern "C" fn init(index: u64) {
     unsafe {
         STATE = State::default();
-        RENDER = match index {
-            0 => Some(RenderData::Wave(<_>::new())),
-            1 => Some(RenderData::DoubleJoint(<_>::new())),
-            _ => None,
-        };
+        RENDER = RenderData::new(index);
     }
 }
 
@@ -127,5 +243,31 @@ pub extern "C" fn process(delta: f64) -> *const ExportState {
             index_cnt: STATE.index.len(),
         };
         addr_of!(STATE_EXPORT)
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn click(ox: f32, oy: f32, oz: f32, nx: f32, ny: f32, nz: f32, button: u32) {
+    let button = match button {
+        0 => MouseButton::Left,
+        1 => MouseButton::Right,
+        2 => MouseButton::Middle,
+        _ => MouseButton::Unknown,
+    };
+    let origin = Vec3 {
+        x: ox,
+        y: oy,
+        z: oz,
+    };
+    let norm = Vec3 {
+        x: nx,
+        y: ny,
+        z: nz,
+    };
+
+    unsafe {
+        if let Some(rp) = &mut *addr_of_mut!(RENDER) {
+            rp.click(origin, norm, button);
+        };
     }
 }

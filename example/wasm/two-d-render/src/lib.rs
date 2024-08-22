@@ -1,5 +1,6 @@
 mod game_of_life;
 mod mandelbrot;
+mod particles;
 
 use std::cell::RefCell;
 use std::fmt::{Arguments, Write as _};
@@ -111,16 +112,66 @@ pub struct ExportState {
     pub colors_cnt: usize,
 }
 
+#[repr(C)]
+pub struct ConfigItem {
+    str_ptr: *const u8,
+    str_len: usize,
+}
+
+impl ConfigItem {
+    const fn from_str(s: &'static str) -> Self {
+        Self {
+            str_ptr: s.as_ptr(),
+            str_len: s.len(),
+        }
+    }
+}
+
+#[repr(C)]
+pub struct Config {
+    cfg_ptr: *const ConfigItem,
+    cfg_len: usize,
+}
+
+impl Config {
+    const fn from_cfg(s: &'static [ConfigItem]) -> Self {
+        Self {
+            cfg_ptr: s.as_ptr(),
+            cfg_len: s.len(),
+        }
+    }
+}
+
 enum RenderData {
     Mandelbrot(mandelbrot::Mandelbrot),
     GameOfLife(game_of_life::GameOfLife),
+    Particles(particles::Particles),
 }
 
 impl RenderData {
+    fn config() -> *const Config {
+        static mut CFG: Config = Config::from_cfg(&[
+            ConfigItem::from_str("Mandelbrot"),
+            ConfigItem::from_str("Game of Life"),
+            ConfigItem::from_str("Particle Sim"),
+        ]);
+        addr_of!(CFG)
+    }
+
+    fn new(ix: u64) -> Option<Self> {
+        match ix {
+            0 => Some(Self::Mandelbrot(<_>::new())),
+            1 => Some(Self::GameOfLife(<_>::new())),
+            2 => Some(Self::Particles(<_>::new())),
+            _ => None,
+        }
+    }
+
     fn render(&self, state: &mut State) {
         match self {
             Self::Mandelbrot(v) => v.render(state),
             Self::GameOfLife(v) => v.render(state),
+            Self::Particles(v) => v.render(state),
         }
     }
 
@@ -128,6 +179,7 @@ impl RenderData {
         match self {
             Self::Mandelbrot(v) => v.step(time, delta),
             Self::GameOfLife(v) => v.step(time, delta),
+            Self::Particles(v) => v.step(time, delta),
         }
     }
 
@@ -135,6 +187,7 @@ impl RenderData {
         match self {
             Self::Mandelbrot(v) => v.click(x, y, button),
             Self::GameOfLife(v) => v.click(x, y, button),
+            Self::Particles(v) => v.click(x, y, button),
         }
     }
 }
@@ -154,14 +207,15 @@ static mut STATE_EXPORT: ExportState = ExportState {
 static mut T: f64 = 0.0;
 
 #[no_mangle]
+pub extern "C" fn config() -> *const Config {
+    RenderData::config()
+}
+
+#[no_mangle]
 pub extern "C" fn init(index: u64) {
     unsafe {
         STATE = State::default();
-        RENDER = match index {
-            0 => Some(RenderData::Mandelbrot(<_>::new())),
-            1 => Some(RenderData::GameOfLife(<_>::new())),
-            _ => None,
-        };
+        RENDER = RenderData::new(index);
     }
 }
 

@@ -13,6 +13,7 @@ cfg_if::cfg_if! {
 }
 
 const SIZE: usize = 64;
+const WAVE_SCALE: usize = 8;
 const TIME_SCALE: f32 = 1.0 / 1024.0;
 const SPEED_SCALE: f32 = TIME_SCALE * 16.0;
 const SPACE_SCALE: f32 = 5.0;

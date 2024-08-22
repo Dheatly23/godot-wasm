@@ -14,5 +14,6 @@ cfg-if = "1"
 colorgrad = { version = "^0.6", default-features = false }
 
 rand_xoshiro = "^0.6"
+rand = { version = "^0.8", default-features = false }
 rand_core = { version = "^0.6", features = ["getrandom"] }
 getrandom = { version = "^0.2", features = ["custom"] }

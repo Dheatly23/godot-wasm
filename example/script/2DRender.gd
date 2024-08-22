@@ -13,7 +13,7 @@ signal message_emitted(msg)
 
 var instance: WasmInstance = null
 
-func __selected(index):
+func __instantiate() -> bool:
 	instance = WasmInstance.new()
 	instance.error_happened.connect(__emit_log)
 	instance = instance.initialize(
@@ -28,8 +28,7 @@ func __selected(index):
 				"rand": {
 					params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
 					results = [],
-					object = self,
-					method = "__rand",
+					callable = __rand
 				},
 			},
 		},
@@ -43,6 +42,10 @@ func __selected(index):
 
 	if instance == null:
 		message_emitted.emit("Failed to instantiate module")
+	return instance != null
+
+func __selected(index):
+	if !__instantiate():
 		return
 
 	if instance.call_wasm("init", [index]) == null:
@@ -51,12 +54,32 @@ func __selected(index):
 func _ready():
 	$Sprite.texture = _tex
 
-	$UI/Root/Panel/VBox/TypeLst.select(1)
+	var items: ItemList = $UI/Root/Panel/VBox/TypeLst
 
-#	wasi_ctx.connect("stdout_emit", self, "__emit_log")
-#	wasi_ctx.connect("stderr_emit", self, "__emit_log")
+	if __instantiate():
+		var ret = instance.call_wasm(&"config", [])
+		if ret == null:
+			message_emitted.emit("Failed to call config")
+			return
+		var p: int = ret[0]
+		var cp := instance.get_32(p)
+		var cl := instance.get_32(p + 4)
+		for o in range(0, cl * 8, 8):
+			var sp := cp + o
+			var s := instance.memory_read(
+				instance.get_32(sp),
+				instance.get_32(sp + 4),
+			).get_string_from_utf8()
+			items.add_item(s, null, true)
+	else:
+		return
 
-	__selected(1)
+	items.select(0)
+
+	wasi_ctx.stdout_emit.connect(__emit_log)
+	wasi_ctx.stderr_emit.connect(__emit_log)
+
+	__selected(0)
 
 func _process(delta):
 	if instance == null:
@@ -87,7 +110,7 @@ func _process(delta):
 		else:
 			_tex.set_image(_img)
 
-func _input(event: InputEvent):
+func __ui_input(event: InputEvent):
 	if instance == null:
 		return
 

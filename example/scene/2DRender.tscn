@@ -24,7 +24,6 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-mouse_filter = 2
 theme = ExtResource("3")
 
 [node name="Panel" type="PanelContainer" parent="UI/Root"]
@@ -47,8 +46,6 @@ layout_mode = 2
 layout_mode = 2
 size_flags_vertical = 3
 allow_reselect = true
-item_count = 2
-item_0/text = "Mandelbrot"
-item_1/text = "Game of Life"
 
+[connection signal="gui_input" from="UI/Root" to="." method="__ui_input"]
 [connection signal="item_selected" from="UI/Root/Panel/VBox/TypeLst" to="." method="__selected"]

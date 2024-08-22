@@ -2,9 +2,12 @@ use std::f32::consts::*;
 use std::iter::repeat;
 
 use glam::f32::*;
+use rand::prelude::*;
+use rand_distr::StandardNormal;
+use rand_xoshiro::Xoshiro512StarStar;
 
-use super::{map_color, MAX_REP, SIZE, SPACE_SCALE, SPEED_SCALE, TIME_SCALE};
-use crate::{Renderable, State};
+use super::{map_color, MAX_REP, SIZE, SPACE_SCALE, SPEED_SCALE, TIME_SCALE, WAVE_SCALE};
+use crate::{MouseButton, Renderable, State};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 struct WavePoint {
@@ -19,6 +22,7 @@ pub struct Wave {
     height: usize,
 
     residue: f32,
+    paused: bool,
 }
 
 impl Wave {
@@ -36,6 +40,7 @@ impl Renderable for Wave {
             height: SIZE,
 
             residue: 0.0,
+            paused: false,
         };
 
         let (ox, oy) = (ret.width as f32 * 0.5, ret.height as f32 * 0.5);
@@ -56,6 +61,10 @@ impl Renderable for Wave {
         delta += self.residue;
         let n = (delta.div_euclid(TIME_SCALE) as usize).min(MAX_REP);
         self.residue = delta.rem_euclid(TIME_SCALE);
+
+        if self.paused {
+            return;
+        }
 
         for _ in 0..n {
             for (i, (x, y)) in self.xy_iter().enumerate() {
@@ -96,6 +105,36 @@ impl Renderable for Wave {
 
             for i in self.arr.iter_mut() {
                 i.position += i.velocity * SPEED_SCALE;
+            }
+        }
+    }
+
+    fn click(&mut self, _: Vec3, _: Vec3, button: MouseButton) {
+        if let MouseButton::Right = button {
+            self.paused = !self.paused;
+        } else if let MouseButton::Middle = button {
+            let mut rng = Xoshiro512StarStar::from_entropy();
+
+            self.arr.fill(WavePoint::default());
+
+            for i in 0..WAVE_SCALE {
+                let ys = (PI / (self.height + 2) as f32) * i as f32;
+                for j in 0..WAVE_SCALE {
+                    let xs = (PI / (self.width + 2) as f32) * j as f32;
+
+                    let mag = rng.sample::<f32, _>(StandardNormal)
+                        * (SPACE_SCALE / WAVE_SCALE as f32).powi(2);
+                    for ((x, y), p) in self.xy_iter().zip(self.arr.iter_mut()) {
+                        p.position +=
+                            (((x + 1) as f32 * xs).cos() + ((y + 1) as f32 * ys).cos()) * mag;
+                    }
+                }
+            }
+
+            for ((x, y), p) in self.xy_iter().zip(self.arr.iter_mut()) {
+                let y = (y + 1) as f32 / (self.height + 2) as f32;
+                let x = (x + 1) as f32 / (self.width + 2) as f32;
+                p.position *= (y - y.powi(2)) * (x - x.powi(2)) * 4.;
             }
         }
     }

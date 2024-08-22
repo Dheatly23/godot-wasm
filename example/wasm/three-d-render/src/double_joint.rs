@@ -66,7 +66,7 @@ impl Renderable for DoubleJoint {
         const DT: f32 = 1.0 / (N_TILES as f32);
 
         let mut f = |p00: Vec3A, p01: Vec3A, p10: Vec3A, p11: Vec3A| {
-            let n = Vec3::from((p11 - p00).cross(p10 - p01));
+            let n = Vec3::from((p10 - p01).cross(p11 - p00));
             let t = (p01 - p00).extend(1.0);
 
             for x in 0..N_TILES {

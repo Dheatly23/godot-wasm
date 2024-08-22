@@ -5,17 +5,32 @@ signal message_emitted(msg)
 @export var wasm_file: WasmModule
 
 @onready var wasi_ctx: WasiContext = WasiContext.new()
+@onready var crypto := Crypto.new()
 
 @onready var _mesh := ArrayMesh.new()
+@onready var _lbl: Label = $UI/Root/Panel/VBox/Label
 
 var instance: WasmInstance = null
 
-func __selected(index):
+func __instantiate() -> bool:
 	instance = WasmInstance.new()
 	instance.error_happened.connect(__emit_log)
 	instance = instance.initialize(
 		wasm_file,
-		{},
+		{
+			"host": {
+				"log": {
+					params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
+					results = [],
+					callable = __log,
+				},
+				"rand": {
+					params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
+					results = [],
+					callable = __rand,
+				},
+			},
+		},
 		{
 			"epoch.enable": true,
 			"epoch.timeout": 1.0,
@@ -25,15 +40,41 @@ func __selected(index):
 	)
 	if instance == null:
 		message_emitted.emit("Failed to instantiate module")
-		return
+	return instance != null
 
-	if instance.call_wasm("init", [index]) == null:
+func __selected(index) -> bool:
+	if !__instantiate():
+		return false
+
+	if instance.call_wasm(&"init", [index]) == null:
 		message_emitted.emit("Failed to call init")
+
+	return true
 
 func _ready():
 	$Mesh.mesh = _mesh
 
-	$UI/Root/TypeLst.select(0)
+	var items: ItemList = $UI/Root/Panel/VBox/TypeLst
+
+	if __instantiate():
+		var ret = instance.call_wasm(&"config", [])
+		if ret == null:
+			message_emitted.emit("Failed to call config")
+			return
+		var p: int = ret[0]
+		var cp := instance.get_32(p)
+		var cl := instance.get_32(p + 4)
+		for o in range(0, cl * 8, 8):
+			var sp := cp + o
+			var s := instance.memory_read(
+				instance.get_32(sp),
+				instance.get_32(sp + 4),
+			).get_string_from_utf8()
+			items.add_item(s, null, true)
+	else:
+		return
+
+	items.select(0)
 
 #	var data := []
 #	data.resize(Mesh.ARRAY_MAX)
@@ -78,13 +119,13 @@ func _process(delta):
 		return
 
 	var start := Time.get_ticks_usec()
-	var ret = instance.call_wasm("process", [delta])
+	var ret = instance.call_wasm(&"process", [delta])
 	if ret == null:
 		message_emitted.emit("Failed to call process")
 		instance = null
 		return
 	var end := Time.get_ticks_usec()
-	__emit_log("WASM Time: %.3f ms" % ((end - start) / 1e3))
+	_lbl.text = "WASM Time: %.3f ms" % ((end - start) / 1e3)
 
 	var p: int = ret[0]
 	if p == 0:
@@ -126,5 +167,32 @@ func _process(delta):
 	if len(data[Mesh.ARRAY_INDEX]) != 0:
 		_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
 
+func __ui_input(event: InputEvent):
+	if instance == null:
+		return
+
+	if (event is InputEventMouseButton) and (not event.is_pressed()):
+		var p: Vector2 = event.position
+		var cam: Camera3D = $Camera
+		var orig := cam.project_ray_origin(p)
+		var norm := cam.project_ray_normal(p)
+		instance.call_wasm(
+			&"click",
+			[
+				orig.x, orig.y, orig.z,
+				norm.x, norm.y, norm.z,
+				event.button_index - 1,
+			],
+		)
+
 func __emit_log(msg):
 	message_emitted.emit(msg.strip_edges())
+
+func __log(p: int, n: int):
+	var s = instance.memory_read(p, n).get_string_from_utf8()
+	print(s)
+	message_emitted.emit(s)
+
+func __rand(p: int, n: int):
+	var b := crypto.generate_random_bytes(n)
+	instance.memory_write(p, b)

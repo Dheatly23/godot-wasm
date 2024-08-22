@@ -1,11 +1,15 @@
 use std::arch::wasm32::*;
 use std::f32::consts::*;
 use std::iter::repeat;
+use std::slice::from_raw_parts_mut;
 
 use glam::f32::*;
+use rand::prelude::*;
+use rand_distr::StandardNormal;
+use rand_xoshiro::Xoshiro512StarStar;
 
-use super::{map_color, MAX_REP, SIZE, SPACE_SCALE, SPEED_SCALE, TIME_SCALE};
-use crate::{Renderable, State};
+use super::{map_color, MAX_REP, SIZE, SPACE_SCALE, SPEED_SCALE, TIME_SCALE, WAVE_SCALE};
+use crate::{MouseButton, Renderable, State};
 
 #[derive(Debug, Default)]
 pub struct Wave {
@@ -16,6 +20,7 @@ pub struct Wave {
     height: usize,
 
     residue: f32,
+    paused: bool,
 }
 
 impl Renderable for Wave {
@@ -27,6 +32,7 @@ impl Renderable for Wave {
             height: SIZE,
 
             residue: 0.0,
+            paused: false,
         };
 
         let (ox, oy) = (f32x4_splat(ret.width as f32 * 0.5), ret.height as f32 * 0.5);
@@ -62,6 +68,10 @@ impl Renderable for Wave {
         delta += self.residue;
         let n = (delta.div_euclid(TIME_SCALE) as usize).min(MAX_REP);
         self.residue = delta.rem_euclid(TIME_SCALE);
+
+        if self.paused {
+            return;
+        }
 
         let stride = (self.width + 3) >> 2;
         for _ in 0..n {
@@ -159,6 +169,56 @@ impl Renderable for Wave {
 
             for (p, v) in self.position.iter_mut().zip(self.velocity.iter()) {
                 *p = f32x4_add(*p, f32x4_mul(*v, f32x4_splat(SPEED_SCALE)));
+            }
+        }
+    }
+
+    fn click(&mut self, _: Vec3, _: Vec3, button: MouseButton) {
+        if let MouseButton::Right = button {
+            self.paused = !self.paused;
+        } else if let MouseButton::Middle = button {
+            let mut rng = Xoshiro512StarStar::from_entropy();
+
+            self.position.fill(f32x4_splat(0.0));
+            self.velocity.fill(f32x4_splat(0.0));
+
+            for i in 0..WAVE_SCALE {
+                let ys = (PI / (self.height + 2) as f32) * i as f32;
+                for j in 0..WAVE_SCALE {
+                    let xs = (PI / (self.width + 2) as f32) * j as f32;
+
+                    let mag = rng.sample::<f32, _>(StandardNormal)
+                        * (SPACE_SCALE / WAVE_SCALE as f32).powi(2);
+                    for (y, a) in self
+                        .position
+                        .chunks_exact_mut((self.width + 3) >> 2)
+                        .enumerate()
+                    {
+                        let y = ((y + 1) as f32 * ys).cos();
+                        assert!(a.len() * 4 <= self.width);
+                        // SAFETY: Slice reference is valid.
+                        let a =
+                            unsafe { from_raw_parts_mut(a.as_mut_ptr() as *mut f32, self.width) };
+                        for (x, p) in a.iter_mut().enumerate() {
+                            *p += (((x + 1) as f32 * xs).cos() + y) * mag;
+                        }
+                    }
+                }
+            }
+
+            for (y, a) in self
+                .position
+                .chunks_exact_mut((self.width + 3) >> 2)
+                .enumerate()
+            {
+                let mut y = (y + 1) as f32 / (self.height + 2) as f32;
+                y = 4. * (y - y.powi(2));
+                for (i, p) in a.iter_mut().enumerate() {
+                    let mut x = u32x4_add(u32x4_splat((i << 2) as _), u32x4(1, 2, 3, 4));
+                    x = f32x4_div(f32x4_convert_u32x4(x), f32x4_splat((self.width + 2) as f32));
+                    x = f32x4_mul(f32x4_sub(x, f32x4_mul(x, x)), f32x4_splat(4. * y));
+                    *p = f32x4_mul(*p, x);
+                }
             }
         }
     }

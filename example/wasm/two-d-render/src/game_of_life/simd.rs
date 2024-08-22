@@ -43,9 +43,7 @@ fn apply_rule(v: v128, r: v128) -> v128 {
     // Death
     let v = v128_and(v, x);
     // Reproduction
-    let v = v128_or(v, v128_and(x, r));
-
-    v
+    v128_or(v, v128_and(x, r))
 }
 
 #[inline]
@@ -299,7 +297,7 @@ impl Renderable for GameOfLife {
 
             let (x, y) = (x as usize, y as usize);
             let i = x % self.size + (y % (self.size * 2)) * self.size;
-            let b = x / self.size | (y / (self.size * 2)) << 3;
+            let b = (x / self.size) | (y / (self.size * 2)) << 3;
             self.data[i] ^= 1 << b;
         }
     }
@@ -313,7 +311,7 @@ impl Renderable for GameOfLife {
             10, 11, 12, 13, 14, 15,
         ];
 
-        let mut it = state.colors_mut().into_iter();
+        let mut it = state.colors_mut().iter_mut();
         for sy in 0..4 {
             let mut b = true;
             for a in self.data[..self.data.len() / 2].chunks_exact(self.size) {
