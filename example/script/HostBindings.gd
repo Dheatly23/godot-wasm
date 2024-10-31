@@ -1,55 +1,22 @@
 extends Node
 
-signal message_emitted(msg)
+@warning_ignore("unused_signal")
+signal message_emitted(msg: String)
 
 @export var wasm_file: WasmModule
 
 var instance: WasmInstance = null
+var task_id = null
 
-# Instance threadpool version
-#func _ready():
-#	var f: WasmFile = load(wasm_file)
-#
-#	var module := f.get_module()
-#	if module == null:
-#		__log("Cannot compile module " + wasm_file)
-#		return
-#
-#	instance = InstanceHandle.new()
-#	instance.instantiate(
-#		module,
-#		{
-#			"write": {
-#				params = [
-#					WasmHelper.TYPE_I32,
-#					WasmHelper.TYPE_I32,
-#				],
-#				results = [],
-#				object = self,
-#				method = "__write",
-#			},
-#		},
-#		{
-#			"epoch.enable": true,
-#		},
-#		self, "__log"
-#	)
-#
-#	instance.call_queue("main", [], null, "", self, "_log")
-#
-#func __write(ptr: int, sz: int) -> void:
-#	var buf: PackedByteArray = instance.inst.memory_read(ptr, sz)
-#	InstanceThreadpoolAutoload.queue_call_main(
-#		self,
-#		"__log",
-#		[buf.get_string_from_utf8()]
-#	)
-
-func __log(msg: String) -> void:
-	message_emitted.emit(msg)
-
-# Non threadpool version
 func _ready():
+	task_id = WorkerThreadPool.add_task(__start)
+
+func _exit_tree() -> void:
+	if task_id != null:
+		WorkerThreadPool.wait_for_task_completion(task_id)
+		task_id = null
+
+func __start():
 	instance = wasm_file.instantiate({
 		"host": {
 			"write": {
@@ -63,15 +30,15 @@ func _ready():
 		},
 	}, {})
 
-	__cb.call_deferred()
-
-func __cb():
 	if instance == null:
 		return
 
 	instance.error_happened.connect(__log)
-	instance.call_wasm("main", [])
+	instance.call_wasm(&"main", [])
 
 func __write(ptr: int, sz: int) -> void:
 	var buf: PackedByteArray = instance.memory_read(ptr, sz)
-	message_emitted.emit(buf.get_string_from_utf8())
+	__log(buf.get_string_from_utf8())
+
+func __log(msg: String) -> void:
+	call_thread_safe(&"emit_signal", &"message_emitted", msg)

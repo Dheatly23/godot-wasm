@@ -1,12 +1,22 @@
 extends Node
 
-signal message_emitted(msg)
+@warning_ignore("unused_signal")
+signal message_emitted(msg: String)
 
 @export var wasm_file: WasmModule
 
 var instance: WasmInstance = null
+var task_id = null
 
 func _ready():
+	task_id = WorkerThreadPool.add_task(__start)
+
+func _exit_tree() -> void:
+	if task_id != null:
+		WorkerThreadPool.wait_for_task_completion(task_id)
+		task_id = null
+
+func __start():
 	instance = wasm_file.instantiate({
 		"host": {
 			"recurse": {
@@ -22,9 +32,6 @@ func _ready():
 		},
 	}, {})
 
-	__cb.call_deferred()
-
-func __cb():
 	if instance == null:
 		return
 
@@ -48,4 +55,4 @@ func __recurse(n: int, a: int):
 	return r
 
 func __log(msg: String) -> void:
-	message_emitted.emit(msg)
+	call_thread_safe(&"emit_signal", &"message_emitted", msg)

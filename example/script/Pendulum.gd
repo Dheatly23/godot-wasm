@@ -1,5 +1,6 @@
 extends Node2D
 
+@warning_ignore("unused_signal")
 signal message_emitted(msg: String)
 
 const SCALE := 64.0
@@ -26,6 +27,8 @@ const SCALE := 64.0
 @export_range(0, 100, 0.01) var velocity2 := 0.0
 
 var instance: WasmInstance = null
+var acc_delta := 0.0
+var task_id = null
 
 @onready var shaft1 := $Shaft
 @onready var bulb1 := $Bulb
@@ -36,7 +39,7 @@ var instance: WasmInstance = null
 var _angle1 := 0.0
 var _angle2 := 0.0
 
-func _set_pendulum(
+func __set_pendulum(
 	shaft: Node2D,
 	bulb: Node2D,
 	length: float,
@@ -61,77 +64,35 @@ func _set_pendulum(
 
 	return t * Vector2(0, SCALE * length)
 
-func _update_pendulum() -> void:
-	var v := _set_pendulum(shaft1, bulb1, length1, mass1, _angle1)
+func __update_pendulum(a1: float, v1: float, a2: float, v2: float) -> void:
+	_angle1 = a1
+	velocity1 = v1
+	_angle2 = a2
+	velocity2 = v2
+
+	var v := __set_pendulum(shaft1, bulb1, length1, mass1, _angle1)
 	pendulum2.position = v
-	v = _set_pendulum(shaft2, bulb2, length2, mass2, _angle2)
+	v = __set_pendulum(shaft2, bulb2, length2, mass2, _angle2)
 
-# Instance threadpool version
-#func _ready():
-#	var f: WasmFile = load(wasm_file)
-#
-#	var module = f.get_module()
-#	if module == null:
-#		__log("Cannot compile module " + wasm_file)
-#		return
-#
-#	instance = InstanceHandle.new()
-#	instance.instantiate(
-#		module,
-#		{},
-#		{
-#			"epoch.enable": true,
-#			"epoch.timeout": 1,
-#		},
-#		self, "__log"
-#	)
-#
-#	instance.call_queue(
-#		"setup",
-#		[
-#			mass1,
-#			mass2,
-#			length1,
-#			length2,
-#			timestep,
-#			_angle1,
-#			velocity1,
-#			_angle2,
-#			velocity2,
-#		],
-#		null, "",
-#		self, "__log"
-#	)
-#
-#var queued := 0
-#
-#func _process(delta):
-#	if instance == null:
-#		return
-#
-#	if queued < 3:
-#		queued += 1
-#		instance.call_queue(
-#			"process", [delta],
-#			self, "__update",
-#			self, "__log"
-#		)
-#	else:
-#		printerr("WASM Call takes too long! Maybe a bug?")
-#
-#func __update(ret: Array) -> void:
-#	var p = ret[0]
-#	angle1 = instance.inst.get_double(p)
-#	velocity1 = instance.inst.get_double(p + 8)
-#	angle2 = instance.inst.get_double(p + 16)
-#	velocity2 = instance.inst.get_double(p + 24)
-#
-#	_update_pendulum()
-#
-#	queued -= 1
-
-# Non threadpool version
 func _ready():
+	task_id = WorkerThreadPool.add_task(__start)
+
+func _process(delta: float):
+	if instance == null:
+		return
+
+	acc_delta += delta
+	if task_id == null or WorkerThreadPool.is_task_completed(task_id):
+		WorkerThreadPool.wait_for_task_completion(task_id)
+		task_id = WorkerThreadPool.add_task(__update.bind(acc_delta))
+		acc_delta = 0.0
+
+func _exit_tree() -> void:
+	if task_id != null:
+		WorkerThreadPool.wait_for_task_completion(task_id)
+		task_id = null
+
+func __start():
 	instance = WasmInstance.new()
 	instance.error_happened.connect(__log)
 	instance = instance.initialize(
@@ -141,7 +102,7 @@ func _ready():
 				"log": {
 					params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
 					results = [],
-					callable = __log,
+					callable = __wasm_log,
 				},
 			},
 		},
@@ -151,26 +112,10 @@ func _ready():
 		},
 	)
 
-	__setup.call_deferred()
-
-func _process(delta):
 	if instance == null:
 		return
 
-	var ret: Array = instance.call_wasm("process", [delta])
-	var p = ret[0]
-	_angle1 = instance.get_double(p)
-	velocity1 = instance.get_double(p + 8)
-	_angle2 = instance.get_double(p + 16)
-	velocity2 = instance.get_double(p + 24)
-
-	_update_pendulum()
-
-func __setup():
-	if instance == null:
-		return
-
-	instance.call_wasm("setup", [
+	var ret = instance.call_wasm("setup", [
 		mass1,
 		mass2,
 		length1,
@@ -181,11 +126,28 @@ func __setup():
 		_angle2,
 		velocity2,
 	])
+	if ret == null:
+		instance = null
 
-func __emit_log(msg: String):
-	message_emitted.emit(msg.strip_edges())
+func __update(delta: float):
+	var ret = instance.call_wasm("process", [delta])
+	if ret == null:
+		instance = null
+		return
 
-func __log(p: int, n: int):
+	var p = ret[0]
+	call_thread_safe(
+		&"__update_pendulum",
+		instance.get_double(p),
+		instance.get_double(p + 8),
+		instance.get_double(p + 16),
+		instance.get_double(p + 24),
+	)
+
+func __log(msg: String) -> void:
+	call_thread_safe(&"emit_signal", &"message_emitted", msg)
+
+func __wasm_log(p: int, n: int):
 	var s = instance.memory_read(p, n).get_string_from_utf8()
 	print(s)
-	message_emitted.emit(s)
+	__log(s)

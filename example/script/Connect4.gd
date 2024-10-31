@@ -1,6 +1,7 @@
 extends Node2D
 
-signal message_emitted(msg)
+@warning_ignore("unused_signal")
+signal message_emitted(msg: String)
 
 enum TileState {
 	EMPTY = 0,
@@ -27,6 +28,7 @@ var turn: int = TileState.YELLOW
 var game_end: bool = false
 
 var robot_instance: WasmInstance = null
+var task_id = null
 
 func init_game() -> void:
 	state = []
@@ -38,22 +40,9 @@ func init_game() -> void:
 			state.append(TileState.EMPTY)
 			tiles.set_cell(0, Vector2i(x, y), 0, ATLAS_MAPPING[TileState.EMPTY])
 
-#	robot_instance = InstanceHandle.new()
-#	robot_instance.instantiate(
-#		module,
-#		{},
-#		{
-#			"epoch.enable": true,
-#			"epoch.timeout": 60,
-#		},
-#		self, "__log"
-#	)
-#	robot_instance.call_queue(
-#		"init", [WIDTH, HEIGHT],
-#		null, "",
-#		self, "__log"
-#	)
+	task_id = WorkerThreadPool.add_task(__start)
 
+func __start():
 	robot_instance = WasmInstance.new().initialize(
 		wasm_file,
 		{},
@@ -193,8 +182,9 @@ func robot_think(move: int):
 #	)
 
 	__log("Robot is thinking")
-
-	__robot_move(robot_instance.call_wasm("make_move", [move]))
+	if task_id != null:
+		WorkerThreadPool.wait_for_task_completion(task_id)
+	task_id = WorkerThreadPool.add_task(__robot_move.bind(move))
 
 func _ready():
 	tiles.position = -Vector2(TILE_SIZE * WIDTH, TILE_SIZE * HEIGHT) / 2
@@ -218,9 +208,15 @@ func _input(event):
 				do_move(x)
 				robot_think(x)
 
-func __log(msg: String) -> void:
-	message_emitted.emit(msg)
+func _exit_tree() -> void:
+	if task_id != null:
+		WorkerThreadPool.wait_for_task_completion(task_id)
+		task_id = null
 
-func __robot_move(res: Array) -> void:
-	if turn == TileState.RED and len(res) >= 1:
-		do_move(res[0])
+func __log(msg: String) -> void:
+	call_thread_safe(&"emit_signal", &"message_emitted", msg)
+
+func __robot_move(move: int) -> void:
+	var ret = robot_instance.call_wasm("make_move", [move])
+	if ret != null:
+		do_move.call_deferred(ret[0])
