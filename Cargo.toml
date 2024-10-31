@@ -39,6 +39,7 @@ git = "https://github.com/godot-rust/gdext"
 rev = "5e9b965b2dbf288f4660b3bf0ada220be1e7e8c6"
 features = [
   "experimental-threads",
+  "register-docs",
 ]
 
 [dependencies.wasmtime]
