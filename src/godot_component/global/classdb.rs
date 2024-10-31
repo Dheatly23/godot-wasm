@@ -230,7 +230,7 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         wrap_error(ClassDb::singleton().class_set_property(
             self.get_object::<Object>(object)?,
             self.get_value(name)?,
-            self.maybe_get_var(value)?,
+            &*self.maybe_get_var_borrow(value)?,
         ))
     }
 

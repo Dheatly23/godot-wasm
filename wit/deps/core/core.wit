@@ -1,7 +1,7 @@
 package godot:core@0.1.0;
 
 interface core {
-    type real = float32;
+    type real = f32;
     type int = s32;
 
     enum error {

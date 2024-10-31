@@ -1,4 +1,5 @@
-use colorgrad::{rd_yl_bu, Gradient};
+use colorgrad::preset::rd_yl_bu;
+use colorgrad::Gradient;
 
 use crate::Color;
 
@@ -19,10 +20,8 @@ const XMAX: f64 = 0.75;
 const YMIN: f64 = -1.25;
 const YMAX: f64 = 1.25;
 
-static mut CMAP: Option<Gradient> = None;
-
 fn map_color(v: f64) -> Color {
-    let c = unsafe { CMAP.get_or_insert_with(rd_yl_bu).reflect_at(v) };
+    let c = rd_yl_bu().reflect_at(v as _);
     Color {
         r: (c.r * 255.0) as _,
         g: (c.g * 255.0) as _,

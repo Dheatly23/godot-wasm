@@ -6,7 +6,7 @@ use wasmtime::component::{Linker, Resource as WasmResource};
 use wasmtime::Store;
 
 use crate::godot_component::filter::Filter;
-use crate::godot_component::{add_to_linker, GodotCtx};
+use crate::godot_component::{add_to_linker, bindgen, GodotCtx};
 use crate::godot_util::PhantomProperty;
 use crate::wasm_config::Config;
 use crate::wasm_engine::WasmModule;
@@ -16,22 +16,6 @@ use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::config_store_epoch;
 use crate::{bail_with_site, site_context};
-
-pub mod bindgen {
-    wasmtime::component::bindgen!({
-        path: "wit",
-        world: "godot-wasm:script/script",
-        tracing: false,
-        async: false,
-        ownership: Borrowing {
-            duplicate_if_necessary: false
-        },
-        trappable_imports: true,
-        with: {
-            "godot": crate::godot_component::bindgen::godot,
-        },
-    });
-}
 
 #[derive(Default)]
 struct ScriptConfig {

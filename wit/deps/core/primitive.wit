@@ -101,8 +101,8 @@ interface primitive {
     to-bool: func(var: borrow<godot-var>) -> bool;
     from-int: func(val: s64) -> godot-var;
     to-int: func(var: borrow<godot-var>) -> s64;
-    from-float: func(val: float64) -> godot-var;
-    to-float: func(var: borrow<godot-var>) -> float64;
+    from-float: func(val: f64) -> godot-var;
+    to-float: func(var: borrow<godot-var>) -> f64;
 
     from-vector2: func(val: vector2) -> godot-var;
     to-vector2: func(var: borrow<godot-var>) -> vector2;

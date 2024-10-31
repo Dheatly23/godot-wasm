@@ -63,7 +63,7 @@ interface int64-array {
 interface float32-array {
     use core.{godot-var};
 
-    type elem = float32;
+    type elem = f32;
 
     %from: func(val: list<elem>) -> godot-var;
     to: func(var: borrow<godot-var>) -> list<elem>;
@@ -83,7 +83,7 @@ interface float32-array {
 interface float64-array {
     use core.{godot-var};
 
-    type elem = float64;
+    type elem = f64;
 
     %from: func(val: list<elem>) -> godot-var;
     to: func(var: borrow<godot-var>) -> list<elem>;

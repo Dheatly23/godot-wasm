@@ -34,18 +34,18 @@ fn warn_vfs_deprecated() {
 #[class(base=RefCounted, init, tool)]
 pub struct WasiContext {
     base: Base<RefCounted>,
-    #[init(default = false)]
+    #[init(val = false)]
     #[export]
     bypass_stdio: bool,
-    #[init(default = false)]
+    #[init(val = false)]
     #[export]
     fs_readonly: bool,
 
-    //#[init(default = Arc::new(Dir::new(<Weak<Dir>>::new())))]
+    //#[init(val = Arc::new(Dir::new(<Weak<Dir>>::new())))]
     //memfs_root: Arc<Dir>,
-    #[init(default = HashMap::new())]
+    #[init(val = HashMap::new())]
     physical_mount: HashMap<Utf8PathBuf, Utf8PathBuf>,
-    #[init(default = HashMap::new())]
+    #[init(val = HashMap::new())]
     envs: HashMap<String, String>,
 }
 

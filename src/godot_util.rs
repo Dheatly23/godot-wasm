@@ -6,8 +6,8 @@ use std::ops::{Deref, DerefMut};
 
 use anyhow::Result as AnyResult;
 use godot::global::Error as GError;
+use godot::meta::PropertyHintInfo;
 use godot::prelude::*;
-use godot::register::property::PropertyHintInfo;
 
 /// WARNING: Incredibly unsafe.
 /// It's just used as workaround to pass Godot objects across closure.
@@ -100,8 +100,8 @@ where
 
     fn set_property(&mut self, _: Self::Via) {}
 
-    fn property_hint() -> PropertyHintInfo {
-        T::property_hint()
+    fn var_hint() -> PropertyHintInfo {
+        T::var_hint()
     }
 }
 

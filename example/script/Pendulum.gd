@@ -1,6 +1,6 @@
 extends Node2D
 
-signal message_emitted(msg)
+signal message_emitted(msg: String)
 
 const SCALE := 64.0
 
@@ -119,9 +119,6 @@ func _update_pendulum() -> void:
 #	else:
 #		printerr("WASM Call takes too long! Maybe a bug?")
 #
-#func __log(msg: String) -> void:
-#	emit_signal("message_emitted", msg)
-#
 #func __update(ret: Array) -> void:
 #	var p = ret[0]
 #	angle1 = instance.inst.get_double(p)
@@ -135,7 +132,24 @@ func _update_pendulum() -> void:
 
 # Non threadpool version
 func _ready():
-	instance = wasm_file.instantiate({}, {})
+	instance = WasmInstance.new()
+	instance.error_happened.connect(__log)
+	instance = instance.initialize(
+		wasm_file,
+		{
+			"host": {
+				"log": {
+					params = [WasmHelper.TYPE_I32, WasmHelper.TYPE_I32],
+					results = [],
+					callable = __log,
+				},
+			},
+		},
+		{
+			"epoch.enable": true,
+			"epoch.timeout": 1.0,
+		},
+	)
 
 	__setup.call_deferred()
 
@@ -167,3 +181,11 @@ func __setup():
 		_angle2,
 		velocity2,
 	])
+
+func __emit_log(msg: String):
+	message_emitted.emit(msg.strip_edges())
+
+func __log(p: int, n: int):
+	var s = instance.memory_read(p, n).get_string_from_utf8()
+	print(s)
+	message_emitted.emit(s)

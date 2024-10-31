@@ -101,6 +101,8 @@ impl FromGodot for BoolWrapper {
 }
 
 impl ToGodot for BoolWrapper {
+    type ToVia<'a> = bool;
+
     fn to_godot(&self) -> bool {
         self.0 != 0
     }

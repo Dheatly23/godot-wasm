@@ -156,7 +156,7 @@ impl crate::godot_component::bindgen::godot::core::array::Host
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, array, extend)?;
         let mut v: VariantArray = self.get_value(var)?;
-        v.extend_array(self.get_value(other)?);
+        v.extend_array(&self.get_value(other)?);
         Ok(())
     }
 

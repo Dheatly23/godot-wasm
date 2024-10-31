@@ -175,7 +175,7 @@ impl globalscope::Host for GodotCtx {
         b: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, bytes_to_var)?;
-        let v = bytes_to_var(self.get_value(b)?);
+        let v = bytes_to_var(&self.get_value(b)?);
         self.set_var(v)
     }
 
@@ -184,7 +184,7 @@ impl globalscope::Host for GodotCtx {
         b: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, bytes_to_var_with_objects)?;
-        let v = bytes_to_var_with_objects(self.get_value(b)?);
+        let v = bytes_to_var_with_objects(&self.get_value(b)?);
         self.set_var(v)
     }
 
@@ -193,7 +193,7 @@ impl globalscope::Host for GodotCtx {
         v: Option<WasmResource<Variant>>,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_bytes)?;
-        let b = var_to_bytes(self.maybe_get_var(v)?);
+        let b = var_to_bytes(&*self.maybe_get_var_borrow(v)?);
         self.set_into_var(b)
     }
 
@@ -202,13 +202,13 @@ impl globalscope::Host for GodotCtx {
         v: Option<WasmResource<Variant>>,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_bytes_with_objects)?;
-        let b = var_to_bytes_with_objects(self.maybe_get_var(v)?);
+        let b = var_to_bytes_with_objects(&*self.maybe_get_var_borrow(v)?);
         self.set_into_var(b)
     }
 
     fn var_to_str(&mut self, v: Option<WasmResource<Variant>>) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_str)?;
-        let s = var_to_str(self.maybe_get_var(v)?);
+        let s = var_to_str(&*self.maybe_get_var_borrow(v)?);
         self.set_into_var(s)
     }
 
@@ -220,23 +220,31 @@ impl globalscope::Host for GodotCtx {
 
     fn weakref(&mut self, v: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, weakref)?;
-        let v = weakref(self.get_var(v)?);
+        let v = weakref(&*self.get_var_borrow(v)?);
         self.set_var(v)
     }
 
     fn is_instance_valid(&mut self, v: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, is_instance_valid)?;
-        Ok(is_instance_valid(self.get_var(v)?))
+        let v = self.get_var_borrow(v)?;
+        Ok(if v.get_type() == VariantType::OBJECT {
+            v.to::<Gd<Object>>().is_instance_valid()
+        } else {
+            true
+        })
     }
 
     fn is_instance_id_valid(&mut self, id: u64) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, is_instance_id_valid)?;
-        Ok(is_instance_id_valid(id as _))
+        match InstanceId::try_from_godot(id as _) {
+            Ok(v) => Ok(v.lookup_validity()),
+            Err(e) => Err(e.into_erased().into()),
+        }
     }
 
     fn is_same(&mut self, a: WasmResource<Variant>, b: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, is_same)?;
-        Ok(is_same(self.get_var(a)?, self.get_var(b)?))
+        Ok(is_same(&self.get_var(a)?, &self.get_var(b)?))
     }
 
     fn type_convert(
@@ -245,7 +253,6 @@ impl globalscope::Host for GodotCtx {
         t: CompVarType,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, type_convert)?;
-        let v = self.get_var(v)?;
         let t = match t {
             CompVarType::Bool => VariantType::BOOL,
             CompVarType::Int => VariantType::INT,
@@ -285,7 +292,7 @@ impl globalscope::Host for GodotCtx {
             CompVarType::Vector3Array => VariantType::PACKED_VECTOR3_ARRAY,
             CompVarType::ColorArray => VariantType::PACKED_COLOR_ARRAY,
         };
-        let r = type_convert(v, t.ord().into());
+        let r = type_convert(&*self.get_var_borrow(v)?, t.ord().into());
         assert!(!r.is_nil(), "Value should be nonnull");
         self.set_var(r).map(|v| v.unwrap())
     }

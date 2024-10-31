@@ -125,11 +125,6 @@ pub mod bindgen {
 
     wasmtime::component::bindgen!({
         path: "wit",
-        interfaces: "
-            include godot:core/imports@0.1.0;
-            include godot:reflection/imports@0.1.0;
-            include godot:global/imports@0.1.0;
-        ",
         tracing: false,
         async: false,
         ownership: Borrowing {

@@ -24,7 +24,7 @@ func_registry! {
     has_all => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>, ka: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let d = site_context!(from_var_any::<Dictionary>(&externref_to_variant(&ctx, d)?))?;
         let ka = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, ka)?))?;
-        Ok(d.contains_all_keys(ka) as _)
+        Ok(d.contains_all_keys(&ka) as _)
     },
     get => |ctx: Caller<'_, _>, d: Option<Rooted<ExternRef>>, k: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let d = site_context!(from_var_any::<Dictionary>(&externref_to_variant(&ctx, d)?))?;

@@ -54,7 +54,7 @@ func_registry! {
             }
         }
 
-        match catch_unwind(AssertUnwindSafe(|| c.callv(v))) {
+        match catch_unwind(AssertUnwindSafe(|| c.callv(&v))) {
             Ok(v) => variant_to_externref(ctx, v),
             Err(_) => bail_with_site!("Error binding object"),
         }
@@ -63,7 +63,7 @@ func_registry! {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
         let a = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, args)?))?;
 
-        match catch_unwind(AssertUnwindSafe(|| v.callv(a))) {
+        match catch_unwind(AssertUnwindSafe(|| v.callv(&a))) {
             Ok(v) => variant_to_externref(ctx, v),
             Err(_) => bail_with_site!("Error binding object"),
         }
@@ -72,6 +72,6 @@ func_registry! {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
         let a = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, args)?))?;
 
-        variant_to_externref(ctx, v.bindv(a).to_variant())
+        variant_to_externref(ctx, v.bindv(&a).to_variant())
     },
 }

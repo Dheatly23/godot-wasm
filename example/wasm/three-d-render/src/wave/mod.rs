@@ -1,4 +1,5 @@
-use colorgrad::{turbo, Gradient};
+use colorgrad::preset::turbo;
+use colorgrad::Gradient;
 
 use crate::Color;
 
@@ -19,13 +20,10 @@ const SPEED_SCALE: f32 = TIME_SCALE * 16.0;
 const SPACE_SCALE: f32 = 5.0;
 const MAX_REP: usize = 256;
 
-static mut CMAP: Option<Gradient> = None;
-
-fn map_color(v: f32) -> Color {
-    let mut v = v as f64;
-    v /= SPACE_SCALE as f64;
+fn map_color(mut v: f32) -> Color {
+    v /= SPACE_SCALE;
     v = v * 0.5 + 0.5;
-    let c = unsafe { CMAP.get_or_insert_with(turbo).at(v) };
+    let c = turbo().at(v);
     Color {
         r: c.r as _,
         g: c.g as _,

@@ -407,7 +407,7 @@ where
                     }
                     .try_call(method.clone(), &p)
                 }
-                CallableEnum::Callable(c) => Ok(c.callv(p.into_iter().collect())),
+                CallableEnum::Callable(c) => Ok(c.callv(&p.into_iter().collect())),
             })
         })?;
 

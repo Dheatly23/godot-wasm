@@ -226,7 +226,9 @@ impl FromGodot for ExternBindingType {
 }
 
 impl ToGodot for ExternBindingType {
-    fn to_godot(&self) -> Self::Via {
+    type ToVia<'a> = Self::Via;
+
+    fn to_godot(&self) -> Self::ToVia<'_> {
         match self {
             Self::None => "none",
             #[cfg(feature = "object-registry-compat")]
@@ -275,7 +277,9 @@ impl FromGodot for PipeBindingType {
 
 #[cfg(feature = "wasi")]
 impl ToGodot for PipeBindingType {
-    fn to_godot(&self) -> Self::Via {
+    type ToVia<'a> = Self::Via;
+
+    fn to_godot(&self) -> Self::ToVia<'_> {
         match self {
             Self::Unbound => "unbound",
             Self::Instance => "instance",
@@ -322,7 +326,9 @@ impl FromGodot for PipeBufferType {
 
 #[cfg(feature = "wasi")]
 impl ToGodot for PipeBufferType {
-    fn to_godot(&self) -> Self::Via {
+    type ToVia<'a> = Self::Via;
+
+    fn to_godot(&self) -> Self::ToVia<'_> {
         match self {
             Self::Unbuffered => "unbuffered",
             Self::LineBuffer => "line",

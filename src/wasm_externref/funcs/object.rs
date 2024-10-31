@@ -80,7 +80,7 @@ func_registry! {
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
         let args = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, args)?))?;
 
-        variant_to_externref(ctx, obj.callv(name, args))
+        variant_to_externref(ctx, obj.callv(name, &args))
     },
     get => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
@@ -93,7 +93,7 @@ func_registry! {
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
         let value = externref_to_variant(&ctx, value)?;
 
-        obj.set(name, value);
+        obj.set(name, &value);
         Ok(1)
     },
     set_deferred => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, value: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
@@ -101,7 +101,7 @@ func_registry! {
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
         let value = externref_to_variant(&ctx, value)?;
 
-        obj.set_deferred(name, value);
+        obj.set_deferred(name, &value);
         Ok(1)
     },
     get_indexed => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, path: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
@@ -115,7 +115,7 @@ func_registry! {
         let path = site_context!(from_var_any::<NodePath>(&externref_to_variant(&ctx, path)?))?;
         let value = externref_to_variant(&ctx, value)?;
 
-        obj.set_indexed(path, value);
+        obj.set_indexed(path, &value);
         Ok(1)
     },
     connect => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, signal: Option<Rooted<ExternRef>>, target: Option<Rooted<ExternRef>>, flags: u32| -> AnyResult<()> {

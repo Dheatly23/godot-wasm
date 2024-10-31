@@ -143,7 +143,7 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         let mut o: Gd<Object> = self.get_value(var)?;
         let name: StringName = self.get_value(name)?;
         let args: VariantArray = self.get_value(args)?;
-        self.set_var(o.callv(name, args))
+        self.set_var(o.callv(name, &args))
     }
 
     fn call_deferred(
@@ -236,7 +236,7 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, set)?;
         let mut o: Gd<Object> = self.get_value(var)?;
-        o.set(self.get_value(name)?, self.maybe_get_var(val)?);
+        o.set(self.get_value(name)?, &*self.maybe_get_var_borrow(val)?);
         Ok(())
     }
 
@@ -248,7 +248,7 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, set_deferred)?;
         let mut o: Gd<Object> = self.get_value(var)?;
-        o.set_deferred(self.get_value(name)?, self.maybe_get_var(val)?);
+        o.set_deferred(self.get_value(name)?, &*self.maybe_get_var_borrow(val)?);
         Ok(())
     }
 
@@ -271,7 +271,7 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, set_indexed)?;
         let mut o: Gd<Object> = self.get_value(var)?;
-        o.set_indexed(self.get_value(name)?, self.maybe_get_var(val)?);
+        o.set_indexed(self.get_value(name)?, &*self.maybe_get_var_borrow(val)?);
         Ok(())
     }
 

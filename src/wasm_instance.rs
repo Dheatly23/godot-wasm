@@ -260,7 +260,7 @@ impl Default for StoreData {
     }
 }
 
-#[allow(dead_code)]
+#[allow(dead_code, clippy::large_enum_variant)]
 pub enum MaybeWasi {
     NoCtx,
     #[cfg(feature = "wasi")]
@@ -343,7 +343,12 @@ impl ResourceLimiter for MemoryLimit {
         }
     }
 
-    fn table_growing(&mut self, current: u32, desired: u32, max: Option<u32>) -> AnyResult<bool> {
+    fn table_growing(
+        &mut self,
+        current: usize,
+        desired: usize,
+        max: Option<usize>,
+    ) -> AnyResult<bool> {
         if max.map_or(false, |max| desired > max) {
             return Ok(false);
         } else if self.max_table_entries == u64::MAX {

@@ -11,8 +11,8 @@ crate-type = ["cdylib"]
 
 [dependencies]
 cfg-if = "1"
-glam = "^0.24"
-colorgrad = { version = "^0.6", default-features = false }
+glam = "^0.28"
+colorgrad = { version = "^0.7", default-features = false, features = ["preset"] }
 
 rand_xoshiro = "^0.6"
 rand = { version = "^0.8", default-features = false }

@@ -72,7 +72,7 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
             .into_iter()
             .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<VariantArray>>()?;
-        self.set_var(v.callv(args))
+        self.set_var(v.callv(&args))
     }
 
     fn callv(
@@ -83,7 +83,7 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         filter_macro!(filter self.filter.as_ref(), godot_core, callable, callv)?;
         let v: Callable = self.get_value(var)?;
         let args: VariantArray = self.get_value(args)?;
-        self.set_var(v.callv(args))
+        self.set_var(v.callv(&args))
     }
 
     fn bind(
@@ -97,7 +97,7 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
             .into_iter()
             .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<VariantArray>>()?;
-        self.set_into_var(v.bindv(args))
+        self.set_into_var(v.bindv(&args))
     }
 
     fn bindv(
@@ -108,6 +108,6 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         filter_macro!(filter self.filter.as_ref(), godot_core, callable, bindv)?;
         let v: Callable = self.get_value(var)?;
         let args: VariantArray = self.get_value(args)?;
-        self.set_into_var(v.bindv(args))
+        self.set_into_var(v.bindv(&args))
     }
 }

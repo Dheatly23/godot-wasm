@@ -29,7 +29,7 @@ func_registry! {
         let reg = ctx.data().as_ref().get_registry()?;
         let v = site_context!(from_var_any::<Dictionary>(&reg.get_or_nil(i as _)))?;
         let ka = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(ka as _)))?;
-        Ok(v.contains_all_keys(ka) as _)
+        Ok(v.contains_all_keys(&ka) as _)
     },
     get => |mut ctx: Caller<'_, T>, i: u32, k: u32| -> Result<u32, Error> {
         let reg = ctx.data_mut().as_mut().get_registry_mut()?;

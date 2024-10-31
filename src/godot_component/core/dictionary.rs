@@ -108,7 +108,7 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, has_all)?;
         Ok(self
             .get_value::<Dictionary>(var)?
-            .contains_all_keys(self.get_value(key)?))
+            .contains_all_keys(&self.get_value(key)?))
     }
 
     fn insert(
@@ -146,7 +146,7 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, extend)?;
         let mut v: Dictionary = self.get_value(var)?;
-        v.extend_dictionary(self.get_value(other)?, overwrite);
+        v.extend_dictionary(&self.get_value(other)?, overwrite);
         Ok(())
     }
 
