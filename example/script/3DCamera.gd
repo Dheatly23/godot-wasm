@@ -11,22 +11,16 @@ var ry := PI / -4
 func _process(delta: float):
 	delta *= SPEED
 
-	var up_pressed := Input.get_action_strength("camera_up") >= 0.1
-	var down_pressed := Input.get_action_strength("camera_down") >= 0.1
-	var left_pressed := Input.get_action_strength("camera_left") >= 0.1
-	var right_pressed := Input.get_action_strength("camera_right") >= 0.1
-	var sprint_pressed := Input.get_action_strength("camera_sprint") >= 0.1
-
-	if sprint_pressed:
+	if Input.is_action_pressed("camera_sprint"):
 		delta *= 4
-	if up_pressed and not down_pressed:
-		ry = clamp(ry - delta, -PI_2, PI_2)
-	elif not up_pressed and down_pressed:
-		ry = clamp(ry + delta, -PI_2, PI_2)
-	if left_pressed and not right_pressed:
-		rx = wrapf(rx - delta, -PI, PI)
-	elif not left_pressed and right_pressed:
-		rx = wrapf(rx + delta, -PI, PI)
+	ry = clamp(
+		ry + delta * (Input.get_action_strength("camera_down") - Input.get_action_strength("camera_up")),
+		-PI_2, PI_2,
+	)
+	rx = wrapf(
+		rx + delta * (Input.get_action_strength("camera_right") - Input.get_action_strength("camera_left")),
+		-PI, PI,
+	)
 
 	var q := Quaternion.from_euler(Vector3(ry, rx, 0))
 	var v := q * (Vector3.BACK * dist)
