@@ -697,7 +697,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "camino",
- "cap-std",
  "cfg-if",
  "godot",
  "memchr",
