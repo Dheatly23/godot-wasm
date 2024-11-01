@@ -1,24 +1,24 @@
 [configuration]
 
 entry_symbol = "gdext_rust_init"
-compatibility_minimum = 4.2
+compatibility_minimum = 4.3
 reloadable = false
 
 [libraries]
 
-windows.debug.x86_32 = "res://addons/godot_wasm/bin/godot_wasm.debug.i686-pc-windows-msvc.dll"
-windows.release.x86_32 = "res://addons/godot_wasm/bin/godot_wasm.release.i686-pc-windows-msvc.dll"
-windows.debug.x86_64 = "res://addons/godot_wasm/bin/godot_wasm.debug.x86_64-pc-windows-msvc.dll"
-windows.release.x86_64 = "res://addons/godot_wasm/bin/godot_wasm.release.x86_64-pc-windows-msvc.dll"
-linux.debug.x86_32 = "res://addons/godot_wasm/bin/libgodot_wasm.debug.i686-unknown-linux-gnu.so"
-linux.release.x86_32 = "res://addons/godot_wasm/bin/libgodot_wasm.release.i686-unknown-linux-gnu.so"
-linux.debug.x86_64 = "res://addons/godot_wasm/bin/libgodot_wasm.debug.x86_64-unknown-linux-gnu.so"
-linux.release.x86_64 = "res://addons/godot_wasm/bin/libgodot_wasm.release.x86_64-unknown-linux-gnu.so"
-linux.debug.arm64 = "res://addons/godot_wasm/bin/libgodot_wasm.debug.aarch64-unknown-linux-gnu.so"
-linux.release.arm64 = "res://addons/godot_wasm/bin/libgodot_wasm.release.aarch64-unknown-linux-gnu.so"
-linux.debug.rv64 = "res://addons/godot_wasm/bin/libgodot_wasm.debug.riscv64gc-unknown-linux-gnu.so"
-linux.release.rv64 = "res://addons/godot_wasm/bin/libgodot_wasm.release.riscv64gc-unknown-linux-gnu.so"
-macos.debug.x86_64 = "res://addons/godot_wasm/bin/libgodot_wasm.debug.x86_64-apple-darwin.dylib"
-macos.release.x86_64 = "res://addons/godot_wasm/bin/libgodot_wasm.release.x86_64-apple-darwin.dylib"
-macos.debug.arm64 = "res://addons/godot_wasm/bin/libgodot_wasm.debug.aarch64-apple-darwin.dylib"
-macos.release.arm64 = "res://addons/godot_wasm/bin/libgodot_wasm.release.aarch64-apple-darwin.dylib"
+windows.debug.x86_32 = "res://addons/godot_wasm/bin/i686-pc-windows-msvc/godot_wasm.dll"
+windows.release.x86_32 = "res://addons/godot_wasm/bin/i686-pc-windows-msvc/godot_wasm.dll"
+windows.debug.x86_64 = "res://addons/godot_wasm/bin/x86_64-pc-windows-msvc/godot_wasm.dll"
+windows.release.x86_64 = "res://addons/godot_wasm/bin/x86_64-pc-windows-msvc/godot_wasm.dll"
+linux.debug.x86_32 = "res://addons/godot_wasm/bin/i686-unknown-linux-gnu/libgodot_wasm.so"
+linux.release.x86_32 = "res://addons/godot_wasm/bin/i686-unknown-linux-gnu/libgodot_wasm.so"
+linux.debug.x86_64 = "res://addons/godot_wasm/bin/x86_64-unknown-linux-gnu/libgodot_wasm.so"
+linux.release.x86_64 = "res://addons/godot_wasm/bin/x86_64-unknown-linux-gnu/libgodot_wasm.so"
+linux.debug.arm64 = "res://addons/godot_wasm/bin/aarch64-unknown-linux-gnu/libgodot_wasm.so"
+linux.release.arm64 = "res://addons/godot_wasm/bin/aarch64-unknown-linux-gnu/libgodot_wasm.so"
+linux.debug.rv64 = "res://addons/godot_wasm/bin/riscv64gc-unknown-linux-gnu/libgodot_wasm.so"
+linux.release.rv64 = "res://addons/godot_wasm/bin/riscv64gc-unknown-linux-gnu/libgodot_wasm.so"
+macos.debug.x86_64 = "res://addons/godot_wasm/bin/x86_64-apple-darwin/libgodot_wasm.dylib"
+macos.release.x86_64 = "res://addons/godot_wasm/bin/x86_64-apple-darwin/libgodot_wasm.dylib"
+macos.debug.arm64 = "res://addons/godot_wasm/bin/aarch64-apple-darwin/libgodot_wasm.dylib"
+macos.release.arm64 = "res://addons/godot_wasm/bin/aarch64-apple-darwin/libgodot_wasm.dylib"

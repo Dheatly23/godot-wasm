@@ -53,21 +53,19 @@ clippy *args:
 # Deploy executable to addon
 [group('Deploy')]
 deploy-addon: (build "godot-wasm" target_triple features extra_args)
-  @ls "{{target_path}}" \
+  @const target_dir = "{{addon_path / "bin" / target_triple}}"; \
+  ls "{{target_path}}" \
   | select name size \
   | rename from \
   | insert file { get from | path basename } \
-  | where file =~ "^(lib)?godot_wasm\\.(dll|dylib|so)$" \
+  | where file =~ "^(lib)?godot_wasm\\.(dll|pdb|dylib|so)$" \
   | insert to { \
     get file \
-    | split row -n 2 "." \
-    | insert 1 "{{target_triple}}" \
-    | insert 1 "{{target_profile}}" \
-    | str join "." \
-    | path dirname -r "{{addon_path / "bin"}}" \
+    | path dirname -r $target_dir \
   } \
   | each {|f| \
     print $"Copy from: ($f.from)" $"Copy to: ($f.to)" $"Size: ($f.size)"; \
+    mkdir $target_dir; \
     cp $f.from $f.to \
   } | ignore
 
