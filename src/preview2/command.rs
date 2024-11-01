@@ -231,7 +231,7 @@ impl WasiCommand {
                 );
                 */
                 godot_error!("{s}");
-                self.base().clone().emit_signal(
+                self.to_gd().emit_signal(
                     StringName::from(c"error_happened"),
                     &[GString::from(s).to_variant()],
                 );
@@ -260,7 +260,7 @@ impl WasiCommand {
             Err(e) => {
                 let s = format!("{e:?}");
                 godot_error!("{s}");
-                self.base().clone().emit_signal(
+                self.to_gd().emit_signal(
                     StringName::from(c"error_happened"),
                     &[GString::from(s).to_variant()],
                 );

@@ -50,32 +50,14 @@ pub struct WasiContext {
 }
 
 impl WasiContext {
-    fn emit_binary(
-        base: Gd<RefCounted>,
-        signal_name: &'static str,
-    ) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
-        let base = SendSyncWrapper::new(base);
-        let signal_name = SendSyncWrapper::new(StringName::from(signal_name));
-        move |buf| {
-            base.clone().emit_signal(
-                (*signal_name).clone(),
-                &[PackedByteArray::from(buf).to_variant()],
-            );
-        }
+    pub fn emit_binary(signal: Signal) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
+        let signal = SendSyncWrapper::new(signal);
+        move |buf| signal.emit(&[PackedByteArray::from(buf).to_variant()])
     }
 
-    fn emit_string(
-        base: Gd<RefCounted>,
-        signal_name: &'static str,
-    ) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
-        let base = SendSyncWrapper::new(base);
-        let signal_name = SendSyncWrapper::new(StringName::from(signal_name));
-        move |buf| {
-            base.clone().emit_signal(
-                (*signal_name).clone(),
-                &[gstring_from_maybe_utf8(buf).to_variant()],
-            );
-        }
+    pub fn emit_string(signal: Signal) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
+        let signal = SendSyncWrapper::new(signal);
+        move |buf| signal.emit(&[gstring_from_maybe_utf8(buf).to_variant()])
     }
 
     /*
@@ -253,16 +235,16 @@ impl WasiContext {
             if o.bypass_stdio {
                 ctx.inherit_stdout();
             } else {
-                let base = (*o.base()).clone();
+                let signal = Signal::from_object_signal(&this, c"stdout_emit");
                 match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => ctx.stdout(UnbufferedWritePipe::new(
-                        Self::emit_binary(base, "stdout_emit"),
-                    )),
+                    PipeBufferType::Unbuffered => {
+                        ctx.stdout(UnbufferedWritePipe::new(Self::emit_binary(signal)))
+                    }
                     PipeBufferType::LineBuffer => ctx.stdout(StreamWrapper::from(
-                        LineWritePipe::new(Self::emit_string(base, "stdout_emit")),
+                        LineWritePipe::new(Self::emit_string(signal)),
                     )),
                     PipeBufferType::BlockBuffer => ctx.stdout(StreamWrapper::from(
-                        BlockWritePipe::new(Self::emit_binary(base, "stdout_emit")),
+                        BlockWritePipe::new(Self::emit_binary(signal)),
                     )),
                 };
             }
@@ -271,16 +253,16 @@ impl WasiContext {
             if o.bypass_stdio {
                 ctx.inherit_stderr();
             } else {
-                let base = (*o.base()).clone();
+                let signal = Signal::from_object_signal(&this, c"stderr_emit");
                 match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => ctx.stderr(UnbufferedWritePipe::new(
-                        Self::emit_binary(base, "stderr_emit"),
-                    )),
+                    PipeBufferType::Unbuffered => {
+                        ctx.stderr(UnbufferedWritePipe::new(Self::emit_binary(signal)))
+                    }
                     PipeBufferType::LineBuffer => ctx.stderr(StreamWrapper::from(
-                        LineWritePipe::new(Self::emit_string(base, "stderr_emit")),
+                        LineWritePipe::new(Self::emit_string(signal)),
                     )),
                     PipeBufferType::BlockBuffer => ctx.stderr(StreamWrapper::from(
-                        BlockWritePipe::new(Self::emit_binary(base, "stderr_emit")),
+                        BlockWritePipe::new(Self::emit_binary(signal)),
                     )),
                 };
             }

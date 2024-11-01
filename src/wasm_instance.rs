@@ -33,8 +33,6 @@ use wasmtime_wasi::preview1::{add_to_linker_sync, WasiP1Ctx};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
-#[cfg(feature = "wasi")]
-use crate::godot_util::gstring_from_maybe_utf8;
 use crate::godot_util::{
     option_to_variant, variant_to_option, PackedArrayLike, PhantomProperty, SendSyncWrapper,
     StructPacking,
@@ -383,8 +381,8 @@ impl<T> InstanceData<T>
 where
     T: Send + AsRef<StoreData> + AsMut<StoreData>,
 {
-    pub fn instantiate(
-        _inst_id: InstanceId,
+    pub fn instantiate<C: GodotClass>(
+        obj: &Gd<C>,
         mut store: Store<T>,
         config: &Config,
         module: Gd<WasmModule>,
@@ -405,68 +403,39 @@ where
                 if let Some(data) = config.wasi_stdin_data.clone() {
                     builder.stdin(StreamWrapper::from(ByteBufferReadPipe::new(data)));
                 } else {
-                    let (outer, inner) = OuterStdin::new(move || {
-                        <Gd<RefCounted>>::from_instance_id(_inst_id)
-                            .emit_signal(StringName::from(c"stdin_request"), &[]);
-                    });
+                    let signal =
+                        SendSyncWrapper::new(Signal::from_object_signal(&obj, c"stdin_request"));
+                    let (outer, inner) = OuterStdin::new(move || signal.emit(&[]));
                     builder.stdin(outer);
                     wasi_stdin = Some(inner as _);
                 }
             }
             if config.wasi_stdout == PipeBindingType::Instance {
+                let signal = Signal::from_object_signal(&obj, c"stdout_emit");
                 match config.wasi_stdout_buffer {
                     PipeBufferType::Unbuffered => {
-                        builder.stdout(UnbufferedWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
-                                StringName::from(c"stdout_emit"),
-                                &[PackedByteArray::from(buf).to_variant()],
-                            );
-                        }))
+                        builder.stdout(UnbufferedWritePipe::new(WasiContext::emit_binary(signal)))
                     }
-                    PipeBufferType::LineBuffer => {
-                        builder.stdout(StreamWrapper::from(LineWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
-                                StringName::from(c"stdout_emit"),
-                                &[gstring_from_maybe_utf8(buf).to_variant()],
-                            );
-                        })))
-                    }
-                    PipeBufferType::BlockBuffer => {
-                        builder.stdout(StreamWrapper::from(BlockWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
-                                StringName::from(c"stdout_emit"),
-                                &[gstring_from_maybe_utf8(buf).to_variant()],
-                            );
-                        })))
-                    }
+                    PipeBufferType::LineBuffer => builder.stdout(StreamWrapper::from(
+                        LineWritePipe::new(WasiContext::emit_string(signal)),
+                    )),
+                    PipeBufferType::BlockBuffer => builder.stdout(StreamWrapper::from(
+                        BlockWritePipe::new(WasiContext::emit_string(signal)),
+                    )),
                 };
             }
             if config.wasi_stderr == PipeBindingType::Instance {
+                let signal = Signal::from_object_signal(&obj, c"stderr_emit");
                 match config.wasi_stderr_buffer {
                     PipeBufferType::Unbuffered => {
-                        builder.stderr(UnbufferedWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
-                                StringName::from(c"stderr_emit"),
-                                &[PackedByteArray::from(buf).to_variant()],
-                            );
-                        }))
+                        builder.stderr(UnbufferedWritePipe::new(WasiContext::emit_binary(signal)))
                     }
-                    PipeBufferType::LineBuffer => {
-                        builder.stderr(StreamWrapper::from(LineWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
-                                StringName::from(c"stderr_emit"),
-                                &[gstring_from_maybe_utf8(buf).to_variant()],
-                            );
-                        })))
-                    }
-                    PipeBufferType::BlockBuffer => {
-                        builder.stderr(StreamWrapper::from(BlockWritePipe::new(move |buf| {
-                            <Gd<RefCounted>>::from_instance_id(_inst_id).emit_signal(
-                                StringName::from(c"stderr_emit"),
-                                &[gstring_from_maybe_utf8(buf).to_variant()],
-                            );
-                        })))
-                    }
+                    PipeBufferType::LineBuffer => builder.stderr(StreamWrapper::from(
+                        LineWritePipe::new(WasiContext::emit_string(signal)),
+                    )),
+                    PipeBufferType::BlockBuffer => builder.stderr(StreamWrapper::from(
+                        BlockWritePipe::new(WasiContext::emit_string(signal)),
+                    )),
                 };
             }
 
@@ -660,11 +629,10 @@ impl StoreData {
 
 impl WasmInstance {
     fn emit_error_wrapper(&self, msg: String) {
-        let args = [GString::from(msg).to_variant()];
-
-        self.base()
-            .clone()
-            .emit_signal(StringName::from(c"error_happened"), &args);
+        self.to_gd().emit_signal(
+            StringName::from(c"error_happened"),
+            &[GString::from(msg).to_variant()],
+        );
     }
 
     pub fn get_data(&self) -> AnyResult<&InstanceData<StoreData>> {
@@ -706,7 +674,7 @@ impl WasmInstance {
     ) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let mut ret = InstanceData::instantiate(
-                self.base().instance_id(),
+                &self.to_gd(),
                 Store::new(&site_context!(get_engine())?, StoreData::default()),
                 &match config {
                     Some(v) => match Config::try_from_variant(&v) {
