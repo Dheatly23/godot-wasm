@@ -58,6 +58,19 @@ or [cross](https://crates.io/crates/cross) (Linux), but result may vary.
 It's recommended to **not** use `just`,
 instead directly run `cargo build` with the correct arguments.
 
+### Platform Support
+Officially, it should work for Windows and Linux on x86 (32 and 64-bit) architecture.
+Other platforms aren't tested and might not work.
+
+Platforms that are listed in `.gdextension` file is as follow:
+* Windows: x86_32, x86_64, ARM64.
+* Linux: x86_32, x86_64, ARM64, RV64.
+* MacOS: x86_64, ARM64.
+
+Web platform is and will not be supported.
+Even if it is, it's API will likely be different,
+and many features (like limiter) will not work.
+
 ## Using the Library
 After adding it to your Godot project, there are many classes added by the library:
 * `WasmModule` : Contains the compiled WebAssembly module.
