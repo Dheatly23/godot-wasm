@@ -722,16 +722,17 @@ impl WasmInstance {
         for<'a> F: FnOnce(&'a mut [u8]) -> AnyResult<R>,
     {
         self.unwrap_data(|m| {
-            m.acquire_store(|_, store| match &self.memory {
-                Some(MemoryType::Memory(mem)) => f(mem.data_mut(store)),
-                #[cfg(feature = "wasm-threads")]
-                Some(MemoryType::SharedMemory(mem)) => {
+            m.acquire_store(|_, store| {
+                f(match &self.memory {
+                    Some(MemoryType::Memory(mem)) => mem.data_mut(store),
+                    #[cfg(feature = "wasm-threads")]
                     // SAFETY: Externalize concurrent access to user
                     #[allow(mutable_transmutes)]
-                    let s = unsafe { mem::transmute::<&[UnsafeCell<u8>], &mut [u8]>(mem.data()) };
-                    f(s)
-                }
-                None => bail_with_site!("No memory exported"),
+                    Some(MemoryType::SharedMemory(mem)) => unsafe {
+                        mem::transmute::<&[UnsafeCell<u8>], &mut [u8]>(mem.data())
+                    },
+                    None => bail_with_site!("No memory exported"),
+                })
             })
         })
     }
