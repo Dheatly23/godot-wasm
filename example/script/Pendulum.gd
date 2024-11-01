@@ -40,12 +40,13 @@ var _angle1 := 0.0
 var _angle2 := 0.0
 
 func __set_pendulum(
-	shaft: Node2D,
-	bulb: Node2D,
 	length: float,
 	weight: float,
-	angle: float
-) -> Vector2:
+	angle: float,
+	shaft: Node2D,
+	bulb: Node2D,
+	child: Node2D = null,
+) -> void:
 	var s := sin(angle)
 	var c := cos(angle)
 	var t := Transform2D(Vector2(c, -s), Vector2(s, c), Vector2.ZERO)
@@ -62,7 +63,8 @@ func __set_pendulum(
 		Vector2(0, SCALE * length)
 	)
 
-	return t * Vector2(0, SCALE * length)
+	if child != null:
+		child.position = t * Vector2(0, SCALE * length)
 
 func __update_pendulum(a1: float, v1: float, a2: float, v2: float) -> void:
 	_angle1 = a1
@@ -70,9 +72,8 @@ func __update_pendulum(a1: float, v1: float, a2: float, v2: float) -> void:
 	_angle2 = a2
 	velocity2 = v2
 
-	var v := __set_pendulum(shaft1, bulb1, length1, mass1, _angle1)
-	pendulum2.position = v
-	v = __set_pendulum(shaft2, bulb2, length2, mass2, _angle2)
+	__set_pendulum(length1, mass1, _angle1, shaft1, bulb1, pendulum2)
+	__set_pendulum(length2, mass2, _angle2, shaft2, bulb2)
 
 func _ready():
 	task_id = WorkerThreadPool.add_task(__start)
