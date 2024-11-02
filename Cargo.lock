@@ -698,6 +698,7 @@ dependencies = [
  "bytes",
  "camino",
  "cfg-if",
+ "either",
  "godot",
  "memchr",
  "nom",

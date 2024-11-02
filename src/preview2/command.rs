@@ -1,4 +1,6 @@
 use anyhow::Error;
+use cfg_if::cfg_if;
+use either::{Either, Left, Right};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -84,8 +86,6 @@ pub struct CommandData {
 }
 
 pub struct StoreData {
-    inner_lock: InnerLock,
-
     #[cfg(feature = "epoch-timeout")]
     epoch_timeout: u64,
 
@@ -94,19 +94,39 @@ pub struct StoreData {
 
     table: ResourceTable,
     wasi_ctx: WasiCtx,
+    #[cfg(not(feature = "godot-component"))]
+    inner_lock: InnerLock,
     #[cfg(feature = "godot-component")]
-    godot_ctx: Option<GodotCtx>,
+    godot_ctx: Either<InnerLock, GodotCtx>,
 }
 
 impl AsRef<InnerLock> for StoreData {
     fn as_ref(&self) -> &InnerLock {
-        &self.inner_lock
+        cfg_if! {
+            if #[cfg(feature = "godot-component")] {
+                match &self.godot_ctx {
+                    Left(v) => v,
+                    Right(v) => v.as_ref(),
+                }
+            } else {
+                &self.inner_lock
+            }
+        }
     }
 }
 
 impl AsMut<InnerLock> for StoreData {
     fn as_mut(&mut self) -> &mut InnerLock {
-        &mut self.inner_lock
+        cfg_if! {
+            if #[cfg(feature = "godot-component")] {
+                match &mut self.godot_ctx {
+                    Left(v) => v,
+                    Right(v) => v.as_mut(),
+                }
+            } else {
+                &mut self.inner_lock
+            }
+        }
     }
 }
 
@@ -152,15 +172,13 @@ fn instantiate(
     let godot_ctx = if use_comp_godot {
         let mut ctx = GodotCtx::new(_inst_id);
         ctx.filter = filter;
-        Some(ctx)
+        Right(ctx)
     } else {
-        None
+        Left(InnerLock::default())
     };
     let mut store = Store::new(
         comp.engine(),
         StoreData {
-            inner_lock: InnerLock::default(),
-
             #[cfg(feature = "epoch-timeout")]
             epoch_timeout: if config.with_epoch {
                 config.epoch_timeout
@@ -173,6 +191,8 @@ fn instantiate(
 
             table: ResourceTable::new(),
             wasi_ctx,
+            #[cfg(not(feature = "godot-component"))]
+            inner_lock: InnerLock::default(),
             #[cfg(feature = "godot-component")]
             godot_ctx,
         },
@@ -188,6 +208,7 @@ fn instantiate(
     godot_add_to_linker(&mut linker, |v| {
         v.godot_ctx
             .as_mut()
+            .right()
             .expect("Godot component is enabled, but no context is provided")
     })?;
 

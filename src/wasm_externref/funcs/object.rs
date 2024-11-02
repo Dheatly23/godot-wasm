@@ -20,26 +20,32 @@ func_registry! {
     instance_id => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>| -> AnyResult<i64> {
         site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(ctx, obj)?).map(|o| o.instance_id().to_i64()))
     },
-    get_property_list => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
-        site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?)).and_then(|o| variant_to_externref(ctx, o.get_property_list().to_variant()))
+    get_property_list => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
+        let r = ctx.data_mut().as_mut().release_store(|| obj.get_property_list());
+        variant_to_externref(ctx, r.to_variant())
     },
-    get_method_list => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
-        site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?)).and_then(|o| variant_to_externref(ctx, o.get_method_list().to_variant()))
+    get_method_list => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
+        let r = ctx.data_mut().as_mut().release_store(|| obj.get_method_list());
+        variant_to_externref(ctx, r.to_variant())
     },
-    get_signal_list => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
-        site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?)).and_then(|o| variant_to_externref(ctx, o.get_signal_list().to_variant()))
+    get_signal_list => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
+        let r = ctx.data_mut().as_mut().release_store(|| obj.get_signal_list());
+        variant_to_externref(ctx, r.to_variant())
     },
-    has_method => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+    has_method => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
-        Ok(obj.has_method(name) as _)
+        ctx.data_mut().as_mut().release_store(|| Ok(obj.has_method(name) as _))
     },
-    has_signal => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+    has_signal => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
-        Ok(obj.has_signal(name) as _)
+        ctx.data_mut().as_mut().release_store(|| Ok(obj.has_signal(name) as _))
     },
-    call => |mut ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<Option<Rooted<ExternRef>>> {
+    call => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let mut obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
 
@@ -55,9 +61,10 @@ func_registry! {
             }
         }
 
-        variant_to_externref(ctx, site_context!(obj.try_call(name, &v))?)
+        let r = ctx.data_mut().as_mut().release_store(|| site_context!(obj.try_call(name, &v)))?;
+        variant_to_externref(ctx, r)
     },
-    call_deferred => |mut ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<Option<Rooted<ExternRef>>> {
+    call_deferred => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let mut obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
 
@@ -73,49 +80,53 @@ func_registry! {
             }
         }
 
-        variant_to_externref(ctx, site_context!(obj.try_call_deferred(name, &v))?)
+        let r = ctx.data_mut().as_mut().release_store(move || site_context!(obj.try_call_deferred(name, &v)))?;
+        variant_to_externref(ctx, r)
     },
-    callv => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+    callv => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let mut obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
         let args = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, args)?))?;
 
-        variant_to_externref(ctx, obj.callv(name, &args))
+        let r = ctx.data_mut().as_mut().release_store(move || obj.callv(name, &args));
+        variant_to_externref(ctx, r)
     },
-    get => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+    get => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
 
-        variant_to_externref(ctx, obj.get(name))
+        let r = ctx.data_mut().as_mut().release_store(move || obj.get(name));
+        variant_to_externref(ctx, r)
     },
-    set => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, value: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+    set => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, value: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let mut obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
         let value = externref_to_variant(&ctx, value)?;
 
-        obj.set(name, &value);
+        ctx.data_mut().as_mut().release_store(move || obj.set(name, &value));
         Ok(1)
     },
-    set_deferred => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, value: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+    set_deferred => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, value: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let mut obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
         let value = externref_to_variant(&ctx, value)?;
 
-        obj.set_deferred(name, &value);
+        ctx.data_mut().as_mut().release_store(move || obj.set_deferred(name, &value));
         Ok(1)
     },
-    get_indexed => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, path: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+    get_indexed => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, path: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let path = site_context!(from_var_any::<NodePath>(&externref_to_variant(&ctx, path)?))?;
 
-        variant_to_externref(ctx, obj.get_indexed(path))
+        let r = ctx.data_mut().as_mut().release_store(move || obj.get_indexed(path));
+        variant_to_externref(ctx, r)
     },
-    set_indexed => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, path: Option<Rooted<ExternRef>>, value: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
+    set_indexed => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, path: Option<Rooted<ExternRef>>, value: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let mut obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let path = site_context!(from_var_any::<NodePath>(&externref_to_variant(&ctx, path)?))?;
         let value = externref_to_variant(&ctx, value)?;
 
-        obj.set_indexed(path, &value);
+        ctx.data_mut().as_mut().release_store(move || obj.set_indexed(path, &value));
         Ok(1)
     },
     connect => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, signal: Option<Rooted<ExternRef>>, target: Option<Rooted<ExternRef>>, flags: u32| -> AnyResult<()> {
@@ -143,7 +154,7 @@ func_registry! {
 
         Ok(obj.is_connected(signal, target) as _)
     },
-    emit_signal => |mut ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<()> {
+    emit_signal => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<()> {
         let mut obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
 
@@ -159,7 +170,9 @@ func_registry! {
             }
         }
 
-        site_context!(obj.try_emit_signal(name, &v))?;
-        Ok(())
+        site_context!(match ctx.data_mut().as_mut().release_store(move || site_context!(obj.try_emit_signal(name, &v)))? {
+            GError::OK => Ok(()),
+            e => Err(ErrorWrapper::from(e)),
+        })
     },
 }

@@ -10,7 +10,6 @@ use anyhow::{Error, Result as AnyResult};
 
 use godot::classes::WeakRef;
 use godot::prelude::*;
-
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{
@@ -392,24 +391,33 @@ where
     let callable = SendSyncWrapper::new(callable);
     let ty_cloned = ty.clone();
     let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> AnyResult<()> {
-        let pi = ty.params();
-        let mut p = Vec::with_capacity(pi.len());
-        for (ix, t) in pi.enumerate() {
-            p.push(unsafe { from_raw(&mut ctx, t, args[ix])? });
-        }
+        let r = {
+            let mut arg_arr = ctx.data_mut().as_mut().get_arg_arr().clone();
+            let pi = ty
+                .params()
+                .enumerate()
+                .map(|(ix, t)| unsafe { from_raw(&mut ctx, t, args[ix]) });
 
-        let r = ctx.data_mut().as_mut().release_store(|| {
-            site_context!(match &*callable {
+            match &*callable {
                 CallableEnum::ObjectMethod(obj, method) => {
-                    match obj.clone().try_cast::<WeakRef>() {
+                    let mut obj = match obj.clone().try_cast::<WeakRef>() {
                         Ok(obj) => site_context!(from_var_any(obj.get_ref()))?,
                         Err(obj) => obj,
-                    }
-                    .try_call(method.clone(), &p)
+                    };
+                    let p = pi.collect::<AnyResult<Vec<_>>>()?;
+                    ctx.data_mut()
+                        .as_mut()
+                        .release_store(|| site_context!(obj.try_call(method.clone(), &p)))?
                 }
-                CallableEnum::Callable(c) => Ok(c.callv(&p.into_iter().collect())),
-            })
-        })?;
+                CallableEnum::Callable(c) => {
+                    arg_arr.clear();
+                    for v in pi {
+                        arg_arr.push(v?);
+                    }
+                    ctx.data_mut().as_mut().release_store(|| c.callv(&arg_arr))
+                }
+            }
+        };
 
         if let Some(msg) = ctx.data_mut().as_mut().error_signal.take() {
             return Err(Error::msg(msg));

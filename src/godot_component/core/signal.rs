@@ -85,7 +85,7 @@ impl bindgen::godot::core::signal::Host for GodotCtx {
             .into_iter()
             .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<Vec<_>>>()?;
-        v.emit(&args);
+        self.release_store(move || v.emit(&args));
         Ok(())
     }
 }

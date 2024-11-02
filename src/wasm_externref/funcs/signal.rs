@@ -1,5 +1,3 @@
-use std::panic::{catch_unwind, AssertUnwindSafe};
-
 use anyhow::Result as AnyResult;
 use godot::global::Error as GError;
 use godot::prelude::*;
@@ -8,7 +6,7 @@ use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut, TypedFunc};
 use crate::godot_util::{from_var_any, ErrorWrapper};
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
-use crate::{bail_with_site, func_registry, site_context};
+use crate::{func_registry, site_context};
 
 func_registry! {
     "signal.",
@@ -19,10 +17,7 @@ func_registry! {
     },
     object => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
-        match v.object() {
-            Some(v) => variant_to_externref(ctx, v.to_variant()),
-            None => Ok(None),
-        }
+        v.object().map_or(Ok(None), |v| variant_to_externref(ctx, v.to_variant()))
     },
     name => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
@@ -32,31 +27,25 @@ func_registry! {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
         let target = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, target)?))?;
 
-        match catch_unwind(AssertUnwindSafe(|| v.connect(target, flags))) {
-            Ok(GError::OK) => Ok(()),
-            Ok(e) => Err(ErrorWrapper::from(e).into()),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        site_context!(match v.connect(target, flags) {
+            GError::OK => Ok(()),
+            e => Err(ErrorWrapper::from(e)),
+        })
     },
     disconnect => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, target: Option<Rooted<ExternRef>>| -> AnyResult<()> {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
         let target = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, target)?))?;
 
-        match catch_unwind(AssertUnwindSafe(|| v.disconnect(target))) {
-            Ok(_) => Ok(()),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        v.disconnect(target);
+        Ok(())
     },
     is_connected => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, target: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
         let target = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, target)?))?;
 
-        match catch_unwind(AssertUnwindSafe(|| v.is_connected(target))) {
-            Ok(v) => Ok(v as _),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        Ok(v.is_connected(target) as _)
     },
-    emit => |mut ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<()> {
+    emit => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<()> {
         let c = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
 
         let mut v = Vec::new();
@@ -71,17 +60,12 @@ func_registry! {
             }
         }
 
-        match catch_unwind(AssertUnwindSafe(|| c.emit(&v))) {
-            Ok(_) => Ok(()),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        ctx.data_mut().as_mut().release_store(move || c.emit(&v));
+        Ok(())
     },
     connections => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
 
-        match catch_unwind(AssertUnwindSafe(|| v.connections())) {
-            Ok(v) => variant_to_externref(ctx, v.to_variant()),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        variant_to_externref(ctx, v.connections().to_variant())
     },
 }

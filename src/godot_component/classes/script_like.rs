@@ -67,8 +67,6 @@ pub struct WasmScriptLikeData {
 }
 
 pub struct WasmScriptLikeStore {
-    inner_lock: InnerLock,
-
     #[cfg(feature = "epoch-timeout")]
     epoch_timeout: u64,
 
@@ -80,13 +78,13 @@ pub struct WasmScriptLikeStore {
 
 impl AsRef<InnerLock> for WasmScriptLikeStore {
     fn as_ref(&self) -> &InnerLock {
-        &self.inner_lock
+        self.godot_ctx.as_ref()
     }
 }
 
 impl AsMut<InnerLock> for WasmScriptLikeStore {
     fn as_mut(&mut self) -> &mut InnerLock {
-        &mut self.inner_lock
+        self.godot_ctx.as_mut()
     }
 }
 
@@ -109,8 +107,6 @@ impl WasmScriptLike {
         let mut store = Store::new(
             comp.engine(),
             WasmScriptLikeStore {
-                inner_lock: InnerLock::default(),
-
                 #[cfg(feature = "epoch-timeout")]
                 epoch_timeout: if config.with_epoch {
                     config.epoch_timeout

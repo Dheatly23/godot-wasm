@@ -68,11 +68,13 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, callable, call)?;
         let v: Callable = self.get_value(var)?;
-        let args = args
-            .into_iter()
-            .map(|v| self.maybe_get_var(v))
-            .collect::<AnyResult<VariantArray>>()?;
-        self.set_var(v.callv(&args))
+        let mut a = self.get_arg_arr().clone();
+        a.clear();
+        for v in args {
+            a.push(self.maybe_get_var_borrow(v)?);
+        }
+        let r = self.release_store(move || v.callv(&a));
+        self.set_var(r)
     }
 
     fn callv(
@@ -83,7 +85,8 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         filter_macro!(filter self.filter.as_ref(), godot_core, callable, callv)?;
         let v: Callable = self.get_value(var)?;
         let args: VariantArray = self.get_value(args)?;
-        self.set_var(v.callv(&args))
+        let r = self.release_store(move || v.callv(&args));
+        self.set_var(r)
     }
 
     fn bind(
@@ -93,11 +96,12 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, callable, bind)?;
         let v: Callable = self.get_value(var)?;
-        let args = args
-            .into_iter()
-            .map(|v| self.maybe_get_var(v))
-            .collect::<AnyResult<VariantArray>>()?;
-        self.set_into_var(v.bindv(&args))
+        let mut a = self.get_arg_arr().clone();
+        a.clear();
+        for v in args {
+            a.push(self.maybe_get_var_borrow(v)?);
+        }
+        self.set_into_var(v.bindv(&a))
     }
 
     fn bindv(

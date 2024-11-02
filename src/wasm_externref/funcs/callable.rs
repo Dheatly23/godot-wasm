@@ -1,5 +1,3 @@
-use std::panic::{catch_unwind, AssertUnwindSafe};
-
 use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut, TypedFunc};
@@ -7,7 +5,7 @@ use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut, TypedFunc};
 use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
-use crate::{bail_with_site, func_registry, site_context};
+use crate::{func_registry, site_context};
 
 func_registry! {
     "callable.",
@@ -27,22 +25,17 @@ func_registry! {
     },
     object => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
-        variant_to_externref(ctx, match v.object() {
-            Some(v) => v.to_variant(),
-            None => Variant::nil(),
-        })
+        v.object().map_or(Ok(None), |v| variant_to_externref(ctx, v.to_variant()))
     },
     method_name => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
-        variant_to_externref(ctx, match v.method_name() {
-            Some(v) => v.to_variant(),
-            None => Variant::nil(),
-        })
+        v.method_name().map_or(Ok(None), |v| variant_to_externref(ctx, v.to_variant()))
     },
-    call => |mut ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<Option<Rooted<ExternRef>>> {
+    call => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let c = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
 
-        let mut v = VariantArray::new();
+        let mut v = ctx.data_mut().as_mut().get_arg_arr().clone();
+        v.clear();
         if let Some(f) = f {
             let f: TypedFunc<u32, (Option<Rooted<ExternRef>>, u32)> = site_context!(f.typed(&ctx))?;
             loop {
@@ -54,19 +47,15 @@ func_registry! {
             }
         }
 
-        match catch_unwind(AssertUnwindSafe(|| c.callv(&v))) {
-            Ok(v) => variant_to_externref(ctx, v),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        let r = ctx.data_mut().as_mut().release_store(move || c.callv(&v));
+        variant_to_externref(ctx, r)
     },
-    callv => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+    callv => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
         let a = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, args)?))?;
 
-        match catch_unwind(AssertUnwindSafe(|| v.callv(&a))) {
-            Ok(v) => variant_to_externref(ctx, v),
-            Err(_) => bail_with_site!("Error binding object"),
-        }
+        let r = ctx.data_mut().as_mut().release_store(move || v.callv(&a));
+        variant_to_externref(ctx, r)
     },
     bindv => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;

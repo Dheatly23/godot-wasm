@@ -12,6 +12,7 @@ use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
 
 use crate::godot_util::{from_var_any, ErrorWrapper, SendSyncWrapper};
+use crate::wasm_instance::InnerLock;
 use crate::{bail_with_site, filter_macro};
 
 filter_macro! {module [
@@ -34,8 +35,13 @@ mod reflection_filter {
 
 #[derive(Default)]
 pub struct GodotCtx {
+    inner_lock: InnerLock,
+
     table: Slab<SendSyncWrapper<Variant>>,
+
     pub inst_id: Option<InstanceId>,
+    arg_arr: Option<SendSyncWrapper<VariantArray>>,
+
     pub filter: filter::Filter,
 }
 
@@ -45,12 +51,32 @@ impl AsMut<GodotCtx> for GodotCtx {
     }
 }
 
+impl AsRef<InnerLock> for GodotCtx {
+    fn as_ref(&self) -> &InnerLock {
+        &self.inner_lock
+    }
+}
+
+impl AsMut<InnerLock> for GodotCtx {
+    fn as_mut(&mut self) -> &mut InnerLock {
+        &mut self.inner_lock
+    }
+}
+
 impl GodotCtx {
     pub fn new(inst_id: InstanceId) -> Self {
         Self {
             inst_id: Some(inst_id),
             ..Self::default()
         }
+    }
+
+    #[inline]
+    pub(crate) fn release_store<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        self.inner_lock.release_store(f)
     }
 
     pub fn get_var_borrow(&mut self, res: WasmResource<Variant>) -> AnyResult<Cow<Variant>> {
@@ -114,6 +140,11 @@ impl GodotCtx {
         let v = var.to_variant();
         drop(var);
         self.try_insert(v).map(WasmResource::new_own)
+    }
+
+    pub fn get_arg_arr(&mut self) -> &mut VariantArray {
+        self.arg_arr
+            .get_or_insert_with(|| SendSyncWrapper::new(<_>::default()))
     }
 }
 

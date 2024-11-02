@@ -82,19 +82,22 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, get_property_list)?;
         let o: Gd<Object> = self.get_value(var)?;
-        self.set_into_var(o.get_property_list())
+        let r = self.release_store(move || o.get_property_list());
+        self.set_into_var(r)
     }
 
     fn get_method_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, get_method_list)?;
         let o: Gd<Object> = self.get_value(var)?;
-        self.set_into_var(o.get_method_list())
+        let r = self.release_store(move || o.get_method_list());
+        self.set_into_var(r)
     }
 
     fn get_signal_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, get_signal_list)?;
         let o: Gd<Object> = self.get_value(var)?;
-        self.set_into_var(o.get_signal_list())
+        let r = self.release_store(move || o.get_signal_list());
+        self.set_into_var(r)
     }
 
     fn has_method(
@@ -104,7 +107,8 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, has_method)?;
         let o: Gd<Object> = self.get_value(var)?;
-        Ok(o.has_method(self.get_value(name)?))
+        let n: StringName = self.get_value(name)?;
+        Ok(self.release_store(move || o.has_method(n)))
     }
 
     fn has_signal(
@@ -114,7 +118,8 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, has_signal)?;
         let o: Gd<Object> = self.get_value(var)?;
-        Ok(o.has_signal(self.get_value(name)?))
+        let n: StringName = self.get_value(name)?;
+        Ok(self.release_store(move || o.has_signal(n)))
     }
 
     fn call(
@@ -130,7 +135,8 @@ impl bindgen::godot::core::object::Host for GodotCtx {
             .into_iter()
             .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<Vec<_>>>()?;
-        self.set_var(o.try_call(name, &args)?)
+        let r = self.release_store(move || o.try_call(name, &args))?;
+        self.set_var(r)
     }
 
     fn callv(
@@ -143,7 +149,8 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         let mut o: Gd<Object> = self.get_value(var)?;
         let name: StringName = self.get_value(name)?;
         let args: VariantArray = self.get_value(args)?;
-        self.set_var(o.callv(name, &args))
+        let r = self.release_store(move || o.callv(name, &args));
+        self.set_var(r)
     }
 
     fn call_deferred(
@@ -159,7 +166,8 @@ impl bindgen::godot::core::object::Host for GodotCtx {
             .into_iter()
             .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<Vec<_>>>()?;
-        self.set_var(o.try_call_deferred(name, &args)?)
+        let r = self.release_store(move || o.try_call_deferred(name, &args))?;
+        self.set_var(r)
     }
 
     fn connect(
@@ -214,7 +222,7 @@ impl bindgen::godot::core::object::Host for GodotCtx {
             .into_iter()
             .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<Vec<_>>>()?;
-        wrap_error(o.try_emit_signal(name, &args)?)
+        wrap_error(self.release_store(move || o.try_emit_signal(name, &args))?)
     }
 
     fn get(
@@ -225,7 +233,8 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, get)?;
         let o: Gd<Object> = self.get_value(var)?;
         let name: StringName = self.get_value(name)?;
-        self.set_var(o.get(name))
+        let r = self.release_store(move || o.get(name));
+        self.set_var(r)
     }
 
     fn set(
@@ -236,7 +245,9 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, set)?;
         let mut o: Gd<Object> = self.get_value(var)?;
-        o.set(self.get_value(name)?, &*self.maybe_get_var_borrow(val)?);
+        let n: StringName = self.get_value(name)?;
+        let v = self.maybe_get_var(val)?;
+        self.release_store(move || o.set(n, &v));
         Ok(())
     }
 
@@ -248,7 +259,9 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, set_deferred)?;
         let mut o: Gd<Object> = self.get_value(var)?;
-        o.set_deferred(self.get_value(name)?, &*self.maybe_get_var_borrow(val)?);
+        let n: StringName = self.get_value(name)?;
+        let v = self.maybe_get_var(val)?;
+        self.release_store(move || o.set_deferred(n, &v));
         Ok(())
     }
 
@@ -260,7 +273,8 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, get_indexed)?;
         let o: Gd<Object> = self.get_value(var)?;
         let name: NodePath = self.get_value(name)?;
-        self.set_var(o.get_indexed(name))
+        let r = self.release_store(move || o.get_indexed(name));
+        self.set_var(r)
     }
 
     fn set_indexed(
@@ -271,7 +285,9 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, set_indexed)?;
         let mut o: Gd<Object> = self.get_value(var)?;
-        o.set_indexed(self.get_value(name)?, &*self.maybe_get_var_borrow(val)?);
+        let n: NodePath = self.get_value(name)?;
+        let v = self.maybe_get_var(val)?;
+        self.release_store(move || o.set_indexed(n, &v));
         Ok(())
     }
 
