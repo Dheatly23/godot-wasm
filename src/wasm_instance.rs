@@ -191,6 +191,7 @@ impl Default for InnerLock {
     }
 }
 
+#[derive(Default)]
 pub struct StoreData {
     inner_lock: InnerLock,
     pub error_signal: Option<String>,
@@ -235,33 +236,10 @@ impl AsMut<InnerLock> for StoreData {
     }
 }
 
-#[allow(clippy::derivable_impls)]
-impl Default for StoreData {
-    fn default() -> Self {
-        Self {
-            inner_lock: InnerLock::default(),
-            error_signal: None,
-            arg_arr: None,
-
-            #[cfg(feature = "epoch-timeout")]
-            epoch_timeout: 0,
-            #[cfg(feature = "epoch-timeout")]
-            epoch_autoreset: false,
-
-            #[cfg(feature = "memory-limiter")]
-            memory_limits: MemoryLimit::default(),
-
-            #[cfg(feature = "object-registry-compat")]
-            object_registry: None,
-
-            #[cfg(feature = "wasi")]
-            wasi_ctx: MaybeWasi::NoCtx,
-        }
-    }
-}
-
 #[allow(dead_code, clippy::large_enum_variant)]
+#[derive(Default)]
 pub enum MaybeWasi {
+    #[default]
     NoCtx,
     #[cfg(feature = "wasi")]
     Preview1(WasiP1Ctx),
