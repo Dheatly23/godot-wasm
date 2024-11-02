@@ -12,3 +12,4 @@ addon. Each class is separated into it's own file, named accordingly.
 * [WasmHelper](./WasmHelper.md)
 * Miscellaneous
   * [Importing](./misc/Importing.md)
+  * [Features](./misc/Features.md)
