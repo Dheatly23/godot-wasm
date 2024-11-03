@@ -67,7 +67,7 @@ features = [
 ]
 
 [dependencies.once_cell]
-version = "^1.19"
+version = "^1.20"
 features = [
   "parking_lot",
 ]
