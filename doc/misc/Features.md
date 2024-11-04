@@ -73,15 +73,6 @@ Enables WASI 0.2
 
 Enables component-based Godot value manipulation.
 
-### WASM Threads Proposal
-
-* Feature: `wasm-threads`
-* Default: false
-
-Enables WASM threads proposal, allowing use of shared memory,
-atomic instruction, and notification.
-Note that multi-threading is a separate thing and currently cannot be done inside WASM code.
-
 ### Deterministic WASM
 
 * Feature: `deterministic-wasm`

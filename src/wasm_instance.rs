@@ -1,7 +1,5 @@
 #[cfg(feature = "wasi")]
 use std::any::Any;
-#[cfg(feature = "wasm-threads")]
-use std::cell::UnsafeCell;
 use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
 #[cfg(feature = "wasi")]
@@ -23,10 +21,9 @@ use wasmtime::component::ResourceTable;
 use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
 use wasmtime::ResourceLimiter;
-#[cfg(feature = "wasm-threads")]
-use wasmtime::SharedMemory;
 use wasmtime::{
-    AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, Store, StoreContextMut,
+    AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, SharedMemory, Store,
+    StoreContextMut,
 };
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::preview1::{add_to_linker_sync, WasiP1Ctx};
@@ -64,7 +61,6 @@ use crate::{bail_with_site, site_context, variant_dispatch};
 
 enum MemoryType {
     Memory(Memory),
-    #[cfg(feature = "wasm-threads")]
     SharedMemory(SharedMemory),
 }
 
@@ -681,7 +677,6 @@ impl WasmInstance {
                     InstanceType::Core(inst) => {
                         match inst.get_export(ret.store.get_mut(), MEMORY_EXPORT) {
                             Some(Extern::Memory(mem)) => Some(MemoryType::Memory(mem)),
-                            #[cfg(feature = "wasm-threads")]
                             Some(Extern::SharedMemory(mem)) => Some(MemoryType::SharedMemory(mem)),
                             _ => None,
                         }
@@ -710,11 +705,10 @@ impl WasmInstance {
             m.acquire_store(|_, store| {
                 f(match &self.memory {
                     Some(MemoryType::Memory(mem)) => mem.data_mut(store),
-                    #[cfg(feature = "wasm-threads")]
                     // SAFETY: Externalize concurrent access to user
                     #[allow(mutable_transmutes)]
                     Some(MemoryType::SharedMemory(mem)) => unsafe {
-                        mem::transmute::<&[UnsafeCell<u8>], &mut [u8]>(mem.data())
+                        mem::transmute::<&[_], &mut [u8]>(mem.data())
                     },
                     None => bail_with_site!("No memory exported"),
                 })
@@ -1106,7 +1100,6 @@ impl WasmInstance {
                         InstanceType::Core(inst) => match inst.get_export(store, &name.to_string())
                         {
                             Some(Extern::Memory(mem)) => Some(MemoryType::Memory(mem)),
-                            #[cfg(feature = "wasm-threads")]
                             Some(Extern::SharedMemory(mem)) => Some(MemoryType::SharedMemory(mem)),
                             _ => None,
                         },
