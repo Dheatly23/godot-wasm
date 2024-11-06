@@ -12,7 +12,7 @@ use godot::prelude::*;
 /// WARNING: Incredibly unsafe.
 /// It's just used as workaround to pass Godot objects across closure.
 /// (At least until it supports multi-threading)
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub(crate) struct SendSyncWrapper<T: ?Sized>(T);
 

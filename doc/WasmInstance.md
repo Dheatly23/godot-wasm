@@ -61,7 +61,7 @@ Config is too complex to be put here, read at [WasmConfig](./WasmConfig.md).
 
 Calls WASM exported function with given arguments. Returns null if it errors.
 
-### `Callable bind_wasm_callable(StringName name)`
+### `Callable bind_wasm(StringName name)`
 
 Creates a callable that calls WASM exported function.
 

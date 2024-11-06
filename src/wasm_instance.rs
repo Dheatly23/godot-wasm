@@ -4,7 +4,7 @@ use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
 #[cfg(feature = "wasi")]
 use std::sync::Arc;
-use std::{fmt, mem, ptr};
+use std::{ffi, fmt, mem, ptr};
 
 use anyhow::{bail, Result as AnyResult};
 use cfg_if::cfg_if;
@@ -737,18 +737,24 @@ impl WasmInstance {
     }
 }
 
+#[derive(Debug)]
 struct WasmCallable {
     name: StringName,
     ty: FuncType,
     f: Func,
+    ptr: *const ffi::c_void,
     this: SendSyncWrapper<Gd<WasmInstance>>,
 }
+
+unsafe impl Send for WasmCallable {}
+unsafe impl Sync for WasmCallable {}
 
 impl PartialEq for WasmCallable {
     fn eq(&self, other: &Self) -> bool {
         (self.name == other.name)
-            && (*self.this == *other.this)
+            && (self.this == other.this)
             && FuncType::eq(&self.ty, &other.ty)
+            && (self.ptr == other.ptr)
     }
 }
 
@@ -756,22 +762,10 @@ impl Eq for WasmCallable {}
 
 impl Hash for WasmCallable {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        <StringName as Hash>::hash(&self.name, state);
+        Hash::hash(&self.name, state);
         self.ty.hash(state);
         self.this.hash(state);
-    }
-}
-
-impl fmt::Debug for WasmCallable {
-    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Self { this, name, ty, f } = self;
-
-        fmt.debug_struct("WasmCallable")
-            .field("object", &**this)
-            .field("name", name)
-            .field("type", ty)
-            .field("func", f)
-            .finish()
+        self.ptr.hash(state);
     }
 }
 
@@ -926,19 +920,26 @@ impl WasmInstance {
     ///
     /// Returns a `Callable` that can be used to call into WASM.
     #[func]
-    fn bind_wasm_callable(&self, name: StringName) -> Callable {
+    fn bind_wasm(&self, name: StringName) -> Callable {
         self.unwrap_data(|m| {
             m.acquire_store(|m, mut store| {
-                let n = name.to_string();
-                let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &n) {
-                    Some(Extern::Func(f)) => f,
-                    Some(_) => bail_with_site!("Export {n} is not a function"),
-                    None => bail_with_site!("Export {n} does not exists"),
+                let f = {
+                    let name = name.to_string();
+                    match site_context!(m.instance.get_core())?.get_export(&mut store, &name) {
+                        Some(Extern::Func(f)) => f,
+                        Some(_) => bail_with_site!("Export {name} is not a function"),
+                        None => bail_with_site!("Export {name} does not exists"),
+                    }
                 };
-                let ty = f.ty(&store);
 
-                let this = SendSyncWrapper::new(self.to_gd());
-                Ok(Callable::from_custom(WasmCallable { name, ty, f, this }))
+                Ok(Callable::from_custom(WasmCallable {
+                    name,
+                    ty: f.ty(&store),
+                    // SAFETY: Pointer is only used for comparison.
+                    ptr: unsafe { f.to_raw(store) },
+                    f,
+                    this: SendSyncWrapper::new(self.to_gd()),
+                }))
             })
         })
         .unwrap_or_else(Callable::invalid)
