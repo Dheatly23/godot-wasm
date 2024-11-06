@@ -741,7 +741,6 @@ impl WasmInstance {
 struct WasmCallable {
     name: StringName,
     ty: FuncType,
-    f: Func,
     ptr: *const ffi::c_void,
     this: SendSyncWrapper<Gd<WasmInstance>>,
 }
@@ -798,16 +797,18 @@ impl fmt::Display for WasmCallable {
 
 impl RustCallable for WasmCallable {
     fn invoke(&mut self, args: &[&Variant]) -> Result<Variant, ()> {
-        let Self { ty, f, this, .. } = self;
-
-        let r = this.bind().unwrap_data(|m| {
+        let r = self.this.bind().unwrap_data(|m| {
             m.acquire_store(|_, #[allow(unused_mut)] mut store| {
                 #[cfg(feature = "epoch-timeout")]
                 if let v @ 1.. = store.data().epoch_timeout {
                     store.set_epoch_deadline(v);
                 }
 
-                unsafe { raw_call(store, f, ty, args.iter().copied()) }
+                // SAFETY: Function pointer is valid.
+                unsafe {
+                    let f = Func::from_raw(&mut store, self.ptr as *mut ffi::c_void).unwrap();
+                    raw_call(store, &f, &self.ty, args.iter().copied())
+                }
             })
         });
         match r {
@@ -935,9 +936,8 @@ impl WasmInstance {
                 Ok(Callable::from_custom(WasmCallable {
                     name,
                     ty: f.ty(&store),
-                    // SAFETY: Pointer is only used for comparison.
+                    // SAFETY: Pointer is valid for the entire lifetime of callable.
                     ptr: unsafe { f.to_raw(store) },
-                    f,
                     this: SendSyncWrapper::new(self.to_gd()),
                 }))
             })
