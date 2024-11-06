@@ -370,7 +370,9 @@ where
         let mut wasi_stdin = None;
 
         #[cfg(feature = "wasi")]
-        let wasi_linker = if config.with_wasi {
+        let mut wasi_linker = None;
+        #[cfg(feature = "wasi")]
+        if config.with_wasi {
             let mut builder = WasiCtxBuilder::new();
 
             let StoreData { wasi_ctx, .. } = store.data_mut().as_mut();
@@ -380,14 +382,14 @@ where
                     builder.stdin(StreamWrapper::from(ByteBufferReadPipe::new(data)));
                 } else {
                     let signal =
-                        SendSyncWrapper::new(Signal::from_object_signal(&obj, c"stdin_request"));
+                        SendSyncWrapper::new(Signal::from_object_signal(obj, c"stdin_request"));
                     let (outer, inner) = OuterStdin::new(move || signal.emit(&[]));
                     builder.stdin(outer);
                     wasi_stdin = Some(inner as _);
                 }
             }
             if config.wasi_stdout == PipeBindingType::Instance {
-                let signal = Signal::from_object_signal(&obj, c"stdout_emit");
+                let signal = Signal::from_object_signal(obj, c"stdout_emit");
                 match config.wasi_stdout_buffer {
                     PipeBufferType::Unbuffered => {
                         builder.stdout(UnbufferedWritePipe::new(WasiContext::emit_binary(signal)))
@@ -401,7 +403,7 @@ where
                 };
             }
             if config.wasi_stderr == PipeBindingType::Instance {
-                let signal = Signal::from_object_signal(&obj, c"stderr_emit");
+                let signal = Signal::from_object_signal(obj, c"stderr_emit");
                 match config.wasi_stderr_buffer {
                     PipeBufferType::Unbuffered => {
                         builder.stderr(UnbufferedWritePipe::new(WasiContext::emit_binary(signal)))
@@ -425,10 +427,8 @@ where
                 MaybeWasi::Preview1(v) => v,
                 _ => panic!("WASI Preview 1 context required, but none supplied"),
             })?;
-            Some(r)
-        } else {
-            None
-        };
+            wasi_linker = Some(r);
+        }
 
         #[cfg(feature = "object-registry-compat")]
         if config.extern_bind == ExternBindingType::Registry {
