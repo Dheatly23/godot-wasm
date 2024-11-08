@@ -27,7 +27,7 @@ func_registry! {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
         let target = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, target)?))?;
 
-        site_context!(match v.connect(target, flags) {
+        site_context!(match v.connect(&target, flags) {
             GError::OK => Ok(()),
             e => Err(ErrorWrapper::from(e)),
         })
@@ -36,14 +36,14 @@ func_registry! {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
         let target = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, target)?))?;
 
-        v.disconnect(target);
+        v.disconnect(&target);
         Ok(())
     },
     is_connected => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, target: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;
         let target = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, target)?))?;
 
-        Ok(v.is_connected(target) as _)
+        Ok(v.is_connected(&target) as _)
     },
     emit => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<()> {
         let c = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;

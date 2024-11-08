@@ -442,7 +442,7 @@ pub fn read_struct(data: &[u8], p: usize, format: &[char]) -> AnyResult<VariantA
             let Some(data) = data.get(s..e) else {
                 bail_with_site!("Index out of range ({s}..{e})")
             };
-            a.push(f(data.try_into().unwrap()).to_variant());
+            a.push(&f(data.try_into().unwrap()).to_variant());
             *p += N;
         }
 

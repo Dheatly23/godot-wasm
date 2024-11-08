@@ -22,7 +22,7 @@ func_registry! {
     set => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
         let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
         let x = externref_to_variant(&ctx, x)?;
-        v.set(i as _, x);
+        v.set(i as _, &x);
         Ok(())
     },
     count => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
@@ -101,7 +101,7 @@ func_registry! {
     push => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
         let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
         let x = externref_to_variant(&ctx, x)?;
-        v.push(x);
+        v.push(&x);
         Ok(())
     },
     pop => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
@@ -114,7 +114,7 @@ func_registry! {
     push_front => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
         let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
         let x = externref_to_variant(&ctx, x)?;
-        v.push_front(x);
+        v.push_front(&x);
         Ok(())
     },
     pop_front => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
@@ -127,7 +127,7 @@ func_registry! {
     insert => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, i: u32, x: Option<Rooted<ExternRef>>| -> AnyResult<()> {
         let mut v = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, v)?))?;
         let x = externref_to_variant(&ctx, x)?;
-        v.insert(i as _, x);
+        v.insert(i as _, &x);
         Ok(())
     },
 }

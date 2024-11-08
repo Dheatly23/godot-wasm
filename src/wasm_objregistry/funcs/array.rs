@@ -29,7 +29,7 @@ func_registry! {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        v.set(i as _, x);
+        v.set(i as _, &x);
         Ok(())
     },
     slice => |mut ctx: Caller<'_, T>, v: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
@@ -162,7 +162,7 @@ func_registry! {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        v.push(x);
+        v.push(&x);
         Ok(())
     },
     pop => |mut ctx: Caller<'_, T>, v: u32| -> Result<u32, Error> {
@@ -174,7 +174,7 @@ func_registry! {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        v.push_front(x);
+        v.push_front(&x);
         Ok(())
     },
     pop_front => |mut ctx: Caller<'_, T>, v: u32| -> Result<u32, Error> {
@@ -186,7 +186,7 @@ func_registry! {
         let reg = ctx.data().as_ref().get_registry()?;
         let mut v = site_context!(from_var_any::<VariantArray>(&reg.get_or_nil(v as _)))?;
         let x = reg.get_or_nil(x as _);
-        v.insert(i as _, x);
+        v.insert(i as _, &x);
         Ok(())
     },
 }

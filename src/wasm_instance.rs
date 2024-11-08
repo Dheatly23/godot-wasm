@@ -611,7 +611,7 @@ impl StoreData {
 impl WasmInstance {
     fn emit_error_wrapper(&self, msg: String) {
         self.to_gd().emit_signal(
-            StringName::from(c"error_happened"),
+            &StringName::from(c"error_happened"),
             &[GString::from(msg).to_variant()],
         );
     }

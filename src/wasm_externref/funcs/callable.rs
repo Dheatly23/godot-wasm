@@ -40,7 +40,7 @@ func_registry! {
             let f: TypedFunc<u32, (Option<Rooted<ExternRef>>, u32)> = site_context!(f.typed(&ctx))?;
             loop {
                 let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
-                v.push(externref_to_variant(&ctx, e)?);
+                v.push(&externref_to_variant(&ctx, e)?);
                 if n == 0 {
                     break;
                 }

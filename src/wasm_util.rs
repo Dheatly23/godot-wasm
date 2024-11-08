@@ -407,12 +407,12 @@ where
                     let p = pi.collect::<AnyResult<Vec<_>>>()?;
                     ctx.data_mut()
                         .as_mut()
-                        .release_store(|| site_context!(obj.try_call(method.clone(), &p)))?
+                        .release_store(|| site_context!(obj.try_call(method, &p)))?
                 }
                 CallableEnum::Callable(c) => {
                     arg_arr.clear();
                     for v in pi {
-                        arg_arr.push(v?);
+                        arg_arr.push(&v?);
                     }
                     ctx.data_mut().as_mut().release_store(|| c.callv(&arg_arr))
                 }
