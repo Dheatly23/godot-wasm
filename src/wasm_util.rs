@@ -187,8 +187,12 @@ pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
     Ok(FuncType::new(&site_context!(get_engine())?, p, r))
 }
 
-// Mark this unsafe for future proofing
-pub unsafe fn to_raw(mut _store: impl AsContextMut, t: ValType, v: &Variant) -> AnyResult<ValRaw> {
+// Mark this unsafe for future proofing.
+pub unsafe fn to_raw<T: AsRef<StoreData>>(
+    mut _store: impl AsContextMut<Data = T>,
+    t: ValType,
+    v: &Variant,
+) -> AnyResult<ValRaw> {
     Ok(match t {
         ValType::I32 => ValRaw::i32(site_context!(from_var_any(v))?),
         ValType::I64 => ValRaw::i64(site_context!(from_var_any(v))?),
@@ -196,24 +200,10 @@ pub unsafe fn to_raw(mut _store: impl AsContextMut, t: ValType, v: &Variant) -> 
         ValType::F64 => ValRaw::f64(site_context!(from_var_any::<f64>(v))?.to_bits()),
         ValType::V128 => ValRaw::v128(variant_dispatch!(v {
             INT => v as u128,
-            PACKED_BYTE_ARRAY => {
-                let Some(s) = v.as_slice().get(..16) else {
-                    bail_with_site!("Value too short for 128-bit integer")
-                };
-                u128::from_le_bytes(s.try_into().unwrap())
-            },
-            PACKED_INT32_ARRAY => {
-                let Some(s) = v.as_slice().get(..4) else {
-                    bail_with_site!("Value too short for 128-bit integer")
-                };
-                s[0] as u128 | (s[1] as u128) << 32 | (s[2] as u128) << 64 | (s[3] as u128) << 96
-            },
-            PACKED_INT64_ARRAY => {
-                let Some(s) = v.as_slice().get(..2) else {
-                    bail_with_site!("Value too short for 128-bit integer")
-                };
-                s[0] as u128 | (s[1] as u128) << 64
-            },
+            VECTOR4I => (0..4).zip(v.to_array()).fold(0u128, |t, (s, v)| t | (v as u32 as u128) << (s * 32)),
+            PACKED_BYTE_ARRAY => (0..16).zip(v.as_slice()).fold(0u128, |t, (s, &v)| t | (v as u128) << (s * 8)),
+            PACKED_INT32_ARRAY => (0..4).zip(v.as_slice()).fold(0u128, |t, (s, &v)| t | (v as u128) << (s * 32)),
+            PACKED_INT64_ARRAY => (0..2).zip(v.as_slice()).fold(0u128, |t, (s, &v)| t | (v as u128) << (s * 64)),
             ARRAY => {
                 let v0 = site_context!(from_var_any::<u64>(v.get(0).unwrap_or_default()))?;
                 let v1 = site_context!(from_var_any::<u64>(v.get(1).unwrap_or_default()))?;
@@ -222,7 +212,10 @@ pub unsafe fn to_raw(mut _store: impl AsContextMut, t: ValType, v: &Variant) -> 
             _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
         })),
         #[cfg(feature = "object-registry-extern")]
-        ValType::Ref(r) if matches!(r.heap_type(), HeapType::Extern) => {
+        ValType::Ref(r)
+            if _store.as_context().data().as_ref().use_extern
+                && matches!(r.heap_type(), HeapType::Extern) =>
+        {
             ValRaw::externref(match variant_to_externref(&mut _store, v.clone())? {
                 Some(v) => v.to_raw(_store)?,
                 None if r.is_nullable() => 0,
@@ -233,8 +226,12 @@ pub unsafe fn to_raw(mut _store: impl AsContextMut, t: ValType, v: &Variant) -> 
     })
 }
 
-// Mark this unsafe for future proofing
-pub unsafe fn from_raw(mut _store: impl AsContextMut, t: ValType, v: ValRaw) -> AnyResult<Variant> {
+// Mark this unsafe for future proofing.
+pub unsafe fn from_raw<T: AsRef<StoreData>>(
+    mut _store: impl AsContextMut<Data = T>,
+    t: ValType,
+    v: ValRaw,
+) -> AnyResult<Variant> {
     Ok(match t {
         ValType::I32 => v.get_i32().to_variant(),
         ValType::I64 => v.get_i64().to_variant(),
@@ -242,14 +239,13 @@ pub unsafe fn from_raw(mut _store: impl AsContextMut, t: ValType, v: ValRaw) -> 
         ValType::F64 => f64::from_bits(v.get_f64()).to_variant(),
         ValType::V128 => {
             let v = v.get_v128();
-            [v as u64, (v >> 64) as u64]
-                .into_iter()
-                .map(|v| v.to_variant())
-                .collect::<VariantArray>()
-                .to_variant()
+            Vector4i::new(v as _, (v >> 32) as _, (v >> 64) as _, (v >> 96) as _).to_variant()
         }
         #[cfg(feature = "object-registry-extern")]
-        ValType::Ref(r) if matches!(r.heap_type(), HeapType::Extern) => {
+        ValType::Ref(r)
+            if _store.as_context().data().as_ref().use_extern
+                && matches!(r.heap_type(), HeapType::Extern) =>
+        {
             let v = ExternRef::from_raw(&mut _store, v.get_externref());
             return externref_to_variant(_store, v);
         }
@@ -335,13 +331,14 @@ thread_local! {
     }));
 }
 
-pub unsafe fn raw_call<It>(
-    ctx: impl AsContextMut,
+pub unsafe fn raw_call<T, It>(
+    ctx: impl AsContextMut<Data = T>,
     f: &Func,
     ty: &FuncType,
     args: It,
 ) -> AnyResult<VariantArray>
 where
+    T: AsRef<StoreData>,
     It: IntoIterator,
     It::Item: Borrow<Variant>,
 {

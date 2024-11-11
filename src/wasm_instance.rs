@@ -204,6 +204,9 @@ pub struct StoreData {
     #[cfg(feature = "object-registry-compat")]
     pub object_registry: Option<ObjectRegistry>,
 
+    #[cfg(feature = "object-registry-extern")]
+    pub use_extern: bool,
+
     #[cfg(feature = "wasi")]
     pub wasi_ctx: MaybeWasi,
 }
@@ -433,6 +436,10 @@ where
         #[cfg(feature = "object-registry-compat")]
         if config.extern_bind == ExternBindingType::Registry {
             store.data_mut().as_mut().object_registry = Some(ObjectRegistry::default());
+        }
+        #[cfg(feature = "object-registry-extern")]
+        {
+            store.data_mut().as_mut().use_extern = config.extern_bind == ExternBindingType::Native;
         }
 
         let instance = InstanceArgs {
