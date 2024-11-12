@@ -54,7 +54,6 @@ pub const TYPE_I32: i64 = 1;
 pub const TYPE_I64: i64 = 2;
 pub const TYPE_F32: i64 = 3;
 pub const TYPE_F64: i64 = 4;
-#[cfg(feature = "object-registry-extern")]
 pub const TYPE_VARIANT: i64 = 6;
 pub const TYPE_V128: i64 = 7;
 pub const TYPE_UNKNOWN: i64 = -1;
