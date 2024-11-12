@@ -7,7 +7,7 @@ use std::slice;
 use std::time;
 
 use anyhow::{Error, Result as AnyResult};
-
+use cfg_if::cfg_if;
 use godot::classes::WeakRef;
 use godot::prelude::*;
 #[cfg(feature = "epoch-timeout")]
@@ -520,10 +520,15 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
             .transpose()?
             .and_then(|d| d.get(name))
         {
-            let (sig, callable) = process_func(
-                site_context!(from_var_any::<Dictionary>(data))?,
-                store.as_context_mut().data().as_ref().use_extern,
-            )?;
+            cfg_if! {
+                if #[cfg(feature = "object-registry-extern")] {
+                    let use_extern = store.as_context_mut().data().as_ref().use_extern;
+                } else {
+                    let use_extern = false;
+                }
+            }
+            let (sig, callable) =
+                process_func(site_context!(from_var_any::<Dictionary>(data))?, use_extern)?;
 
             let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
             self.cache.define(store, module, name, v.clone())?;
