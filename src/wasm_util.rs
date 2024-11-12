@@ -151,8 +151,11 @@ pub fn from_signature(sig: &FuncType) -> (PackedByteArray, PackedByteArray) {
     (params, results)
 }
 
-pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
-    fn f(it: impl Iterator<Item = Result<i64, Error>>) -> AnyResult<Vec<ValType>> {
+pub fn to_signature(params: Variant, results: Variant, use_extern: bool) -> AnyResult<FuncType> {
+    fn f(
+        it: impl Iterator<Item = Result<i64, Error>>,
+        _use_extern: bool,
+    ) -> AnyResult<Vec<ValType>> {
         it.map(|i| {
             Ok(match i? {
                 TYPE_I32 => ValType::I32,
@@ -161,26 +164,33 @@ pub fn to_signature(params: Variant, results: Variant) -> AnyResult<FuncType> {
                 TYPE_F64 => ValType::F64,
                 TYPE_V128 => ValType::V128,
                 #[cfg(feature = "object-registry-extern")]
-                TYPE_VARIANT => ValType::Ref(RefType::EXTERNREF),
-                v => bail_with_site!("Unknown enumeration value {v}"),
+                TYPE_VARIANT if _use_extern => ValType::Ref(RefType::EXTERNREF),
+                v => bail_with_site!(
+                    "Unknown enumeration value {v}.{}",
+                    if v == TYPE_VARIANT {
+                        " Enable native Godot object API to be able to pass Variant type."
+                    } else {
+                        ""
+                    }
+                ),
             })
         })
         .collect()
     }
 
     let p = variant_dispatch!(params {
-        ARRAY => f(params.iter_shared().map(|v| site_context!(from_var_any(v)))),
-        PACKED_BYTE_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v as _))),
-        PACKED_INT32_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v as _))),
-        PACKED_INT64_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v))),
+        ARRAY => f(params.iter_shared().map(|v| site_context!(from_var_any(v))), use_extern),
+        PACKED_BYTE_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v as _)), use_extern),
+        PACKED_INT32_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v as _)), use_extern),
+        PACKED_INT64_ARRAY => f(params.as_slice().iter().map(|&v| Ok(v)), use_extern),
         _ => bail_with_site!("Unconvertible value {params}"),
     })?;
 
     let r = variant_dispatch!(results {
-        ARRAY => f(results.iter_shared().map(|v| site_context!(from_var_any(v)))),
-        PACKED_BYTE_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v as _))),
-        PACKED_INT32_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v as _))),
-        PACKED_INT64_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v))),
+        ARRAY => f(results.iter_shared().map(|v| site_context!(from_var_any(v))), use_extern),
+        PACKED_BYTE_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v as _)), use_extern),
+        PACKED_INT32_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v as _)), use_extern),
+        PACKED_INT64_ARRAY => f(results.as_slice().iter().map(|&v| Ok(v)), use_extern),
         _ => bail_with_site!("Unconvertible value {results}"),
     })?;
 
@@ -452,7 +462,7 @@ where
     unsafe { Func::new_unchecked(store, ty_cloned, f) }
 }
 
-fn process_func(dict: Dictionary) -> AnyResult<(FuncType, CallableEnum)> {
+fn process_func(dict: Dictionary, use_extern: bool) -> AnyResult<(FuncType, CallableEnum)> {
     let Some(params) = dict.get(StringName::from(c"params")) else {
         bail_with_site!("Key \"params\" does not exist")
     };
@@ -480,7 +490,7 @@ fn process_func(dict: Dictionary) -> AnyResult<(FuncType, CallableEnum)> {
         )
     };
 
-    Ok((to_signature(params, results)?, callable))
+    Ok((to_signature(params, results, use_extern)?, callable))
 }
 
 pub struct HostModuleCache<T> {
@@ -511,7 +521,10 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
             .transpose()?
             .and_then(|d| d.get(name))
         {
-            let (sig, callable) = process_func(site_context!(from_var_any::<Dictionary>(data))?)?;
+            let (sig, callable) = process_func(
+                site_context!(from_var_any::<Dictionary>(data))?,
+                store.as_context_mut().data().as_ref().use_extern,
+            )?;
 
             let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
             self.cache.define(store, module, name, v.clone())?;

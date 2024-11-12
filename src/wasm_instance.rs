@@ -477,15 +477,17 @@ where
             bail_with_site!("Cannot instantiate component")
         };
 
-        let it = module_.imports().map(|i| {
-            let mut v = match &mut self.host {
-                Some(v) => v.get_extern(&mut self.store, i.module(), i.name())?,
-                None => None,
-            };
+        let imports = module_
+            .imports()
+            .map(|i| {
+                if let Some(v) = &mut self.host {
+                    if let Some(v) = v.get_extern(&mut self.store, i.module(), i.name())? {
+                        return Ok(v);
+                    }
+                }
 
-            #[cfg(any(feature = "object-registry-compat", feature = "object-registry-extern"))]
-            if v.is_none() {
-                v = match (i.module(), &self.config) {
+                #[cfg(any(feature = "object-registry-compat", feature = "object-registry-extern"))]
+                if let Some(v) = match (i.module(), &self.config) {
                     #[cfg(feature = "object-registry-compat")]
                     (
                         OBJREGISTRY_MODULE,
@@ -503,40 +505,42 @@ where
                         },
                     ) => self.externref_funcs.get_func(&mut self.store, i.name()),
                     _ => None,
+                } {
+                    return Ok(v.into());
                 }
-                .map(|v| v.into());
-            }
 
-            #[cfg(feature = "wasi")]
-            if v.is_none() {
-                if let Some(l) = &self.wasi_linker {
-                    v = l.get_by_import(&mut self.store, &i);
+                #[cfg(feature = "wasi")]
+                if let Some(v) = &self.wasi_linker {
+                    if let Some(v) = v.get_by_import(&mut self.store, &i) {
+                        return Ok(v);
+                    }
                 }
-            }
 
-            if v.is_none() {
                 if let Some(o) = module.imports.get(i.module()) {
                     let id = o.instance_id();
-                    v = loop {
-                        match self.insts.entry(id) {
-                            Entry::Occupied(v) => match v.get() {
-                                Some(v) => break v.get_export(&mut self.store, i.name()),
-                                None => bail_with_site!("Recursive data structure"),
-                            },
-                            Entry::Vacant(v) => v.insert(None),
-                        };
-                        let t = self.instantiate_wasm(o.bind().get_data()?)?;
-                        self.insts.insert(id, Some(t));
+                    let mut v = match self.insts.entry(id) {
+                        Entry::Vacant(v) => v.insert(None),
+                        Entry::Occupied(v) => match v.into_mut() {
+                            None => bail_with_site!("Recursive data structure"),
+                            v => v,
+                        },
                     };
+                    let t = loop {
+                        if let Some(v) = v {
+                            break v;
+                        }
+                        let t = self.instantiate_wasm(o.bind().get_data()?)?;
+                        v = self.insts.entry(id).or_insert(None);
+                        *v = Some(t);
+                    };
+                    if let Some(v) = t.get_export(&mut self.store, i.name()) {
+                        return Ok(v);
+                    }
                 }
-            }
 
-            match v {
-                Some(v) => Ok(v),
-                None => bail_with_site!("Unknown import {:?}.{:?}", i.module(), i.name()),
-            }
-        });
-        let imports = it.collect::<AnyResult<Vec<_>>>()?;
+                bail_with_site!("Unknown import {:?}.{:?}", i.module(), i.name());
+            })
+            .collect::<AnyResult<Vec<_>>>()?;
 
         InstanceWasm::new(&mut self.store, module_, &imports)
     }
