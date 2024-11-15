@@ -2,16 +2,17 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cn1injebc6e6v"
-path="res://.godot/imported/placeholder.bmp-484cb8b347284e3961967bde3ede1e0d.ctex"
+uid="uid://bmpd6nkwxp5dm"
+path="res://.godot/imported/WasmInstance.svg-931f13842868a6c5cf91c58d1935f967.ctex"
 metadata={
+"has_editor_variant": true,
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://addons/godot_wasm/placeholder.bmp"
-dest_files=["res://.godot/imported/placeholder.bmp-484cb8b347284e3961967bde3ede1e0d.ctex"]
+source_file="res://addons/godot_wasm/icons/WasmInstance.svg"
+dest_files=["res://.godot/imported/WasmInstance.svg-931f13842868a6c5cf91c58d1935f967.ctex"]
 
 [params]
 
@@ -23,7 +24,7 @@ compress/normal_map=0
 compress/channel_pack=0
 mipmaps/generate=false
 mipmaps/limit=-1
-roughness/mode=0
+roughness/mode=1
 roughness/src_normal=""
 process/fix_alpha_border=true
 process/premult_alpha=false
@@ -31,4 +32,7 @@ process/normal_map_invert_y=false
 process/hdr_as_srgb=false
 process/hdr_clamp_exposure=false
 process/size_limit=0
-detect_3d/compress_to=1
+detect_3d/compress_to=0
+svg/scale=1.0
+editor/scale_with_editor_scale=true
+editor/convert_colors_with_editor_theme=true

@@ -4,6 +4,12 @@ entry_symbol = "gdext_rust_init"
 compatibility_minimum = 4.3
 reloadable = false
 
+[icons]
+
+WasmModule = "res://addons/godot_wasm/icons/WasmModule.svg"
+WasmInstance = "res://addons/godot_wasm/icons/WasmInstance.svg"
+WasiContext = "res://addons/godot_wasm/icons/WasiContext.svg"
+
 [libraries]
 
 windows.debug.x86_32 = "res://addons/godot_wasm/bin/i686-pc-windows-msvc/godot_wasm.dll"
