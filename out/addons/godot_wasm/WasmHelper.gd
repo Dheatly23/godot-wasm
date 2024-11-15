@@ -1,12 +1,27 @@
 @tool
 class_name WasmHelper
+## Helper class for using [code]godot-wasm[/code]
 
+## 32-bit signed integer type ID.
 const TYPE_I32 = 1
+## 64-bit signed integer type ID.
 const TYPE_I64 = 2
+## 32-bit floating-point number type ID.
 const TYPE_F32 = 3
+## 64-bit floating-point number type ID.
 const TYPE_F64 = 4
+## Any Godot value type ID.
 const TYPE_VARIANT = 6
+## 128-bit vector type ID.[br][br]
+##
+## Supported Godot equivalent value:[br]
+## * [Vector4i] (default) : 4 32-bit integer, LSB to MSB is [code]x, y, z, w[/code].[br]
+## * [Array] : 2 64-bit integer, starts from LSB.[br]
+## * [PackedByteArray] : 16 8-bit integer, starts from LSB.[br]
+## * [PackedInt32Array] : 4 32-bit integer, starts from LSB.[br]
+## * [PackedInt64Array] : 2 64-bit integer, starts from LSB.[br]
 const TYPE_V128 = 7
+## Unknown type ID.
 const TYPE_UNKNOWN = -1
 
 static func load_wasm(
