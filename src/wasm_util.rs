@@ -222,14 +222,16 @@ pub unsafe fn to_raw<T: AsRef<StoreData>>(
         })),
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r)
-            if _store.as_context().data().as_ref().use_extern
-                && matches!(r.heap_type(), HeapType::Extern) =>
+            if matches!(r.heap_type(), HeapType::Extern)
+                && _store.as_context().data().as_ref().use_extern =>
         {
-            ValRaw::externref(match variant_to_externref(&mut _store, v.clone())? {
-                Some(v) => v.to_raw(_store)?,
-                None if r.is_nullable() => 0,
-                None => bail_with_site!("Converting null into non-nullable WASM type"),
-            })
+            ValRaw::externref(
+                match variant_to_externref(_store.as_context_mut(), v.clone())? {
+                    Some(v) => v.to_raw(_store)?,
+                    None if r.is_nullable() => 0,
+                    None => bail_with_site!("Converting null into non-nullable WASM type"),
+                },
+            )
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })
