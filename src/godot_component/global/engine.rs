@@ -198,10 +198,7 @@ impl bindgen::godot::global::engine::Host for GodotCtx {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, get_singleton)?;
         let name: StringName = self.get_value(name)?;
-        Engine::singleton()
-            .get_singleton(name)
-            .map(|v| self.set_into_var(v))
-            .transpose()
+        self.set_var(Engine::singleton().get_singleton(&name).to_variant())
     }
 
     fn get_singleton_list(&mut self) -> AnyResult<WasmResource<Variant>> {
@@ -221,7 +218,7 @@ impl bindgen::godot::global::engine::Host for GodotCtx {
 
     fn has_singleton(&mut self, name: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, has_singleton)?;
-        Ok(Engine::singleton().has_singleton(self.get_value(name)?))
+        Ok(Engine::singleton().has_singleton(&self.get_value::<StringName>(name)?))
     }
 
     fn is_editor_hint(&mut self) -> AnyResult<bool> {
@@ -237,14 +234,15 @@ impl bindgen::godot::global::engine::Host for GodotCtx {
     fn register_script_language(&mut self, lang: WasmResource<Variant>) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, register_script_language)?;
         wrap_error(
-            Engine::singleton().register_script_language(self.get_object::<ScriptLanguage>(lang)?),
+            Engine::singleton().register_script_language(&self.get_object::<ScriptLanguage>(lang)?),
         )
     }
 
     fn unregister_script_language(&mut self, lang: WasmResource<Variant>) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, unregister_script_language)?;
         wrap_error(
-            Engine::singleton().register_script_language(self.get_object::<ScriptLanguage>(lang)?),
+            Engine::singleton()
+                .unregister_script_language(&self.get_object::<ScriptLanguage>(lang)?),
         )
     }
 
@@ -254,14 +252,16 @@ impl bindgen::godot::global::engine::Host for GodotCtx {
         inst: WasmResource<Variant>,
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, register_singleton)?;
-        Engine::singleton()
-            .register_singleton(self.get_value(name)?, self.get_object::<Object>(inst)?);
+        Engine::singleton().register_singleton(
+            &self.get_value::<StringName>(name)?,
+            &self.get_object::<Object>(inst)?,
+        );
         Ok(())
     }
 
     fn unregister_singleton(&mut self, name: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, engine, unregister_singleton)?;
-        Engine::singleton().unregister_singleton(self.get_value(name)?);
+        Engine::singleton().unregister_singleton(&self.get_value::<StringName>(name)?);
         Ok(())
     }
 }

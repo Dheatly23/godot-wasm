@@ -227,6 +227,13 @@ fn instantiate(
 }
 
 impl WasiCommand {
+    fn emit_error_wrapper(&self, msg: String) {
+        self.to_gd().emit_signal(
+            &StringName::from(c"error_happened"),
+            &[GString::from(msg).to_variant()],
+        );
+    }
+
     pub fn get_data(&self) -> Result<&CommandData, Error> {
         if let Some(data) = self.data.get() {
             Ok(data)
@@ -252,10 +259,7 @@ impl WasiCommand {
                 );
                 */
                 godot_error!("{s}");
-                self.to_gd().emit_signal(
-                    StringName::from(c"error_happened"),
-                    &[GString::from(s).to_variant()],
-                );
+                self.emit_error_wrapper(s);
                 None
             }
         }
@@ -281,10 +285,7 @@ impl WasiCommand {
             Err(e) => {
                 let s = format!("{e:?}");
                 godot_error!("{s}");
-                self.to_gd().emit_signal(
-                    StringName::from(c"error_happened"),
-                    &[GString::from(s).to_variant()],
-                );
+                self.emit_error_wrapper(s);
                 false
             }
         }

@@ -40,7 +40,7 @@ impl ip::Host for crate::godot_component::GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_global, ip, clear_cache)?;
         Ip::singleton()
             .clear_cache_ex()
-            .hostname(self.get_value(h)?)
+            .hostname(&self.get_value::<GString>(h)?)
             .done();
         Ok(())
     }
@@ -89,7 +89,7 @@ impl ip::Host for crate::godot_component::GodotCtx {
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, ip, resolve_hostname)?;
         let r = Ip::singleton()
-            .resolve_hostname_ex(self.get_value(h)?)
+            .resolve_hostname_ex(&self.get_value::<GString>(h)?)
             .ip_type(from_type(i))
             .done();
         self.set_into_var(r)
@@ -102,7 +102,7 @@ impl ip::Host for crate::godot_component::GodotCtx {
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, ip, resolve_hostname_addresses)?;
         let r = Ip::singleton()
-            .resolve_hostname_addresses_ex(self.get_value(h)?)
+            .resolve_hostname_addresses_ex(&self.get_value::<GString>(h)?)
             .ip_type(from_type(i))
             .done();
         self.set_into_var(r)
@@ -115,7 +115,7 @@ impl ip::Host for crate::godot_component::GodotCtx {
     ) -> AnyResult<i32> {
         filter_macro!(filter self.filter.as_ref(), godot_global, ip, resolve_hostname_queue_item)?;
         Ok(Ip::singleton()
-            .resolve_hostname_queue_item_ex(self.get_value(h)?)
+            .resolve_hostname_queue_item_ex(&self.get_value::<GString>(h)?)
             .ip_type(from_type(i))
             .done())
     }

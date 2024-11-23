@@ -145,7 +145,7 @@ impl crate::godot_component::bindgen::godot::core::array::Host
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, array, set)?;
         let mut v: VariantArray = self.get_value(var)?;
-        v.set(ix as _, self.maybe_get_var(item)?);
+        v.set(ix as _, &self.maybe_get_var(item)?);
         Ok(())
     }
 
@@ -167,7 +167,7 @@ impl crate::godot_component::bindgen::godot::core::array::Host
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, array, push_back)?;
         let mut v: VariantArray = self.get_value(var)?;
-        v.push(self.maybe_get_var(item)?);
+        v.push(&self.maybe_get_var(item)?);
         Ok(())
     }
 
@@ -178,7 +178,7 @@ impl crate::godot_component::bindgen::godot::core::array::Host
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, array, push_front)?;
         let mut v: VariantArray = self.get_value(var)?;
-        v.push_front(self.maybe_get_var(item)?);
+        v.push_front(&self.maybe_get_var(item)?);
         Ok(())
     }
 
@@ -211,7 +211,7 @@ impl crate::godot_component::bindgen::godot::core::array::Host
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, array, insert)?;
         let mut v: VariantArray = self.get_value(var)?;
-        v.insert(i as _, self.maybe_get_var(item)?);
+        v.insert(i as _, &self.maybe_get_var(item)?);
         Ok(())
     }
 

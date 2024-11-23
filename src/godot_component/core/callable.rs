@@ -33,7 +33,7 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         filter_macro!(filter self.filter.as_ref(), godot_core, callable, from_object_method)?;
         let o: Gd<Object> = self.get_value(obj)?;
         let m: StringName = self.get_value(method)?;
-        self.set_into_var(Callable::from_object_method(&o, m))
+        self.set_into_var(Callable::from_object_method(&o, &m))
     }
 
     fn is_custom(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
@@ -71,7 +71,7 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         let mut a = self.get_arg_arr().clone();
         a.clear();
         for v in args {
-            a.push(self.maybe_get_var_borrow(v)?);
+            a.push(&*self.maybe_get_var_borrow(v)?);
         }
         let r = self.release_store(move || v.callv(&a));
         self.set_var(r)
@@ -99,7 +99,7 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
         let mut a = self.get_arg_arr().clone();
         a.clear();
         for v in args {
-            a.push(self.maybe_get_var_borrow(v)?);
+            a.push(&*self.maybe_get_var_borrow(v)?);
         }
         self.set_into_var(v.bindv(&a))
     }

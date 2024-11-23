@@ -141,7 +141,7 @@ impl input::Host for crate::godot_component::GodotCtx {
     fn action_press(&mut self, v: WasmResource<Variant>, s: f32) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, action_press)?;
         Input::singleton()
-            .action_press_ex(self.get_value(v)?)
+            .action_press_ex(&self.get_value::<StringName>(v)?)
             .strength(s)
             .done();
         Ok(())
@@ -149,14 +149,14 @@ impl input::Host for crate::godot_component::GodotCtx {
 
     fn action_release(&mut self, v: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, action_release)?;
-        Input::singleton().action_release(self.get_value(v)?);
+        Input::singleton().action_release(&self.get_value::<StringName>(v)?);
         Ok(())
     }
 
     fn add_joy_mapping(&mut self, v: WasmResource<Variant>, u: bool) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, add_joy_mapping)?;
         Input::singleton()
-            .add_joy_mapping_ex(self.get_value(v)?)
+            .add_joy_mapping_ex(&self.get_value::<GString>(v)?)
             .update_existing(u)
             .done();
         Ok(())
@@ -177,7 +177,7 @@ impl input::Host for crate::godot_component::GodotCtx {
     fn get_action_raw_strength(&mut self, v: WasmResource<Variant>, m: bool) -> AnyResult<f32> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, get_action_raw_strength)?;
         Ok(Input::singleton()
-            .get_action_raw_strength_ex(self.get_value(v)?)
+            .get_action_raw_strength_ex(&self.get_value::<StringName>(v)?)
             .exact_match(m)
             .done())
     }
@@ -185,14 +185,17 @@ impl input::Host for crate::godot_component::GodotCtx {
     fn get_action_strength(&mut self, v: WasmResource<Variant>, m: bool) -> AnyResult<f32> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, get_action_strength)?;
         Ok(Input::singleton()
-            .get_action_strength_ex(self.get_value(v)?)
+            .get_action_strength_ex(&self.get_value::<StringName>(v)?)
             .exact_match(m)
             .done())
     }
 
     fn get_axis(&mut self, n: WasmResource<Variant>, p: WasmResource<Variant>) -> AnyResult<f32> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, get_axis)?;
-        Ok(Input::singleton().get_axis(self.get_value(n)?, self.get_value(p)?))
+        Ok(Input::singleton().get_axis(
+            &self.get_value::<StringName>(n)?,
+            &self.get_value::<StringName>(p)?,
+        ))
     }
 
     fn get_connected_joypads(&mut self) -> AnyResult<WasmResource<Variant>> {
@@ -297,10 +300,10 @@ impl input::Host for crate::godot_component::GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, get_vector)?;
         let Vector2 { x, y } = Input::singleton()
             .get_vector_ex(
-                self.get_value(nx)?,
-                self.get_value(px)?,
-                self.get_value(ny)?,
-                self.get_value(py)?,
+                &self.get_value::<StringName>(nx)?,
+                &self.get_value::<StringName>(px)?,
+                &self.get_value::<StringName>(ny)?,
+                &self.get_value::<StringName>(py)?,
             )
             .deadzone(d)
             .done();
@@ -310,7 +313,7 @@ impl input::Host for crate::godot_component::GodotCtx {
     fn is_action_just_pressed(&mut self, a: WasmResource<Variant>, e: bool) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, is_action_just_pressed)?;
         Ok(Input::singleton()
-            .is_action_just_pressed_ex(self.get_value(a)?)
+            .is_action_just_pressed_ex(&self.get_value::<StringName>(a)?)
             .exact_match(e)
             .done())
     }
@@ -318,7 +321,7 @@ impl input::Host for crate::godot_component::GodotCtx {
     fn is_action_just_released(&mut self, a: WasmResource<Variant>, e: bool) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, is_action_just_released)?;
         Ok(Input::singleton()
-            .is_action_just_released_ex(self.get_value(a)?)
+            .is_action_just_released_ex(&self.get_value::<StringName>(a)?)
             .exact_match(e)
             .done())
     }
@@ -326,7 +329,7 @@ impl input::Host for crate::godot_component::GodotCtx {
     fn is_action_pressed(&mut self, a: WasmResource<Variant>, e: bool) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, is_action_pressed)?;
         Ok(Input::singleton()
-            .is_action_pressed_ex(self.get_value(a)?)
+            .is_action_pressed_ex(&self.get_value::<StringName>(a)?)
             .exact_match(e)
             .done())
     }
@@ -368,13 +371,13 @@ impl input::Host for crate::godot_component::GodotCtx {
 
     fn parse_input_event(&mut self, v: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, parse_input_even)?;
-        Input::singleton().parse_input_event(self.get_object::<InputEvent>(v)?);
+        Input::singleton().parse_input_event(&self.get_object::<InputEvent>(v)?);
         Ok(())
     }
 
     fn remove_joy_mapping(&mut self, v: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, remove_joy_mapping)?;
-        Input::singleton().remove_joy_mapping(self.get_value(v)?);
+        Input::singleton().remove_joy_mapping(&self.get_value::<GString>(v)?);
         Ok(())
     }
 
@@ -395,7 +398,7 @@ impl input::Host for crate::godot_component::GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input, set_custom_mouse_cursor)?;
         Input::singleton()
-            .set_custom_mouse_cursor_ex(self.get_object::<Resource>(i)?)
+            .set_custom_mouse_cursor_ex(&self.get_object::<Resource>(i)?)
             .shape(from_cursor_shape(s))
             .hotspot(Vector2 { x, y })
             .done();

@@ -46,12 +46,12 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
 
     fn class_exists(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_exists)?;
-        Ok(ClassDb::singleton().class_exists(self.get_value(class)?))
+        Ok(ClassDb::singleton().class_exists(&self.get_value::<StringName>(class)?))
     }
 
     fn is_class_enabled(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, is_class_enabled)?;
-        Ok(ClassDb::singleton().is_class_enabled(self.get_value(class)?))
+        Ok(ClassDb::singleton().is_class_enabled(&self.get_value::<StringName>(class)?))
     }
 
     fn get_parent_class(
@@ -59,7 +59,7 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         class: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, get_parent_class)?;
-        let r = ClassDb::singleton().get_parent_class(self.get_value(class)?);
+        let r = ClassDb::singleton().get_parent_class(&self.get_value::<StringName>(class)?);
         self.set_into_var(r)
     }
 
@@ -69,7 +69,10 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         parent: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, is_parent_class)?;
-        Ok(ClassDb::singleton().is_parent_class(self.get_value(class)?, self.get_value(parent)?))
+        Ok(ClassDb::singleton().is_parent_class(
+            &self.get_value::<StringName>(class)?,
+            &self.get_value::<StringName>(parent)?,
+        ))
     }
 
     fn get_inheriters_from_class(
@@ -77,13 +80,14 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         class: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, get_inheriters_from_class)?;
-        let r = ClassDb::singleton().get_inheriters_from_class(self.get_value(class)?);
+        let r =
+            ClassDb::singleton().get_inheriters_from_class(&self.get_value::<StringName>(class)?);
         self.set_into_var(r)
     }
 
     fn can_instantiate(&mut self, class: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, can_instantiate)?;
-        Ok(ClassDb::singleton().can_instantiate(self.get_value(class)?))
+        Ok(ClassDb::singleton().can_instantiate(&self.get_value::<StringName>(class)?))
     }
 
     fn instantiate(
@@ -91,7 +95,8 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         class: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, instantiate)?;
-        let r = ClassDb::singleton().instantiate(self.get_value(class)?);
+        let c: StringName = self.get_value(class)?;
+        let r = self.release_store(move || ClassDb::singleton().instantiate(&c));
         self.set_var(r)
     }
 
@@ -102,10 +107,14 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_enum_constants)?;
-        let r = ClassDb::singleton()
-            .class_get_enum_constants_ex(self.get_value(class)?, self.get_value(name)?)
-            .no_inheritance(no_inherit)
-            .done();
+        let c: StringName = self.get_value(class)?;
+        let n: StringName = self.get_value(name)?;
+        let r = self.release_store(move || {
+            ClassDb::singleton()
+                .class_get_enum_constants_ex(&c, &n)
+                .no_inheritance(no_inherit)
+                .done()
+        });
         self.set_into_var(r)
     }
 
@@ -115,10 +124,13 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_enum_list)?;
-        let r = ClassDb::singleton()
-            .class_get_enum_list_ex(self.get_value(class)?)
-            .no_inheritance(no_inherit)
-            .done();
+        let c: StringName = self.get_value(class)?;
+        let r = self.release_store(move || {
+            ClassDb::singleton()
+                .class_get_enum_list_ex(&c)
+                .no_inheritance(no_inherit)
+                .done()
+        });
         self.set_into_var(r)
     }
 
@@ -128,8 +140,9 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         name: WasmResource<Variant>,
     ) -> AnyResult<i64> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_integer_constant)?;
-        Ok(ClassDb::singleton()
-            .class_get_integer_constant(self.get_value(class)?, self.get_value(name)?))
+        let c: StringName = self.get_value(class)?;
+        let n: StringName = self.get_value(name)?;
+        self.release_store(move || Ok(ClassDb::singleton().class_get_integer_constant(&c, &n)))
     }
 
     fn class_get_integer_constant_enum(
@@ -139,10 +152,14 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_integer_constant_enum)?;
-        let r = ClassDb::singleton()
-            .class_get_integer_constant_enum_ex(self.get_value(class)?, self.get_value(name)?)
-            .no_inheritance(no_inherit)
-            .done();
+        let c: StringName = self.get_value(class)?;
+        let n: StringName = self.get_value(name)?;
+        let r = self.release_store(move || {
+            ClassDb::singleton()
+                .class_get_integer_constant_enum_ex(&c, &n)
+                .no_inheritance(no_inherit)
+                .done()
+        });
         self.set_into_var(r)
     }
 
@@ -152,10 +169,13 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_integer_constant_list)?;
-        let r = ClassDb::singleton()
-            .class_get_integer_constant_list_ex(self.get_value(class)?)
-            .no_inheritance(no_inherit)
-            .done();
+        let c: StringName = self.get_value(class)?;
+        let r = self.release_store(move || {
+            ClassDb::singleton()
+                .class_get_integer_constant_list_ex(&c)
+                .no_inheritance(no_inherit)
+                .done()
+        });
         self.set_into_var(r)
     }
 
@@ -165,10 +185,13 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_method_list)?;
-        let r = ClassDb::singleton()
-            .class_get_method_list_ex(self.get_value(class)?)
-            .no_inheritance(no_inherit)
-            .done();
+        let c: StringName = self.get_value(class)?;
+        let r = self.release_store(move || {
+            ClassDb::singleton()
+                .class_get_method_list_ex(&c)
+                .no_inheritance(no_inherit)
+                .done()
+        });
         self.set_into_var(r)
     }
 
@@ -178,10 +201,13 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_property_list)?;
-        let r = ClassDb::singleton()
-            .class_get_property_list_ex(self.get_value(class)?)
-            .no_inheritance(no_inherit)
-            .done();
+        let c: StringName = self.get_value(class)?;
+        let r = self.release_store(move || {
+            ClassDb::singleton()
+                .class_get_property_list_ex(&c)
+                .no_inheritance(no_inherit)
+                .done()
+        });
         self.set_into_var(r)
     }
 
@@ -191,10 +217,13 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_signal_list)?;
-        let r = ClassDb::singleton()
-            .class_get_signal_list_ex(self.get_value(class)?)
-            .no_inheritance(no_inherit)
-            .done();
+        let c: StringName = self.get_value(class)?;
+        let r = self.release_store(move || {
+            ClassDb::singleton()
+                .class_get_signal_list_ex(&c)
+                .no_inheritance(no_inherit)
+                .done()
+        });
         self.set_into_var(r)
     }
 
@@ -204,8 +233,9 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         name: WasmResource<Variant>,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_signal)?;
-        let r =
-            ClassDb::singleton().class_get_signal(self.get_value(class)?, self.get_value(name)?);
+        let c: StringName = self.get_value(class)?;
+        let n: StringName = self.get_value(name)?;
+        let r = self.release_store(move || ClassDb::singleton().class_get_signal(&c, &n));
         self.set_into_var(r)
     }
 
@@ -215,8 +245,9 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         name: WasmResource<Variant>,
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_get_property)?;
-        let r = ClassDb::singleton()
-            .class_get_property(self.get_object::<Object>(object)?, self.get_value(name)?);
+        let o: Gd<Object> = self.get_value(object)?;
+        let n: StringName = self.get_value(name)?;
+        let r = self.release_store(move || ClassDb::singleton().class_get_property(&o, &n));
         self.set_var(r)
     }
 
@@ -227,11 +258,10 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         value: Option<WasmResource<Variant>>,
     ) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_set_property)?;
-        wrap_error(ClassDb::singleton().class_set_property(
-            self.get_object::<Object>(object)?,
-            self.get_value(name)?,
-            &*self.maybe_get_var_borrow(value)?,
-        ))
+        let o: Gd<Object> = self.get_value(object)?;
+        let n: StringName = self.get_value(name)?;
+        let v = self.maybe_get_var(value)?;
+        self.release_store(move || wrap_error(ClassDb::singleton().class_set_property(&o, &n, &v)))
     }
 
     fn class_has_enum(
@@ -241,10 +271,14 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_has_enum)?;
-        Ok(ClassDb::singleton()
-            .class_has_enum_ex(self.get_value(class)?, self.get_value(name)?)
-            .no_inheritance(no_inherit)
-            .done())
+        let c: StringName = self.get_value(class)?;
+        let n: StringName = self.get_value(name)?;
+        self.release_store(move || {
+            Ok(ClassDb::singleton()
+                .class_has_enum_ex(&c, &n)
+                .no_inheritance(no_inherit)
+                .done())
+        })
     }
 
     fn class_has_integer_constant(
@@ -253,8 +287,9 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         name: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_has_integer_constant)?;
-        Ok(ClassDb::singleton()
-            .class_has_integer_constant(self.get_value(class)?, self.get_value(name)?))
+        let c: StringName = self.get_value(class)?;
+        let n: StringName = self.get_value(name)?;
+        self.release_store(move || Ok(ClassDb::singleton().class_has_integer_constant(&c, &n)))
     }
 
     fn class_has_method(
@@ -264,10 +299,14 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         no_inherit: bool,
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_has_method)?;
-        Ok(ClassDb::singleton()
-            .class_has_method_ex(self.get_value(class)?, self.get_value(name)?)
-            .no_inheritance(no_inherit)
-            .done())
+        let c: StringName = self.get_value(class)?;
+        let n: StringName = self.get_value(name)?;
+        self.release_store(move || {
+            Ok(ClassDb::singleton()
+                .class_has_method_ex(&c, &n)
+                .no_inheritance(no_inherit)
+                .done())
+        })
     }
 
     fn class_has_signal(
@@ -276,6 +315,8 @@ impl bindgen::godot::global::classdb::Host for GodotCtx {
         name: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, classdb, class_has_signal)?;
-        Ok(ClassDb::singleton().class_has_signal(self.get_value(class)?, self.get_value(name)?))
+        let c: StringName = self.get_value(class)?;
+        let n: StringName = self.get_value(name)?;
+        self.release_store(move || Ok(ClassDb::singleton().class_has_signal(&c, &n)))
     }
 }

@@ -95,6 +95,13 @@ impl AsMut<GodotCtx> for WasmScriptLikeStore {
 }
 
 impl WasmScriptLike {
+    fn emit_error_wrapper(&self, msg: String) {
+        self.to_gd().emit_signal(
+            &StringName::from(c"error_happened"),
+            &[GString::from(msg).to_variant()],
+        );
+    }
+
     fn instantiate(
         inst_id: InstanceId,
         ScriptConfig { config, filter }: ScriptConfig,
@@ -167,10 +174,7 @@ impl WasmScriptLike {
                 );
                 */
                 godot_error!("{s}");
-                self.to_gd().emit_signal(
-                    StringName::from(c"error_happened"),
-                    &[GString::from(s).to_variant()],
-                );
+                self.emit_error_wrapper(s);
                 None
             }
         }
@@ -196,10 +200,7 @@ impl WasmScriptLike {
             Err(e) => {
                 let s = format!("{e:?}");
                 godot_error!("{s}");
-                self.to_gd().emit_signal(
-                    StringName::from(c"error_happened"),
-                    &[GString::from(s).to_variant()],
-                );
+                self.emit_error_wrapper(s);
                 false
             }
         }

@@ -142,31 +142,31 @@ filter_macro! {method [
 impl globalscope::Host for GodotCtx {
     fn print(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, print)?;
-        print(&[s.to_variant()]);
+        self.release_store(move || print(&[s.to_variant()]));
         Ok(())
     }
 
     fn print_rich(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, print_rich)?;
-        print_rich(&[s.to_variant()]);
+        self.release_store(move || print_rich(&[s.to_variant()]));
         Ok(())
     }
 
     fn printerr(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, printerr)?;
-        printerr(&[s.to_variant()]);
+        self.release_store(move || printerr(&[s.to_variant()]));
         Ok(())
     }
 
     fn push_error(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, push_error)?;
-        push_error(&[s.to_variant()]);
+        self.release_store(move || push_error(&[s.to_variant()]));
         Ok(())
     }
 
     fn push_warning(&mut self, s: String) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, push_warning)?;
-        push_warning(&[s.to_variant()]);
+        self.release_store(move || push_warning(&[s.to_variant()]));
         Ok(())
     }
 
@@ -193,7 +193,8 @@ impl globalscope::Host for GodotCtx {
         v: Option<WasmResource<Variant>>,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_bytes)?;
-        let b = var_to_bytes(&*self.maybe_get_var_borrow(v)?);
+        let v = self.maybe_get_var(v)?;
+        let b = self.release_store(move || var_to_bytes(&v));
         self.set_into_var(b)
     }
 
@@ -202,19 +203,21 @@ impl globalscope::Host for GodotCtx {
         v: Option<WasmResource<Variant>>,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_bytes_with_objects)?;
-        let b = var_to_bytes_with_objects(&*self.maybe_get_var_borrow(v)?);
+        let v = self.maybe_get_var(v)?;
+        let b = self.release_store(move || var_to_bytes_with_objects(&v));
         self.set_into_var(b)
     }
 
     fn var_to_str(&mut self, v: Option<WasmResource<Variant>>) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, var_to_str)?;
-        let s = var_to_str(&*self.maybe_get_var_borrow(v)?);
+        let v = self.maybe_get_var(v)?;
+        let s = self.release_store(move || var_to_str(&v));
         self.set_into_var(s)
     }
 
     fn str_to_var(&mut self, s: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, str_to_var)?;
-        let v = str_to_var(self.get_value(s)?);
+        let v = str_to_var(&self.get_value::<GString>(s)?);
         self.set_var(v)
     }
 
@@ -341,7 +344,7 @@ impl globalscope::Host for GodotCtx {
 
     fn load(&mut self, path: String) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, load)?;
-        match ResourceLoader::singleton().load((&path).into()) {
+        match self.release_store(|| ResourceLoader::singleton().load(&path)) {
             Some(v) => self.set_into_var(v),
             None => bail!("Cannot load resource {path}"),
         }
@@ -349,11 +352,9 @@ impl globalscope::Host for GodotCtx {
 
     fn save(&mut self, res: WasmResource<Variant>, path: String) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_global, globalscope, save)?;
-        wrap_error(
-            ResourceSaver::singleton()
-                .save_ex(self.get_object::<Resource>(res)?)
-                .path((&path).into())
-                .done(),
-        )
+        let o = self.get_object::<Resource>(res)?;
+        self.release_store(move || {
+            wrap_error(ResourceSaver::singleton().save_ex(&o).path(&path).done())
+        })
     }
 }

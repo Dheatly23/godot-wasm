@@ -13,7 +13,7 @@ func_registry! {
     from_object_signal => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
-        variant_to_externref(ctx, Signal::from_object_signal(&obj, name).to_variant())
+        variant_to_externref(ctx, Signal::from_object_signal(&obj, &name).to_variant())
     },
     object => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Signal>(&externref_to_variant(&ctx, v)?))?;

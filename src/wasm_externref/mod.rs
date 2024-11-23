@@ -5,23 +5,24 @@ use godot::prelude::*;
 use wasmtime::{AsContext, AsContextMut, ExternRef, Rooted};
 
 use crate::godot_util::SendSyncWrapper;
-use crate::site_context;
+use crate::{bail_with_site, site_context};
 pub use funcs::Funcs;
 
 pub fn externref_to_variant(
     ctx: impl AsContext,
     v: Option<Rooted<ExternRef>>,
 ) -> AnyResult<Variant> {
-    v.and_then(|v| {
-        site_context!(v.data(ctx.as_context()))
-            .map(|v| {
-                v.downcast_ref::<SendSyncWrapper<Variant>>()
-                    .map(|v| (**v).clone())
-            })
-            .transpose()
-    })
-    .transpose()
-    .map(|v| v.unwrap_or_default())
+    Ok(match v {
+        None => None,
+        Some(v) => match site_context!(v.data(ctx.as_context()))? {
+            None => bail_with_site!("Externref is created by guest"),
+            Some(v) => match v.downcast_ref::<SendSyncWrapper<Variant>>() {
+                None => None,
+                Some(v) => Some((**v).clone()),
+            },
+        },
+    }
+    .unwrap_or_default())
 }
 
 pub fn variant_to_externref(

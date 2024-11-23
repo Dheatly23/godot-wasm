@@ -24,7 +24,7 @@ impl bindgen::godot::core::signal::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, signal, from_object_signal)?;
         let o: Gd<Object> = self.get_value(obj)?;
         let s: StringName = self.get_value(signal)?;
-        self.set_into_var(Signal::from_object_signal(&o, s))
+        self.set_into_var(Signal::from_object_signal(&o, &s))
     }
 
     fn object(&mut self, var: WasmResource<Variant>) -> AnyResult<Option<WasmResource<Variant>>> {
@@ -50,7 +50,7 @@ impl bindgen::godot::core::signal::Host for GodotCtx {
     ) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_core, signal, connect)?;
         let v: Signal = self.get_value(var)?;
-        wrap_error(v.connect(self.get_value(callable)?, flags as _))
+        wrap_error(v.connect(&self.get_value(callable)?, flags as _))
     }
 
     fn disconnect(
@@ -60,7 +60,7 @@ impl bindgen::godot::core::signal::Host for GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, signal, disconnect)?;
         let v: Signal = self.get_value(var)?;
-        v.disconnect(self.get_value(callable)?);
+        v.disconnect(&self.get_value(callable)?);
         Ok(())
     }
 
@@ -71,7 +71,7 @@ impl bindgen::godot::core::signal::Host for GodotCtx {
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_core, signal, is_connected)?;
         let v: Signal = self.get_value(var)?;
-        Ok(v.is_connected(self.get_value(callable)?))
+        Ok(v.is_connected(&self.get_value(callable)?))
     }
 
     fn emit(

@@ -36,8 +36,10 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
         e: WasmResource<Variant>,
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_add_event)?;
-        InputMap::singleton()
-            .action_add_event(self.get_value(a)?, self.get_object::<InputEvent>(e)?);
+        InputMap::singleton().action_add_event(
+            &self.get_value::<StringName>(a)?,
+            &self.get_object::<InputEvent>(e)?,
+        );
         Ok(())
     }
 
@@ -47,25 +49,27 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
         e: WasmResource<Variant>,
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_erase_event)?;
-        InputMap::singleton()
-            .action_erase_event(self.get_value(a)?, self.get_object::<InputEvent>(e)?);
+        InputMap::singleton().action_erase_event(
+            &self.get_value::<StringName>(a)?,
+            &self.get_object::<InputEvent>(e)?,
+        );
         Ok(())
     }
 
     fn action_erase_events(&mut self, a: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_erase_events)?;
-        InputMap::singleton().action_erase_events(self.get_value(a)?);
+        InputMap::singleton().action_erase_events(&self.get_value::<StringName>(a)?);
         Ok(())
     }
 
     fn action_get_deadzone(&mut self, a: WasmResource<Variant>) -> AnyResult<f32> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_get_deadzone)?;
-        Ok(InputMap::singleton().action_get_deadzone(self.get_value(a)?))
+        Ok(InputMap::singleton().action_get_deadzone(&self.get_value::<StringName>(a)?))
     }
 
     fn action_get_events(&mut self, a: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_get_events)?;
-        let r = InputMap::singleton().action_get_events(self.get_value(a)?);
+        let r = InputMap::singleton().action_get_events(&self.get_value::<StringName>(a)?);
         self.set_into_var(r)
     }
 
@@ -75,20 +79,22 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
         e: WasmResource<Variant>,
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_has_event)?;
-        Ok(InputMap::singleton()
-            .action_has_event(self.get_value(a)?, self.get_object::<InputEvent>(e)?))
+        Ok(InputMap::singleton().action_has_event(
+            &self.get_value::<StringName>(a)?,
+            &self.get_object::<InputEvent>(e)?,
+        ))
     }
 
     fn action_set_deadzone(&mut self, a: WasmResource<Variant>, v: f32) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, action_set_deadzone)?;
-        InputMap::singleton().action_set_deadzone(self.get_value(a)?, v);
+        InputMap::singleton().action_set_deadzone(&self.get_value::<StringName>(a)?, v);
         Ok(())
     }
 
     fn add_action(&mut self, a: WasmResource<Variant>, v: f32) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, add_action)?;
         InputMap::singleton()
-            .add_action_ex(self.get_value(a)?)
+            .add_action_ex(&self.get_value::<StringName>(a)?)
             .deadzone(v)
             .done();
         Ok(())
@@ -96,7 +102,7 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
 
     fn erase_action(&mut self, a: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, erase_action)?;
-        InputMap::singleton().erase_action(self.get_value(a)?);
+        InputMap::singleton().erase_action(&self.get_value::<StringName>(a)?);
         Ok(())
     }
 
@@ -108,7 +114,10 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
     ) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, event_is_action)?;
         Ok(InputMap::singleton()
-            .event_is_action_ex(self.get_object::<InputEvent>(e)?, self.get_value(a)?)
+            .event_is_action_ex(
+                &self.get_object::<InputEvent>(e)?,
+                &self.get_value::<StringName>(a)?,
+            )
             .exact_match(m)
             .done())
     }
@@ -120,7 +129,7 @@ impl crate::godot_component::bindgen::godot::global::input_map::Host
 
     fn has_action(&mut self, a: WasmResource<Variant>) -> AnyResult<bool> {
         filter_macro!(filter self.filter.as_ref(), godot_global, input_map, has_action)?;
-        Ok(InputMap::singleton().has_action(self.get_value(a)?))
+        Ok(InputMap::singleton().has_action(&self.get_value::<StringName>(a)?))
     }
 
     fn load_from_project_settings(&mut self) -> AnyResult<()> {

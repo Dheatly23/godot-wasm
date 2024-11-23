@@ -12,7 +12,7 @@ func_registry! {
     from_object_method => |ctx: Caller<'_, _>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(&ctx, obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(&ctx, name)?))?;
-        variant_to_externref(ctx, Callable::from_object_method(&obj, name).to_variant())
+        variant_to_externref(ctx, Callable::from_object_method(&obj, &name).to_variant())
     },
     invalid => |ctx: Caller<'_, _>| -> AnyResult<Option<Rooted<ExternRef>>> {
         variant_to_externref(ctx, Callable::invalid().to_variant())
