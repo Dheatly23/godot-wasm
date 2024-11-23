@@ -16,10 +16,9 @@ pub fn externref_to_variant(
         None => None,
         Some(v) => match site_context!(v.data(ctx.as_context()))? {
             None => bail_with_site!("Externref is created by guest"),
-            Some(v) => match v.downcast_ref::<SendSyncWrapper<Variant>>() {
-                None => None,
-                Some(v) => Some((**v).clone()),
-            },
+            Some(v) => v
+                .downcast_ref::<SendSyncWrapper<Variant>>()
+                .map(|v| (**v).clone()),
         },
     }
     .unwrap_or_default())
