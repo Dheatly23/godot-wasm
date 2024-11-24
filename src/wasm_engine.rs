@@ -64,7 +64,9 @@ pub fn init_engine() {
             .wasm_multi_memory(true)
             .wasm_memory64(true)
             .wasm_threads(true)
-            .wasm_custom_page_sizes(true);
+            .wasm_custom_page_sizes(true)
+            .wasm_extended_const(true)
+            .wasm_wide_arithmetic(true);
         #[cfg(feature = "component-model")]
         config
             .wasm_component_model(true)
