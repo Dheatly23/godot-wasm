@@ -66,7 +66,10 @@ pub fn init_engine() {
             .wasm_threads(true)
             .wasm_custom_page_sizes(true);
         #[cfg(feature = "component-model")]
-        config.wasm_component_model(true);
+        config
+            .wasm_component_model(true)
+            .wasm_component_model_more_flags(true)
+            .wasm_component_model_multiple_returns(true);
 
         let e = Engine::new(&config).unwrap();
         cfg_if! {
