@@ -52,6 +52,8 @@ features = [
   "wat",
   "parallel-compilation",
   "gc",
+  "gc-drc",
+  "gc-null",
   "threads",
   "demangle",
   "addr2line",
