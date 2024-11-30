@@ -124,8 +124,8 @@ impl Particles {
         let mut rng = Xoshiro512StarStar::from_entropy();
 
         for (px, py) in &mut self.position {
-            *px = rng.gen();
-            *py = rng.gen();
+            *px = rng.r#gen();
+            *py = rng.r#gen();
         }
     }
 }

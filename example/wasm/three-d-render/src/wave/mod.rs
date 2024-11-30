@@ -1,5 +1,5 @@
-use colorgrad::preset::turbo;
 use colorgrad::Gradient;
+use colorgrad::preset::turbo;
 
 use crate::Color;
 

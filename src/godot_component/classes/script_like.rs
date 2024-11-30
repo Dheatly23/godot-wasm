@@ -2,11 +2,11 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use wasmtime::component::{Linker, Resource as WasmResource};
 use wasmtime::Store;
+use wasmtime::component::{Linker, Resource as WasmResource};
 
 use crate::godot_component::filter::Filter;
-use crate::godot_component::{add_to_linker, bindgen, GodotCtx};
+use crate::godot_component::{GodotCtx, add_to_linker, bindgen};
 use crate::godot_util::PhantomProperty;
 use crate::wasm_config::Config;
 use crate::wasm_engine::WasmModule;
@@ -96,10 +96,10 @@ impl AsMut<GodotCtx> for WasmScriptLikeStore {
 
 impl WasmScriptLike {
     fn emit_error_wrapper(&self, msg: String) {
-        self.to_gd().emit_signal(
-            &StringName::from(c"error_happened"),
-            &[GString::from(msg).to_variant()],
-        );
+        self.to_gd()
+            .emit_signal(&StringName::from(c"error_happened"), &[
+                GString::from(msg).to_variant()
+            ]);
     }
 
     fn instantiate(
@@ -111,22 +111,19 @@ impl WasmScriptLike {
 
         let mut godot_ctx = GodotCtx::new(inst_id);
         godot_ctx.filter = filter;
-        let mut store = Store::new(
-            comp.engine(),
-            WasmScriptLikeStore {
-                #[cfg(feature = "epoch-timeout")]
-                epoch_timeout: if config.with_epoch {
-                    config.epoch_timeout
-                } else {
-                    0
-                },
-
-                #[cfg(feature = "memory-limiter")]
-                memory_limits: MemoryLimit::from_config(&config),
-
-                godot_ctx,
+        let mut store = Store::new(comp.engine(), WasmScriptLikeStore {
+            #[cfg(feature = "epoch-timeout")]
+            epoch_timeout: if config.with_epoch {
+                config.epoch_timeout
+            } else {
+                0
             },
-        );
+
+            #[cfg(feature = "memory-limiter")]
+            memory_limits: MemoryLimit::from_config(&config),
+
+            godot_ctx,
+        });
         #[cfg(feature = "epoch-timeout")]
         config_store_epoch(&mut store, &config)?;
         #[cfg(feature = "memory-limiter")]

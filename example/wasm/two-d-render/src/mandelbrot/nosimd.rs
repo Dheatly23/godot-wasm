@@ -1,4 +1,4 @@
-use super::{map_color, SIZE, STEPS, XMAX, XMIN, YMAX, YMIN};
+use super::{SIZE, STEPS, XMAX, XMIN, YMAX, YMIN, map_color};
 use crate::{Color, MouseButton, Renderable, State};
 
 #[derive(Debug, Default, Clone, Copy)]

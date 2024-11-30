@@ -2,11 +2,11 @@ use std::arch::wasm32::*;
 use std::mem::size_of_val;
 use std::slice::from_raw_parts_mut;
 
-use rand_xoshiro::rand_core::{RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro512StarStar;
+use rand_xoshiro::rand_core::{RngCore, SeedableRng};
 
 use super::SIZE;
-use crate::{log, MouseButton, Renderable, State};
+use crate::{MouseButton, Renderable, State, log};
 
 #[derive(Debug, Default)]
 pub struct GameOfLife {

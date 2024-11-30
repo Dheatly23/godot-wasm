@@ -4,15 +4,15 @@ use either::{Either, Left, Right};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use wasmtime::component::{Linker, ResourceTable};
 use wasmtime::Store;
+use wasmtime::component::{Linker, ResourceTable};
 use wasmtime_wasi::bindings::sync::Command;
-use wasmtime_wasi::{add_to_linker_sync, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView, add_to_linker_sync};
 
 #[cfg(feature = "godot-component")]
 use crate::godot_component::filter::Filter;
 #[cfg(feature = "godot-component")]
-use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
+use crate::godot_component::{GodotCtx, add_to_linker as godot_add_to_linker};
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
 use crate::wasm_engine::WasmModule;
@@ -176,27 +176,24 @@ fn instantiate(
     } else {
         Left(InnerLock::default())
     };
-    let mut store = Store::new(
-        comp.engine(),
-        StoreData {
-            #[cfg(feature = "epoch-timeout")]
-            epoch_timeout: if config.with_epoch {
-                config.epoch_timeout
-            } else {
-                0
-            },
-
-            #[cfg(feature = "memory-limiter")]
-            memory_limits: MemoryLimit::from_config(&config),
-
-            table: ResourceTable::new(),
-            wasi_ctx,
-            #[cfg(not(feature = "godot-component"))]
-            inner_lock: InnerLock::default(),
-            #[cfg(feature = "godot-component")]
-            godot_ctx,
+    let mut store = Store::new(comp.engine(), StoreData {
+        #[cfg(feature = "epoch-timeout")]
+        epoch_timeout: if config.with_epoch {
+            config.epoch_timeout
+        } else {
+            0
         },
-    );
+
+        #[cfg(feature = "memory-limiter")]
+        memory_limits: MemoryLimit::from_config(&config),
+
+        table: ResourceTable::new(),
+        wasi_ctx,
+        #[cfg(not(feature = "godot-component"))]
+        inner_lock: InnerLock::default(),
+        #[cfg(feature = "godot-component")]
+        godot_ctx,
+    });
     #[cfg(feature = "epoch-timeout")]
     config_store_epoch(&mut store, &config)?;
     #[cfg(feature = "memory-limiter")]
@@ -228,10 +225,10 @@ fn instantiate(
 
 impl WasiCommand {
     fn emit_error_wrapper(&self, msg: String) {
-        self.to_gd().emit_signal(
-            &StringName::from(c"error_happened"),
-            &[GString::from(msg).to_variant()],
-        );
+        self.to_gd()
+            .emit_signal(&StringName::from(c"error_happened"), &[
+                GString::from(msg).to_variant()
+            ]);
     }
 
     pub fn get_data(&self) -> Result<&CommandData, Error> {

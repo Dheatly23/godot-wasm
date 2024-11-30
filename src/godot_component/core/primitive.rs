@@ -389,19 +389,23 @@ impl primitive::Host for crate::godot_component::GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, primitive, to_basis)?;
         let Basis {
             rows:
-                [Vector3 {
-                    x: ax,
-                    y: bx,
-                    z: cx,
-                }, Vector3 {
-                    x: ay,
-                    y: by,
-                    z: cy,
-                }, Vector3 {
-                    x: az,
-                    y: bz,
-                    z: cz,
-                }],
+                [
+                    Vector3 {
+                        x: ax,
+                        y: bx,
+                        z: cx,
+                    },
+                    Vector3 {
+                        x: ay,
+                        y: by,
+                        z: cy,
+                    },
+                    Vector3 {
+                        x: az,
+                        y: bz,
+                        z: cz,
+                    },
+                ],
         } = self.get_value(var)?;
         Ok(primitive::Basis {
             col_a: primitive::Vector3 {
@@ -521,19 +525,23 @@ impl primitive::Host for crate::godot_component::GodotCtx {
             basis:
                 Basis {
                     rows:
-                        [Vector3 {
-                            x: ax,
-                            y: bx,
-                            z: cx,
-                        }, Vector3 {
-                            x: ay,
-                            y: by,
-                            z: cy,
-                        }, Vector3 {
-                            x: az,
-                            y: bz,
-                            z: cz,
-                        }],
+                        [
+                            Vector3 {
+                                x: ax,
+                                y: bx,
+                                z: cx,
+                            },
+                            Vector3 {
+                                x: ay,
+                                y: by,
+                                z: cy,
+                            },
+                            Vector3 {
+                                x: az,
+                                y: bz,
+                                z: cz,
+                            },
+                        ],
                 },
             origin:
                 Vector3 {
@@ -637,27 +645,32 @@ impl primitive::Host for crate::godot_component::GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, primitive, to_projection)?;
         let Projection {
             cols:
-                [Vector4 {
-                    x: ax,
-                    y: ay,
-                    z: az,
-                    w: aw,
-                }, Vector4 {
-                    x: bx,
-                    y: by,
-                    z: bz,
-                    w: bw,
-                }, Vector4 {
-                    x: cx,
-                    y: cy,
-                    z: cz,
-                    w: cw,
-                }, Vector4 {
-                    x: dx,
-                    y: dy,
-                    z: dz,
-                    w: dw,
-                }],
+                [
+                    Vector4 {
+                        x: ax,
+                        y: ay,
+                        z: az,
+                        w: aw,
+                    },
+                    Vector4 {
+                        x: bx,
+                        y: by,
+                        z: bz,
+                        w: bw,
+                    },
+                    Vector4 {
+                        x: cx,
+                        y: cy,
+                        z: cz,
+                        w: cw,
+                    },
+                    Vector4 {
+                        x: dx,
+                        y: dy,
+                        z: dz,
+                        w: dw,
+                    },
+                ],
         } = self.get_value(var)?;
         Ok(primitive::Projection {
             col_a: primitive::Vector4 {

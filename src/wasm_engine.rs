@@ -5,7 +5,7 @@ use std::path::PathBuf;
 #[cfg(feature = "epoch-timeout")]
 use std::{thread, time};
 
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use cfg_if::cfg_if;
 use godot::classes::FileAccess;
 use godot::prelude::*;
@@ -15,11 +15,11 @@ use parking_lot::RwLock;
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
 
-use crate::godot_util::{from_var_any, variant_to_option, PhantomProperty};
+use crate::godot_util::{PhantomProperty, from_var_any, variant_to_option};
 use crate::wasm_instance::WasmInstance;
-use crate::wasm_util::from_signature;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
+use crate::wasm_util::from_signature;
 use crate::{bail_with_site, site_context, variant_dispatch};
 
 cfg_if! {

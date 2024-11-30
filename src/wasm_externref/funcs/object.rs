@@ -3,7 +3,7 @@ use godot::global::Error as GError;
 use godot::prelude::*;
 use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut, TypedFunc};
 
-use crate::godot_util::{from_var_any, ErrorWrapper};
+use crate::godot_util::{ErrorWrapper, from_var_any};
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
 use crate::wasm_instance::StoreData;
 use crate::{bail_with_site, func_registry, site_context};

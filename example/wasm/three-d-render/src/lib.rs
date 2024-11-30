@@ -6,11 +6,11 @@ use std::cell::RefCell;
 use std::fmt::{Arguments, Write as _};
 use std::ptr::{addr_of, addr_of_mut, null};
 
-use getrandom::{register_custom_getrandom, Error as RandError};
+use getrandom::{Error as RandError, register_custom_getrandom};
 use glam::f32::*;
 
 #[link(wasm_import_module = "host")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "log"]
     fn _log(p: *const u8, n: usize);
     #[link_name = "rand"]
@@ -37,7 +37,7 @@ static mut TEMP_STR: RefCell<String> = RefCell::new(String::new());
 #[allow(dead_code)]
 pub(crate) fn print_log(args: Arguments) {
     // SAFETY: Wraps static mut
-    let mut guard = unsafe { TEMP_STR.borrow_mut() };
+    let mut guard = unsafe { (*addr_of!(TEMP_STR)).borrow_mut() };
     guard.clear();
     guard.write_fmt(args).unwrap();
     log(&guard);
@@ -145,7 +145,7 @@ impl RenderData {
             ConfigItem::from_str("Double Joint"),
             ConfigItem::from_str("Maze"),
         ]);
-        addr_of!(CFG)
+        &raw const CFG
     }
 
     fn new(ix: u64) -> Option<Self> {
@@ -207,12 +207,12 @@ static mut STATE_EXPORT: ExportState = ExportState {
 };
 static mut T: f64 = 0.0;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn config() -> *const Config {
     RenderData::config()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn init(index: u64) {
     unsafe {
         STATE = State::default();
@@ -220,33 +220,34 @@ pub extern "C" fn init(index: u64) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn process(delta: f64) -> *const ExportState {
     unsafe {
+        let state = &mut *addr_of_mut!(STATE);
         T += delta;
         if let Some(rp) = &mut *addr_of_mut!(RENDER) {
             rp.step(T as _, delta as _);
-            rp.render(&mut *addr_of_mut!(STATE));
+            rp.render(&mut *state);
         };
         STATE_EXPORT = ExportState {
-            vertex_ptr: STATE.vertex.as_ptr(),
-            vertex_cnt: STATE.vertex.len(),
-            normal_ptr: STATE.normal.as_ptr(),
-            normal_cnt: STATE.normal.len(),
-            tangent_ptr: STATE.tangent.as_ptr(),
-            tangent_cnt: STATE.tangent.len(),
-            uv_ptr: STATE.uv.as_ptr(),
-            uv_cnt: STATE.uv.len(),
-            color_ptr: STATE.color.as_ptr(),
-            color_cnt: STATE.color.len(),
-            index_ptr: STATE.index.as_ptr(),
-            index_cnt: STATE.index.len(),
+            vertex_ptr: state.vertex.as_ptr(),
+            vertex_cnt: state.vertex.len(),
+            normal_ptr: state.normal.as_ptr(),
+            normal_cnt: state.normal.len(),
+            tangent_ptr: state.tangent.as_ptr(),
+            tangent_cnt: state.tangent.len(),
+            uv_ptr: state.uv.as_ptr(),
+            uv_cnt: state.uv.len(),
+            color_ptr: state.color.as_ptr(),
+            color_cnt: state.color.len(),
+            index_ptr: state.index.as_ptr(),
+            index_cnt: state.index.len(),
         };
-        addr_of!(STATE_EXPORT)
+        &raw const STATE_EXPORT
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn click(ox: f32, oy: f32, oz: f32, nx: f32, ny: f32, nz: f32, button: u32) {
     let button = match button {
         0 => MouseButton::Left,

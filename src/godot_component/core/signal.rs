@@ -3,7 +3,7 @@ use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
 use crate::filter_macro;
-use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
+use crate::godot_component::{ErrorRes, GodotCtx, bindgen, wrap_error};
 
 filter_macro! {method [
     from_object_signal -> "from-object-signal",

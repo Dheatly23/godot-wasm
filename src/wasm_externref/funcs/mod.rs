@@ -37,7 +37,9 @@ macro_rules! register{
     };
 }
 
-register![array, callable, compat, dict, object, pool_array, primitive, signal, string, typeis];
+register![
+    array, callable, compat, dict, object, pool_array, primitive, signal, string, typeis
+];
 
 #[cfg(not(feature = "object-registry-compat"))]
 mod compat {

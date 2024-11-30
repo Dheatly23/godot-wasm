@@ -5,8 +5,8 @@ use std::io::{Result as IoResult, Write};
 use std::ops::Deref;
 use std::ptr;
 use std::slice;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Poll, Waker};
 
 use async_trait::async_trait;

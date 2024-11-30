@@ -60,7 +60,7 @@ fn get_field<T: FromGodot>(
 ) -> Result<Option<T>, ConvertError> {
     for name in names {
         if let Some(v) = d.get(name) {
-            return Some(v.try_to()).transpose();
+            return Ok(Some(v.try_to()?));
         }
     }
 

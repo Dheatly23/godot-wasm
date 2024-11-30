@@ -15,7 +15,7 @@ use crate::wasi_ctx::stdio::StreamWrapper;
 use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
 //use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
 use crate::godot_util::{
-    gstring_from_maybe_utf8, option_to_variant, variant_to_option, SendSyncWrapper,
+    SendSyncWrapper, gstring_from_maybe_utf8, option_to_variant, variant_to_option,
 };
 use crate::site_context;
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};

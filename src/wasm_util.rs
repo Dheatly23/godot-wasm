@@ -18,7 +18,7 @@ use wasmtime::{
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, HeapType, RefType};
 
-use crate::godot_util::{from_var_any, SendSyncWrapper};
+use crate::godot_util::{SendSyncWrapper, from_var_any};
 use crate::variant_dispatch;
 use crate::wasm_config::Config;
 use crate::wasm_engine::get_engine;
@@ -83,7 +83,7 @@ macro_rules! site_context {
             $crate::wasm_util::add_site(anyhow::Error::from(e), gdnative::log::godot_site!())
         })
         */
-        $e.map_err(anyhow::Error::from)
+        ($e).map_err(anyhow::Error::from)
     };
 }
 
@@ -227,7 +227,7 @@ pub unsafe fn to_raw<T: AsRef<StoreData>>(
         {
             ValRaw::externref(
                 match variant_to_externref(_store.as_context_mut(), v.clone())? {
-                    Some(v) => v.to_raw(_store)?,
+                    Some(v) => unsafe { v.to_raw(_store)? },
                     None if r.is_nullable() => 0,
                     None => bail_with_site!("Converting null into non-nullable WASM type"),
                 },
@@ -257,7 +257,7 @@ pub unsafe fn from_raw<T: AsRef<StoreData>>(
             if _store.as_context().data().as_ref().use_extern
                 && matches!(r.heap_type(), HeapType::Extern) =>
         {
-            let v = ExternRef::from_raw(&mut _store, v.get_externref());
+            let v = unsafe { ExternRef::from_raw(&mut _store, v.get_externref()) };
             return externref_to_variant(_store, v);
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
@@ -275,21 +275,21 @@ struct ParamCacheGuard<'a> {
     data: &'a mut [ValRaw],
 }
 
-impl<'a> Drop for ParamCacheGuard<'a> {
+impl Drop for ParamCacheGuard<'_> {
     fn drop(&mut self) {
         let v = self.len.replace(self.len.get() - self.data.len());
         debug_assert_eq!(v, self.old_len);
     }
 }
 
-impl<'a> Deref for ParamCacheGuard<'a> {
+impl Deref for ParamCacheGuard<'_> {
     type Target = [ValRaw];
     fn deref(&self) -> &[ValRaw] {
         &*self.data
     }
 }
 
-impl<'a> DerefMut for ParamCacheGuard<'a> {
+impl DerefMut for ParamCacheGuard<'_> {
     fn deref_mut(&mut self) -> &mut [ValRaw] {
         &mut *self.data
     }
@@ -372,14 +372,18 @@ where
         let Some(v) = args.next() else {
             bail_with_site!("Too few parameters (expected {pl}, got {i})")
         };
-        *o = to_raw(&mut ctx, p, v.borrow())?;
+        unsafe {
+            *o = to_raw(&mut ctx, p, v.borrow())?;
+        }
     }
     drop(args);
 
-    f.call_unchecked(&mut ctx, v.as_mut_ptr(), v.len())?;
+    unsafe {
+        f.call_unchecked(&mut ctx, v.as_mut_ptr(), v.len())?;
+    }
 
     ri.zip(v.iter())
-        .map(|(t, v)| from_raw(&mut ctx, t, *v))
+        .map(|(t, v)| unsafe { from_raw(&mut ctx, t, *v) })
         .collect()
 }
 

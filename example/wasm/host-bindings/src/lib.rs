@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 #[link(wasm_import_module = "host")]
-extern "C" {
+unsafe extern "C" {
     fn write(ptr: u32, n: u32);
 }
 
@@ -14,7 +14,7 @@ fn write_log(s: &str) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn main() {
     let mut s = String::new();
     for i in 1..=30 {

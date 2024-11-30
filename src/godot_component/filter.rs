@@ -130,7 +130,7 @@ impl<const N: usize> FilterFlags<N> {
 }
 
 #[allow(dead_code)]
-impl<'a, const N: usize> FilterFlagsRef<'a, N> {
+impl<const N: usize> FilterFlagsRef<'_, N> {
     pub fn slice(&self, i: impl RangeBounds<usize> + Debug) -> Self {
         let Self { r, o, l } = *self;
         let Some((o, l)) = rebound(o, l, i.start_bound(), i.end_bound()) else {
@@ -415,52 +415,40 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
     for (k, v) in d.iter_shared() {
         f(&mut module, k)?;
         if module == "*" {
-            parse_filter(
-                fi.slice_mut(..),
-                FilterItem {
-                    allow: v.try_to()?,
-                    ..FilterItem::default()
-                },
-            );
+            parse_filter(fi.slice_mut(..), FilterItem {
+                allow: v.try_to()?,
+                ..FilterItem::default()
+            });
             continue;
         }
 
         if v.get_type() == VariantType::BOOL {
-            parse_filter(
-                fi.slice_mut(..),
-                FilterItem {
-                    allow: v.to(),
-                    module: Some(&module),
-                    ..FilterItem::default()
-                },
-            );
+            parse_filter(fi.slice_mut(..), FilterItem {
+                allow: v.to(),
+                module: Some(&module),
+                ..FilterItem::default()
+            });
             continue;
         }
 
         for (k, v) in v.try_to::<Dictionary>()?.iter_shared() {
             f(&mut interface, k)?;
             if interface == "*" {
-                parse_filter(
-                    fi.slice_mut(..),
-                    FilterItem {
-                        allow: v.try_to()?,
-                        module: Some(&module),
-                        ..FilterItem::default()
-                    },
-                );
+                parse_filter(fi.slice_mut(..), FilterItem {
+                    allow: v.try_to()?,
+                    module: Some(&module),
+                    ..FilterItem::default()
+                });
                 continue;
             }
 
             if v.get_type() == VariantType::BOOL {
-                parse_filter(
-                    fi.slice_mut(..),
-                    FilterItem {
-                        allow: v.to(),
-                        module: Some(&module),
-                        interface: Some(&interface),
-                        ..FilterItem::default()
-                    },
-                );
+                parse_filter(fi.slice_mut(..), FilterItem {
+                    allow: v.to(),
+                    module: Some(&module),
+                    interface: Some(&interface),
+                    ..FilterItem::default()
+                });
                 continue;
             }
 
@@ -468,27 +456,21 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
                 f(&mut method, k)?;
                 let allow = v.try_to::<bool>()?;
                 if method == "*" {
-                    parse_filter(
-                        fi.slice_mut(..),
-                        FilterItem {
-                            allow,
-                            module: Some(&module),
-                            interface: Some(&interface),
-                            ..FilterItem::default()
-                        },
-                    );
-                    continue;
-                }
-
-                parse_filter(
-                    fi.slice_mut(..),
-                    FilterItem {
+                    parse_filter(fi.slice_mut(..), FilterItem {
                         allow,
                         module: Some(&module),
                         interface: Some(&interface),
-                        method: Some(&method),
-                    },
-                );
+                        ..FilterItem::default()
+                    });
+                    continue;
+                }
+
+                parse_filter(fi.slice_mut(..), FilterItem {
+                    allow,
+                    module: Some(&module),
+                    interface: Some(&interface),
+                    method: Some(&method),
+                });
             }
         }
     }
@@ -504,7 +486,7 @@ pub struct FilterItem<'a> {
     pub method: Option<&'a str>,
 }
 
-impl<'a> Debug for FilterItem<'a> {
+impl Debug for FilterItem<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         static UNKNOWN: &str = "<unknown>";
         write!(
@@ -517,13 +499,13 @@ impl<'a> Debug for FilterItem<'a> {
     }
 }
 
-impl<'a> Display for FilterItem<'a> {
+impl Display for FilterItem<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         <Self as Debug>::fmt(self, f)
     }
 }
 
-impl<'a> Error for FilterItem<'a> {}
+impl Error for FilterItem<'_> {}
 
 #[allow(clippy::type_complexity)]
 fn parse_line(
@@ -610,15 +592,12 @@ fn parse_script(s: &GString) -> Result<Filter, NomErr<SingleError<String>>> {
         } else {
             None
         };
-        parse_filter(
-            f.slice_mut(..),
-            FilterItem {
-                module,
-                interface,
-                method,
-                allow,
-            },
-        );
+        parse_filter(f.slice_mut(..), FilterItem {
+            module,
+            interface,
+            method,
+            allow,
+        });
     }
 
     Ok(ret)

@@ -1,5 +1,5 @@
-use colorgrad::preset::rd_yl_bu;
 use colorgrad::Gradient;
+use colorgrad::preset::rd_yl_bu;
 
 use crate::Color;
 

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use godot::classes::{ResourceLoader, ResourceSaver};
 use godot::global::*;
 use godot::prelude::*;
@@ -7,7 +7,7 @@ use wasmtime::component::Resource as WasmResource;
 use crate::filter_macro;
 use crate::godot_component::bindgen::godot::core::typeis::VariantType as CompVarType;
 use crate::godot_component::bindgen::godot::global::globalscope;
-use crate::godot_component::{wrap_error, ErrorRes, GodotCtx};
+use crate::godot_component::{ErrorRes, GodotCtx, wrap_error};
 
 pub fn from_joy_axis(v: globalscope::JoyAxis) -> JoyAxis {
     match v {

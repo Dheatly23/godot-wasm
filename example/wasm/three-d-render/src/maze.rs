@@ -5,7 +5,7 @@ use glam::f32::*;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro512StarStar;
 
-use crate::{log, Color, MouseButton, Renderable, State};
+use crate::{Color, MouseButton, Renderable, State, log};
 
 const SIZE: usize = 8;
 const TIME_SCALE: f32 = 1. / 64.;
@@ -29,7 +29,7 @@ const FLAG_M: u8 = 128;
 
 #[derive(Debug, Clone, Copy)]
 enum Slice {
-    NoSlice,
+    None,
     X(usize),
     Y(usize),
     Z(usize),
@@ -61,7 +61,7 @@ impl Renderable for Maze {
             residue: 0.0,
             paused: false,
 
-            slice: Slice::NoSlice,
+            slice: Slice::None,
         };
 
         let x = ret.rng.gen_range(0..SIZE);
@@ -197,7 +197,7 @@ impl Renderable for Maze {
                     let [_, y, z] = vec_to_uarr(if v == 0 { txp } else { txm });
                     match self.slice {
                         Slice::Z(v) if v == z => Slice::Y(y),
-                        Slice::Y(v) if v == y => Slice::NoSlice,
+                        Slice::Y(v) if v == y => Slice::None,
                         Slice::Y(_) => Slice::Y(y),
                         _ => Slice::Z(z),
                     }
@@ -206,7 +206,7 @@ impl Renderable for Maze {
                     let [x, _, z] = vec_to_uarr(if v == 1 { typ } else { tym });
                     match self.slice {
                         Slice::X(v) if v == x => Slice::Z(z),
-                        Slice::Z(v) if v == z => Slice::NoSlice,
+                        Slice::Z(v) if v == z => Slice::None,
                         Slice::Z(_) => Slice::Z(z),
                         _ => Slice::X(x),
                     }
@@ -215,7 +215,7 @@ impl Renderable for Maze {
                     let [x, y, _] = vec_to_uarr(if v == 2 { tzp } else { tzm });
                     match self.slice {
                         Slice::X(v) if v == x => Slice::Y(y),
-                        Slice::Y(v) if v == y => Slice::NoSlice,
+                        Slice::Y(v) if v == y => Slice::None,
                         Slice::Y(_) => Slice::Y(y),
                         _ => Slice::X(x),
                     }
@@ -352,7 +352,7 @@ impl Renderable for Maze {
 
                     #[derive(Clone, Copy, PartialEq, Eq)]
                     enum Axis {
-                        NoAxis,
+                        None,
                         X,
                         Y,
                         Z,
@@ -365,10 +365,10 @@ impl Renderable for Maze {
                         Slice::X(v) if x != v => continue,
                         Slice::Y(v) if y != v => continue,
                         Slice::Z(v) if z != v => continue,
-                        _ => Axis::NoAxis,
+                        _ => Axis::None,
                     };
 
-                    if (x == 0 || self.data[j - 1] & FLAG_R == 0) && axis == Axis::NoAxis {
+                    if (x == 0 || self.data[j - 1] & FLAG_R == 0) && axis == Axis::None {
                         add_quad(
                             &mut *state,
                             Vec3::new(x_, y_, z_) + SPACE_OFFSET,
@@ -381,7 +381,7 @@ impl Renderable for Maze {
                             true,
                         );
                     }
-                    if v & FLAG_R != 0 && matches!(axis, Axis::NoAxis | Axis::X) {
+                    if v & FLAG_R != 0 && matches!(axis, Axis::None | Axis::X) {
                         add_tube(
                             &mut *state,
                             Vec3::new(x_ + SPACE_SCALE / 2., y_ + SPACE_SCALE / 2., z_)
@@ -395,7 +395,7 @@ impl Renderable for Maze {
                             TUBE_C,
                             UVPos::None,
                         );
-                    } else if axis == Axis::NoAxis {
+                    } else if axis == Axis::None {
                         add_quad(
                             &mut *state,
                             Vec3::new(x_ + SPACE_SCALE / 2., y_, z_) + SPACE_OFFSET,
@@ -409,7 +409,7 @@ impl Renderable for Maze {
                         );
                     }
 
-                    if (y == 0 || self.data[j - SIZE] & FLAG_U == 0) && axis == Axis::NoAxis {
+                    if (y == 0 || self.data[j - SIZE] & FLAG_U == 0) && axis == Axis::None {
                         add_quad(
                             &mut *state,
                             Vec3::new(x_, y_, z_) + SPACE_OFFSET,
@@ -422,7 +422,7 @@ impl Renderable for Maze {
                             true,
                         );
                     }
-                    if v & FLAG_U != 0 && matches!(axis, Axis::NoAxis | Axis::Y) {
+                    if v & FLAG_U != 0 && matches!(axis, Axis::None | Axis::Y) {
                         add_tube(
                             &mut *state,
                             Vec3::new(x_, y_ + SPACE_SCALE / 2., z_) + SPACE_OFFSET,
@@ -435,7 +435,7 @@ impl Renderable for Maze {
                             TUBE_C,
                             UVPos::None,
                         );
-                    } else if axis == Axis::NoAxis {
+                    } else if axis == Axis::None {
                         add_quad(
                             &mut *state,
                             Vec3::new(x_, y_ + SPACE_SCALE / 2., z_) + SPACE_OFFSET,
@@ -449,8 +449,7 @@ impl Renderable for Maze {
                         );
                     }
 
-                    if (z == 0 || self.data[j - SIZE * SIZE] & FLAG_F == 0) && axis == Axis::NoAxis
-                    {
+                    if (z == 0 || self.data[j - SIZE * SIZE] & FLAG_F == 0) && axis == Axis::None {
                         add_quad(
                             &mut *state,
                             Vec3::new(x_, y_, z_) + SPACE_OFFSET,
@@ -463,7 +462,7 @@ impl Renderable for Maze {
                             false,
                         );
                     }
-                    if v & FLAG_F != 0 && matches!(axis, Axis::NoAxis | Axis::Z) {
+                    if v & FLAG_F != 0 && matches!(axis, Axis::None | Axis::Z) {
                         add_tube(
                             &mut *state,
                             Vec3::new(x_, y_ + SPACE_SCALE / 2., z_ + SPACE_SCALE / 2.)
@@ -477,7 +476,7 @@ impl Renderable for Maze {
                             TUBE_C,
                             UVPos::None,
                         );
-                    } else if axis == Axis::NoAxis {
+                    } else if axis == Axis::None {
                         add_quad(
                             &mut *state,
                             Vec3::new(x_, y_, z_ + SPACE_SCALE / 2.) + SPACE_OFFSET,

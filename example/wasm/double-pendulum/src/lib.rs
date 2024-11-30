@@ -1,7 +1,6 @@
 mod deriv_trait;
 
 use std::ops;
-use std::ptr::addr_of;
 
 const G: f64 = 9.8;
 
@@ -40,7 +39,7 @@ static mut STATE: PendulumState = PendulumState {
 };
 static mut T: f64 = 0.0;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn setup(
     m1: f64,
     m2: f64,
@@ -71,7 +70,7 @@ pub extern "C" fn setup(
 
 static mut OUTPUT: [f64; 4] = [0.0; 4];
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn process(mut delta: f64) -> *const f64 {
     let (mut s, mut t) = unsafe { (STATE, T) };
     let dt = s.config.delta;
@@ -86,7 +85,7 @@ pub extern "C" fn process(mut delta: f64) -> *const f64 {
         STATE = s;
         T = t;
         OUTPUT = [s.theta1, s.w1, s.theta2, s.w2];
-        addr_of!(OUTPUT[0])
+        &raw const OUTPUT[0]
     }
 }
 
@@ -127,7 +126,7 @@ impl deriv_trait::Derivable for PendulumState {
     }
 }
 
-impl<'a> ops::Mul<f64> for &'a PendulumDeriv {
+impl ops::Mul<f64> for &PendulumDeriv {
     type Output = PendulumDeriv;
 
     fn mul(self, k: f64) -> PendulumDeriv {
@@ -158,7 +157,7 @@ fn wrap_theta(v: f64) -> f64 {
     v - d * (PI * 2.0)
 }
 
-impl<'a> ops::Add<PendulumDeriv> for &'a PendulumState {
+impl ops::Add<PendulumDeriv> for &PendulumState {
     type Output = PendulumState;
 
     fn add(self, d: PendulumDeriv) -> PendulumState {

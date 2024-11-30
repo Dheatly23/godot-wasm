@@ -1,11 +1,11 @@
 use std::mem::size_of_val;
 use std::slice::from_raw_parts_mut;
 
-use rand_xoshiro::rand_core::{RngCore, SeedableRng};
 use rand_xoshiro::Xoshiro512StarStar;
+use rand_xoshiro::rand_core::{RngCore, SeedableRng};
 
 use super::SIZE;
-use crate::{log, Color, MouseButton, Renderable, State};
+use crate::{Color, MouseButton, Renderable, State, log};
 
 #[derive(Debug, Default)]
 pub struct GameOfLife {
@@ -254,7 +254,7 @@ impl Renderable for GameOfLife {
 
             let (x, y) = (x as usize, y as usize);
             let i = x % self.size + (y % self.size) * self.size;
-            let b = x / self.size | (y / self.size) << 2;
+            let b = (x / self.size) | (y / self.size) << 2;
             self.data[i] ^= 1 << b;
         }
     }
@@ -264,7 +264,7 @@ impl Renderable for GameOfLife {
 
         static PATTERN: [u8; 16] = [8, 9, 10, 11, 0, 1, 2, 3, 0, 1, 2, 3, 4, 5, 6, 7];
 
-        let mut it = state.colors_mut().into_iter();
+        let mut it = state.colors_mut().iter_mut();
         for sy in 0..4 {
             let mut b = true;
             for a in self.data[..self.data.len() / 2].chunks_exact(self.size) {

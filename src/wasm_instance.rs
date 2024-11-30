@@ -6,48 +6,48 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::{ffi, fmt, mem, ptr};
 
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use cfg_if::cfg_if;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
-use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
+use parking_lot::{Mutex, RawMutex, lock_api::RawMutex as RawMutexTrait};
 use rayon::prelude::*;
 use scopeguard::guard;
-#[cfg(feature = "component-model")]
-use wasmtime::component::Instance as InstanceComp;
-#[cfg(feature = "wasi")]
-use wasmtime::component::ResourceTable;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
 use wasmtime::ResourceLimiter;
+#[cfg(feature = "component-model")]
+use wasmtime::component::Instance as InstanceComp;
+#[cfg(feature = "wasi")]
+use wasmtime::component::ResourceTable;
 use wasmtime::{
     AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, SharedMemory, Store,
     StoreContextMut,
 };
 #[cfg(feature = "wasi")]
-use wasmtime_wasi::preview1::{add_to_linker_sync, WasiP1Ctx};
+use wasmtime_wasi::preview1::{WasiP1Ctx, add_to_linker_sync};
 #[cfg(feature = "wasi")]
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::godot_util::{
-    option_to_variant, variant_to_option, PackedArrayLike, PhantomProperty, SendSyncWrapper,
-    StructPacking,
+    PackedArrayLike, PhantomProperty, SendSyncWrapper, StructPacking, option_to_variant,
+    variant_to_option,
 };
 use crate::rw_struct::{read_struct, write_struct};
+#[cfg(feature = "wasi")]
+use crate::wasi_ctx::WasiContext;
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::stdio::{
     BlockWritePipe, ByteBufferReadPipe, InnerStdin, LineWritePipe, OuterStdin, StreamWrapper,
     UnbufferedWritePipe,
 };
-#[cfg(feature = "wasi")]
-use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
 #[cfg(any(feature = "object-registry-compat", feature = "object-registry-extern"))]
 use crate::wasm_config::ExternBindingType;
 #[cfg(feature = "wasi")]
 use crate::wasm_config::{PipeBindingType, PipeBufferType};
-use crate::wasm_engine::{get_engine, ModuleData, ModuleType, WasmModule};
+use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, get_engine};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
@@ -56,7 +56,7 @@ use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
-use crate::wasm_util::{config_store_common, raw_call, HostModuleCache, MEMORY_EXPORT};
+use crate::wasm_util::{HostModuleCache, MEMORY_EXPORT, config_store_common, raw_call};
 use crate::{bail_with_site, site_context, variant_dispatch};
 
 enum MemoryType {
@@ -305,7 +305,7 @@ impl ResourceLimiter for MemoryLimit {
         desired: usize,
         max: Option<usize>,
     ) -> AnyResult<bool> {
-        if max.map_or(false, |max| desired > max) {
+        if max.is_some_and(|max| desired > max) {
             return Ok(false);
         } else if self.max_memory == u64::MAX {
             return Ok(true);
@@ -326,7 +326,7 @@ impl ResourceLimiter for MemoryLimit {
         desired: usize,
         max: Option<usize>,
     ) -> AnyResult<bool> {
-        if max.map_or(false, |max| desired > max) {
+        if max.is_some_and(|max| desired > max) {
             return Ok(false);
         } else if self.max_table_entries == u64::MAX {
             return Ok(true);
@@ -466,14 +466,13 @@ where
     }
 }
 
-impl<'a, T> InstanceArgs<'a, T>
+impl<T> InstanceArgs<'_, T>
 where
     T: Send + AsRef<StoreData> + AsMut<StoreData>,
 {
     fn instantiate_wasm(&mut self, module: &ModuleData) -> AnyResult<InstanceWasm> {
         #[allow(irrefutable_let_patterns)]
-        let ModuleType::Core(module_) = &module.module
-        else {
+        let ModuleType::Core(module_) = &module.module else {
             bail_with_site!("Cannot instantiate component")
         };
 
@@ -621,10 +620,10 @@ impl StoreData {
 
 impl WasmInstance {
     fn emit_error_wrapper(&self, msg: String) {
-        self.to_gd().emit_signal(
-            &StringName::from(c"error_happened"),
-            &[GString::from(msg).to_variant()],
-        );
+        self.to_gd()
+            .emit_signal(&StringName::from(c"error_happened"), &[
+                GString::from(msg).to_variant()
+            ]);
     }
 
     pub fn get_data(&self) -> AnyResult<&InstanceData<StoreData>> {

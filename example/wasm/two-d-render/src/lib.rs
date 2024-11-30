@@ -6,10 +6,10 @@ use std::cell::RefCell;
 use std::fmt::{Arguments, Write as _};
 use std::ptr::{addr_of, addr_of_mut, null};
 
-use getrandom::{register_custom_getrandom, Error as RandError};
+use getrandom::{Error as RandError, register_custom_getrandom};
 
 #[link(wasm_import_module = "host")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "log"]
     fn _log(p: *const u8, n: usize);
     #[link_name = "rand"]
@@ -33,7 +33,7 @@ static mut TEMP_STR: RefCell<String> = RefCell::new(String::new());
 
 pub(crate) fn print_log(args: Arguments) {
     // SAFETY: Wraps static mut
-    let mut guard = unsafe { TEMP_STR.borrow_mut() };
+    let mut guard = unsafe { (*addr_of!(TEMP_STR)).borrow_mut() };
     guard.clear();
     guard.write_fmt(args).unwrap();
     log(&guard);
@@ -155,7 +155,7 @@ impl RenderData {
             ConfigItem::from_str("Game of Life"),
             ConfigItem::from_str("Particle Sim"),
         ]);
-        addr_of!(CFG)
+        &raw const CFG
     }
 
     fn new(ix: u64) -> Option<Self> {
@@ -206,12 +206,12 @@ static mut STATE_EXPORT: ExportState = ExportState {
 };
 static mut T: f64 = 0.0;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn config() -> *const Config {
     RenderData::config()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn init(index: u64) {
     unsafe {
         STATE = State::default();
@@ -219,25 +219,26 @@ pub extern "C" fn init(index: u64) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn process(delta: f64) -> *const ExportState {
     unsafe {
+        let state = &mut *addr_of_mut!(STATE);
         T += delta;
         if let Some(rp) = &mut *addr_of_mut!(RENDER) {
             rp.step(T as _, delta as _);
-            rp.render(&mut *addr_of_mut!(STATE));
+            rp.render(&mut *state);
         };
         STATE_EXPORT = ExportState {
-            width: STATE.width,
-            height: STATE.height,
-            colors_ptr: STATE.colors.as_ptr(),
-            colors_cnt: STATE.colors.len(),
+            width: state.width,
+            height: state.height,
+            colors_ptr: state.colors.as_ptr(),
+            colors_cnt: state.colors.len(),
         };
-        addr_of!(STATE_EXPORT)
+        &raw const STATE_EXPORT
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn click(x: f64, y: f64, button: u32) {
     let button = match button {
         0 => MouseButton::Left,
