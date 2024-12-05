@@ -26,18 +26,18 @@ either = "^1.0"
 anyhow = { version = "^1.0", features = ["backtrace"] }
 slab = { version = "^0.4", optional = true }
 #wasi-common = { version = "^18.0", optional = true }
-wasmparser = { version = "^0.220", optional = true }
+wasmparser = { version = "^0.221", optional = true }
 bytes = { version = "^1.5", optional = true }
 wat = { version = "~1", optional = true }
 #cap-std = { version = "^3.0", optional = true }
 async-trait = { version = "^0.1", optional = true }
-cfg-if = "^1.0"
+cfg-if = { workspace = true }
 memchr = { version = "^2.7", optional = true }
 camino = { version = "^1.1", optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "4c7db4833a932c1ff647ac841036f3e631ec2877"
+rev = "d32d569ed61ef8427470acdc41e8e708828fe412"
 features = [
   "experimental-threads",
   "register-docs",
@@ -117,3 +117,15 @@ members = [
 exclude = [
   "example/wasm/.cargo",
 ]
+
+[workspace.dependencies]
+# Dependencies for example crates
+cfg-if = "^1.0"
+glam = "^0.29"
+colorgrad = { version = "^0.7", default-features = false, features = ["preset"] }
+
+rand_xoshiro = "^0.6"
+rand = { version = "^0.8", default-features = false }
+rand_distr = { version = "^0.4", default-features = false }
+rand_core = { version = "^0.6", features = ["getrandom"] }
+getrandom = { version = "^0.2", features = ["custom"] }

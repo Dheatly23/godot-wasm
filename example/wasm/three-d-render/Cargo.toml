@@ -10,12 +10,12 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-cfg-if = "1"
-glam = "^0.28"
-colorgrad = { version = "^0.7", default-features = false, features = ["preset"] }
+cfg-if = { workspace = true }
+glam = { workspace = true }
+colorgrad = { workspace = true }
 
-rand_xoshiro = "^0.6"
-rand = { version = "^0.8", default-features = false }
-rand_distr = { version = "^0.4", default-features = false }
-rand_core = { version = "^0.6", features = ["getrandom"] }
-getrandom = { version = "^0.2", features = ["custom"] }
+rand_xoshiro = { workspace = true }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+rand_core = { workspace = true }
+getrandom = { workspace = true }
