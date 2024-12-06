@@ -1,0 +1,18 @@
+[package]
+name = "wasi-isolated-fs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dheatly23 <71598333+Dheatly23@users.noreply.github.com>"]
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+
+
+[dependencies.wasmtime]
+version = "^27.0"
+default-features = false
+features = [
+  "runtime",
+  "component-model",
+]

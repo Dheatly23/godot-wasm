@@ -113,6 +113,7 @@ godot-component = [
 [workspace]
 members = [
   "example/wasm/*",
+  "crates/*",
 ]
 exclude = [
   "example/wasm/.cargo",
