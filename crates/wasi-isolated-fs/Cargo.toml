@@ -7,12 +7,27 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-
+scopeguard = { workspace = true }
+anyhow = { workspace = true }
+cfg-if = { workspace = true }
+parking_lot = { workspace = true, features = ["arc_lock"] }
+slab = { workspace = true }
+bytes = { workspace = true }
+memchr = { workspace = true }
+camino = { workspace = true }
 
 [dependencies.wasmtime]
-version = "^27.0"
-default-features = false
+workspace = true
 features = [
   "runtime",
   "component-model",
+]
+
+[dependencies.smallvec]
+version = "~1"
+features = [
+  "union",
+  "const_generics",
+  "const_new",
+  "write",
 ]
