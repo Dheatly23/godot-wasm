@@ -420,6 +420,10 @@ impl Dir {
 
         r
     }
+
+    pub fn iter(&self) -> impl use<'_> + Iterator<Item = (&'_ str, &'_ Arc<Node>)> {
+        self.items.iter().map(|(k, v)| (&**k, v))
+    }
 }
 
 type LinkSegmentType = SmallVec<[usize; 4]>;
