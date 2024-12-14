@@ -1,3 +1,4 @@
+use std::io::{stderr, stdout, IoSlice, Result as IoResult, Stderr, Stdout, Write};
 use std::sync::Arc;
 
 use memchr::memchr;
@@ -186,25 +187,21 @@ const REPLACEMENT: &str = "\u{FFFD}";
 
 impl Default for LineBuffer {
     fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl LineBuffer {
-    pub fn new() -> Self {
         Self {
             buf: Box::new([0; 1024]),
             len: 0,
             s: String::new(),
         }
     }
+}
 
-    pub fn write<F>(&mut self, mut f: F, mut data: &[u8])
+impl LineBuffer {
+    pub fn write<F, E>(&mut self, mut f: F, mut data: &[u8]) -> Result<(), E>
     where
-        for<'a> F: FnMut(&'a str),
+        for<'a> F: FnMut(&'a str) -> Result<(), E>,
     {
         let mut g = guard(self, |this| this.len = 0);
-        let this: &mut Self = &mut g;
+        let Self { buf, len, s } = &mut *g;
 
         while !data.is_empty() {
             let mut d;
@@ -215,116 +212,245 @@ impl LineBuffer {
             };
 
             while !d.is_empty() {
-                if this.len == 0 && *d.last().unwrap() == LINESEP {
+                if *len == 0 && *d.last().unwrap() == LINESEP {
                     // Emit line without buffering
                     let mut it = d.utf8_chunks();
                     let chunk = it.next().unwrap();
                     if chunk.invalid().is_empty() {
-                        f(chunk.valid());
+                        f(chunk.valid())?;
                         d = &[];
                         continue;
                     }
 
-                    this.s.clear();
-                    this.s.reserve(d.len());
-                    this.s += chunk.valid();
-                    this.s += REPLACEMENT;
+                    s.clear();
+                    s.reserve(d.len());
+                    *s += chunk.valid();
+                    *s += REPLACEMENT;
                     for chunk in it {
-                        this.s += chunk.valid();
+                        *s += chunk.valid();
                         if !chunk.invalid().is_empty() {
-                            this.s += REPLACEMENT;
+                            *s += REPLACEMENT;
                         }
                     }
 
-                    f(&this.s);
+                    f(s)?;
                     d = &[];
                     continue;
                 }
 
-                let rest = this.buf.len() - this.len;
+                let rest = buf.len() - *len;
                 if rest >= d.len() {
-                    this.buf[this.len..this.len + d.len()].copy_from_slice(d);
-                    this.len += d.len();
+                    buf[*len..*len + d.len()].copy_from_slice(d);
+                    *len += d.len();
                     d = &[];
                 } else {
                     let a;
                     (a, d) = d.split_at(rest);
-                    this.buf[this.len..].copy_from_slice(a);
-                    this.len = this.buf.len();
+                    buf[*len..].copy_from_slice(a);
+                    *len = buf.len();
                 }
 
-                if this.buf[this.len - 1] == LINESEP {
+                if buf[*len - 1] == LINESEP {
                     // Emit the line
-                    let mut it = this.buf[..this.len].utf8_chunks();
+                    let mut it = buf[..*len].utf8_chunks();
                     let chunk = it.next().unwrap();
-                    if chunk.invalid().is_empty() {
-                        f(chunk.valid());
+                    f(if chunk.invalid().is_empty() {
+                        chunk.valid()
                     } else {
-                        this.s.clear();
-                        this.s.reserve(this.len);
-                        this.s += chunk.valid();
-                        this.s += REPLACEMENT;
+                        s.clear();
+                        s.reserve(*len);
+                        *s += chunk.valid();
+                        *s += REPLACEMENT;
                         for chunk in it {
-                            this.s += chunk.valid();
+                            *s += chunk.valid();
                             if !chunk.invalid().is_empty() {
-                                this.s += REPLACEMENT;
+                                *s += REPLACEMENT;
                             }
                         }
 
-                        f(&this.s);
-                    }
-                    this.len = 0;
+                        s
+                    })?;
+                    *len = 0;
                     continue;
-                } else if this.len < this.buf.len() {
+                } else if *len < buf.len() {
                     continue;
                 }
 
                 // Buffer full
-                let mut it = this.buf.utf8_chunks();
+                let mut it = buf.utf8_chunks();
                 let chunk = it.next().unwrap();
                 let i = chunk.invalid().len();
                 if i == 0 {
                     // All of it is valid
-                    f(chunk.valid());
-                    this.len = 0;
+                    f(chunk.valid())?;
+                    *len = 0;
                     continue;
-                } else if chunk.valid().len() + i == this.buf.len() {
+                } else if chunk.valid().len() + i == buf.len() {
                     // Some invalid residual in buffer
-                    f(chunk.valid());
-                    let s = this.buf.len() - i;
-                    this.buf.copy_within(s.., 0);
-                    this.len = i;
+                    f(chunk.valid())?;
+                    let s = buf.len() - i;
+                    buf.copy_within(s.., 0);
+                    *len = i;
                     continue;
                 }
 
-                this.s.clear();
-                this.s.reserve(this.buf.len());
-                this.s += chunk.valid();
-                this.s += REPLACEMENT;
+                s.clear();
+                s.reserve(buf.len());
+                *s += chunk.valid();
+                *s += REPLACEMENT;
                 let mut chunk = it.next();
                 while let Some(c) = chunk {
-                    this.s += c.valid();
+                    *s += c.valid();
                     let i = c.invalid().len();
                     chunk = it.next();
 
                     if chunk.is_none() {
                         if i != 0 {
                             // Some invalid residual in buffer
-                            let s = this.buf.len() - i;
-                            this.buf.copy_within(s.., 0);
+                            let s = buf.len() - i;
+                            buf.copy_within(s.., 0);
                         }
-                        this.len = i;
+                        *len = i;
                         break;
                     } else if i != 0 {
-                        this.s += REPLACEMENT;
+                        *s += REPLACEMENT;
                     }
                 }
 
-                f(&this.s);
+                f(s)?;
             }
         }
 
         // Defuse the guard
         ScopeGuard::into_inner(g);
+        Ok(())
+    }
+
+    pub fn flush<F, E>(&mut self, mut f: F) -> Result<(), E>
+    where
+        for<'a> F: FnMut(&'a str) -> Result<(), E>,
+    {
+        let mut g = guard(self, |this| this.len = 0);
+        let Self { buf, len, s } = &mut *g;
+
+        let mut it = buf[..*len].utf8_chunks();
+        let Some(chunk) = it.next() else {
+            return Ok(());
+        };
+        if chunk.invalid().is_empty() {
+            *len = 0;
+            return f(chunk.valid());
+        }
+
+        s.clear();
+        s.reserve(*len);
+        *s += chunk.valid();
+        *s += REPLACEMENT;
+        for chunk in it {
+            *s += chunk.valid();
+            if !chunk.invalid().is_empty() {
+                *s += REPLACEMENT;
+            }
+        }
+
+        *len = 0;
+        f(s)
+    }
+}
+
+struct StdBypassInner<T>(LineBuffer, T);
+
+impl<T: Write> Write for StdBypassInner<T> {
+    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
+        let (lb, f) = self.split();
+        lb.write(f, buf)
+    }
+
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        let (lb, f) = self.split();
+        lb.flush(f)?;
+        self.1.flush()
+    }
+
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
+        let mut ret = 0;
+        for buf in bufs {
+            self.write_all(buf)?;
+            ret += buf.len();
+        }
+        Ok(ret)
+    }
+}
+
+impl<T: Write> StdBypassInner<T> {
+    fn new(t: T) -> Self {
+        Self(LineBuffer::default(), t)
+    }
+
+    fn split(
+        &mut self,
+    ) -> (
+        &mut LineBuffer,
+        impl use<'_, T> + FnMut(&str) -> IoResult<()>,
+    ) {
+        let Self(lb, i) = self;
+        (lb, |s| i.write_all(s.as_bytes()))
+    }
+}
+
+pub struct StdoutBypass(StdBypassInner<Stdout>);
+
+impl Default for StdoutBypass {
+    fn default() -> Self {
+        Self(StdBypassInner::new(stdout()))
+    }
+}
+
+impl Write for StdoutBypass {
+    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
+        self.0.write_all(buf)
+    }
+
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        self.0.flush()
+    }
+
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
+        self.0.write_vectored(bufs)
+    }
+}
+
+pub struct StderrBypass(StdBypassInner<Stderr>);
+
+impl Default for StderrBypass {
+    fn default() -> Self {
+        Self(StdBypassInner::new(stderr()))
+    }
+}
+
+impl Write for StderrBypass {
+    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
+        self.0.write_all(buf)
+    }
+
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        self.0.flush()
+    }
+
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
+        self.0.write_vectored(bufs)
     }
 }

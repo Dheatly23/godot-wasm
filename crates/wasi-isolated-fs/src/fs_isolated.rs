@@ -1,7 +1,7 @@
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::io::SeekFrom;
+use std::io::{ErrorKind, SeekFrom};
 use std::mem::replace;
 use std::ops::{BitAnd, Deref, DerefMut};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -288,8 +288,10 @@ impl File {
             };
 
             let s = r.saturating_add(buf.len()).min(65536);
-            if s >= v.len() && s > 16 {
-                v.resize(Self::clamped_size(s), 0);
+            if s > v.len() && s > 16 {
+                let s = Self::clamped_size(s);
+                v.reserve_exact(s - v.len());
+                v.resize(s, 0);
             }
 
             let (a, b) = buf.split_at(s);
@@ -511,7 +513,7 @@ impl Link {
         self.len == 0
     }
 
-    pub fn iter(&self) -> impl '_ + Iterator<Item = Utf8Component<'_>> + Send {
+    pub fn iter(&self) -> impl use<'_> + Iterator<Item = Utf8Component<'_>> + Send {
         enum Iter<'a> {
             CurDir,
             Walk { dir: &'a Link, ix: usize },
@@ -734,7 +736,7 @@ impl Node {
         self: Arc<Self>,
         controller: &IsolatedFSController,
         depth: usize,
-    ) -> Result<Arc<Node>, wasi::filesystem::types::ErrorCode> {
+    ) -> Result<Arc<Node>, errors::StreamError> {
         let (d, n) = match &self.0 {
             NodeItem::Link(v) => (
                 depth
@@ -745,25 +747,21 @@ impl Node {
             _ => return Ok(self),
         };
 
-        let mut ret = self
-            .parent_or_root(controller)
-            .ok_or(wasi::filesystem::types::ErrorCode::NoEntry)?;
+        let mut ret = self.parent_or_root(controller).ok_or(ErrorKind::NotFound)?;
         for c in n.iter() {
             ret = match c {
-                Utf8Component::Prefix(_) => {
-                    return Err(wasi::filesystem::types::ErrorCode::Invalid)
-                }
+                Utf8Component::Prefix(_) => return Err(ErrorKind::InvalidInput.into()),
                 Utf8Component::RootDir => controller.root.clone(),
                 Utf8Component::CurDir => continue,
-                Utf8Component::ParentDir => ret
-                    .parent_or_root(controller)
-                    .ok_or(wasi::filesystem::types::ErrorCode::NoEntry)?,
+                Utf8Component::ParentDir => {
+                    ret.parent_or_root(controller).ok_or(ErrorKind::NotFound)?
+                }
                 Utf8Component::Normal(p) => ret
                     .follow_link(controller, d)?
                     .dir()
-                    .ok_or(wasi::filesystem::types::ErrorCode::NotDirectory)?
+                    .ok_or(ErrorKind::NotADirectory)?
                     .get(p)
-                    .ok_or(wasi::filesystem::types::ErrorCode::NoEntry)?,
+                    .ok_or(ErrorKind::NotFound)?,
             };
         }
 
@@ -819,6 +817,29 @@ impl AccessMode {
     pub fn is_write(self) -> bool {
         matches!(self, Self::W | Self::RW)
     }
+
+    fn read_or_err(self) -> Result<(), errors::StreamError> {
+        if self.is_read() {
+            Ok(())
+        } else {
+            Err(ErrorKind::PermissionDenied.into())
+        }
+    }
+
+    fn write_or_err(self) -> Result<(), errors::StreamError> {
+        if self.is_write() {
+            Ok(())
+        } else {
+            Err(ErrorKind::PermissionDenied.into())
+        }
+    }
+
+    fn access_or_err(self) -> Result<(), errors::StreamError> {
+        match self {
+            Self::NA => Err(ErrorKind::PermissionDenied.into()),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -847,9 +868,7 @@ impl CapWrapper {
             nanoseconds: n,
         }
     }
-}
 
-impl CapWrapper {
     pub fn new(node: Arc<Node>, access: AccessMode) -> Self {
         Self { node, access }
     }
@@ -864,17 +883,11 @@ impl CapWrapper {
 
     pub fn file_type(
         &self,
-    ) -> AnyResult<
-        Result<wasi::filesystem::types::DescriptorType, wasi::filesystem::types::ErrorCode>,
-    > {
-        Ok(Ok(self.node.file_type()))
+    ) -> Result<wasi::filesystem::types::DescriptorType, errors::StreamError> {
+        Ok(self.node.file_type())
     }
 
-    pub fn stat(
-        &self,
-    ) -> AnyResult<
-        Result<wasi::filesystem::types::DescriptorStat, wasi::filesystem::types::ErrorCode>,
-    > {
+    pub fn stat(&self) -> Result<wasi::filesystem::types::DescriptorStat, errors::StreamError> {
         let (size, mtime, atime) = match &self.node.0 {
             NodeItem::File(v) => {
                 let v = v.lock();
@@ -893,14 +906,14 @@ impl CapWrapper {
         let mtime = Self::to_datetime(mtime);
         let atime = Self::to_datetime(atime);
 
-        Ok(Ok(wasi::filesystem::types::DescriptorStat {
+        Ok(wasi::filesystem::types::DescriptorStat {
             type_: self.node.file_type(),
             link_count: 0,
-            size: size.try_into()?,
+            size: size.try_into().map_err(Error::from)?,
             data_access_timestamp: Some(atime),
             data_modification_timestamp: Some(mtime),
             status_change_timestamp: Some(atime),
-        }))
+        })
     }
 
     pub fn is_same(&self, other: &Self) -> bool {
@@ -951,28 +964,24 @@ impl CapWrapper {
         &self,
         mtime: SystemTime,
         atime: SystemTime,
-    ) -> AnyResult<Result<(), wasi::filesystem::types::ErrorCode>> {
-        if !self.access.is_write() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+    ) -> Result<(), errors::StreamError> {
+        self.access.write_or_err()?;
 
         let mut stamp = self.node.stamp();
         stamp.mtime = mtime;
         stamp.atime = atime;
-        Ok(Ok(()))
+        Ok(())
     }
 
     pub fn open_file(
         &self,
         mut access: AccessMode,
         seek: SeekFrom,
-    ) -> AnyResult<Result<FileAccessor, wasi::filesystem::types::ErrorCode>> {
+    ) -> Result<FileAccessor, errors::StreamError> {
         access = self.access & access;
-        if access == AccessMode::NA {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+        access.access_or_err()?;
 
-        Ok(match &self.node.0 {
+        match &self.node.0 {
             NodeItem::File(v) => {
                 let len = v.lock().len();
                 let cursor = match seek {
@@ -990,11 +999,12 @@ impl CapWrapper {
                     file: self.node.clone(),
                     access,
                     cursor,
+                    closed: false,
                 })
             }
-            NodeItem::Dir(_) => Err(wasi::filesystem::types::ErrorCode::IsDirectory),
-            NodeItem::Link(_) => Err(wasi::filesystem::types::ErrorCode::Loop),
-        })
+            NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
+            NodeItem::Link(_) => Err(wasi::filesystem::types::ErrorCode::Loop.into()),
+        }
     }
 
     pub fn open(
@@ -1004,89 +1014,67 @@ impl CapWrapper {
         follow_symlink: bool,
         create_file: bool,
         mut access: AccessMode,
-    ) -> AnyResult<Result<Self, wasi::filesystem::types::ErrorCode>> {
+    ) -> Result<Self, errors::StreamError> {
         access = self.access & access;
-        if access == AccessMode::NA {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+        access.access_or_err()?;
 
         let mut node = self.node.clone();
         let mut it = path.components().peekable();
         while let Some(c) = it.next() {
             let p = match c {
-                Utf8Component::Prefix(_) => {
-                    return Ok(Err(wasi::filesystem::types::ErrorCode::Invalid))
-                }
+                Utf8Component::Prefix(_) => return Err(ErrorKind::InvalidInput.into()),
                 Utf8Component::RootDir => {
                     node = controller.root.clone();
                     continue;
                 }
                 Utf8Component::CurDir => continue,
                 Utf8Component::ParentDir => {
-                    node = match node.parent_or_root(controller) {
-                        Some(v) => v,
-                        None => return Ok(Err(wasi::filesystem::types::ErrorCode::NoEntry)),
-                    };
+                    node = node.parent_or_root(controller).ok_or(ErrorKind::NotFound)?;
                     continue;
                 }
                 Utf8Component::Normal(p) if p.contains(ILLEGAL_CHARS) => {
-                    return Ok(Err(wasi::filesystem::types::ErrorCode::Invalid))
+                    return Err(ErrorKind::InvalidInput.into())
                 }
                 Utf8Component::Normal(p) => p,
             };
 
             if follow_symlink {
-                node = match node.follow_link(controller, LINK_DEPTH) {
-                    Ok(v) => v,
-                    Err(e) => return Ok(Err(e)),
-                };
+                node = node.follow_link(controller, LINK_DEPTH)?;
             }
 
-            let n = match node.dir() {
-                Some(mut v) => match v.get(p) {
-                    Some(v) => v,
-                    None if create_file && it.peek().is_none() => {
-                        if !access.is_write() {
-                            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-                        }
-
-                        match v.add::<Error>(p, || {
-                            Ok(Arc::new(Node::from((
-                                File::new(controller)?,
-                                Arc::downgrade(&node),
-                            ))))
-                        })? {
-                            Some(v) => v,
-                            None => return Ok(Err(wasi::filesystem::types::ErrorCode::Exist)),
-                        }
+            let mut v = node.dir().ok_or(ErrorKind::NotADirectory)?;
+            let n = match v.get(p) {
+                Some(v) => Ok(v),
+                None if create_file && it.peek().is_none() => {
+                    if !access.is_write() {
+                        return Err(ErrorKind::PermissionDenied.into());
                     }
-                    None => return Ok(Err(wasi::filesystem::types::ErrorCode::NoEntry)),
-                },
-                None => return Ok(Err(wasi::filesystem::types::ErrorCode::NotDirectory)),
-            };
+
+                    v.add::<Error>(p, || {
+                        Ok(Arc::new(Node::from((
+                            File::new(controller)?,
+                            Arc::downgrade(&node),
+                        ))))
+                    })?
+                    .ok_or(ErrorKind::AlreadyExists)
+                }
+                None => Err(ErrorKind::NotFound),
+            }?;
+            drop(v);
             node = n;
         }
 
         if follow_symlink {
-            node = match node.follow_link(controller, LINK_DEPTH) {
-                Ok(v) => v,
-                Err(e) => return Ok(Err(e)),
-            };
+            node = node.follow_link(controller, LINK_DEPTH)?;
         }
 
-        Ok(Ok(Self { node, access }))
+        Ok(Self { node, access })
     }
 
-    pub fn read(
-        &self,
-        len: usize,
-        off: usize,
-    ) -> AnyResult<Result<Vec<u8>, wasi::filesystem::types::ErrorCode>> {
-        if !self.access.is_read() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+    pub fn read(&self, len: usize, off: usize) -> Result<Vec<u8>, errors::StreamError> {
+        self.access.read_or_err()?;
 
-        Ok(match &self.node.0 {
+        match &self.node.0 {
             NodeItem::File(v) => {
                 let mut v = v.lock();
                 let (s, l) = v.read(len, off);
@@ -1094,99 +1082,87 @@ impl CapWrapper {
                 ret[..s.len()].copy_from_slice(s);
                 Ok(ret)
             }
-            NodeItem::Dir(_) => Err(wasi::filesystem::types::ErrorCode::IsDirectory),
-            NodeItem::Link(_) => Err(wasi::filesystem::types::ErrorCode::Unsupported),
-        })
+            NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
+            NodeItem::Link(_) => Err(ErrorKind::InvalidInput.into()),
+        }
     }
 
-    pub fn write(
-        &self,
-        buf: &[u8],
-        off: usize,
-    ) -> AnyResult<Result<(), wasi::filesystem::types::ErrorCode>> {
-        if !self.access.is_write() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+    pub fn write(&self, buf: &[u8], off: usize) -> Result<(), errors::StreamError> {
+        self.access.write_or_err()?;
 
-        Ok(match &self.node.0 {
+        match &self.node.0 {
             NodeItem::File(v) => {
                 v.lock().write(buf, off)?;
                 Ok(())
             }
-            NodeItem::Dir(_) => Err(wasi::filesystem::types::ErrorCode::IsDirectory),
-            NodeItem::Link(_) => Err(wasi::filesystem::types::ErrorCode::Unsupported),
-        })
+            NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
+            NodeItem::Link(_) => Err(ErrorKind::InvalidInput.into()),
+        }
     }
 
-    pub fn resize(&self, size: usize) -> AnyResult<Result<(), wasi::filesystem::types::ErrorCode>> {
-        if !self.access.is_write() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+    pub fn resize(&self, size: usize) -> Result<(), errors::StreamError> {
+        self.access.write_or_err()?;
 
-        Ok(match &self.node.0 {
+        match &self.node.0 {
             NodeItem::File(v) => {
                 v.lock().resize(size)?;
                 Ok(())
             }
-            NodeItem::Dir(_) => Err(wasi::filesystem::types::ErrorCode::IsDirectory),
-            NodeItem::Link(_) => Err(wasi::filesystem::types::ErrorCode::Unsupported),
-        })
+            NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
+            NodeItem::Link(_) => Err(ErrorKind::InvalidInput.into()),
+        }
     }
 
     pub fn create_dir(
         &self,
         controller: &IsolatedFSController,
         name: &str,
-    ) -> AnyResult<Result<Self, wasi::filesystem::types::ErrorCode>> {
+    ) -> Result<Self, errors::StreamError> {
         if name.contains(ILLEGAL_CHARS) {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::Invalid));
-        } else if !self.access.is_write() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
+            return Err(ErrorKind::InvalidInput.into());
         }
+        self.access.write_or_err()?;
 
-        let Some(mut n) = self.node.dir() else {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotDirectory));
-        };
-        match n.add::<Error>(name, || {
-            Ok(Arc::new(Node::from((
-                Dir::new(controller)?,
-                Arc::downgrade(&self.node),
-            ))))
-        })? {
-            Some(node) => Ok(Ok(Self {
-                node,
-                access: self.access,
-            })),
-            None => Ok(Err(wasi::filesystem::types::ErrorCode::Exist)),
-        }
+        Ok(Self {
+            node: self
+                .node
+                .dir()
+                .ok_or(ErrorKind::NotADirectory)?
+                .add::<Error>(name, || {
+                    Ok(Arc::new(Node::from((
+                        Dir::new(controller)?,
+                        Arc::downgrade(&self.node),
+                    ))))
+                })?
+                .ok_or(ErrorKind::AlreadyExists)?,
+            access: self.access,
+        })
     }
 
     pub fn create_file(
         &self,
         controller: &IsolatedFSController,
         name: &str,
-    ) -> AnyResult<Result<Self, wasi::filesystem::types::ErrorCode>> {
+    ) -> Result<Self, errors::StreamError> {
         if name.contains(ILLEGAL_CHARS) {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::Invalid));
-        } else if !self.access.is_write() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
+            return Err(ErrorKind::InvalidInput.into());
         }
+        self.access.write_or_err()?;
 
-        let Some(mut n) = self.node.dir() else {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotDirectory));
-        };
-        match n.add::<Error>(name, || {
-            Ok(Arc::new(Node::from((
-                File::new(controller)?,
-                Arc::downgrade(&self.node),
-            ))))
-        })? {
-            Some(node) => Ok(Ok(Self {
-                node,
-                access: self.access,
-            })),
-            None => Ok(Err(wasi::filesystem::types::ErrorCode::Exist)),
-        }
+        Ok(Self {
+            node: self
+                .node
+                .dir()
+                .ok_or(ErrorKind::NotADirectory)?
+                .add::<Error>(name, || {
+                    Ok(Arc::new(Node::from((
+                        File::new(controller)?,
+                        Arc::downgrade(&self.node),
+                    ))))
+                })?
+                .ok_or(ErrorKind::AlreadyExists)?,
+            access: self.access,
+        })
     }
 
     pub fn create_link(
@@ -1194,28 +1170,26 @@ impl CapWrapper {
         controller: &IsolatedFSController,
         name: &str,
         path: &Utf8Path,
-    ) -> AnyResult<Result<Self, wasi::filesystem::types::ErrorCode>> {
+    ) -> Result<Self, errors::StreamError> {
         if path.as_str().is_empty() || name.contains(ILLEGAL_CHARS) {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::Invalid));
-        } else if !self.access.is_write() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
+            return Err(ErrorKind::InvalidInput.into());
         }
+        self.access.write_or_err()?;
 
-        let Some(mut n) = self.node.dir() else {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotDirectory));
-        };
-        match n.add::<Error>(name, || {
-            Ok(Arc::new(Node::from((
-                Link::new(controller, path)?,
-                Arc::downgrade(&self.node),
-            ))))
-        })? {
-            Some(node) => Ok(Ok(Self {
-                node,
-                access: self.access,
-            })),
-            None => Ok(Err(wasi::filesystem::types::ErrorCode::Exist)),
-        }
+        Ok(Self {
+            node: self
+                .node
+                .dir()
+                .ok_or(ErrorKind::NotADirectory)?
+                .add::<Error>(name, || {
+                    Ok(Arc::new(Node::from((
+                        Link::new(controller, path)?,
+                        Arc::downgrade(&self.node),
+                    ))))
+                })?
+                .ok_or(ErrorKind::AlreadyExists)?,
+            access: self.access,
+        })
     }
 
     pub fn move_file(
@@ -1223,100 +1197,69 @@ impl CapWrapper {
         src: Arc<Node>,
         src_file: &str,
         dst_file: &str,
-    ) -> AnyResult<Result<(), wasi::filesystem::types::ErrorCode>> {
+    ) -> Result<(), errors::StreamError> {
         if dst_file.contains(ILLEGAL_CHARS) {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::Invalid));
-        } else if !self.access.is_write() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
+            return Err(ErrorKind::InvalidInput.into());
         }
+        self.access.write_or_err()?;
 
-        let Some(mut n) = self.node.dir() else {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotDirectory));
-        };
+        let mut n = self.node.dir().ok_or(ErrorKind::NotADirectory)?;
 
         if Arc::ptr_eq(&src, &self.node) {
             if n.items.contains_key(dst_file) {
-                return Ok(Err(wasi::filesystem::types::ErrorCode::Exist));
+                return Err(ErrorKind::AlreadyExists.into());
             }
-            let Some(src) = n.items.remove(src_file) else {
-                return Ok(Err(wasi::filesystem::types::ErrorCode::NoEntry));
-            };
+            let src = n.items.remove(src_file).ok_or(ErrorKind::NotFound)?;
             n.items.insert(dst_file.into(), src);
         } else {
             let Entry::Vacant(dst) = n.items.entry(dst_file.into()) else {
-                return Ok(Err(wasi::filesystem::types::ErrorCode::Exist));
+                return Err(ErrorKind::AlreadyExists.into());
             };
-            let src = match src.dir() {
-                Some(mut v) => match v.items.remove(src_file) {
-                    Some(r) => {
-                        v.stamp.modify();
-                        r
-                    }
-                    None => return Ok(Err(wasi::filesystem::types::ErrorCode::NoEntry)),
-                },
-                None => return Ok(Err(wasi::filesystem::types::ErrorCode::NotDirectory)),
-            };
+            let mut v = src.dir().ok_or(ErrorKind::NotADirectory)?;
+            let src = v.items.remove(src_file).ok_or(ErrorKind::NotFound)?;
+            v.stamp.modify();
+            drop(v);
             *dst.insert(src).1.write() = Arc::downgrade(&self.node);
         }
         n.stamp.modify();
 
-        Ok(Ok(()))
+        Ok(())
     }
 
-    pub fn unlink(
-        &self,
-        file: &str,
-        is_dir: bool,
-    ) -> AnyResult<Result<(), wasi::filesystem::types::ErrorCode>> {
-        if !self.access.is_write() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+    pub fn unlink(&self, file: &str, is_dir: bool) -> Result<(), errors::StreamError> {
+        self.access.write_or_err()?;
 
-        let Some(mut n) = self.node.dir() else {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotDirectory));
-        };
-        let Some(v) = n.items.get(file) else {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NoEntry));
-        };
+        let mut n = self.node.dir().ok_or(ErrorKind::NotADirectory)?;
+        let v = n.items.get(file).ok_or(ErrorKind::NotFound)?;
+
         if is_dir {
-            match v.dir().map(|v| v.is_empty()) {
-                Some(true) => (),
-                Some(false) => return Ok(Err(wasi::filesystem::types::ErrorCode::NotEmpty)),
-                None => return Ok(Err(wasi::filesystem::types::ErrorCode::NotDirectory)),
+            if !v.dir().ok_or(ErrorKind::NotADirectory)?.is_empty() {
+                return Err(ErrorKind::DirectoryNotEmpty.into());
             }
         } else if v.is_dir() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::IsDirectory));
+            return Err(ErrorKind::IsADirectory.into());
         }
         n.items.remove(file);
 
-        Ok(Ok(()))
+        Ok(())
     }
 
-    pub fn read_directory(
-        &self,
-    ) -> AnyResult<Result<DirEntryAccessor, wasi::filesystem::types::ErrorCode>> {
-        if !self.access.is_read() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+    pub fn read_directory(&self) -> Result<DirEntryAccessor, errors::StreamError> {
+        self.access.read_or_err()?;
 
-        Ok(match self.node.0 {
-            NodeItem::Dir(_) => Ok(DirEntryAccessor(DirEntryInner::Current(self.node.clone()))),
-            _ => Err(wasi::filesystem::types::ErrorCode::NotDirectory),
-        })
+        if self.node.is_dir() {
+            Ok(DirEntryAccessor(DirEntryInner::Current(self.node.clone())))
+        } else {
+            Err(ErrorKind::NotADirectory.into())
+        }
     }
 
-    pub fn read_link(&self) -> AnyResult<Result<String, wasi::filesystem::types::ErrorCode>> {
-        if !self.access.is_read() {
-            return Ok(Err(wasi::filesystem::types::ErrorCode::NotPermitted));
-        }
+    pub fn read_link(&self) -> Result<String, errors::StreamError> {
+        self.access.read_or_err()?;
 
-        Ok(match self.node.link() {
-            Some(mut v) => {
-                v.stamp.access();
-                Ok(v.get())
-            }
-            None => Err(wasi::filesystem::types::ErrorCode::Unsupported),
-        })
+        let mut v = self.node.link().ok_or(ErrorKind::InvalidInput)?;
+        v.stamp.access();
+        Ok(v.get())
     }
 }
 
@@ -1324,13 +1267,15 @@ pub struct FileAccessor {
     access: AccessMode,
     file: Arc<Node>,
     cursor: usize,
+    closed: bool,
 }
 
 impl FileAccessor {
-    pub fn read(&mut self, len: usize) -> AnyResult<Vec<u8>> {
-        if !self.access.is_read() {
-            return Err(errors::AccessError.into());
+    pub fn read(&mut self, len: usize) -> Result<Vec<u8>, errors::StreamError> {
+        if self.closed {
+            return Err(errors::StreamError::closed());
         }
+        self.access.read_or_err()?;
 
         let mut file = self.file.try_file()?;
         let (s, l) = file.read(len, self.cursor);
@@ -1340,14 +1285,19 @@ impl FileAccessor {
         Ok(ret)
     }
 
-    pub fn write(&mut self, buf: &[u8]) -> AnyResult<()> {
-        if !self.access.is_write() {
-            return Err(errors::AccessError.into());
+    pub fn write(&mut self, buf: &[u8]) -> Result<(), errors::StreamError> {
+        if self.closed {
+            return Err(errors::StreamError::closed());
         }
+        self.access.write_or_err()?;
 
         self.file.try_file()?.write(buf, self.cursor)?;
         self.cursor += buf.len();
         Ok(())
+    }
+
+    pub fn close(&mut self) {
+        self.closed = true;
     }
 }
 
