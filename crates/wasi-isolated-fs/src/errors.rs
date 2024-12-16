@@ -50,6 +50,22 @@ impl Display for WrongNodeItemError {
 
 impl Error for WrongNodeItemError {}
 
+pub(crate) struct BuilderIsoFSDefinedError;
+
+impl Debug for BuilderIsoFSDefinedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for BuilderIsoFSDefinedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "isolated filesystem is already set")
+    }
+}
+
+impl Error for BuilderIsoFSDefinedError {}
+
 pub(crate) enum FileLimitError {
     Size(usize),
     Node,
@@ -71,6 +87,102 @@ impl Display for FileLimitError {
 }
 
 impl Error for FileLimitError {}
+
+pub(crate) struct InvalidPathError(pub(crate) String);
+
+impl Debug for InvalidPathError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for InvalidPathError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "path {:?} is invalid", self.0)
+    }
+}
+
+impl Error for InvalidPathError {}
+
+pub(crate) struct PathAlreadyExistError(pub(crate) String);
+
+impl Debug for PathAlreadyExistError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for PathAlreadyExistError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "path {:?} already exist", self.0)
+    }
+}
+
+impl Error for PathAlreadyExistError {}
+
+#[derive(Default)]
+pub(crate) struct InvalidResourceIDError {
+    ids: [u32; 32],
+    n: u8,
+}
+
+impl Debug for InvalidResourceIDError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for InvalidResourceIDError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self.n {
+            0 => return write!(f, "resource ID not found"),
+            1 => return write!(f, "resource ID not found: {}", self.ids[0]),
+            _ => (),
+        }
+
+        write!(f, "resource IDs not found: ")?;
+        for i in 0..self.n as usize {
+            write!(f, "{}{}", if i == 0 { "" } else { ", " }, self.ids[i])?;
+        }
+
+        Ok(())
+    }
+}
+
+impl Error for InvalidResourceIDError {}
+
+impl FromIterator<u32> for InvalidResourceIDError {
+    fn from_iter<T: IntoIterator<Item = u32>>(it: T) -> Self {
+        let mut ret = Self::default();
+        ret.extend(it);
+        ret
+    }
+}
+
+impl Extend<u32> for InvalidResourceIDError {
+    fn extend<T: IntoIterator<Item = u32>>(&mut self, it: T) {
+        if self.n as usize >= self.ids.len() {
+            return;
+        }
+        for id in it {
+            if self.n as usize >= self.ids.len() {
+                return;
+            }
+            let Err(i) = self.ids[..self.n as usize].binary_search(&id) else {
+                continue;
+            };
+            self.ids.copy_within(i..self.n as usize, i + 1);
+            self.ids[i] = id;
+            self.n += 1;
+        }
+    }
+}
+
+impl InvalidResourceIDError {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.n == 0
+    }
+}
 
 pub(crate) struct StreamClosedError;
 

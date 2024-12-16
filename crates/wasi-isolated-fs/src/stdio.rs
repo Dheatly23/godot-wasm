@@ -1,6 +1,7 @@
 use std::io::{stderr, stdout, IoSlice, Result as IoResult, Stderr, Stdout, Write};
 use std::sync::Arc;
 
+use anyhow::Result as AnyResult;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex};
 use scopeguard::{guard, ScopeGuard};
@@ -138,6 +139,10 @@ impl StdinSignal {
         ret[a.len()..].copy_from_slice(b);
         ret
     }
+
+    pub fn poll(self: &Arc<Self>) -> AnyResult<StdinSignalPollable> {
+        Ok(StdinSignalPollable(self.clone()))
+    }
 }
 
 impl StdinProvider {
@@ -162,19 +167,44 @@ impl StdinProvider {
     }
 }
 
+pub struct StdinSignalPollable(Arc<StdinSignal>);
+
+impl StdinSignalPollable {
+    pub fn is_ready(&self) -> bool {
+        let guard = self.0.inner.lock();
+        guard.closed || guard.end != guard.start
+    }
+
+    pub fn block(&self) {
+        let mut guard = self.0.inner.lock();
+        while !guard.closed && guard.end == guard.start {
+            self.0.cond.wait(&mut guard);
+        }
+    }
+}
+
 pub struct StdoutCb<F: ?Sized + Send + Sync + FnMut(&[u8])>(F);
 
-impl<F: Send + Sync + Fn(&[u8])> StdoutCb<F> {
+impl<F: Send + Sync + FnMut(&[u8])> StdoutCb<F> {
     pub fn new(f: F) -> Self {
         Self(f)
     }
+
+    pub fn into_erased(self) -> ErasedStdoutCb
+    where
+        F: 'static,
+    {
+        Box::new(self)
+    }
 }
 
-impl<F: ?Sized + Send + Sync + Fn(&[u8])> StdoutCb<F> {
-    pub fn write(&self, buf: &[u8]) {
+impl<F: ?Sized + Send + Sync + FnMut(&[u8])> StdoutCb<F> {
+    pub fn write(&mut self, buf: &[u8]) {
         (self.0)(buf)
     }
 }
+
+pub type ErasedStdoutCb = Box<StdoutCb<dyn Send + Sync + FnMut(&[u8])>>;
 
 pub struct LineBuffer {
     buf: Box<[u8; 1024]>,
@@ -358,6 +388,58 @@ impl LineBuffer {
     }
 }
 
+pub struct StdoutCbLineBuffered {
+    buf: LineBuffer,
+    cb: ErasedStdoutCb,
+}
+
+impl StdoutCbLineBuffered {
+    pub fn new(f: impl 'static + Send + Sync + FnMut(&[u8])) -> Self {
+        Self {
+            buf: Default::default(),
+            cb: StdoutCb::new(f).into_erased(),
+        }
+    }
+
+    fn split(&mut self) -> (&mut LineBuffer, impl use<'_> + FnMut(&str) -> IoResult<()>) {
+        let Self { buf, cb } = self;
+        (buf, |s| {
+            cb.write(s.as_bytes());
+            Ok(())
+        })
+    }
+
+    pub fn poll(&self) -> AnyResult<NullPollable> {
+        Ok(NullPollable { _p: () })
+    }
+}
+
+impl Write for StdoutCbLineBuffered {
+    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
+        let (lb, f) = self.split();
+        lb.write(f, buf)
+    }
+
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        let (lb, f) = self.split();
+        lb.flush(f)
+    }
+
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
+        let mut ret = 0;
+        for buf in bufs {
+            self.write_all(buf)?;
+            ret += buf.len();
+        }
+        Ok(ret)
+    }
+}
+
 struct StdBypassInner<T>(LineBuffer, T);
 
 impl<T: Write> Write for StdBypassInner<T> {
@@ -429,6 +511,12 @@ impl Write for StdoutBypass {
     }
 }
 
+impl StdoutBypass {
+    pub fn poll(&self) -> AnyResult<NullPollable> {
+        Ok(NullPollable { _p: () })
+    }
+}
+
 pub struct StderrBypass(StdBypassInner<Stderr>);
 
 impl Default for StderrBypass {
@@ -453,4 +541,14 @@ impl Write for StderrBypass {
     fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
         self.0.write_vectored(bufs)
     }
+}
+
+impl StderrBypass {
+    pub fn poll(&self) -> AnyResult<NullPollable> {
+        Ok(NullPollable { _p: () })
+    }
+}
+
+pub struct NullPollable {
+    _p: (),
 }

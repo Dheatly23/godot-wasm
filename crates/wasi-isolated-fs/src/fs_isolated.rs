@@ -18,7 +18,7 @@ use crate::errors;
 
 pub const LINK_DEPTH: usize = 10;
 
-static ILLEGAL_CHARS: &[char] = &['\\', '/', ':', '*', '?', '\"', '\'', '<', '>', '|'];
+pub(crate) static ILLEGAL_CHARS: &[char] = &['\\', '/', ':', '*', '?', '\"', '\'', '<', '>', '|'];
 
 pub struct IsolatedFSController {
     limits: Arc<FSLimits>,
@@ -53,6 +53,20 @@ impl IsolatedFSController {
 
             state: RandomState::new(),
         })
+    }
+
+    #[inline(always)]
+    pub fn root(&self) -> Arc<Node> {
+        self.root.clone()
+    }
+
+    pub(crate) fn dup(&self) -> Self {
+        Self {
+            limits: self.limits.clone(),
+            root: self.root.clone(),
+
+            state: RandomState::new(),
+        }
     }
 }
 
@@ -214,26 +228,32 @@ impl File {
         })
     }
 
+    #[inline(always)]
     pub(crate) fn inode(&self) -> usize {
         self.inode
     }
 
+    #[inline(always)]
     pub fn stamp(&self) -> &Timestamp {
         &self.stamp
     }
 
+    #[inline(always)]
     pub fn stamp_mut(&mut self) -> &mut Timestamp {
         &mut self.stamp
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.size
     }
 
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.size == 0
     }
 
+    #[inline(always)]
     pub fn capacity(&self) -> usize {
         self.size_chunks
     }
@@ -358,7 +378,7 @@ pub struct Dir {
     limits: AcqNode,
     stamp: Timestamp,
 
-    items: BTreeMap<Arc<str>, Arc<Node>>,
+    pub(crate) items: BTreeMap<Arc<str>, Arc<Node>>,
 }
 
 impl Dir {
@@ -371,34 +391,39 @@ impl Dir {
         })
     }
 
+    #[inline(always)]
     pub(crate) fn inode(&self) -> usize {
         self.limits.inode
     }
 
+    #[inline(always)]
     pub fn stamp(&self) -> &Timestamp {
         &self.stamp
     }
 
+    #[inline(always)]
     pub fn stamp_mut(&mut self) -> &mut Timestamp {
         &mut self.stamp
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.items.len()
     }
 
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
 
-    pub fn get(&mut self, key: &str) -> Option<Arc<Node>> {
+    pub fn get(&mut self, key: impl AsRef<str>) -> Option<Arc<Node>> {
         self.stamp.access();
-        self.items.get(key).cloned()
+        self.items.get(key.as_ref()).cloned()
     }
 
     pub fn add<E>(
         &mut self,
-        key: &str,
+        key: impl Into<Arc<str>>,
         f: impl FnOnce() -> Result<Arc<Node>, E>,
     ) -> Result<Option<Arc<Node>>, E> {
         Ok(match self.items.entry(key.into()) {
@@ -497,22 +522,27 @@ impl Link {
         })
     }
 
+    #[inline(always)]
     pub(crate) fn inode(&self) -> usize {
         self.limits.inode
     }
 
+    #[inline(always)]
     pub fn stamp(&self) -> &Timestamp {
         &self.stamp
     }
 
+    #[inline(always)]
     pub fn stamp_mut(&mut self) -> &mut Timestamp {
         &mut self.stamp
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
+    #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -612,14 +642,17 @@ impl Node {
         }
     }
 
+    #[inline(always)]
     pub fn is_dir(&self) -> bool {
         matches!(self.0, NodeItem::Dir(_))
     }
 
+    #[inline(always)]
     pub fn is_file(&self) -> bool {
         matches!(self.0, NodeItem::File(_))
     }
 
+    #[inline(always)]
     pub fn is_link(&self) -> bool {
         matches!(self.0, NodeItem::Link(_))
     }
@@ -873,14 +906,17 @@ impl CapWrapper {
         }
     }
 
+    #[inline(always)]
     pub fn new(node: Arc<Node>, access: AccessMode) -> Self {
         Self { node, access }
     }
 
+    #[inline(always)]
     pub fn node(&self) -> &Node {
         &self.node
     }
 
+    #[inline(always)]
     pub fn access(&self) -> &AccessMode {
         &self.access
     }
@@ -1120,9 +1156,9 @@ impl CapWrapper {
     pub fn create_dir(
         &self,
         controller: &IsolatedFSController,
-        name: &str,
+        name: impl Into<Arc<str>> + AsRef<str>,
     ) -> Result<Self, errors::StreamError> {
-        if name.contains(ILLEGAL_CHARS) {
+        if name.as_ref().contains(ILLEGAL_CHARS) {
             return Err(ErrorKind::InvalidInput.into());
         }
         self.access.write_or_err()?;
@@ -1146,9 +1182,9 @@ impl CapWrapper {
     pub fn create_file(
         &self,
         controller: &IsolatedFSController,
-        name: &str,
+        name: impl Into<Arc<str>> + AsRef<str>,
     ) -> Result<Self, errors::StreamError> {
-        if name.contains(ILLEGAL_CHARS) {
+        if name.as_ref().contains(ILLEGAL_CHARS) {
             return Err(ErrorKind::InvalidInput.into());
         }
         self.access.write_or_err()?;
@@ -1172,10 +1208,10 @@ impl CapWrapper {
     pub fn create_link(
         &self,
         controller: &IsolatedFSController,
-        name: &str,
+        name: impl Into<Arc<str>> + AsRef<str>,
         path: &Utf8Path,
     ) -> Result<Self, errors::StreamError> {
-        if path.as_str().is_empty() || name.contains(ILLEGAL_CHARS) {
+        if path.as_str().is_empty() || name.as_ref().contains(ILLEGAL_CHARS) {
             return Err(ErrorKind::InvalidInput.into());
         }
         self.access.write_or_err()?;
@@ -1200,9 +1236,9 @@ impl CapWrapper {
         &self,
         src: Arc<Node>,
         src_file: &str,
-        dst_file: &str,
+        dst_file: impl Into<Arc<str>> + AsRef<str>,
     ) -> Result<(), errors::StreamError> {
-        if dst_file.contains(ILLEGAL_CHARS) {
+        if dst_file.as_ref().contains(ILLEGAL_CHARS) {
             return Err(ErrorKind::InvalidInput.into());
         }
         self.access.write_or_err()?;
@@ -1210,7 +1246,7 @@ impl CapWrapper {
         let mut n = self.node.dir().ok_or(ErrorKind::NotADirectory)?;
 
         if Arc::ptr_eq(&src, &self.node) {
-            if n.items.contains_key(dst_file) {
+            if n.items.contains_key(dst_file.as_ref()) {
                 return Err(ErrorKind::AlreadyExists.into());
             }
             let src = n.items.remove(src_file).ok_or(ErrorKind::NotFound)?;
@@ -1300,8 +1336,13 @@ impl FileAccessor {
         Ok(())
     }
 
+    #[inline(always)]
     pub fn close(&mut self) {
         self.closed = true;
+    }
+
+    pub fn poll(&self) -> AnyResult<Pollable> {
+        Ok(Pollable { _p: () })
     }
 }
 
@@ -1363,4 +1404,8 @@ impl Iterator for DirEntryAccessor {
             DirEntryInner::None => None,
         }
     }
+}
+
+pub struct Pollable {
+    _p: (),
 }
