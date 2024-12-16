@@ -21,3 +21,13 @@ pub mod bindings {
         },
     });
 }
+
+pub struct NullPollable {
+    _p: (),
+}
+
+impl NullPollable {
+    pub(crate) fn new() -> Self {
+        Self { _p: () }
+    }
+}

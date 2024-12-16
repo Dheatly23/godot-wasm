@@ -1,16 +1,18 @@
 use std::collections::btree_map::Entry;
 use std::collections::hash_set::HashSet;
 use std::convert::{AsMut, AsRef};
+use std::io::{Error as IoError, ErrorKind};
 use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
 use camino::{Utf8Component, Utf8PathBuf};
 use wasmtime::component::Resource;
 
-use crate::errors;
+use crate::bindings::wasi;
 use crate::fs_isolated::{AccessMode, CapWrapper, Dir, IsolatedFSController, Node, ILLEGAL_CHARS};
 use crate::items::Items;
 pub use crate::items::{Item, MaybeBorrowMut};
+use crate::{errors, items, NullPollable};
 
 pub struct WasiContext {
     pub(crate) items: Items,
@@ -193,5 +195,146 @@ impl WasiContext {
         self.items
             .get(res.rep().try_into()?)
             .ok_or_else(|| errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::io::poll::HostPollable for WasiContext {
+    fn ready(&mut self, res: Resource<wasi::io::poll::Pollable>) -> AnyResult<bool> {
+        Ok(match self.items.get_item(res)? {
+            items::Poll::NullPoll(_) => true,
+            items::Poll::StdinPoll(v) => v.is_ready(),
+        })
+    }
+
+    fn block(&mut self, res: Resource<wasi::io::poll::Pollable>) -> AnyResult<()> {
+        match self.items.get_item(res)? {
+            items::Poll::NullPoll(_) => (),
+            items::Poll::StdinPoll(v) => v.block()?,
+        }
+        Ok(())
+    }
+
+    fn drop(&mut self, res: Resource<wasi::io::poll::Pollable>) -> AnyResult<()> {
+        self.items.get_item(res)?;
+        Ok(())
+    }
+}
+
+impl wasi::io::poll::Host for WasiContext {
+    fn poll(&mut self, res: Vec<Resource<wasi::io::poll::Pollable>>) -> AnyResult<Vec<u32>> {
+        let polls = self.items.get_item(res)?;
+        Ok(polls
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, p)| {
+                if match p {
+                    items::Poll::NullPoll(_) => true,
+                    items::Poll::StdinPoll(v) => v.is_ready(),
+                } {
+                    Some(i as u32)
+                } else {
+                    None
+                }
+            })
+            .collect())
+    }
+}
+
+impl wasi::io::error::HostError for WasiContext {
+    fn to_debug_string(&mut self, res: Resource<wasi::io::error::Error>) -> AnyResult<String> {
+        // No way to construct stream error
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn drop(&mut self, res: Resource<wasi::io::error::Error>) -> AnyResult<()> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::io::error::Host for WasiContext {}
+
+impl wasi::io::streams::HostInputStream for WasiContext {
+    fn read(
+        &mut self,
+        res: Resource<wasi::io::streams::InputStream>,
+        len: u64,
+    ) -> Result<Vec<u8>, errors::StreamError> {
+        let len = len.try_into().unwrap_or(usize::MAX);
+        Ok(match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
+            items::IOStream::StdinSignal(v) => v.read(len)?,
+            items::IOStream::BoxedRead(mut v) => {
+                let mut ret = vec![0; len.min(1024)];
+                let i = v.read(&mut ret)?;
+                ret.truncate(i);
+                ret
+            }
+            _ => return Err(ErrorKind::InvalidInput.into()),
+        })
+    }
+
+    fn blocking_read(
+        &mut self,
+        res: Resource<wasi::io::streams::InputStream>,
+        len: u64,
+    ) -> Result<Vec<u8>, errors::StreamError> {
+        let len = len.try_into().unwrap_or(usize::MAX);
+        Ok(match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
+            items::IOStream::StdinSignal(v) => v.read(len)?,
+            items::IOStream::BoxedRead(mut v) => {
+                let mut ret = vec![0; len.min(1024)];
+                let i = v.read(&mut ret)?;
+                ret.truncate(i);
+                ret
+            }
+            _ => return Err(ErrorKind::InvalidInput.into()),
+        })
+    }
+
+    fn skip(
+        &mut self,
+        res: Resource<wasi::io::streams::InputStream>,
+        len: u64,
+    ) -> Result<u64, errors::StreamError> {
+        let len = len.try_into().unwrap_or(usize::MAX);
+        Ok(match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(mut v) => v.skip(len)? as u64,
+            items::IOStream::StdinSignal(v) => v.skip(len)? as u64,
+            items::IOStream::BoxedRead(mut v) => v.read(&mut vec![0; len.min(1024)])? as u64,
+            _ => return Err(ErrorKind::InvalidInput.into()),
+        })
+    }
+
+    fn blocking_skip(
+        &mut self,
+        res: Resource<wasi::io::streams::InputStream>,
+        len: u64,
+    ) -> Result<u64, errors::StreamError> {
+        let len = len.try_into().unwrap_or(usize::MAX);
+        Ok(match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(mut v) => v.skip(len)? as u64,
+            items::IOStream::StdinSignal(v) => v.skip_block(len)? as u64,
+            items::IOStream::BoxedRead(mut v) => v.read(&mut vec![0; len.min(1024)])? as u64,
+            _ => return Err(ErrorKind::InvalidInput.into()),
+        })
+    }
+
+    fn subscribe(
+        &mut self,
+        res: Resource<wasi::io::streams::InputStream>,
+    ) -> AnyResult<Resource<wasi::io::poll::Pollable>> {
+        let ret: Item = match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(v) => v.poll()?.into(),
+            items::IOStream::StdinSignal(v) => v.poll()?.into(),
+            items::IOStream::BoxedRead(_) => NullPollable::new().into(),
+            _ => return Err(IoError::from(ErrorKind::InvalidInput).into()),
+        };
+        self.register(ret)
+    }
+
+    fn drop(&mut self, res: Resource<wasi::io::streams::InputStream>) -> AnyResult<()> {
+        self.items.get_item(res)?;
+        Ok(())
     }
 }

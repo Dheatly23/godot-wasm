@@ -8,11 +8,11 @@ use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
 use crate::errors;
-use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor, Pollable as IsoFSPollable};
+use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
 use crate::stdio::{
-    NullPollable as StdioNullPollable, StderrBypass, StdinSignal, StdinSignalPollable,
-    StdoutBypass, StdoutCbLineBuffered,
+    StderrBypass, StdinSignal, StdinSignalPollable, StdoutBypass, StdoutCbLineBuffered,
 };
+use crate::NullPollable;
 
 #[derive(Default)]
 pub(crate) struct Items {
@@ -143,8 +143,7 @@ item_def! {
         IsoFSReaddir(Box<DirEntryAccessor>),
     },
     Poll | PollR(wasi::io::poll::Pollable) {
-        IsoFSPoll(IsoFSPollable),
-        StdioNullPoll(StdioNullPollable),
+        NullPoll(NullPollable),
         StdinPoll(StdinSignalPollable),
     },
 }
@@ -450,4 +449,91 @@ impl_getitem_tuple! {
     U, V, W, X,
     Y, Z, Aa, Ab,
     Ac, Ad, Ae, Af
+}
+
+impl<T: ResItem + 'static> GetItem for Vec<Resource<T>> {
+    type Output<'a> = Vec<T::ItemOut<'a>>;
+    type OutputRef<'a> = Vec<T::ItemOutRef<'a>>;
+
+    fn get_item(self, items: &mut Items) -> AnyResult<Self::Output<'_>> {
+        let mut errval = errors::InvalidResourceIDError::default();
+
+        // Check for duplicates.
+        for (ix, i) in self.iter().enumerate() {
+            for j in &self[ix + 1..] {
+                if i.rep() == j.rep() {
+                    errval.extend([i.rep()]);
+                }
+            }
+        }
+        if !errval.is_empty() {
+            return Err(errval.into());
+        }
+
+        let mut ret = Vec::with_capacity(self.len());
+        for r in self.into_iter() {
+            let ix = usize::try_from(r.rep()).ok();
+            let v = if r.owned() {
+                ix.and_then(|i| items.remove(i)).and_then(T::from_item)
+            } else {
+                ix.and_then(|i| items.get_mut(i)).and_then(|v| {
+                    // SAFETY: Slab remove does not move other elements.
+                    #[allow(clippy::deref_addrof)]
+                    unsafe {
+                        T::from_item_mut(&mut *(&raw mut *v))
+                    }
+                })
+            };
+
+            let Some(v) = v else {
+                errval.extend([r.rep()]);
+                continue;
+            };
+            if errval.is_empty() {
+                ret.push(v);
+            }
+        }
+
+        if errval.is_empty() {
+            Ok(ret)
+        } else {
+            Err(errval.into())
+        }
+    }
+
+    fn get_item_ref<'a>(&self, items: &'a Items) -> AnyResult<Self::OutputRef<'a>> {
+        let mut errval = errors::InvalidResourceIDError::default();
+        let mut ret = Vec::with_capacity(self.len());
+        for r in self.iter() {
+            let v = usize::try_from(r.rep())
+                .ok()
+                .and_then(|i| items.get(i))
+                .and_then(T::from_item_ref);
+
+            let Some(v) = v else {
+                errval.extend([r.rep()]);
+                continue;
+            };
+            if errval.is_empty() {
+                ret.push(v);
+            }
+        }
+
+        if errval.is_empty() {
+            Ok(ret)
+        } else {
+            Err(errval.into())
+        }
+    }
+
+    fn maybe_unregister(self, items: &mut Items) {
+        for r in self.into_iter() {
+            if r.owned() {
+                let Ok(i) = usize::try_from(r.rep()) else {
+                    continue;
+                };
+                items.remove(i);
+            }
+        }
+    }
 }

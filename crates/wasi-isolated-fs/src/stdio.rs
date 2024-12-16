@@ -1,11 +1,16 @@
-use std::io::{stderr, stdout, IoSlice, Result as IoResult, Stderr, Stdout, Write};
+use std::io::{
+    stderr, stdout, Error as IoError, ErrorKind, IoSlice, Result as IoResult, Stderr, Stdout, Write,
+};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::Result as AnyResult;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex};
 use scopeguard::{guard, ScopeGuard};
 use smallvec::SmallVec;
+
+const MAX_TIMEOUT: Duration = Duration::from_secs(1);
 
 pub struct StdinSignal {
     inner: Mutex<StdinInner>,
@@ -120,7 +125,24 @@ impl StdinSignal {
         (ret.clone(), StdinProvider(ret))
     }
 
-    pub fn read(&self, len: usize) -> Vec<u8> {
+    pub fn is_ready(&self) -> bool {
+        let guard = self.inner.lock();
+        guard.closed || guard.end != guard.start
+    }
+
+    pub fn read(&self, len: usize) -> IoResult<Vec<u8>> {
+        let mut guard = self.inner.lock();
+
+        let (a, b) = guard.pop_data(len);
+
+        let mut ret = vec![0u8; a.len() + b.len()];
+        ret[..a.len()].copy_from_slice(a);
+        ret[a.len()..].copy_from_slice(b);
+        Ok(ret)
+    }
+
+    pub fn read_block(&self, len: usize) -> IoResult<Vec<u8>> {
+        let timeout = Instant::now() + MAX_TIMEOUT;
         let mut guard = self.inner.lock();
 
         let (a, b) = loop {
@@ -128,7 +150,9 @@ impl StdinSignal {
             let (a, b) = guard.pop_data(len);
             if !closed && a.is_empty() && b.is_empty() {
                 (self.f)();
-                self.cond.wait(&mut guard);
+                if self.cond.wait_until(&mut guard, timeout).timed_out() {
+                    return Err(ErrorKind::TimedOut.into());
+                }
             } else {
                 break (a, b);
             }
@@ -137,7 +161,34 @@ impl StdinSignal {
         let mut ret = vec![0u8; a.len() + b.len()];
         ret[..a.len()].copy_from_slice(a);
         ret[a.len()..].copy_from_slice(b);
-        ret
+        Ok(ret)
+    }
+
+    pub fn skip(&self, len: usize) -> IoResult<usize> {
+        let mut guard = self.inner.lock();
+
+        let (a, b) = guard.pop_data(len);
+        Ok(a.len() + b.len())
+    }
+
+    pub fn skip_block(&self, len: usize) -> IoResult<usize> {
+        let timeout = Instant::now() + MAX_TIMEOUT;
+        let mut guard = self.inner.lock();
+
+        let (a, b) = loop {
+            let closed = guard.closed;
+            let (a, b) = guard.pop_data(len);
+            if !closed && a.is_empty() && b.is_empty() {
+                (self.f)();
+                if self.cond.wait_until(&mut guard, timeout).timed_out() {
+                    return Err(ErrorKind::TimedOut.into());
+                }
+            } else {
+                break (a, b);
+            }
+        };
+
+        Ok(a.len() + b.len())
     }
 
     pub fn poll(self: &Arc<Self>) -> AnyResult<StdinSignalPollable> {
@@ -156,6 +207,9 @@ impl StdinProvider {
 
     pub fn write(&self, buf: &[u8]) {
         let mut guard = self.0.inner.lock();
+        if guard.closed {
+            return;
+        }
         guard.push_data(buf);
         self.0.cond.notify_one();
     }
@@ -170,16 +224,21 @@ impl StdinProvider {
 pub struct StdinSignalPollable(Arc<StdinSignal>);
 
 impl StdinSignalPollable {
+    #[inline(always)]
     pub fn is_ready(&self) -> bool {
-        let guard = self.0.inner.lock();
-        guard.closed || guard.end != guard.start
+        self.0.is_ready()
     }
 
-    pub fn block(&self) {
+    pub fn block(&self) -> AnyResult<()> {
+        let timeout = Instant::now() + MAX_TIMEOUT;
         let mut guard = self.0.inner.lock();
         while !guard.closed && guard.end == guard.start {
-            self.0.cond.wait(&mut guard);
+            if self.0.cond.wait_until(&mut guard, timeout).timed_out() {
+                return Err(IoError::from(ErrorKind::TimedOut).into());
+            }
         }
+
+        Ok(())
     }
 }
 
@@ -410,7 +469,7 @@ impl StdoutCbLineBuffered {
     }
 
     pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable { _p: () })
+        Ok(NullPollable::new())
     }
 }
 
@@ -513,7 +572,7 @@ impl Write for StdoutBypass {
 
 impl StdoutBypass {
     pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable { _p: () })
+        Ok(NullPollable::new())
     }
 }
 
@@ -545,10 +604,8 @@ impl Write for StderrBypass {
 
 impl StderrBypass {
     pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable { _p: () })
+        Ok(NullPollable::new())
     }
 }
 
-pub struct NullPollable {
-    _p: (),
-}
+pub type NullPollable = crate::NullPollable;

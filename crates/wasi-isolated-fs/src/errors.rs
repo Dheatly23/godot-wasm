@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::io::{Error as IoError, ErrorKind};
@@ -141,8 +142,14 @@ impl Display for InvalidResourceIDError {
         }
 
         write!(f, "resource IDs not found: ")?;
-        for i in 0..self.n as usize {
-            write!(f, "{}{}", if i == 0 { "" } else { ", " }, self.ids[i])?;
+        for (i, v) in self.ids[..self.ids.len().min(self.n as usize)]
+            .iter()
+            .enumerate()
+        {
+            write!(f, "{}{}", if i == 0 { "" } else { ", " }, v)?;
+        }
+        if self.n as usize > self.ids.len() {
+            write!(f, ", ...")?;
         }
 
         Ok(())
@@ -161,12 +168,19 @@ impl FromIterator<u32> for InvalidResourceIDError {
 
 impl Extend<u32> for InvalidResourceIDError {
     fn extend<T: IntoIterator<Item = u32>>(&mut self, it: T) {
-        if self.n as usize >= self.ids.len() {
+        if self.n as usize > self.ids.len() {
             return;
         }
         for id in it {
-            if self.n as usize >= self.ids.len() {
-                return;
+            match self.ids.len().cmp(&(self.n as usize)) {
+                Ordering::Less => return,
+                Ordering::Equal => {
+                    if self.ids.binary_search(&id).is_err() {
+                        self.n += 1;
+                    }
+                    return;
+                }
+                Ordering::Greater => (),
             }
             let Err(i) = self.ids[..self.n as usize].binary_search(&id) else {
                 continue;
@@ -287,6 +301,17 @@ impl From<StreamError> for Result<WasiStreamError, AnyError> {
             StreamErrorInner::Io(v) => Err(v.into()),
             StreamErrorInner::Wasi(v) => Err(WasiFSError(v).into()),
             StreamErrorInner::Closed => Ok(WasiStreamError::Closed),
+        }
+    }
+}
+
+impl From<StreamError> for AnyError {
+    fn from(v: StreamError) -> Self {
+        match v.0 {
+            StreamErrorInner::Any(v) => v,
+            StreamErrorInner::Io(v) => v.into(),
+            StreamErrorInner::Wasi(v) => WasiFSError(v).into(),
+            StreamErrorInner::Closed => StreamClosedError.into(),
         }
     }
 }

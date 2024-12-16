@@ -1325,6 +1325,18 @@ impl FileAccessor {
         Ok(ret)
     }
 
+    pub fn skip(&mut self, len: usize) -> Result<usize, errors::StreamError> {
+        if self.closed {
+            return Err(errors::StreamError::closed());
+        }
+        self.access.read_or_err()?;
+
+        let mut file = self.file.try_file()?;
+        let (_, l) = file.read(len, self.cursor);
+        self.cursor += l;
+        Ok(l)
+    }
+
     pub fn write(&mut self, buf: &[u8]) -> Result<(), errors::StreamError> {
         if self.closed {
             return Err(errors::StreamError::closed());
@@ -1342,7 +1354,7 @@ impl FileAccessor {
     }
 
     pub fn poll(&self) -> AnyResult<Pollable> {
-        Ok(Pollable { _p: () })
+        Ok(Pollable::new())
     }
 }
 
@@ -1406,6 +1418,4 @@ impl Iterator for DirEntryAccessor {
     }
 }
 
-pub struct Pollable {
-    _p: (),
-}
+pub type Pollable = crate::NullPollable;
