@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result as AnyResult;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex};
-use scopeguard::{guard, ScopeGuard};
+use scopeguard::{defer, guard, ScopeGuard};
 use smallvec::SmallVec;
 
 const MAX_TIMEOUT: Duration = Duration::from_secs(1);
@@ -323,9 +323,9 @@ impl LineBuffer {
 
                 let rest = buf.len() - *len;
                 if rest >= d.len() {
-                    buf[*len..*len + d.len()].copy_from_slice(d);
-                    *len += d.len();
-                    d = &[];
+                    let e = *len + d.len();
+                    buf[*len..e].copy_from_slice(d);
+                    (*len, d) = (e, &[]);
                 } else {
                     let a;
                     (a, d) = d.split_at(rest);
@@ -337,11 +337,12 @@ impl LineBuffer {
                     // Emit the line
                     let mut it = buf[..*len].utf8_chunks();
                     let chunk = it.next().unwrap();
+                    let len = guard(&mut *len, |len| *len = 0);
                     f(if chunk.invalid().is_empty() {
                         chunk.valid()
                     } else {
                         s.clear();
-                        s.reserve(*len);
+                        s.reserve(**len);
                         *s += chunk.valid();
                         *s += REPLACEMENT;
                         for chunk in it {
@@ -353,27 +354,33 @@ impl LineBuffer {
 
                         s
                     })?;
-                    *len = 0;
                     continue;
                 } else if *len < buf.len() {
                     continue;
                 }
 
                 // Buffer full
+                let bp = &raw mut *buf;
                 let mut it = buf.utf8_chunks();
                 let chunk = it.next().unwrap();
                 let i = chunk.invalid().len();
                 if i == 0 {
                     // All of it is valid
+                    defer! {
+                        *len = 0;
+                    }
                     f(chunk.valid())?;
-                    *len = 0;
                     continue;
                 } else if chunk.valid().len() + i == buf.len() {
                     // Some invalid residual in buffer
+                    defer! {
+                        // SAFETY: Buffer is not used and alive
+                        let buf = unsafe { &mut *bp };
+                        let s = buf.len() - i;
+                        buf.copy_within(s.., 0);
+                        *len = i;
+                    }
                     f(chunk.valid())?;
-                    let s = buf.len() - i;
-                    buf.copy_within(s.., 0);
-                    *len = i;
                     continue;
                 }
 
@@ -388,7 +395,7 @@ impl LineBuffer {
                     chunk = it.next();
 
                     if chunk.is_none() {
-                        if i != 0 {
+                        if i > 0 {
                             // Some invalid residual in buffer
                             let s = buf.len() - i;
                             buf.copy_within(s.., 0);
@@ -400,6 +407,7 @@ impl LineBuffer {
                     }
                 }
 
+                debug_assert!(*len < buf.len(), "length is not set");
                 f(s)?;
             }
         }
@@ -545,8 +553,11 @@ impl Write for StdoutCbBlockBuffered {
                 self.buf.len()
             );
             if self.len >= self.buf.len() {
+                let len = &mut self.len;
+                defer! {
+                    *len = 0;
+                }
                 cb(&self.buf[..]);
-                self.len = 0;
             }
         }
 
@@ -560,10 +571,10 @@ impl Write for StdoutCbBlockBuffered {
 
     fn flush(&mut self) -> IoResult<()> {
         let cb = &mut self.cb;
-        if self.len > 0 {
-            cb(&self.buf[..self.len]);
+        let len = guard(&mut self.len, |len| *len = 0);
+        if **len > 0 {
+            cb(&self.buf[..**len]);
         }
-        self.len = 0;
         Ok(())
     }
 
