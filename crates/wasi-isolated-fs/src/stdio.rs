@@ -281,7 +281,7 @@ impl LineBuffer {
                 if *len == 0 && *d.last().unwrap() == LINESEP {
                     // Emit line without buffering
                     let mut it = d.utf8_chunks();
-                    let chunk = it.next().unwrap();
+                    let mut chunk = it.next().unwrap();
                     if chunk.invalid().is_empty() {
                         f(chunk.valid())?;
                         d = &[];
@@ -290,9 +290,7 @@ impl LineBuffer {
 
                     s.clear();
                     s.reserve(d.len().min(buf.len()));
-                    *s += chunk.valid();
-                    *s += REPLACEMENT;
-                    for chunk in it {
+                    loop {
                         let mut v = chunk.valid();
 
                         // Limit string length
@@ -321,9 +319,16 @@ impl LineBuffer {
                         if !chunk.invalid().is_empty() {
                             *s += REPLACEMENT;
                         }
+
+                        chunk = match it.next() {
+                            Some(v) => v,
+                            None => break,
+                        };
                     }
 
-                    f(s)?;
+                    if !s.is_empty() {
+                        f(s)?;
+                    }
                     d = &[];
                     continue;
                 }
