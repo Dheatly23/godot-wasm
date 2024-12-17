@@ -10,7 +10,8 @@ use crate::bindings::wasi;
 use crate::errors;
 use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
 use crate::stdio::{
-    StderrBypass, StdinSignal, StdinSignalPollable, StdoutBypass, StdoutCbLineBuffered,
+    StderrBypass, StdinSignal, StdinSignalPollable, StdoutBypass, StdoutCbBlockBuffered,
+    StdoutCbLineBuffered,
 };
 use crate::NullPollable;
 
@@ -137,6 +138,7 @@ item_def! {
         StdoutBp(Box<StdoutBypass>),
         StderrBp(Box<StderrBypass>),
         StdoutLBuf(Box<StdoutCbLineBuffered>),
+        StdoutBBuf(Box<StdoutCbBlockBuffered>),
         BoxedRead(Box<dyn Send + Sync + Read>),
     },
     Readdir | ReaddirR(wasi::filesystem::types::DirectoryEntryStream) {
@@ -353,14 +355,14 @@ impl<T: ResItem + 'static> GetItem for Resource<T> {
 
 macro_rules! impl_getitem_tuple {
     (#tuple $($t:ident),+) => {
-        impl<$($t: ResItem + 'static),+> GetItem for ($(Resource<$t>),+) {
-            type Output<'a> = ($($t::ItemOut<'a>),+);
-            type OutputRef<'a> = ($($t::ItemOutRef<'a>),+);
+        impl<$($t: ResItem + 'static),+> GetItem for ($(Resource<$t>,)+) {
+            type Output<'a> = ($($t::ItemOut<'a>,)+);
+            type OutputRef<'a> = ($($t::ItemOutRef<'a>,)+);
 
             #[allow(non_snake_case)]
             fn get_item(self, items: &mut Items) -> AnyResult<Self::Output<'_>> {
                 let mut errval = errors::InvalidResourceIDError::default();
-                let ($($t),+) = self;
+                let ($($t,)+) = self;
 
                 // Check for duplicates.
                 {
@@ -393,8 +395,8 @@ macro_rules! impl_getitem_tuple {
                 };
                 )+
 
-                match ($($t),+) {
-                    ($(Some($t)),+) => Ok(($($t),+)),
+                match ($($t,)+) {
+                    ($(Some($t),)+) => Ok(($($t,)+)),
                     _ => Err(errval.into()),
                 }
             }
@@ -402,7 +404,7 @@ macro_rules! impl_getitem_tuple {
             #[allow(non_snake_case)]
             fn get_item_ref<'a>(&self, items: &'a Items) -> AnyResult<Self::OutputRef<'a>> {
                 let mut errval = errors::InvalidResourceIDError::default();
-                let ($($t),+) = self;
+                let ($($t,)+) = self;
 
                 $(
                 let $t = {
@@ -414,15 +416,15 @@ macro_rules! impl_getitem_tuple {
                 };
                 )+
 
-                match ($($t),+) {
-                    ($(Some($t)),+) => Ok(($($t),+)),
+                match ($($t,)+) {
+                    ($(Some($t),)+) => Ok(($($t,)+)),
                     _ => Err(errval.into()),
                 }
             }
 
             #[allow(non_snake_case)]
             fn maybe_unregister(self, items: &mut Items) {
-                let ($($t),+) = self;
+                let ($($t,)+) = self;
 
                 $(
                 if $t.owned() {
@@ -434,9 +436,10 @@ macro_rules! impl_getitem_tuple {
             }
         }
     };
+    () => {};
     ($r:ident $(,$t:ident)*) => {
         impl_getitem_tuple!{#tuple $r $(,$t)*}
-        impl_getitem_tuple!{#tuple $($t),*}
+        impl_getitem_tuple!{$($t),*}
     };
 }
 

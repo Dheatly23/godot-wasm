@@ -1311,6 +1311,16 @@ pub struct FileAccessor {
 }
 
 impl FileAccessor {
+    #[inline(always)]
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    #[inline(always)]
+    pub fn file(&self) -> &Arc<Node> {
+        &self.file
+    }
+
     pub fn read(&mut self, len: usize) -> Result<Vec<u8>, errors::StreamError> {
         if self.closed {
             return Err(errors::StreamError::closed());

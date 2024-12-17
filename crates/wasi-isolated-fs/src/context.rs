@@ -1,10 +1,10 @@
 use std::collections::btree_map::Entry;
 use std::collections::hash_set::HashSet;
 use std::convert::{AsMut, AsRef};
-use std::io::{Error as IoError, ErrorKind};
+use std::io::{Error as IoError, ErrorKind, Write as _};
 use std::sync::Arc;
 
-use anyhow::Result as AnyResult;
+use anyhow::{Error as AnyError, Result as AnyResult};
 use camino::{Utf8Component, Utf8PathBuf};
 use wasmtime::component::Resource;
 
@@ -336,5 +336,289 @@ impl wasi::io::streams::HostInputStream for WasiContext {
     fn drop(&mut self, res: Resource<wasi::io::streams::InputStream>) -> AnyResult<()> {
         self.items.get_item(res)?;
         Ok(())
+    }
+}
+
+static EMPTY_BUF: [u8; 4096] = [0; 4096];
+
+impl wasi::io::streams::HostOutputStream for WasiContext {
+    fn check_write(
+        &mut self,
+        res: Resource<wasi::io::streams::OutputStream>,
+    ) -> Result<u64, errors::StreamError> {
+        if matches!(
+            self.items.get_item(res)?,
+            items::IOStream::IsoFSAccess(_)
+                | items::IOStream::StdoutBp(_)
+                | items::IOStream::StderrBp(_)
+                | items::IOStream::StdoutLBuf(_)
+                | items::IOStream::StdoutBBuf(_)
+        ) {
+            Ok(65536)
+        } else {
+            Err(ErrorKind::InvalidInput.into())
+        }
+    }
+
+    fn write(
+        &mut self,
+        res: Resource<wasi::io::streams::OutputStream>,
+        data: Vec<u8>,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(mut v) => v.write(&data)?,
+            items::IOStream::StdoutBp(mut v) => v.write_all(&data)?,
+            items::IOStream::StderrBp(mut v) => v.write_all(&data)?,
+            items::IOStream::StdoutLBuf(mut v) => v.write_all(&data)?,
+            items::IOStream::StdoutBBuf(mut v) => v.write_all(&data)?,
+            _ => return Err(ErrorKind::InvalidInput.into()),
+        }
+        Ok(())
+    }
+
+    fn blocking_write_and_flush(
+        &mut self,
+        res: Resource<wasi::io::streams::OutputStream>,
+        data: Vec<u8>,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(mut v) => v.write(&data)?,
+            items::IOStream::StdoutBp(mut v) => {
+                v.write_all(&data)?;
+                v.flush()?;
+            }
+            items::IOStream::StderrBp(mut v) => {
+                v.write_all(&data)?;
+                v.flush()?;
+            }
+            items::IOStream::StdoutLBuf(mut v) => {
+                v.write_all(&data)?;
+                v.flush()?;
+            }
+            items::IOStream::StdoutBBuf(mut v) => {
+                v.write_all(&data)?;
+                v.flush()?;
+            }
+            _ => return Err(ErrorKind::InvalidInput.into()),
+        }
+        Ok(())
+    }
+
+    fn flush(
+        &mut self,
+        res: Resource<wasi::io::streams::OutputStream>,
+    ) -> Result<(), errors::StreamError> {
+        self.blocking_flush(res)
+    }
+
+    fn blocking_flush(
+        &mut self,
+        res: Resource<wasi::io::streams::OutputStream>,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(_) => (),
+            items::IOStream::StdoutBp(mut v) => v.flush()?,
+            items::IOStream::StderrBp(mut v) => v.flush()?,
+            items::IOStream::StdoutLBuf(mut v) => v.flush()?,
+            items::IOStream::StdoutBBuf(mut v) => v.flush()?,
+            _ => return Err(ErrorKind::InvalidInput.into()),
+        }
+        Ok(())
+    }
+
+    fn subscribe(
+        &mut self,
+        res: Resource<wasi::io::streams::OutputStream>,
+    ) -> AnyResult<Resource<wasi::io::poll::Pollable>> {
+        let ret: Item = match self.items.get_item(res)? {
+            items::IOStream::IsoFSAccess(v) => v.poll()?.into(),
+            items::IOStream::StdoutBp(_)
+            | items::IOStream::StderrBp(_)
+            | items::IOStream::StdoutLBuf(_)
+            | items::IOStream::StdoutBBuf(_) => NullPollable::new().into(),
+            _ => return Err(IoError::from(ErrorKind::InvalidInput).into()),
+        };
+        self.register(ret)
+    }
+
+    fn write_zeroes(
+        &mut self,
+        res: Resource<wasi::io::streams::OutputStream>,
+        mut len: u64,
+    ) -> Result<(), errors::StreamError> {
+        let mut v = self.items.get_item(res)?;
+        while len > 0 {
+            let data = &EMPTY_BUF[..len.min(EMPTY_BUF.len() as u64) as usize];
+            match v {
+                items::IOStream::IsoFSAccess(ref mut v) => v.write(data)?,
+                items::IOStream::StdoutBp(ref mut v) => v.write_all(data)?,
+                items::IOStream::StderrBp(ref mut v) => v.write_all(data)?,
+                items::IOStream::StdoutLBuf(ref mut v) => v.write_all(data)?,
+                items::IOStream::StdoutBBuf(ref mut v) => v.write_all(data)?,
+                _ => return Err(ErrorKind::InvalidInput.into()),
+            }
+            len -= data.len() as u64;
+        }
+        Ok(())
+    }
+
+    fn blocking_write_zeroes_and_flush(
+        &mut self,
+        res: Resource<wasi::io::streams::OutputStream>,
+        mut len: u64,
+    ) -> Result<(), errors::StreamError> {
+        let mut v = self.items.get_item(res)?;
+        while len > 0 {
+            let data = &EMPTY_BUF[..len.min(EMPTY_BUF.len() as u64) as usize];
+            match v {
+                items::IOStream::IsoFSAccess(ref mut v) => v.write(data)?,
+                items::IOStream::StdoutBp(ref mut v) => v.write_all(data)?,
+                items::IOStream::StderrBp(ref mut v) => v.write_all(data)?,
+                items::IOStream::StdoutLBuf(ref mut v) => v.write_all(data)?,
+                items::IOStream::StdoutBBuf(ref mut v) => v.write_all(data)?,
+                _ => return Err(ErrorKind::InvalidInput.into()),
+            }
+            len -= data.len() as u64;
+        }
+
+        match v {
+            items::IOStream::IsoFSAccess(_) => (),
+            items::IOStream::StdoutBp(mut v) => v.flush()?,
+            items::IOStream::StderrBp(mut v) => v.flush()?,
+            items::IOStream::StdoutLBuf(mut v) => v.flush()?,
+            items::IOStream::StdoutBBuf(mut v) => v.flush()?,
+            _ => return Err(ErrorKind::InvalidInput.into()),
+        }
+        Ok(())
+    }
+
+    fn splice(
+        &mut self,
+        output: Resource<wasi::io::streams::OutputStream>,
+        input: Resource<wasi::io::streams::InputStream>,
+        len: u64,
+    ) -> Result<u64, errors::StreamError> {
+        let (mut input, mut output) = self.items.get_item((input, output))?;
+        if !matches!(
+            (&input, &output),
+            (
+                items::IOStream::IsoFSAccess(_)
+                    | items::IOStream::StdinSignal(_)
+                    | items::IOStream::BoxedRead(_),
+                items::IOStream::IsoFSAccess(_)
+                    | items::IOStream::StdoutBp(_)
+                    | items::IOStream::StderrBp(_)
+                    | items::IOStream::StdoutLBuf(_)
+                    | items::IOStream::StdoutBBuf(_)
+            )
+        ) {
+            return Err(ErrorKind::InvalidInput.into());
+        }
+
+        let mut n = 0;
+        let mut l = usize::try_from(len).map_err(AnyError::from)?;
+        while l > 0 {
+            let i = l.min(4096);
+
+            let b = match input {
+                items::IOStream::IsoFSAccess(ref mut v) => v.read(i)?,
+                items::IOStream::StdinSignal(ref v) => v.read(i)?,
+                items::IOStream::BoxedRead(ref mut v) => {
+                    let mut r = vec![0; i.min(1024)];
+                    let i = v.read(&mut r)?;
+                    r.truncate(i);
+                    r
+                }
+                _ => return Err(ErrorKind::InvalidInput.into()),
+            };
+            if b.is_empty() {
+                break;
+            }
+            l -= b.len();
+            n += b.len();
+
+            match output {
+                items::IOStream::IsoFSAccess(ref mut v) => v.write(&b)?,
+                items::IOStream::StdoutBp(ref mut v) => v.write_all(&b)?,
+                items::IOStream::StderrBp(ref mut v) => v.write_all(&b)?,
+                items::IOStream::StdoutLBuf(ref mut v) => v.write_all(&b)?,
+                items::IOStream::StdoutBBuf(ref mut v) => v.write_all(&b)?,
+                _ => return Err(ErrorKind::InvalidInput.into()),
+            }
+        }
+
+        Ok(n as u64)
+    }
+
+    fn blocking_splice(
+        &mut self,
+        output: Resource<wasi::io::streams::OutputStream>,
+        input: Resource<wasi::io::streams::InputStream>,
+        len: u64,
+    ) -> Result<u64, errors::StreamError> {
+        let (mut input, mut output) = self.items.get_item((input, output))?;
+        if !matches!(
+            (&input, &output),
+            (
+                items::IOStream::IsoFSAccess(_)
+                    | items::IOStream::StdinSignal(_)
+                    | items::IOStream::BoxedRead(_),
+                items::IOStream::IsoFSAccess(_)
+                    | items::IOStream::StdoutBp(_)
+                    | items::IOStream::StderrBp(_)
+                    | items::IOStream::StdoutLBuf(_)
+                    | items::IOStream::StdoutBBuf(_)
+            )
+        ) {
+            return Err(ErrorKind::InvalidInput.into());
+        }
+
+        let mut n = 0;
+        let mut l = usize::try_from(len).map_err(AnyError::from)?;
+        while l > 0 {
+            let i = l.min(4096);
+
+            let b = match input {
+                items::IOStream::IsoFSAccess(ref mut v) => v.read(i)?,
+                items::IOStream::StdinSignal(ref v) => v.read_block(i)?,
+                items::IOStream::BoxedRead(ref mut v) => {
+                    let mut r = vec![0; i.min(1024)];
+                    let i = v.read(&mut r)?;
+                    r.truncate(i);
+                    r
+                }
+                _ => return Err(ErrorKind::InvalidInput.into()),
+            };
+            if b.is_empty() {
+                break;
+            }
+            l -= b.len();
+            n += b.len();
+
+            match output {
+                items::IOStream::IsoFSAccess(ref mut v) => v.write(&b)?,
+                items::IOStream::StdoutBp(ref mut v) => v.write_all(&b)?,
+                items::IOStream::StderrBp(ref mut v) => v.write_all(&b)?,
+                items::IOStream::StdoutLBuf(ref mut v) => v.write_all(&b)?,
+                items::IOStream::StdoutBBuf(ref mut v) => v.write_all(&b)?,
+                _ => return Err(ErrorKind::InvalidInput.into()),
+            }
+        }
+
+        Ok(n as u64)
+    }
+
+    fn drop(&mut self, res: Resource<wasi::io::streams::OutputStream>) -> AnyResult<()> {
+        self.items.get_item(res)?;
+        Ok(())
+    }
+}
+
+impl wasi::io::streams::Host for WasiContext {
+    fn convert_stream_error(
+        &mut self,
+        e: errors::StreamError,
+    ) -> AnyResult<wasi::io::streams::StreamError> {
+        e.into()
     }
 }

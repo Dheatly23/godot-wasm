@@ -63,7 +63,7 @@ impl StdinInner {
             self.end = b.len();
         } else {
             self.data[self.end..i].copy_from_slice(buf);
-            self.end = i;
+            self.end = i % self.data.len();
         }
 
         debug_assert_eq!(
@@ -81,7 +81,7 @@ impl StdinInner {
         let old_size = self.len();
 
         let ret: (&[u8], &[u8]) = if self.end >= self.start {
-            let i = len.min(self.end);
+            let i = self.start + len.min(self.end);
             let s = &self.data[self.start..i];
             self.start = i;
             (s, &[])
@@ -242,29 +242,6 @@ impl StdinSignalPollable {
     }
 }
 
-pub struct StdoutCb<F: ?Sized + Send + Sync + FnMut(&[u8])>(F);
-
-impl<F: Send + Sync + FnMut(&[u8])> StdoutCb<F> {
-    pub fn new(f: F) -> Self {
-        Self(f)
-    }
-
-    pub fn into_erased(self) -> ErasedStdoutCb
-    where
-        F: 'static,
-    {
-        Box::new(self)
-    }
-}
-
-impl<F: ?Sized + Send + Sync + FnMut(&[u8])> StdoutCb<F> {
-    pub fn write(&mut self, buf: &[u8]) {
-        (self.0)(buf)
-    }
-}
-
-pub type ErasedStdoutCb = Box<StdoutCb<dyn Send + Sync + FnMut(&[u8])>>;
-
 pub struct LineBuffer {
     buf: Box<[u8; 1024]>,
     len: usize,
@@ -312,11 +289,28 @@ impl LineBuffer {
                     }
 
                     s.clear();
-                    s.reserve(d.len());
+                    s.reserve(d.len().min(buf.len()));
                     *s += chunk.valid();
                     *s += REPLACEMENT;
                     for chunk in it {
-                        *s += chunk.valid();
+                        let mut v = chunk.valid();
+
+                        // Limit string length
+                        while s.len() + v.len() >= buf.len() {
+                            // Split at floor char boundary
+                            let i = (0..=buf.len().saturating_sub(s.len()).min(v.len()))
+                                .rfind(|&i| v.is_char_boundary(i))
+                                .unwrap_or(0);
+                            let t;
+                            (t, v) = v.split_at(i);
+                            *s += t;
+
+                            // Emit chunk
+                            f(s)?;
+                            s.clear();
+                        }
+
+                        *s += v;
                         if !chunk.invalid().is_empty() {
                             *s += REPLACEMENT;
                         }
@@ -447,23 +441,25 @@ impl LineBuffer {
     }
 }
 
+type StdoutCb = Box<dyn Send + Sync + FnMut(&[u8])>;
+
 pub struct StdoutCbLineBuffered {
     buf: LineBuffer,
-    cb: ErasedStdoutCb,
+    cb: StdoutCb,
 }
 
 impl StdoutCbLineBuffered {
     pub fn new(f: impl 'static + Send + Sync + FnMut(&[u8])) -> Self {
         Self {
             buf: Default::default(),
-            cb: StdoutCb::new(f).into_erased(),
+            cb: Box::new(f),
         }
     }
 
     fn split(&mut self) -> (&mut LineBuffer, impl use<'_> + FnMut(&str) -> IoResult<()>) {
         let Self { buf, cb } = self;
         (buf, |s| {
-            cb.write(s.as_bytes());
+            cb(s.as_bytes());
             Ok(())
         })
     }
@@ -487,6 +483,88 @@ impl Write for StdoutCbLineBuffered {
     fn flush(&mut self) -> IoResult<()> {
         let (lb, f) = self.split();
         lb.flush(f)
+    }
+
+    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
+        let mut ret = 0;
+        for buf in bufs {
+            self.write_all(buf)?;
+            ret += buf.len();
+        }
+        Ok(ret)
+    }
+}
+
+pub struct StdoutCbBlockBuffered {
+    buf: Box<[u8; 1024]>,
+    len: usize,
+    cb: StdoutCb,
+}
+
+impl StdoutCbBlockBuffered {
+    pub fn new(f: impl 'static + Send + Sync + FnMut(&[u8])) -> Self {
+        Self {
+            buf: Box::new([0; 1024]),
+            len: 0,
+            cb: Box::new(f),
+        }
+    }
+
+    pub fn poll(&self) -> AnyResult<NullPollable> {
+        Ok(NullPollable::new())
+    }
+}
+
+impl Write for StdoutCbBlockBuffered {
+    fn write_all(&mut self, mut buf: &[u8]) -> IoResult<()> {
+        let cb = &mut self.cb;
+        while !buf.is_empty() {
+            if self.len == 0 && buf.len() >= self.buf.len() {
+                let a;
+                (a, buf) = buf.split_at(self.buf.len());
+                cb(a);
+                continue;
+            }
+
+            let i = self.buf.len() - self.len;
+            if i >= buf.len() {
+                let e = self.len + buf.len();
+                self.buf[self.len..e].copy_from_slice(buf);
+                (self.len, buf) = (e, &[]);
+            } else {
+                let a;
+                (a, buf) = buf.split_at(i);
+                self.buf[self.len..].copy_from_slice(a);
+                self.len = self.buf.len();
+            }
+
+            debug_assert!(
+                self.len <= self.buf.len(),
+                "{} > {}",
+                self.len,
+                self.buf.len()
+            );
+            if self.len >= self.buf.len() {
+                cb(&self.buf[..]);
+                self.len = 0;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        let cb = &mut self.cb;
+        if self.len > 0 {
+            cb(&self.buf[..self.len]);
+        }
+        self.len = 0;
+        Ok(())
     }
 
     fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
