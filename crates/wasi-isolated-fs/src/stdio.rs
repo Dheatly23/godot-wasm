@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result as AnyResult;
 use memchr::memchr;
 use parking_lot::{Condvar, Mutex};
-use scopeguard::{defer, guard, ScopeGuard};
+use scopeguard::{defer, guard, guard_on_unwind};
 use smallvec::SmallVec;
 
 const MAX_TIMEOUT: Duration = Duration::from_secs(1);
@@ -266,8 +266,7 @@ impl LineBuffer {
     where
         for<'a> F: FnMut(&'a str) -> Result<(), E>,
     {
-        let mut g = guard(self, |this| this.len = 0);
-        let Self { buf, len, s } = &mut *g;
+        let Self { buf, len, s } = &mut *guard_on_unwind(self, |this| this.len = 0);
 
         while !data.is_empty() {
             let mut d;
@@ -424,8 +423,6 @@ impl LineBuffer {
             }
         }
 
-        // Defuse the guard
-        ScopeGuard::into_inner(g);
         Ok(())
     }
 
