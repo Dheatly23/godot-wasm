@@ -297,6 +297,13 @@ impl LineBuffer {
 
                         // Limit string length
                         while s.len() + v.len() >= buf.len() {
+                            if s.is_empty() {
+                                // Buffer string is empty
+                                f(v)?;
+                                v = "";
+                                continue;
+                            }
+
                             // Split at floor char boundary
                             let i = (0..=buf.len().saturating_sub(s.len()).min(v.len()))
                                 .rfind(|&i| v.is_char_boundary(i))
