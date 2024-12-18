@@ -1,8 +1,9 @@
 use std::collections::btree_map::Entry;
 use std::collections::hash_set::HashSet;
 use std::convert::{AsMut, AsRef};
-use std::io::{Error as IoError, ErrorKind, Write as _};
+use std::io::{Error as IoError, ErrorKind, SeekFrom, Write as _};
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Error as AnyError, Result as AnyResult};
 use camino::{Utf8Component, Utf8PathBuf};
@@ -449,12 +450,12 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         let mut v = self.items.get_item(res)?;
         while len > 0 {
             let data = &EMPTY_BUF[..len.min(EMPTY_BUF.len() as u64) as usize];
-            match v {
-                items::IOStream::IsoFSAccess(ref mut v) => v.write(data)?,
-                items::IOStream::StdoutBp(ref mut v) => v.write_all(data)?,
-                items::IOStream::StderrBp(ref mut v) => v.write_all(data)?,
-                items::IOStream::StdoutLBuf(ref mut v) => v.write_all(data)?,
-                items::IOStream::StdoutBBuf(ref mut v) => v.write_all(data)?,
+            match &mut v {
+                items::IOStream::IsoFSAccess(v) => v.write(data)?,
+                items::IOStream::StdoutBp(v) => v.write_all(data)?,
+                items::IOStream::StderrBp(v) => v.write_all(data)?,
+                items::IOStream::StdoutLBuf(v) => v.write_all(data)?,
+                items::IOStream::StdoutBBuf(v) => v.write_all(data)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
             len -= data.len() as u64;
@@ -470,12 +471,12 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         let mut v = self.items.get_item(res)?;
         while len > 0 {
             let data = &EMPTY_BUF[..len.min(EMPTY_BUF.len() as u64) as usize];
-            match v {
-                items::IOStream::IsoFSAccess(ref mut v) => v.write(data)?,
-                items::IOStream::StdoutBp(ref mut v) => v.write_all(data)?,
-                items::IOStream::StderrBp(ref mut v) => v.write_all(data)?,
-                items::IOStream::StdoutLBuf(ref mut v) => v.write_all(data)?,
-                items::IOStream::StdoutBBuf(ref mut v) => v.write_all(data)?,
+            match &mut v {
+                items::IOStream::IsoFSAccess(v) => v.write(data)?,
+                items::IOStream::StdoutBp(v) => v.write_all(data)?,
+                items::IOStream::StderrBp(v) => v.write_all(data)?,
+                items::IOStream::StdoutLBuf(v) => v.write_all(data)?,
+                items::IOStream::StdoutBBuf(v) => v.write_all(data)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
             len -= data.len() as u64;
@@ -520,10 +521,10 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         while l > 0 {
             let i = l.min(4096);
 
-            let b = match input {
-                items::IOStream::IsoFSAccess(ref mut v) => v.read(i)?,
-                items::IOStream::StdinSignal(ref v) => v.read(i)?,
-                items::IOStream::BoxedRead(ref mut v) => {
+            let b = match &mut input {
+                items::IOStream::IsoFSAccess(v) => v.read(i)?,
+                items::IOStream::StdinSignal(v) => v.read(i)?,
+                items::IOStream::BoxedRead(v) => {
                     let mut r = vec![0; i.min(1024)];
                     let i = v.read(&mut r)?;
                     r.truncate(i);
@@ -537,12 +538,12 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             l -= b.len();
             n += b.len();
 
-            match output {
-                items::IOStream::IsoFSAccess(ref mut v) => v.write(&b)?,
-                items::IOStream::StdoutBp(ref mut v) => v.write_all(&b)?,
-                items::IOStream::StderrBp(ref mut v) => v.write_all(&b)?,
-                items::IOStream::StdoutLBuf(ref mut v) => v.write_all(&b)?,
-                items::IOStream::StdoutBBuf(ref mut v) => v.write_all(&b)?,
+            match &mut output {
+                items::IOStream::IsoFSAccess(v) => v.write(&b)?,
+                items::IOStream::StdoutBp(v) => v.write_all(&b)?,
+                items::IOStream::StderrBp(v) => v.write_all(&b)?,
+                items::IOStream::StdoutLBuf(v) => v.write_all(&b)?,
+                items::IOStream::StdoutBBuf(v) => v.write_all(&b)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
@@ -578,10 +579,10 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         while l > 0 {
             let i = l.min(4096);
 
-            let b = match input {
-                items::IOStream::IsoFSAccess(ref mut v) => v.read(i)?,
-                items::IOStream::StdinSignal(ref v) => v.read_block(i)?,
-                items::IOStream::BoxedRead(ref mut v) => {
+            let b = match &mut input {
+                items::IOStream::IsoFSAccess(v) => v.read(i)?,
+                items::IOStream::StdinSignal(v) => v.read_block(i)?,
+                items::IOStream::BoxedRead(v) => {
                     let mut r = vec![0; i.min(1024)];
                     let i = v.read(&mut r)?;
                     r.truncate(i);
@@ -595,12 +596,12 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             l -= b.len();
             n += b.len();
 
-            match output {
-                items::IOStream::IsoFSAccess(ref mut v) => v.write(&b)?,
-                items::IOStream::StdoutBp(ref mut v) => v.write_all(&b)?,
-                items::IOStream::StderrBp(ref mut v) => v.write_all(&b)?,
-                items::IOStream::StdoutLBuf(ref mut v) => v.write_all(&b)?,
-                items::IOStream::StdoutBBuf(ref mut v) => v.write_all(&b)?,
+            match &mut output {
+                items::IOStream::IsoFSAccess(v) => v.write(&b)?,
+                items::IOStream::StdoutBp(v) => v.write_all(&b)?,
+                items::IOStream::StderrBp(v) => v.write_all(&b)?,
+                items::IOStream::StdoutLBuf(v) => v.write_all(&b)?,
+                items::IOStream::StdoutBBuf(v) => v.write_all(&b)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
@@ -620,5 +621,526 @@ impl wasi::io::streams::Host for WasiContext {
         e: errors::StreamError,
     ) -> AnyResult<wasi::io::streams::StreamError> {
         e.into()
+    }
+}
+
+fn set_time(time: wasi::filesystem::types::NewTimestamp, now: &SystemTime, dst: &mut SystemTime) {
+    match time {
+        wasi::filesystem::types::NewTimestamp::NoChange => (),
+        wasi::filesystem::types::NewTimestamp::Now => *dst = *now,
+        wasi::filesystem::types::NewTimestamp::Timestamp(t) => {
+            *dst = SystemTime::UNIX_EPOCH + Duration::new(t.seconds, t.nanoseconds)
+        }
+    }
+}
+
+impl wasi::filesystem::types::HostDescriptor for WasiContext {
+    fn read_via_stream(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        off: wasi::filesystem::types::Filesize,
+    ) -> Result<Resource<wasi::io::streams::InputStream>, errors::StreamError> {
+        let ret: Item = match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                Box::new(v.open_file(AccessMode::R, SeekFrom::Start(off))?).into()
+            }
+        };
+        Ok(self.register(ret)?)
+    }
+
+    fn write_via_stream(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        off: wasi::filesystem::types::Filesize,
+    ) -> Result<Resource<wasi::io::streams::OutputStream>, errors::StreamError> {
+        let ret: Item = match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                Box::new(v.open_file(AccessMode::W, SeekFrom::Start(off))?).into()
+            }
+        };
+        Ok(self.register(ret)?)
+    }
+
+    fn append_via_stream(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> Result<Resource<wasi::io::streams::OutputStream>, errors::StreamError> {
+        let ret: Item = match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                Box::new(v.open_file(AccessMode::W, SeekFrom::End(0))?).into()
+            }
+        };
+        Ok(self.register(ret)?)
+    }
+    fn advise(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        _: wasi::filesystem::types::Filesize,
+        _: wasi::filesystem::types::Filesize,
+        _: wasi::filesystem::types::Advice,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(_) => (),
+        }
+        Ok(())
+    }
+
+    fn sync_data(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(_) => (),
+        }
+        Ok(())
+    }
+
+    fn get_flags(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> Result<wasi::filesystem::types::DescriptorFlags, errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => v.file_flags(),
+        }
+    }
+
+    fn get_type(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> Result<wasi::filesystem::types::DescriptorType, errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => v.file_type(),
+        }
+    }
+
+    fn set_size(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        size: wasi::filesystem::types::Filesize,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => v.resize(size.try_into().map_err(AnyError::from)?)?,
+        }
+        Ok(())
+    }
+
+    fn set_times(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        atime: wasi::filesystem::types::NewTimestamp,
+        mtime: wasi::filesystem::types::NewTimestamp,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => v.set_time(|stamp| {
+                let now = SystemTime::now();
+                set_time(mtime, &now, &mut stamp.mtime);
+                set_time(atime, &now, &mut stamp.atime);
+                Ok(())
+            })?,
+        }
+        Ok(())
+    }
+
+    fn read(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        len: wasi::filesystem::types::Filesize,
+        off: wasi::filesystem::types::Filesize,
+    ) -> Result<(Vec<u8>, bool), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                let l = usize::try_from(len).unwrap_or(usize::MAX);
+                let r = v.read(l, off.try_into().map_err(AnyError::from)?)?;
+                let b = r.len() == l;
+                Ok((r, b))
+            }
+        }
+    }
+
+    fn write(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        buf: Vec<u8>,
+        off: wasi::filesystem::types::Filesize,
+    ) -> Result<wasi::filesystem::types::Filesize, errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                v.write(&buf, off.try_into().map_err(AnyError::from)?)?;
+                Ok(buf.len() as _)
+            }
+        }
+    }
+
+    fn read_directory(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> Result<Resource<wasi::filesystem::types::DirectoryEntryStream>, errors::StreamError> {
+        let ret: Item = match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => Box::new(v.read_directory()?).into(),
+        };
+        Ok(self.register(ret)?)
+    }
+
+    fn sync(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(_) => (),
+        }
+        Ok(())
+    }
+
+    fn create_directory_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path: String,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                let p = Utf8PathBuf::from(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(ErrorKind::InvalidInput.into());
+                };
+
+                v.open(&self.iso_fs, parent, true, false, false, AccessMode::W)?
+                    .create_dir(&self.iso_fs, name)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn stat(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> Result<wasi::filesystem::types::DescriptorStat, errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => v.stat(),
+        }
+    }
+
+    fn stat_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path_flags: wasi::filesystem::types::PathFlags,
+        path: String,
+    ) -> Result<wasi::filesystem::types::DescriptorStat, errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => v
+                .open(
+                    &self.iso_fs,
+                    &Utf8PathBuf::from(path),
+                    path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
+                    false,
+                    false,
+                    AccessMode::RW,
+                )?
+                .stat(),
+        }
+    }
+
+    fn set_times_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path_flags: wasi::filesystem::types::PathFlags,
+        path: String,
+        atime: wasi::filesystem::types::NewTimestamp,
+        mtime: wasi::filesystem::types::NewTimestamp,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => v
+                .open(
+                    &self.iso_fs,
+                    &Utf8PathBuf::from(path),
+                    path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
+                    false,
+                    false,
+                    AccessMode::W,
+                )?
+                .set_time(|stamp| {
+                    let now = SystemTime::now();
+                    set_time(mtime, &now, &mut stamp.mtime);
+                    set_time(atime, &now, &mut stamp.atime);
+                    Ok(())
+                })?,
+        }
+        Ok(())
+    }
+
+    fn link_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        _: wasi::filesystem::types::PathFlags,
+        _: String,
+        _: Resource<wasi::filesystem::types::Descriptor>,
+        _: String,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(_) => Err(ErrorKind::Unsupported.into()),
+        }
+    }
+
+    fn open_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path_flags: wasi::filesystem::types::PathFlags,
+        path: String,
+        open_flags: wasi::filesystem::types::OpenFlags,
+        flags: wasi::filesystem::types::DescriptorFlags,
+    ) -> Result<Resource<wasi::filesystem::types::Descriptor>, errors::StreamError> {
+        let ret: Item = match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                let symlink =
+                    path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW);
+                let create = open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE);
+                let is_dir = open_flags.contains(
+                    wasi::filesystem::types::OpenFlags::CREATE
+                        | wasi::filesystem::types::OpenFlags::DIRECTORY,
+                );
+                let access = match (
+                    flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
+                    flags.intersects(
+                        wasi::filesystem::types::DescriptorFlags::WRITE
+                            | wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY,
+                    ),
+                ) {
+                    (false, false) => AccessMode::NA,
+                    (true, false) => AccessMode::R,
+                    (false, true) => AccessMode::W,
+                    (true, true) => AccessMode::RW,
+                };
+                let v = v.open(
+                    &self.iso_fs,
+                    &Utf8PathBuf::from(path),
+                    symlink,
+                    create,
+                    is_dir,
+                    access,
+                )?;
+
+                if flags.contains(wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY)
+                    && !v.node().is_dir()
+                {
+                    return Err(ErrorKind::PermissionDenied.into());
+                }
+                if open_flags.contains(wasi::filesystem::types::OpenFlags::TRUNCATE) {
+                    v.resize(0)?;
+                }
+
+                Box::new(v).into()
+            }
+        };
+        Ok(self.register(ret)?)
+    }
+
+    fn readlink_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path: String,
+    ) -> Result<String, errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => v
+                .open(
+                    &self.iso_fs,
+                    &Utf8PathBuf::from(path),
+                    false,
+                    false,
+                    false,
+                    AccessMode::R,
+                )?
+                .read_link(),
+        }
+    }
+
+    fn remove_directory_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path: String,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                let p = Utf8PathBuf::from(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(ErrorKind::InvalidInput.into());
+                };
+
+                v.open(&self.iso_fs, parent, true, false, false, AccessMode::W)?
+                    .unlink(name, true)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn rename_at(
+        &mut self,
+        src: Resource<wasi::filesystem::types::Descriptor>,
+        src_path: String,
+        dst: Resource<wasi::filesystem::types::Descriptor>,
+        dst_path: String,
+    ) -> Result<(), errors::StreamError> {
+        let res = (src, dst);
+        match self.items.get_item_ref(&res)? {
+            (items::DescR::IsoFSNode(src), items::DescR::IsoFSNode(dst)) => {
+                let (src_path, dst_path) =
+                    (Utf8PathBuf::from(src_path), Utf8PathBuf::from(dst_path));
+                let (src_path, Some(src_file), dst_path, Some(dst_file)) = (
+                    src_path.parent().unwrap_or(&src_path),
+                    src_path.file_name(),
+                    dst_path.parent().unwrap_or(&dst_path),
+                    dst_path.file_name(),
+                ) else {
+                    return Err(ErrorKind::InvalidInput.into());
+                };
+
+                let src = src.open(&self.iso_fs, src_path, true, false, false, AccessMode::RW)?;
+                let dst = dst.open(&self.iso_fs, dst_path, true, false, false, AccessMode::RW)?;
+
+                dst.move_file(src.node(), src_file, dst_file)?;
+            }
+        }
+        self.items.maybe_unregister(res);
+        Ok(())
+    }
+
+    fn symlink_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path: String,
+        target: String,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                let p = Utf8PathBuf::from(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(ErrorKind::InvalidInput.into());
+                };
+
+                v.open(&self.iso_fs, parent, true, false, false, AccessMode::W)?
+                    .create_link(&self.iso_fs, name, &Utf8PathBuf::from(target))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn unlink_file_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path: String,
+    ) -> Result<(), errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => {
+                let p = Utf8PathBuf::from(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(ErrorKind::InvalidInput.into());
+                };
+
+                v.open(&self.iso_fs, parent, true, false, false, AccessMode::W)?
+                    .unlink(name, false)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn is_same_object(
+        &mut self,
+        a: Resource<wasi::filesystem::types::Descriptor>,
+        b: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> AnyResult<bool> {
+        let res = (a, b);
+        let ret = match self.items.get_item_ref(&res)? {
+            (items::DescR::IsoFSNode(a), items::DescR::IsoFSNode(b)) => a.is_same(b),
+        };
+        self.items.maybe_unregister(res);
+        Ok(ret)
+    }
+
+    fn metadata_hash(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+    ) -> Result<wasi::filesystem::types::MetadataHashValue, errors::StreamError> {
+        match self.items.get_item_ref(&res)? {
+            items::DescR::IsoFSNode(v) => Ok(v.metadata_hash(&self.iso_fs)),
+        }
+    }
+
+    fn metadata_hash_at(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        path_flags: wasi::filesystem::types::PathFlags,
+        path: String,
+    ) -> Result<wasi::filesystem::types::MetadataHashValue, errors::StreamError> {
+        match self.items.get_item_ref(&res)? {
+            items::DescR::IsoFSNode(v) => Ok(v
+                .open(
+                    &self.iso_fs,
+                    &Utf8PathBuf::from(path),
+                    path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
+                    false,
+                    false,
+                    AccessMode::RW,
+                )?
+                .metadata_hash(&self.iso_fs)),
+        }
+    }
+
+    fn drop(&mut self, res: Resource<wasi::filesystem::types::Descriptor>) -> AnyResult<()> {
+        self.items.get_item(res)?;
+        Ok(())
+    }
+}
+
+impl wasi::filesystem::types::HostDirectoryEntryStream for WasiContext {
+    fn read_directory_entry(
+        &mut self,
+        res: Resource<wasi::filesystem::types::DirectoryEntryStream>,
+    ) -> Result<Option<wasi::filesystem::types::DirectoryEntry>, errors::StreamError> {
+        match self.items.get_item(res)? {
+            items::Readdir::IsoFSReaddir(mut v) => Ok(v.next()),
+        }
+    }
+
+    fn drop(
+        &mut self,
+        res: Resource<wasi::filesystem::types::DirectoryEntryStream>,
+    ) -> AnyResult<()> {
+        self.items.get_item(res)?;
+        Ok(())
+    }
+}
+
+impl wasi::filesystem::types::Host for WasiContext {
+    fn filesystem_error_code(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Error>,
+    ) -> AnyResult<Option<wasi::filesystem::types::ErrorCode>> {
+        // No way to construct stream error
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn convert_error_code(
+        &mut self,
+        e: errors::StreamError,
+    ) -> AnyResult<wasi::filesystem::types::ErrorCode> {
+        e.into()
+    }
+}
+
+impl wasi::filesystem::preopens::Host for WasiContext {
+    fn get_directories(
+        &mut self,
+    ) -> AnyResult<Vec<(Resource<wasi::filesystem::preopens::Descriptor>, String)>> {
+        self.preopens
+            .iter()
+            .map(|(p, v)| {
+                let i = self.items.insert(Box::new(v.clone()).into());
+                match u32::try_from(i) {
+                    Ok(i) => Ok((Resource::new_own(i), p.to_string())),
+                    Err(e) => {
+                        self.items.remove(i);
+                        Err(AnyError::from(e))
+                    }
+                }
+            })
+            .collect()
     }
 }

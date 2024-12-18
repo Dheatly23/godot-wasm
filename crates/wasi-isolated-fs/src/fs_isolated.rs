@@ -912,7 +912,7 @@ impl CapWrapper {
     }
 
     #[inline(always)]
-    pub fn node(&self) -> &Node {
+    pub fn node(&self) -> &Arc<Node> {
         &self.node
     }
 
@@ -925,6 +925,22 @@ impl CapWrapper {
         &self,
     ) -> Result<wasi::filesystem::types::DescriptorType, errors::StreamError> {
         Ok(self.node.file_type())
+    }
+
+    pub fn file_flags(
+        &self,
+    ) -> Result<wasi::filesystem::types::DescriptorFlags, errors::StreamError> {
+        let mut flags = wasi::filesystem::types::DescriptorFlags::empty();
+        if self.access.is_read() {
+            flags |= wasi::filesystem::types::DescriptorFlags::READ;
+        }
+        if self.access.is_write() {
+            flags |= wasi::filesystem::types::DescriptorFlags::WRITE;
+            if self.node.is_dir() {
+                flags |= wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY;
+            }
+        }
+        Ok(flags)
     }
 
     pub fn stat(&self) -> Result<wasi::filesystem::types::DescriptorStat, errors::StreamError> {
@@ -1002,15 +1018,11 @@ impl CapWrapper {
 
     pub fn set_time(
         &self,
-        mtime: SystemTime,
-        atime: SystemTime,
+        f: impl FnOnce(&mut Timestamp) -> Result<(), errors::StreamError>,
     ) -> Result<(), errors::StreamError> {
         self.access.write_or_err()?;
 
-        let mut stamp = self.node.stamp();
-        stamp.mtime = mtime;
-        stamp.atime = atime;
-        Ok(())
+        f(&mut self.node.stamp())
     }
 
     pub fn open_file(
@@ -1053,6 +1065,7 @@ impl CapWrapper {
         path: &Utf8Path,
         follow_symlink: bool,
         create_file: bool,
+        create_dir: bool,
         mut access: AccessMode,
     ) -> Result<Self, errors::StreamError> {
         access = self.access & access;
@@ -1085,16 +1098,17 @@ impl CapWrapper {
             let mut v = node.dir().ok_or(ErrorKind::NotADirectory)?;
             let n = match v.get(p) {
                 Some(v) => Ok(v),
-                None if create_file && it.peek().is_none() => {
+                None if (create_file || create_dir) && it.peek().is_none() => {
                     if !access.is_write() {
                         return Err(ErrorKind::PermissionDenied.into());
                     }
 
                     v.add::<Error>(p, || {
-                        Ok(Arc::new(Node::from((
-                            File::new(controller)?,
-                            Arc::downgrade(&node),
-                        ))))
+                        Ok(Arc::new(if create_dir {
+                            Node::from((File::new(controller)?, Arc::downgrade(&node)))
+                        } else {
+                            Node::from((Dir::new(controller)?, Arc::downgrade(&node)))
+                        }))
                     })?
                     .ok_or(ErrorKind::AlreadyExists)
                 }
@@ -1234,7 +1248,7 @@ impl CapWrapper {
 
     pub fn move_file(
         &self,
-        src: Arc<Node>,
+        src: &Arc<Node>,
         src_file: &str,
         dst_file: impl Into<Arc<str>> + AsRef<str>,
     ) -> Result<(), errors::StreamError> {
@@ -1245,7 +1259,7 @@ impl CapWrapper {
 
         let mut n = self.node.dir().ok_or(ErrorKind::NotADirectory)?;
 
-        if Arc::ptr_eq(&src, &self.node) {
+        if Arc::ptr_eq(src, &self.node) {
             if n.items.contains_key(dst_file.as_ref()) {
                 return Err(ErrorKind::AlreadyExists.into());
             }
