@@ -7,6 +7,9 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Error as AnyError, Result as AnyResult};
 use camino::{Utf8Component, Utf8PathBuf};
+use rand::prelude::*;
+use rand::rngs::OsRng;
+use rand_xoshiro::Xoshiro512StarStar;
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
@@ -22,6 +25,8 @@ pub struct WasiContext {
     pub(crate) preopens: Vec<(Utf8PathBuf, CapWrapper)>,
     pub(crate) clock: ClockController,
     pub(crate) clock_tz: Box<dyn wasi::clocks::timezone::Host>,
+    pub(crate) insecure_rng: Box<dyn Send + Sync + RngCore>,
+    pub(crate) secure_rng: Box<dyn Send + Sync + RngCore>,
 }
 
 pub struct WasiContextBuilder {
@@ -29,6 +34,8 @@ pub struct WasiContextBuilder {
     fs_readonly: bool,
     preopen_dirs: HashSet<Utf8PathBuf>,
     clock_tz: Box<dyn wasi::clocks::timezone::Host>,
+    insecure_rng: Option<Box<dyn Send + Sync + RngCore>>,
+    secure_rng: Option<Box<dyn Send + Sync + RngCore>>,
 }
 
 enum BuilderIsoFS {
@@ -52,6 +59,8 @@ impl WasiContextBuilder {
             fs_readonly: false,
             preopen_dirs: HashSet::new(),
             clock_tz: Box::new(UTCClock),
+            insecure_rng: None,
+            secure_rng: None,
         }
     }
 
@@ -104,6 +113,19 @@ impl WasiContextBuilder {
 
     pub fn clock_timezone(&mut self, tz: Box<dyn wasi::clocks::timezone::Host>) -> &mut Self {
         self.clock_tz = tz;
+        self
+    }
+
+    pub fn insecure_rng(&mut self, rng: impl 'static + Send + Sync + RngCore) -> &mut Self {
+        self.insecure_rng = Some(Box::new(rng));
+        self
+    }
+
+    pub fn secure_rng(
+        &mut self,
+        rng: impl 'static + Send + Sync + RngCore + CryptoRng,
+    ) -> &mut Self {
+        self.secure_rng = Some(Box::new(rng));
         self
     }
 
@@ -164,6 +186,10 @@ impl WasiContextBuilder {
             preopens,
             clock: ClockController::new(),
             clock_tz: self.clock_tz,
+            insecure_rng: self
+                .insecure_rng
+                .unwrap_or_else(|| Box::new(Xoshiro512StarStar::from_entropy())),
+            secure_rng: self.secure_rng.unwrap_or_else(|| Box::new(OsRng)),
         })
     }
 }
@@ -1211,7 +1237,6 @@ impl wasi::clocks::wall_clock::Host for WasiContext {
     }
 }
 
-// Use UTC
 impl wasi::clocks::timezone::Host for WasiContext {
     fn display(
         &mut self,
@@ -1222,5 +1247,35 @@ impl wasi::clocks::timezone::Host for WasiContext {
 
     fn utc_offset(&mut self, time: wasi::clocks::timezone::Datetime) -> AnyResult<i32> {
         self.clock_tz.utc_offset(time)
+    }
+}
+
+impl wasi::random::insecure::Host for WasiContext {
+    fn get_insecure_random_bytes(&mut self, len: u64) -> AnyResult<Vec<u8>> {
+        let mut ret = vec![0u8; len.try_into()?];
+        self.insecure_rng.fill(&mut ret[..]);
+        Ok(ret)
+    }
+
+    fn get_insecure_random_u64(&mut self) -> AnyResult<u64> {
+        Ok(self.insecure_rng.gen())
+    }
+}
+
+impl wasi::random::insecure_seed::Host for WasiContext {
+    fn insecure_seed(&mut self) -> AnyResult<(u64, u64)> {
+        Ok(self.insecure_rng.gen())
+    }
+}
+
+impl wasi::random::random::Host for WasiContext {
+    fn get_random_bytes(&mut self, len: u64) -> AnyResult<Vec<u8>> {
+        let mut ret = vec![0u8; len.try_into()?];
+        self.secure_rng.fill(&mut ret[..]);
+        Ok(ret)
+    }
+
+    fn get_random_u64(&mut self) -> AnyResult<u64> {
+        Ok(self.secure_rng.gen())
     }
 }

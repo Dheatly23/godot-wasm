@@ -1785,6 +1785,8 @@ dependencies = [
  "cfg-if",
  "memchr",
  "parking_lot",
+ "rand",
+ "rand_xoshiro",
  "scopeguard",
  "slab",
  "smallvec",

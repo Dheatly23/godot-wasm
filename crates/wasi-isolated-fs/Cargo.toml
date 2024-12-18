@@ -15,6 +15,7 @@ slab = { workspace = true }
 bytes = { workspace = true }
 memchr = { workspace = true }
 camino = { workspace = true }
+rand_xoshiro = { workspace = true }
 
 [dependencies.wasmtime]
 workspace = true
@@ -31,3 +32,7 @@ features = [
   "const_new",
   "write",
 ]
+
+[dependencies.rand]
+workspace = true
+default-features = true
