@@ -9,6 +9,7 @@ pub mod bindings {
 
     wasmtime::component::bindgen!({
         path: "wit",
+        world: "wasi:cli/command",
         tracing: false,
         async: false,
         ownership: Borrowing {
