@@ -1,3 +1,4 @@
+use std::borrow::{Borrow, BorrowMut};
 use std::io::Read;
 use std::mem::replace;
 use std::ops::{Deref, DerefMut};
@@ -68,12 +69,12 @@ macro_rules! item_def {
         }
         )*
 
-        #[allow(clippy::enum_variant_names)]
+        #[allow(clippy::enum_variant_names, dead_code)]
         pub(crate) enum $oi<'a> {
             $($ei(MaybeBorrowMut<'a, $et>),)*
         }
 
-        #[allow(clippy::enum_variant_names)]
+        #[allow(clippy::enum_variant_names, dead_code)]
         pub(crate) enum $oir<'a> {
             $($ei(&'a $et),)*
         }
@@ -311,6 +312,24 @@ impl<T> Deref for MaybeBorrowMut<'_, T> {
 
 impl<T> DerefMut for MaybeBorrowMut<'_, T> {
     fn deref_mut(&mut self) -> &mut T {
+        match self {
+            Self::Owned(v) => v,
+            Self::Borrowed(v) => v,
+        }
+    }
+}
+
+impl<T> Borrow<T> for MaybeBorrowMut<'_, T> {
+    fn borrow(&self) -> &T {
+        match self {
+            Self::Owned(v) => v,
+            Self::Borrowed(v) => v,
+        }
+    }
+}
+
+impl<T> BorrowMut<T> for MaybeBorrowMut<'_, T> {
+    fn borrow_mut(&mut self) -> &mut T {
         match self {
             Self::Owned(v) => v,
             Self::Borrowed(v) => v,
