@@ -10,6 +10,7 @@ use camino::{Utf8Component, Utf8PathBuf};
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
+use crate::clock::{ClockController, UTCClock};
 use crate::fs_isolated::{AccessMode, CapWrapper, Dir, IsolatedFSController, Node, ILLEGAL_CHARS};
 use crate::items::Items;
 pub use crate::items::{Item, MaybeBorrowMut};
@@ -19,17 +20,26 @@ pub struct WasiContext {
     pub(crate) items: Items,
     pub(crate) iso_fs: IsolatedFSController,
     pub(crate) preopens: Vec<(Utf8PathBuf, CapWrapper)>,
+    pub(crate) clock: ClockController,
+    pub(crate) clock_tz: Box<dyn wasi::clocks::timezone::Host>,
 }
 
 pub struct WasiContextBuilder {
     iso_fs: BuilderIsoFS,
     fs_readonly: bool,
     preopen_dirs: HashSet<Utf8PathBuf>,
+    clock_tz: Box<dyn wasi::clocks::timezone::Host>,
 }
 
 enum BuilderIsoFS {
     New { max_size: usize, max_node: usize },
     Exist(IsolatedFSController),
+}
+
+impl Default for WasiContextBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WasiContextBuilder {
@@ -41,6 +51,7 @@ impl WasiContextBuilder {
             },
             fs_readonly: false,
             preopen_dirs: HashSet::new(),
+            clock_tz: Box::new(UTCClock),
         }
     }
 
@@ -89,6 +100,11 @@ impl WasiContextBuilder {
             Some(s) => Err(errors::PathAlreadyExistError(s.into()).into()),
             None => Ok(self),
         }
+    }
+
+    pub fn clock_timezone(&mut self, tz: Box<dyn wasi::clocks::timezone::Host>) -> &mut Self {
+        self.clock_tz = tz;
+        self
     }
 
     pub fn build(self) -> AnyResult<WasiContext> {
@@ -146,6 +162,8 @@ impl WasiContextBuilder {
             items: Items::new(),
             iso_fs,
             preopens,
+            clock: ClockController::new(),
+            clock_tz: self.clock_tz,
         })
     }
 }
@@ -204,6 +222,7 @@ impl wasi::io::poll::HostPollable for WasiContext {
         Ok(match self.items.get_item(res)? {
             items::Poll::NullPoll(_) => true,
             items::Poll::StdinPoll(v) => v.is_ready(),
+            items::Poll::ClockPoll(v) => v.is_ready(),
         })
     }
 
@@ -211,6 +230,7 @@ impl wasi::io::poll::HostPollable for WasiContext {
         match self.items.get_item(res)? {
             items::Poll::NullPoll(_) => (),
             items::Poll::StdinPoll(v) => v.block()?,
+            items::Poll::ClockPoll(v) => v.block()?,
         }
         Ok(())
     }
@@ -231,6 +251,7 @@ impl wasi::io::poll::Host for WasiContext {
                 if match p {
                     items::Poll::NullPoll(_) => true,
                     items::Poll::StdinPoll(v) => v.is_ready(),
+                    items::Poll::ClockPoll(v) => v.is_ready(),
                 } {
                     Some(i as u32)
                 } else {
@@ -1142,5 +1163,64 @@ impl wasi::filesystem::preopens::Host for WasiContext {
                 }
             })
             .collect()
+    }
+}
+
+impl wasi::clocks::monotonic_clock::Host for WasiContext {
+    fn now(&mut self) -> AnyResult<wasi::clocks::monotonic_clock::Instant> {
+        Ok(self.clock.now())
+    }
+
+    fn resolution(&mut self) -> AnyResult<wasi::clocks::monotonic_clock::Duration> {
+        Ok(1000)
+    }
+
+    fn subscribe_instant(
+        &mut self,
+        when: wasi::clocks::monotonic_clock::Instant,
+    ) -> AnyResult<Resource<wasi::clocks::monotonic_clock::Pollable>> {
+        let ret = Item::from(Box::new(self.clock.poll_until(when)?));
+        self.register(ret)
+    }
+
+    fn subscribe_duration(
+        &mut self,
+        when: wasi::clocks::monotonic_clock::Duration,
+    ) -> AnyResult<Resource<wasi::clocks::monotonic_clock::Pollable>> {
+        let ret = Item::from(Box::new(self.clock.poll_for(when)?));
+        self.register(ret)
+    }
+}
+
+impl wasi::clocks::wall_clock::Host for WasiContext {
+    fn now(&mut self) -> AnyResult<wasi::clocks::wall_clock::Datetime> {
+        let t = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_err(AnyError::from)?;
+        Ok(wasi::clocks::wall_clock::Datetime {
+            seconds: t.as_secs(),
+            nanoseconds: t.subsec_nanos(),
+        })
+    }
+
+    fn resolution(&mut self) -> AnyResult<wasi::clocks::wall_clock::Datetime> {
+        Ok(wasi::clocks::wall_clock::Datetime {
+            seconds: 0,
+            nanoseconds: 1000,
+        })
+    }
+}
+
+// Use UTC
+impl wasi::clocks::timezone::Host for WasiContext {
+    fn display(
+        &mut self,
+        time: wasi::clocks::timezone::Datetime,
+    ) -> AnyResult<wasi::clocks::timezone::TimezoneDisplay> {
+        self.clock_tz.display(time)
+    }
+
+    fn utc_offset(&mut self, time: wasi::clocks::timezone::Datetime) -> AnyResult<i32> {
+        self.clock_tz.utc_offset(time)
     }
 }

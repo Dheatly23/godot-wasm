@@ -214,6 +214,22 @@ impl Display for StreamClosedError {
 
 impl Error for StreamClosedError {}
 
+pub(crate) struct MonotonicClockError;
+
+impl Debug for MonotonicClockError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for MonotonicClockError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "unknown monotonic clock error")
+    }
+}
+
+impl Error for MonotonicClockError {}
+
 pub(crate) struct WasiFSError(ErrorCode);
 
 impl Debug for WasiFSError {

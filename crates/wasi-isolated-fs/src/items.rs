@@ -8,6 +8,7 @@ use anyhow::Result as AnyResult;
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
+use crate::clock::ClockPollable;
 use crate::errors;
 use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
 use crate::stdio::{
@@ -148,6 +149,7 @@ item_def! {
     Poll | PollR(wasi::io::poll::Pollable) {
         NullPoll(NullPollable),
         StdinPoll(StdinSignalPollable),
+        ClockPoll(Box<ClockPollable>),
     },
 }
 
