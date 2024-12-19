@@ -460,19 +460,39 @@ impl LineBuffer {
 
 type StdoutCb = Box<dyn Send + Sync + FnMut(&[u8])>;
 
-pub struct StdoutCbLineBuffered {
+pub struct StdoutCbLineBuffered(Mutex<StdoutCbLineBufferedInner>);
+
+struct StdoutCbLineBufferedInner {
     buf: LineBuffer,
     cb: StdoutCb,
 }
 
 impl StdoutCbLineBuffered {
     pub fn new(f: impl 'static + Send + Sync + FnMut(&[u8])) -> Self {
-        Self {
+        Self(Mutex::new(StdoutCbLineBufferedInner {
             buf: Default::default(),
             cb: Box::new(f),
-        }
+        }))
     }
 
+    pub fn write(&self, buf: &[u8]) -> IoResult<()> {
+        let mut g = self.0.lock();
+        let (lb, f) = g.split();
+        lb.write(f, buf)
+    }
+
+    pub fn flush(&self) -> IoResult<()> {
+        let mut g = self.0.lock();
+        let (lb, f) = g.split();
+        lb.flush(f)
+    }
+
+    pub fn poll(&self) -> AnyResult<NullPollable> {
+        Ok(NullPollable::new())
+    }
+}
+
+impl StdoutCbLineBufferedInner {
     fn split(&mut self) -> (&mut LineBuffer, impl use<'_> + FnMut(&str) -> IoResult<()>) {
         let Self { buf, cb } = self;
         (buf, |s| {
@@ -480,39 +500,11 @@ impl StdoutCbLineBuffered {
             Ok(())
         })
     }
-
-    pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable::new())
-    }
 }
 
-impl Write for StdoutCbLineBuffered {
-    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
-        let (lb, f) = self.split();
-        lb.write(f, buf)
-    }
+pub struct StdoutCbBlockBuffered(Mutex<StdoutCbBlockBufferedInner>);
 
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.write_all(buf)?;
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        let (lb, f) = self.split();
-        lb.flush(f)
-    }
-
-    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
-        let mut ret = 0;
-        for buf in bufs {
-            self.write_all(buf)?;
-            ret += buf.len();
-        }
-        Ok(ret)
-    }
-}
-
-pub struct StdoutCbBlockBuffered {
+struct StdoutCbBlockBufferedInner {
     buf: Box<[u8; 1024]>,
     len: usize,
     cb: StdoutCb,
@@ -520,80 +512,64 @@ pub struct StdoutCbBlockBuffered {
 
 impl StdoutCbBlockBuffered {
     pub fn new(f: impl 'static + Send + Sync + FnMut(&[u8])) -> Self {
-        Self {
+        Self(Mutex::new(StdoutCbBlockBufferedInner {
             buf: Box::new([0; 1024]),
             len: 0,
             cb: Box::new(f),
-        }
+        }))
     }
 
-    pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable::new())
-    }
-}
-
-impl Write for StdoutCbBlockBuffered {
-    fn write_all(&mut self, mut buf: &[u8]) -> IoResult<()> {
-        let cb = &mut self.cb;
+    pub fn write(&self, mut buf: &[u8]) -> IoResult<()> {
+        let this = &mut *self.0.lock();
+        let cb = &mut this.cb;
         while !buf.is_empty() {
-            if self.len == 0 && buf.len() >= self.buf.len() {
+            if this.len == 0 && buf.len() >= this.buf.len() {
                 let a;
-                (a, buf) = buf.split_at(self.buf.len());
+                (a, buf) = buf.split_at(this.buf.len());
                 cb(a);
                 continue;
             }
 
-            let i = self.buf.len() - self.len;
+            let i = this.buf.len() - this.len;
             if i >= buf.len() {
-                let e = self.len + buf.len();
-                self.buf[self.len..e].copy_from_slice(buf);
-                (self.len, buf) = (e, &[]);
+                let e = this.len + buf.len();
+                this.buf[this.len..e].copy_from_slice(buf);
+                (this.len, buf) = (e, &[]);
             } else {
                 let a;
                 (a, buf) = buf.split_at(i);
-                self.buf[self.len..].copy_from_slice(a);
-                self.len = self.buf.len();
+                this.buf[this.len..].copy_from_slice(a);
+                this.len = this.buf.len();
             }
 
             debug_assert!(
-                self.len <= self.buf.len(),
+                this.len <= this.buf.len(),
                 "{} > {}",
-                self.len,
-                self.buf.len()
+                this.len,
+                this.buf.len()
             );
-            if self.len >= self.buf.len() {
-                let len = &mut self.len;
+            if this.len >= this.buf.len() {
+                let len = &mut this.len;
                 defer! {
                     *len = 0;
                 }
-                cb(&self.buf[..]);
+                cb(&this.buf[..]);
             }
         }
 
         Ok(())
     }
 
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.write_all(buf)?;
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        let cb = &mut self.cb;
-        let len = guard(&mut self.len, |len| *len = 0);
-        if **len > 0 {
-            cb(&self.buf[..**len]);
+    pub fn flush(&self) -> IoResult<()> {
+        let this = &mut **guard(self.0.lock(), |mut this| this.len = 0);
+        if this.len > 0 {
+            (this.cb)(&this.buf[..this.len]);
         }
         Ok(())
     }
 
-    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
-        let mut ret = 0;
-        for buf in bufs {
-            self.write_all(buf)?;
-            ret += buf.len();
-        }
-        Ok(ret)
+    pub fn poll(&self) -> AnyResult<NullPollable> {
+        Ok(NullPollable::new())
     }
 }
 
@@ -642,65 +618,45 @@ impl<T: Write> StdBypassInner<T> {
     }
 }
 
-pub struct StdoutBypass(StdBypassInner<Stdout>);
+pub struct StdoutBypass(Mutex<StdBypassInner<Stdout>>);
 
 impl Default for StdoutBypass {
     fn default() -> Self {
-        Self(StdBypassInner::new(stdout()))
-    }
-}
-
-impl Write for StdoutBypass {
-    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
-        self.0.write_all(buf)
-    }
-
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        self.0.flush()
-    }
-
-    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
-        self.0.write_vectored(bufs)
+        Self(Mutex::new(StdBypassInner::new(stdout())))
     }
 }
 
 impl StdoutBypass {
+    pub fn write(&self, buf: &[u8]) -> IoResult<()> {
+        self.0.lock().write_all(buf)
+    }
+
+    pub fn flush(&self) -> IoResult<()> {
+        self.0.lock().flush()
+    }
+
     pub fn poll(&self) -> AnyResult<NullPollable> {
         Ok(NullPollable::new())
     }
 }
 
-pub struct StderrBypass(StdBypassInner<Stderr>);
+pub struct StderrBypass(Mutex<StdBypassInner<Stderr>>);
 
 impl Default for StderrBypass {
     fn default() -> Self {
-        Self(StdBypassInner::new(stderr()))
-    }
-}
-
-impl Write for StderrBypass {
-    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
-        self.0.write_all(buf)
-    }
-
-    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> IoResult<()> {
-        self.0.flush()
-    }
-
-    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> IoResult<usize> {
-        self.0.write_vectored(bufs)
+        Self(Mutex::new(StdBypassInner::new(stderr())))
     }
 }
 
 impl StderrBypass {
+    pub fn write(&self, buf: &[u8]) -> IoResult<()> {
+        self.0.lock().write_all(buf)
+    }
+
+    pub fn flush(&self) -> IoResult<()> {
+        self.0.lock().flush()
+    }
+
     pub fn poll(&self) -> AnyResult<NullPollable> {
         Ok(NullPollable::new())
     }

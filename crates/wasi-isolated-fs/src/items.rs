@@ -137,10 +137,10 @@ item_def! {
     IOStream | IOStreamR(wasi::io::streams::InputStream, wasi::io::streams::OutputStream) {
         IsoFSAccess(Box<FileAccessor>),
         StdinSignal(Arc<StdinSignal>),
-        StdoutBp(Box<StdoutBypass>),
-        StderrBp(Box<StderrBypass>),
-        StdoutLBuf(Box<StdoutCbLineBuffered>),
-        StdoutBBuf(Box<StdoutCbBlockBuffered>),
+        StdoutBp(Arc<StdoutBypass>),
+        StderrBp(Arc<StderrBypass>),
+        StdoutLBuf(Arc<StdoutCbLineBuffered>),
+        StdoutBBuf(Arc<StdoutCbBlockBuffered>),
         BoxedRead(Box<dyn Send + Sync + Read>),
     },
     Readdir | ReaddirR(wasi::filesystem::types::DirectoryEntryStream) {
