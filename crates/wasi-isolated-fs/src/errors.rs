@@ -449,3 +449,36 @@ impl From<NetworkError> for AnyError {
         }
     }
 }
+
+#[derive(Default)]
+pub struct ProcessExit {
+    pub code: u32,
+}
+
+impl Debug for ProcessExit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for ProcessExit {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        if self.is_success() {
+            write!(f, "WASM code successfully exited")
+        } else {
+            write!(f, "WASM code exited with code {}", self.code)
+        }
+    }
+}
+
+impl Error for ProcessExit {}
+
+impl ProcessExit {
+    pub const fn new(code: u32) -> Self {
+        Self { code }
+    }
+
+    pub const fn is_success(&self) -> bool {
+        self.code == 0
+    }
+}

@@ -2060,3 +2060,16 @@ impl wasi::cli::environment::Host for WasiContext {
         Ok(Some(self.cwd.as_path().to_string()))
     }
 }
+
+impl wasi::cli::exit::Host for WasiContext {
+    fn exit(&mut self, status: Result<(), ()>) -> AnyResult<()> {
+        match status {
+            Ok(_) => Err(errors::ProcessExit::default().into()),
+            Err(_) => Err(errors::ProcessExit::new(1).into()),
+        }
+    }
+
+    fn exit_with_code(&mut self, code: u8) -> AnyResult<()> {
+        Err(errors::ProcessExit::new(code.into()).into())
+    }
+}
