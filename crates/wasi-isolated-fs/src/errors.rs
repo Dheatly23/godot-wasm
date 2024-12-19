@@ -84,6 +84,22 @@ impl Display for BuilderStdioDefinedError {
 
 impl Error for BuilderStdioDefinedError {}
 
+pub(crate) struct RelativePathError;
+
+impl Debug for RelativePathError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for RelativePathError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "current working directory path should be absolute")
+    }
+}
+
+impl Error for RelativePathError {}
+
 pub(crate) enum FileLimitError {
     Size(usize),
     Node,

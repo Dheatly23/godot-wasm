@@ -1,4 +1,6 @@
+use std::borrow::{Borrow, ToOwned};
 use std::collections::btree_map::Entry;
+use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
 use std::convert::{AsMut, AsRef};
 use std::io::{Error as IoError, ErrorKind, Read, SeekFrom};
@@ -6,7 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Error as AnyError, Result as AnyResult};
-use camino::{Utf8Component, Utf8PathBuf};
+use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use rand::prelude::*;
 use rand::rngs::OsRng;
 use rand_xoshiro::Xoshiro512StarStar;
@@ -27,6 +29,9 @@ pub struct WasiContext {
     items: Items,
     iso_fs: IsolatedFSController,
     preopens: Vec<(Utf8PathBuf, CapWrapper)>,
+    cwd: Utf8PathBuf,
+    envs: Vec<(String, String)>,
+    args: Vec<String>,
     clock: ClockController,
     clock_tz: Box<dyn wasi::clocks::timezone::Host>,
     insecure_rng: Box<dyn Send + Sync + RngCore>,
@@ -40,6 +45,9 @@ pub struct WasiContextBuilder {
     iso_fs: BuilderIsoFS,
     fs_readonly: bool,
     preopen_dirs: HashSet<Utf8PathBuf>,
+    cwd: Utf8PathBuf,
+    envs: HashMap<String, String>,
+    args: Vec<String>,
     clock_tz: Box<dyn wasi::clocks::timezone::Host>,
     insecure_rng: Option<Box<dyn Send + Sync + RngCore>>,
     secure_rng: Option<Box<dyn Send + Sync + RngCore>>,
@@ -96,6 +104,9 @@ impl WasiContextBuilder {
             },
             fs_readonly: false,
             preopen_dirs: HashSet::new(),
+            cwd: Utf8PathBuf::new(),
+            envs: HashMap::new(),
+            args: Vec::new(),
             clock_tz: Box::new(UTCClock),
             insecure_rng: None,
             secure_rng: None,
@@ -257,6 +268,33 @@ impl WasiContextBuilder {
         Ok(self)
     }
 
+    pub fn env(&mut self, key: String, val: String) -> &mut Self {
+        self.envs.insert(key, val);
+        self
+    }
+
+    pub fn envs(&mut self, it: impl IntoIterator<Item = (String, String)>) -> &mut Self {
+        self.envs.extend(it);
+        self
+    }
+
+    pub fn cwd(
+        &mut self,
+        cwd: impl Borrow<Utf8Path> + ToOwned<Owned = Utf8PathBuf>,
+    ) -> AnyResult<&mut Self> {
+        self.cwd = match cwd.borrow().components().next() {
+            None => "/".into(),
+            Some(Utf8Component::RootDir) => cwd.to_owned(),
+            _ => return Err(errors::RelativePathError.into()),
+        };
+        Ok(self)
+    }
+
+    pub fn args(&mut self, args: impl IntoIterator<Item = String>) -> &mut Self {
+        self.args.extend(args);
+        self
+    }
+
     pub fn build(self) -> AnyResult<WasiContext> {
         let access = if self.fs_readonly {
             AccessMode::R
@@ -312,6 +350,9 @@ impl WasiContextBuilder {
             items: Items::new(),
             iso_fs,
             preopens,
+            cwd: self.cwd,
+            envs: self.envs.into_iter().collect(),
+            args: self.args,
             clock: ClockController::new(),
             clock_tz: self.clock_tz,
             insecure_rng: self
@@ -2003,5 +2044,19 @@ impl wasi::cli::terminal_stderr::Host for WasiContext {
         &mut self,
     ) -> AnyResult<Option<Resource<wasi::cli::terminal_output::TerminalOutput>>> {
         Ok(None)
+    }
+}
+
+impl wasi::cli::environment::Host for WasiContext {
+    fn get_environment(&mut self) -> AnyResult<Vec<(String, String)>> {
+        Ok(self.envs.clone())
+    }
+
+    fn get_arguments(&mut self) -> AnyResult<Vec<String>> {
+        Ok(self.args.clone())
+    }
+
+    fn initial_cwd(&mut self) -> AnyResult<Option<String>> {
+        Ok(Some(self.cwd.as_path().to_string()))
     }
 }
