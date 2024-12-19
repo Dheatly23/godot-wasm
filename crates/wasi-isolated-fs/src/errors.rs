@@ -68,6 +68,22 @@ impl Display for BuilderIsoFSDefinedError {
 
 impl Error for BuilderIsoFSDefinedError {}
 
+pub(crate) struct BuilderStdioDefinedError;
+
+impl Debug for BuilderStdioDefinedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for BuilderStdioDefinedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "stdio is already set")
+    }
+}
+
+impl Error for BuilderStdioDefinedError {}
+
 pub(crate) enum FileLimitError {
     Size(usize),
     Node,

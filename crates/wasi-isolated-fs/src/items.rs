@@ -12,7 +12,7 @@ use crate::clock::ClockPollable;
 use crate::errors;
 use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
 use crate::stdio::{
-    StderrBypass, StdinSignal, StdinSignalPollable, StdoutBypass, StdoutCbBlockBuffered,
+    NullStdio, StderrBypass, StdinSignal, StdinSignalPollable, StdoutBypass, StdoutCbBlockBuffered,
     StdoutCbLineBuffered,
 };
 use crate::NullPollable;
@@ -142,6 +142,7 @@ item_def! {
         StdoutLBuf(Arc<StdoutCbLineBuffered>),
         StdoutBBuf(Arc<StdoutCbBlockBuffered>),
         BoxedRead(Box<dyn Send + Sync + Read>),
+        NullStdio(NullStdio),
     },
     Readdir | ReaddirR(wasi::filesystem::types::DirectoryEntryStream) {
         IsoFSReaddir(Box<DirEntryAccessor>),

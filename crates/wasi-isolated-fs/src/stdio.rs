@@ -12,6 +12,11 @@ use smallvec::SmallVec;
 
 const MAX_TIMEOUT: Duration = Duration::from_secs(1);
 
+#[derive(Default)]
+pub struct NullStdio {
+    _p: (),
+}
+
 pub struct StdinSignal {
     inner: Mutex<StdinInner>,
     cond: Condvar,
