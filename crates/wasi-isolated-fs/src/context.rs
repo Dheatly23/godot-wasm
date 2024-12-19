@@ -200,6 +200,12 @@ impl AsRef<IsolatedFSController> for WasiContext {
     }
 }
 
+impl AsRef<ClockController> for WasiContext {
+    fn as_ref(&self) -> &ClockController {
+        &self.clock
+    }
+}
+
 impl WasiContext {
     #[inline(always)]
     pub fn builder() -> WasiContextBuilder {
@@ -1277,5 +1283,487 @@ impl wasi::random::random::Host for WasiContext {
 
     fn get_random_u64(&mut self) -> AnyResult<u64> {
         Ok(self.secure_rng.gen())
+    }
+}
+
+impl wasi::sockets::network::HostNetwork for WasiContext {
+    fn drop(&mut self, res: Resource<wasi::sockets::network::Network>) -> AnyResult<()> {
+        // No way to construct network connection
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::sockets::network::Host for WasiContext {
+    fn network_error_code(
+        &mut self,
+        res: Resource<wasi::sockets::network::Error>,
+    ) -> AnyResult<Option<wasi::sockets::network::ErrorCode>> {
+        // No way to construct network error
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn convert_error_code(
+        &mut self,
+        e: errors::NetworkError,
+    ) -> AnyResult<wasi::sockets::network::ErrorCode> {
+        e.into()
+    }
+}
+
+impl wasi::sockets::instance_network::Host for WasiContext {
+    fn instance_network(&mut self) -> AnyResult<Resource<wasi::sockets::network::Network>> {
+        Err(errors::NetworkUnsupportedError.into())
+    }
+}
+
+impl wasi::sockets::ip_name_lookup::HostResolveAddressStream for WasiContext {
+    fn resolve_next_address(
+        &mut self,
+        res: Resource<wasi::sockets::ip_name_lookup::ResolveAddressStream>,
+    ) -> Result<Option<wasi::sockets::network::IpAddress>, errors::NetworkError> {
+        // No way to construct resolve address
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn subscribe(
+        &mut self,
+        res: Resource<wasi::sockets::ip_name_lookup::ResolveAddressStream>,
+    ) -> AnyResult<Resource<wasi::io::poll::Pollable>> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn drop(
+        &mut self,
+        res: Resource<wasi::sockets::ip_name_lookup::ResolveAddressStream>,
+    ) -> AnyResult<()> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::sockets::ip_name_lookup::Host for WasiContext {
+    fn resolve_addresses(
+        &mut self,
+        res: Resource<wasi::sockets::network::Network>,
+        _: String,
+    ) -> Result<Resource<wasi::sockets::ip_name_lookup::ResolveAddressStream>, errors::NetworkError>
+    {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+}
+
+impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
+    fn start_bind(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        network: Resource<wasi::sockets::network::Network>,
+        _: wasi::sockets::network::IpSocketAddress,
+    ) -> Result<(), errors::NetworkError> {
+        // No way to construct TCP socket
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([
+            res.rep(),
+            network.rep(),
+        ]))
+        .into())
+    }
+
+    fn finish_bind(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn start_connect(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: Resource<wasi::sockets::network::Network>,
+        _: wasi::sockets::network::IpSocketAddress,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn finish_connect(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<
+        (
+            Resource<wasi::io::streams::InputStream>,
+            Resource<wasi::io::streams::OutputStream>,
+        ),
+        errors::NetworkError,
+    > {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn start_listen(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn finish_listen(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn accept(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<
+        (
+            Resource<wasi::sockets::tcp::TcpSocket>,
+            Resource<wasi::io::streams::InputStream>,
+            Resource<wasi::io::streams::OutputStream>,
+        ),
+        errors::NetworkError,
+    > {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn local_address(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<wasi::sockets::network::IpSocketAddress, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn remote_address(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<wasi::sockets::network::IpSocketAddress, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn is_listening(&mut self, res: Resource<wasi::sockets::tcp::TcpSocket>) -> AnyResult<bool> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn address_family(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> AnyResult<wasi::sockets::network::IpAddressFamily> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn set_listen_backlog_size(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: u64,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn keep_alive_enabled(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<bool, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_keep_alive_enabled(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: bool,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn keep_alive_idle_time(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<wasi::clocks::monotonic_clock::Duration, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_keep_alive_idle_time(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: wasi::clocks::monotonic_clock::Duration,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn keep_alive_interval(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<wasi::clocks::monotonic_clock::Duration, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_keep_alive_interval(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: wasi::clocks::monotonic_clock::Duration,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn keep_alive_count(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<u32, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_keep_alive_count(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: u32,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn hop_limit(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<u8, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_hop_limit(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: u8,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn receive_buffer_size(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<u64, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_receive_buffer_size(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: u64,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn send_buffer_size(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> Result<u64, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_send_buffer_size(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: u64,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn subscribe(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+    ) -> AnyResult<Resource<wasi::io::poll::Pollable>> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn shutdown(
+        &mut self,
+        res: Resource<wasi::sockets::tcp::TcpSocket>,
+        _: wasi::sockets::tcp::ShutdownType,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn drop(&mut self, res: Resource<wasi::sockets::tcp::TcpSocket>) -> AnyResult<()> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::sockets::tcp::Host for WasiContext {}
+
+impl wasi::sockets::udp::HostUdpSocket for WasiContext {
+    fn start_bind(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+        network: Resource<wasi::sockets::network::Network>,
+        _: wasi::sockets::network::IpSocketAddress,
+    ) -> Result<(), errors::NetworkError> {
+        // No way to construct UDP socket
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([
+            res.rep(),
+            network.rep(),
+        ]))
+        .into())
+    }
+
+    fn finish_bind(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn stream(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+        _: Option<wasi::sockets::network::IpSocketAddress>,
+    ) -> Result<
+        (
+            Resource<wasi::sockets::udp::IncomingDatagramStream>,
+            Resource<wasi::sockets::udp::OutgoingDatagramStream>,
+        ),
+        errors::NetworkError,
+    > {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn local_address(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+    ) -> Result<wasi::sockets::network::IpSocketAddress, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn remote_address(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+    ) -> Result<wasi::sockets::network::IpSocketAddress, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn address_family(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+    ) -> AnyResult<wasi::sockets::network::IpAddressFamily> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn unicast_hop_limit(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+    ) -> Result<u8, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_unicast_hop_limit(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+        _: u8,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn receive_buffer_size(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+    ) -> Result<u64, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_receive_buffer_size(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+        _: u64,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn send_buffer_size(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+    ) -> Result<u64, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn set_send_buffer_size(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+        _: u64,
+    ) -> Result<(), errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn subscribe(
+        &mut self,
+        res: Resource<wasi::sockets::udp::UdpSocket>,
+    ) -> AnyResult<Resource<wasi::io::poll::Pollable>> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn drop(&mut self, res: Resource<wasi::sockets::udp::UdpSocket>) -> AnyResult<()> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::sockets::udp::HostIncomingDatagramStream for WasiContext {
+    fn receive(
+        &mut self,
+        res: Resource<wasi::sockets::udp::IncomingDatagramStream>,
+        _: u64,
+    ) -> Result<Vec<wasi::sockets::udp::IncomingDatagram>, errors::NetworkError> {
+        // No way to construct incoming datagram stream
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn subscribe(
+        &mut self,
+        res: Resource<wasi::sockets::udp::IncomingDatagramStream>,
+    ) -> AnyResult<Resource<wasi::io::poll::Pollable>> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn drop(&mut self, res: Resource<wasi::sockets::udp::IncomingDatagramStream>) -> AnyResult<()> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::sockets::udp::HostOutgoingDatagramStream for WasiContext {
+    fn check_send(
+        &mut self,
+        res: Resource<wasi::sockets::udp::OutgoingDatagramStream>,
+    ) -> Result<u64, errors::NetworkError> {
+        // No way to construct outgoing datagram stream
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn send(
+        &mut self,
+        res: Resource<wasi::sockets::udp::OutgoingDatagramStream>,
+        _: Vec<wasi::sockets::udp::OutgoingDatagram>,
+    ) -> Result<u64, errors::NetworkError> {
+        Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
+    }
+
+    fn subscribe(
+        &mut self,
+        res: Resource<wasi::sockets::udp::OutgoingDatagramStream>,
+    ) -> AnyResult<Resource<wasi::io::poll::Pollable>> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+
+    fn drop(&mut self, res: Resource<wasi::sockets::udp::OutgoingDatagramStream>) -> AnyResult<()> {
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::sockets::udp::Host for WasiContext {}
+
+impl wasi::sockets::tcp_create_socket::Host for WasiContext {
+    fn create_tcp_socket(
+        &mut self,
+        _: wasi::sockets::network::IpAddressFamily,
+    ) -> Result<Resource<wasi::sockets::tcp::TcpSocket>, errors::NetworkError> {
+        Err(AnyError::from(errors::NetworkUnsupportedError).into())
+    }
+}
+
+impl wasi::sockets::udp_create_socket::Host for WasiContext {
+    fn create_udp_socket(
+        &mut self,
+        _: wasi::sockets::network::IpAddressFamily,
+    ) -> Result<Resource<wasi::sockets::udp::UdpSocket>, errors::NetworkError> {
+        Err(AnyError::from(errors::NetworkUnsupportedError).into())
     }
 }

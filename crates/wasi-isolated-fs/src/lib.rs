@@ -6,7 +6,7 @@ mod items;
 pub mod stdio;
 
 pub mod bindings {
-    use crate::errors::StreamError;
+    use crate::errors::{NetworkError, StreamError};
 
     wasmtime::component::bindgen!({
         path: "wit",
@@ -20,6 +20,7 @@ pub mod bindings {
         trappable_error_type: {
             "wasi:io/streams/stream-error" => StreamError,
             "wasi:filesystem/types/error-code" => StreamError,
+            "wasi:sockets/network/error-code" => NetworkError,
         },
     });
 }

@@ -5,8 +5,9 @@ use std::io::{Error as IoError, ErrorKind};
 
 use anyhow::Error as AnyError;
 
-use crate::bindings::wasi::filesystem::types::ErrorCode;
+use crate::bindings::wasi::filesystem::types::ErrorCode as FSErrorCode;
 use crate::bindings::wasi::io::streams::StreamError as WasiStreamError;
+use crate::bindings::wasi::sockets::network::ErrorCode as NetErrorCode;
 
 pub(crate) enum NodeItemTy {
     Dir,
@@ -230,7 +231,23 @@ impl Display for MonotonicClockError {
 
 impl Error for MonotonicClockError {}
 
-pub(crate) struct WasiFSError(ErrorCode);
+pub(crate) struct NetworkUnsupportedError;
+
+impl Debug for NetworkUnsupportedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for NetworkUnsupportedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "network access denied")
+    }
+}
+
+impl Error for NetworkUnsupportedError {}
+
+pub(crate) struct WasiFSError(FSErrorCode);
 
 impl Debug for WasiFSError {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
@@ -246,12 +263,28 @@ impl Display for WasiFSError {
 
 impl Error for WasiFSError {}
 
+pub(crate) struct WasiNetError(NetErrorCode);
+
+impl Debug for WasiNetError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for WasiNetError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "WASI network error: {}", self.0)
+    }
+}
+
+impl Error for WasiNetError {}
+
 pub struct StreamError(StreamErrorInner);
 
 enum StreamErrorInner {
     Any(AnyError),
     Io(IoError),
-    Wasi(ErrorCode),
+    Wasi(FSErrorCode),
     Closed,
 }
 
@@ -279,13 +312,13 @@ impl From<ErrorKind> for StreamError {
     }
 }
 
-impl From<ErrorCode> for StreamError {
-    fn from(v: ErrorCode) -> Self {
+impl From<FSErrorCode> for StreamError {
+    fn from(v: FSErrorCode) -> Self {
         Self(StreamErrorInner::Wasi(v))
     }
 }
 
-impl From<StreamError> for Result<ErrorCode, AnyError> {
+impl From<StreamError> for Result<FSErrorCode, AnyError> {
     fn from(v: StreamError) -> Self {
         Ok(match v.0 {
             StreamErrorInner::Any(v) => return Err(v),
@@ -293,18 +326,18 @@ impl From<StreamError> for Result<ErrorCode, AnyError> {
             StreamErrorInner::Wasi(v) => v,
             StreamErrorInner::Io(v) => match v.kind() {
                 ErrorKind::Other => return Err(v.into()),
-                ErrorKind::NotFound => ErrorCode::NoEntry,
-                ErrorKind::PermissionDenied => ErrorCode::NotPermitted,
-                ErrorKind::AlreadyExists => ErrorCode::Exist,
-                ErrorKind::InvalidInput => ErrorCode::Invalid,
-                ErrorKind::Deadlock => ErrorCode::Deadlock,
-                ErrorKind::DirectoryNotEmpty => ErrorCode::NotEmpty,
-                ErrorKind::IsADirectory => ErrorCode::IsDirectory,
-                ErrorKind::NotADirectory => ErrorCode::NotDirectory,
-                ErrorKind::ReadOnlyFilesystem => ErrorCode::ReadOnly,
-                ErrorKind::NotSeekable => ErrorCode::InvalidSeek,
-                ErrorKind::Unsupported => ErrorCode::Unsupported,
-                _ => ErrorCode::Io,
+                ErrorKind::NotFound => FSErrorCode::NoEntry,
+                ErrorKind::PermissionDenied => FSErrorCode::NotPermitted,
+                ErrorKind::AlreadyExists => FSErrorCode::Exist,
+                ErrorKind::InvalidInput => FSErrorCode::Invalid,
+                ErrorKind::Deadlock => FSErrorCode::Deadlock,
+                ErrorKind::DirectoryNotEmpty => FSErrorCode::NotEmpty,
+                ErrorKind::IsADirectory => FSErrorCode::IsDirectory,
+                ErrorKind::NotADirectory => FSErrorCode::NotDirectory,
+                ErrorKind::ReadOnlyFilesystem => FSErrorCode::ReadOnly,
+                ErrorKind::NotSeekable => FSErrorCode::InvalidSeek,
+                ErrorKind::Unsupported => FSErrorCode::Unsupported,
+                _ => FSErrorCode::Io,
             },
         })
     }
@@ -328,6 +361,59 @@ impl From<StreamError> for AnyError {
             StreamErrorInner::Io(v) => v.into(),
             StreamErrorInner::Wasi(v) => WasiFSError(v).into(),
             StreamErrorInner::Closed => StreamClosedError.into(),
+        }
+    }
+}
+
+pub struct NetworkError(NetworkErrorInner);
+
+enum NetworkErrorInner {
+    Any(AnyError),
+    Io(IoError),
+    Wasi(NetErrorCode),
+}
+
+impl From<AnyError> for NetworkError {
+    fn from(v: AnyError) -> Self {
+        Self(NetworkErrorInner::Any(v))
+    }
+}
+
+impl From<IoError> for NetworkError {
+    fn from(v: IoError) -> Self {
+        Self(NetworkErrorInner::Io(v))
+    }
+}
+
+impl From<ErrorKind> for NetworkError {
+    fn from(v: ErrorKind) -> Self {
+        Self(NetworkErrorInner::Io(v.into()))
+    }
+}
+
+impl From<NetErrorCode> for NetworkError {
+    fn from(v: NetErrorCode) -> Self {
+        Self(NetworkErrorInner::Wasi(v))
+    }
+}
+
+impl From<NetworkError> for Result<NetErrorCode, AnyError> {
+    fn from(v: NetworkError) -> Self {
+        Ok(match v.0 {
+            NetworkErrorInner::Any(v) => return Err(v),
+            NetworkErrorInner::Wasi(v) => v,
+            // For now no mapping
+            NetworkErrorInner::Io(v) => return Err(v.into()),
+        })
+    }
+}
+
+impl From<NetworkError> for AnyError {
+    fn from(v: NetworkError) -> Self {
+        match v.0 {
+            NetworkErrorInner::Any(v) => v,
+            NetworkErrorInner::Io(v) => v.into(),
+            NetworkErrorInner::Wasi(v) => WasiNetError(v).into(),
         }
     }
 }
