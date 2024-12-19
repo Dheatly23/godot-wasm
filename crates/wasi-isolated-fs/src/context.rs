@@ -1963,3 +1963,45 @@ impl wasi::cli::stderr::Host for WasiContext {
         self.register(ret)
     }
 }
+
+impl wasi::cli::terminal_input::HostTerminalInput for WasiContext {
+    fn drop(&mut self, res: Resource<wasi::cli::terminal_input::TerminalInput>) -> AnyResult<()> {
+        // No way to construct terminal input
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::cli::terminal_input::Host for WasiContext {}
+
+impl wasi::cli::terminal_output::HostTerminalOutput for WasiContext {
+    fn drop(&mut self, res: Resource<wasi::cli::terminal_output::TerminalOutput>) -> AnyResult<()> {
+        // No way to construct terminal output
+        Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
+    }
+}
+
+impl wasi::cli::terminal_output::Host for WasiContext {}
+
+impl wasi::cli::terminal_stdin::Host for WasiContext {
+    fn get_terminal_stdin(
+        &mut self,
+    ) -> AnyResult<Option<Resource<wasi::cli::terminal_input::TerminalInput>>> {
+        Ok(None)
+    }
+}
+
+impl wasi::cli::terminal_stdout::Host for WasiContext {
+    fn get_terminal_stdout(
+        &mut self,
+    ) -> AnyResult<Option<Resource<wasi::cli::terminal_output::TerminalOutput>>> {
+        Ok(None)
+    }
+}
+
+impl wasi::cli::terminal_stderr::Host for WasiContext {
+    fn get_terminal_stderr(
+        &mut self,
+    ) -> AnyResult<Option<Resource<wasi::cli::terminal_output::TerminalOutput>>> {
+        Ok(None)
+    }
+}
