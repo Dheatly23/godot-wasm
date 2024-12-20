@@ -1,7 +1,7 @@
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::io::{ErrorKind, SeekFrom};
+use std::io::ErrorKind;
 use std::mem::replace;
 use std::ops::{BitAnd, Deref, DerefMut};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -364,12 +364,14 @@ impl File {
 
     /// Clamped chunk size.
     fn clamped_size(v: usize) -> usize {
-        if v == 0 {
-            0
-        } else {
-            v.checked_next_power_of_two()
-                .unwrap_or(usize::MAX)
-                .clamp(4096, 65536)
+        match v {
+            0 => 0,
+            1..=16 => 16,
+            17..=4096 => 4096,
+            4097..=8192 => 8192,
+            8193..=16384 => 16384,
+            16385..=32768 => 32768,
+            32769.. => 65536,
         }
     }
 }
@@ -1028,32 +1030,19 @@ impl CapWrapper {
     pub fn open_file(
         &self,
         mut access: AccessMode,
-        seek: SeekFrom,
+        cursor: Option<usize>,
     ) -> Result<FileAccessor, errors::StreamError> {
         access = self.access & access;
         access.access_or_err()?;
 
         match &self.node.0 {
-            NodeItem::File(v) => {
-                let len = v.lock().len();
-                let cursor = match seek {
-                    SeekFrom::Start(v) => usize::try_from(v).unwrap_or(usize::MAX),
-                    SeekFrom::Current(..-1) => 0,
-                    SeekFrom::Current(v) => usize::try_from(v).unwrap_or(usize::MAX),
-                    SeekFrom::End(0..) => len,
-                    SeekFrom::End(v) => {
-                        len.saturating_sub(usize::try_from(v.wrapping_neg()).unwrap_or(usize::MAX))
-                    }
-                }
-                .min(len);
-
-                Ok(FileAccessor {
-                    file: self.node.clone(),
-                    access,
-                    cursor,
-                    closed: false,
-                })
-            }
+            NodeItem::File(_) => Ok(FileAccessor {
+                file: self.node.clone(),
+                access,
+                cursor: cursor.unwrap_or(0),
+                append: cursor.is_none(),
+                closed: false,
+            }),
             NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
             NodeItem::Link(_) => Err(wasi::filesystem::types::ErrorCode::Loop.into()),
         }
@@ -1322,6 +1311,7 @@ pub struct FileAccessor {
     file: Arc<Node>,
     cursor: usize,
     closed: bool,
+    append: bool,
 }
 
 impl FileAccessor {
@@ -1367,8 +1357,14 @@ impl FileAccessor {
         }
         self.access.write_or_err()?;
 
-        self.file.try_file()?.write(buf, self.cursor)?;
-        self.cursor += buf.len();
+        let mut v = self.file.try_file()?;
+        if self.append {
+            let i = v.len();
+            v.write(buf, i)?;
+        } else {
+            v.write(buf, self.cursor)?;
+            self.cursor += buf.len();
+        }
         Ok(())
     }
 

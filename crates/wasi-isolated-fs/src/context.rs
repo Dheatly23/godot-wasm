@@ -3,7 +3,7 @@ use std::collections::btree_map::Entry;
 use std::collections::hash_map::HashMap;
 use std::collections::hash_set::HashSet;
 use std::convert::{AsMut, AsRef};
-use std::io::{Error as IoError, ErrorKind, Read, SeekFrom};
+use std::io::{Error as IoError, ErrorKind, Read};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -897,7 +897,8 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<Resource<wasi::io::streams::InputStream>, errors::StreamError> {
         let ret: Item = match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
-                Box::new(v.open_file(AccessMode::R, SeekFrom::Start(off))?).into()
+                Box::new(v.open_file(AccessMode::R, Some(off.try_into().map_err(AnyError::from)?))?)
+                    .into()
             }
         };
         Ok(self.register(ret)?)
@@ -910,7 +911,8 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<Resource<wasi::io::streams::OutputStream>, errors::StreamError> {
         let ret: Item = match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
-                Box::new(v.open_file(AccessMode::W, SeekFrom::Start(off))?).into()
+                Box::new(v.open_file(AccessMode::W, Some(off.try_into().map_err(AnyError::from)?))?)
+                    .into()
             }
         };
         Ok(self.register(ret)?)
@@ -921,9 +923,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         res: Resource<wasi::filesystem::types::Descriptor>,
     ) -> Result<Resource<wasi::io::streams::OutputStream>, errors::StreamError> {
         let ret: Item = match self.items.get_item(res)? {
-            items::Desc::IsoFSNode(v) => {
-                Box::new(v.open_file(AccessMode::W, SeekFrom::End(0))?).into()
-            }
+            items::Desc::IsoFSNode(v) => Box::new(v.open_file(AccessMode::W, None)?).into(),
         };
         Ok(self.register(ret)?)
     }
