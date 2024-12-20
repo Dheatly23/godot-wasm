@@ -42,8 +42,10 @@ macro_rules! item_def {
             }
         }
 
-        impl From<Item> for Result<$et, Item> {
-            fn from(v: Item) -> Self {
+        impl TryFrom<Item> for $et {
+            type Error = Item;
+
+            fn try_from(v: Item) -> Result<Self, Item> {
                 match v {
                     Item::$ei(v) => Ok(v),
                     v => Err(v),
@@ -51,8 +53,10 @@ macro_rules! item_def {
             }
         }
 
-        impl<'a> From<&'a Item> for Result<&'a $et, &'a Item> {
-            fn from(v: &'a Item) -> Self {
+        impl<'a> TryFrom<&'a Item> for &'a $et {
+            type Error = &'a Item;
+
+            fn try_from(v: &'a Item) -> Result<Self, &'a Item> {
                 match v {
                     Item::$ei(v) => Ok(v),
                     v => Err(v),
@@ -60,8 +64,10 @@ macro_rules! item_def {
             }
         }
 
-        impl<'a> From<&'a mut Item> for Result<&'a mut $et, &'a mut Item> {
-            fn from(v: &'a mut Item) -> Self {
+        impl<'a> TryFrom<&'a mut Item> for &'a mut $et {
+            type Error = &'a mut Item;
+
+            fn try_from(v: &'a mut Item) -> Result<Self, &'a mut Item> {
                 match v {
                     Item::$ei(v) => Ok(v),
                     v => Err(v),
@@ -152,32 +158,6 @@ item_def! {
         StdinPoll(StdinSignalPollable),
         ClockPoll(Box<ClockPollable>),
     },
-}
-
-impl Item {
-    #[inline(always)]
-    pub fn to<T>(self) -> Result<T, Self>
-    where
-        Self: Into<Result<T, Self>>,
-    {
-        self.into()
-    }
-
-    #[inline(always)]
-    pub fn to_ref<T>(&self) -> Result<&T, &Self>
-    where
-        for<'a> &'a Self: Into<Result<&'a T, &'a Self>>,
-    {
-        self.into()
-    }
-
-    #[inline(always)]
-    pub fn to_mut<T>(&mut self) -> Result<&mut T, &mut Self>
-    where
-        for<'a> &'a mut Self: Into<Result<&'a mut T, &'a mut Self>>,
-    {
-        self.into()
-    }
 }
 
 impl<'t> MaybeBorrowMut<'t, Item> {
