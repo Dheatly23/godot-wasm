@@ -10,6 +10,7 @@ use wasmtime::component::Resource;
 use crate::bindings::wasi;
 use crate::clock::ClockPollable;
 use crate::errors;
+use crate::fs_host::{CapWrapper as HostCapWrapper, FileStream, ReadDir as HostReadDir};
 use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
 use crate::stdio::{
     NullStdio, StderrBypass, StdinSignal, StdinSignalPollable, StdoutBypass, StdoutCbBlockBuffered,
@@ -139,9 +140,11 @@ macro_rules! item_def {
 item_def! {
     Desc | DescR(wasi::filesystem::types::Descriptor) {
         IsoFSNode(Box<CapWrapper>),
+        HostFSDesc(Box<HostCapWrapper>),
     },
     IOStream | IOStreamR(wasi::io::streams::InputStream, wasi::io::streams::OutputStream) {
         IsoFSAccess(Box<FileAccessor>),
+        HostFSStream(Box<FileStream>),
         StdinSignal(Arc<StdinSignal>),
         StdoutBp(Arc<StdoutBypass>),
         StderrBp(Arc<StderrBypass>),
@@ -152,6 +155,7 @@ item_def! {
     },
     Readdir | ReaddirR(wasi::filesystem::types::DirectoryEntryStream) {
         IsoFSReaddir(Box<DirEntryAccessor>),
+        HostFSReaddir(Box<HostReadDir>),
     },
     Poll | PollR(wasi::io::poll::Pollable) {
         NullPoll(NullPollable),

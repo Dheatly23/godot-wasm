@@ -1,22 +1,33 @@
 use std::borrow::{Borrow, ToOwned};
 use std::collections::btree_map::Entry;
-use std::collections::hash_map::HashMap;
+use std::collections::hash_map::{HashMap, RandomState};
 use std::collections::hash_set::HashSet;
-use std::convert::{AsMut, AsRef};
+use std::convert::AsRef;
 use std::io::{Error as IoError, ErrorKind, Read};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Error as AnyError, Result as AnyResult};
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
+use cap_fs_ext::{
+    DirExt, FileTypeExt, FollowSymlinks, MetadataExt, OpenOptionsFollowExt, OpenOptionsMaybeDirExt,
+    SystemTimeSpec as CapSystemTimeSpec,
+};
+use cap_std::fs::{Dir as CapDir, FileType, Metadata, OpenOptions};
+use cfg_if::cfg_if;
+use fs_set_times::{SetTimes, SystemTimeSpec};
 use rand::prelude::*;
 use rand::rngs::OsRng;
 use rand_xoshiro::Xoshiro512StarStar;
+use system_interface::fs::{Advice, FdFlags, FileIoExt, GetSetFdFlags};
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
 use crate::clock::{ClockController, UTCClock};
-use crate::fs_isolated::{AccessMode, CapWrapper, Dir, IsolatedFSController, Node, ILLEGAL_CHARS};
+use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
+use crate::fs_isolated::{
+    AccessMode, CapWrapper, CreateParams, Dir, IsolatedFSController, Node, OpenMode, ILLEGAL_CHARS,
+};
 use crate::items::Items;
 pub use crate::items::{Item, MaybeBorrowMut};
 use crate::stdio::{
@@ -26,6 +37,7 @@ use crate::stdio::{
 use crate::{errors, items, NullPollable};
 
 pub struct WasiContext {
+    hasher: RandomState,
     items: Items,
     iso_fs: IsolatedFSController,
     preopens: Vec<(Utf8PathBuf, CapWrapper)>,
@@ -373,6 +385,7 @@ impl WasiContextBuilder {
                 BuilderStdout::CbLine(v) => Stderr::CbLine(v),
                 BuilderStdout::CbBlock(v) => Stderr::CbBlock(v),
             }),
+            hasher: RandomState::new(),
         })
     }
 }
@@ -889,19 +902,72 @@ fn set_time(time: wasi::filesystem::types::NewTimestamp, now: &SystemTime, dst: 
     }
 }
 
+fn time_cvt(time: wasi::filesystem::types::NewTimestamp) -> Option<SystemTimeSpec> {
+    match time {
+        wasi::filesystem::types::NewTimestamp::NoChange => None,
+        wasi::filesystem::types::NewTimestamp::Now => Some(SystemTimeSpec::SymbolicNow),
+        wasi::filesystem::types::NewTimestamp::Timestamp(v) => Some(SystemTimeSpec::Absolute(
+            SystemTime::UNIX_EPOCH + Duration::new(v.seconds, v.nanoseconds),
+        )),
+    }
+}
+
+fn desc_type(f: FileType) -> wasi::filesystem::types::DescriptorType {
+    if f.is_dir() {
+        wasi::filesystem::types::DescriptorType::Directory
+    } else if f.is_symlink() {
+        wasi::filesystem::types::DescriptorType::SymbolicLink
+    } else if f.is_block_device() {
+        wasi::filesystem::types::DescriptorType::BlockDevice
+    } else if f.is_char_device() {
+        wasi::filesystem::types::DescriptorType::CharacterDevice
+    } else if f.is_file() {
+        wasi::filesystem::types::DescriptorType::RegularFile
+    } else {
+        wasi::filesystem::types::DescriptorType::Unknown
+    }
+}
+
+fn meta_to_stat(m: Metadata) -> wasi::filesystem::types::DescriptorStat {
+    fn to_datetime(t: cap_std::time::SystemTime) -> Option<wasi::clocks::wall_clock::Datetime> {
+        let t = t.into_std().duration_since(SystemTime::UNIX_EPOCH).ok()?;
+        Some(wasi::clocks::wall_clock::Datetime {
+            seconds: t.as_secs(),
+            nanoseconds: t.subsec_nanos(),
+        })
+    }
+
+    wasi::filesystem::types::DescriptorStat {
+        type_: desc_type(m.file_type()),
+        link_count: m.nlink(),
+        size: m.len(),
+        data_access_timestamp: m.accessed().ok().and_then(to_datetime),
+        data_modification_timestamp: m.modified().ok().and_then(to_datetime),
+        status_change_timestamp: m.created().ok().and_then(to_datetime),
+    }
+}
+
+impl WasiContext {
+    fn open_file<T: 'static>(
+        &mut self,
+        res: Resource<wasi::filesystem::types::Descriptor>,
+        mode: OpenMode,
+    ) -> Result<Resource<T>, errors::StreamError> {
+        let ret: Item = match self.items.get_item(res)? {
+            items::Desc::IsoFSNode(v) => Box::new(v.open_file(mode)?).into(),
+            items::Desc::HostFSDesc(v) => Box::new(v.open_file(mode)?).into(),
+        };
+        Ok(self.register(ret)?)
+    }
+}
+
 impl wasi::filesystem::types::HostDescriptor for WasiContext {
     fn read_via_stream(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
         off: wasi::filesystem::types::Filesize,
     ) -> Result<Resource<wasi::io::streams::InputStream>, errors::StreamError> {
-        let ret: Item = match self.items.get_item(res)? {
-            items::Desc::IsoFSNode(v) => {
-                Box::new(v.open_file(AccessMode::R, Some(off.try_into().map_err(AnyError::from)?))?)
-                    .into()
-            }
-        };
-        Ok(self.register(ret)?)
+        self.open_file(res, OpenMode::Read(off.try_into().map_err(AnyError::from)?))
     }
 
     fn write_via_stream(
@@ -909,33 +975,40 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         res: Resource<wasi::filesystem::types::Descriptor>,
         off: wasi::filesystem::types::Filesize,
     ) -> Result<Resource<wasi::io::streams::OutputStream>, errors::StreamError> {
-        let ret: Item = match self.items.get_item(res)? {
-            items::Desc::IsoFSNode(v) => {
-                Box::new(v.open_file(AccessMode::W, Some(off.try_into().map_err(AnyError::from)?))?)
-                    .into()
-            }
-        };
-        Ok(self.register(ret)?)
+        self.open_file(
+            res,
+            OpenMode::Write(off.try_into().map_err(AnyError::from)?),
+        )
     }
 
     fn append_via_stream(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
     ) -> Result<Resource<wasi::io::streams::OutputStream>, errors::StreamError> {
-        let ret: Item = match self.items.get_item(res)? {
-            items::Desc::IsoFSNode(v) => Box::new(v.open_file(AccessMode::W, None)?).into(),
-        };
-        Ok(self.register(ret)?)
+        self.open_file(res, OpenMode::Append)
     }
+
     fn advise(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
-        _: wasi::filesystem::types::Filesize,
-        _: wasi::filesystem::types::Filesize,
-        _: wasi::filesystem::types::Advice,
+        off: wasi::filesystem::types::Filesize,
+        len: wasi::filesystem::types::Filesize,
+        advice: wasi::filesystem::types::Advice,
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(_) => (),
+            items::Desc::HostFSDesc(v) => v.file()?.advise(
+                off,
+                len,
+                match advice {
+                    wasi::filesystem::types::Advice::Normal => Advice::Normal,
+                    wasi::filesystem::types::Advice::Sequential => Advice::Sequential,
+                    wasi::filesystem::types::Advice::Random => Advice::Random,
+                    wasi::filesystem::types::Advice::WillNeed => Advice::WillNeed,
+                    wasi::filesystem::types::Advice::DontNeed => Advice::DontNeed,
+                    wasi::filesystem::types::Advice::NoReuse => Advice::NoReuse,
+                },
+            )?,
         }
         Ok(())
     }
@@ -946,6 +1019,25 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(_) => (),
+            items::Desc::HostFSDesc(v) => match &**v.desc() {
+                Descriptor::File(v) => v.sync_data().or_else(|e| {
+                    cfg_if!{
+                        // On windows, `sync_data` uses `FileFlushBuffers` which fails with
+                        // `ERROR_ACCESS_DENIED` if the file is not upen for writing. Ignore
+                        // this error, for POSIX compatibility.
+                        if #[cfg(windows)] {
+                            if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as _) {
+                                Ok(())
+                            } else {
+                                Err(e)
+                            }
+                        } else {
+                            return Err(e)
+                        }
+                    }
+                })?,
+                Descriptor::Dir(v) => v.open(".")?.sync_data()?,
+            },
         }
         Ok(())
     }
@@ -956,6 +1048,34 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<wasi::filesystem::types::DescriptorFlags, errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => v.file_flags(),
+            items::Desc::HostFSDesc(v) => {
+                let f = match &**v.desc() {
+                    Descriptor::File(v) => v.get_fd_flags(),
+                    Descriptor::Dir(v) => v.get_fd_flags(),
+                }?;
+
+                let mut r = wasi::filesystem::types::DescriptorFlags::empty();
+                if v.access().is_read() {
+                    r |= wasi::filesystem::types::DescriptorFlags::READ;
+                }
+                if v.access().is_write() {
+                    r |= match v.desc().dir() {
+                        Some(_) => wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY,
+                        None => wasi::filesystem::types::DescriptorFlags::WRITE,
+                    };
+                }
+                if f.contains(FdFlags::DSYNC) {
+                    r |= wasi::filesystem::types::DescriptorFlags::REQUESTED_WRITE_SYNC;
+                }
+                if f.contains(FdFlags::RSYNC) {
+                    r |= wasi::filesystem::types::DescriptorFlags::DATA_INTEGRITY_SYNC;
+                }
+                if f.contains(FdFlags::SYNC) {
+                    r |= wasi::filesystem::types::DescriptorFlags::FILE_INTEGRITY_SYNC;
+                }
+
+                Ok(r)
+            }
         }
     }
 
@@ -965,6 +1085,10 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<wasi::filesystem::types::DescriptorType, errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => v.file_type(),
+            items::Desc::HostFSDesc(v) => Ok(match &**v.desc() {
+                Descriptor::Dir(_) => wasi::filesystem::types::DescriptorType::Directory,
+                Descriptor::File(v) => desc_type(v.metadata()?.file_type()),
+            }),
         }
     }
 
@@ -975,6 +1099,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => v.resize(size.try_into().map_err(AnyError::from)?)?,
+            items::Desc::HostFSDesc(v) => v.write()?.file()?.set_len(size)?,
         }
         Ok(())
     }
@@ -992,6 +1117,14 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 set_time(atime, &now, &mut stamp.atime);
                 Ok(())
             })?,
+            items::Desc::HostFSDesc(v) => {
+                let atime = time_cvt(atime);
+                let mtime = time_cvt(mtime);
+                match &**v.write()?.desc() {
+                    Descriptor::File(v) => v.set_times(atime, mtime),
+                    Descriptor::Dir(v) => SetTimes::set_times(v, atime, mtime),
+                }?
+            }
         }
         Ok(())
     }
@@ -1002,14 +1135,25 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         len: wasi::filesystem::types::Filesize,
         off: wasi::filesystem::types::Filesize,
     ) -> Result<(Vec<u8>, bool), errors::StreamError> {
-        match self.items.get_item(res)? {
+        Ok(match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
                 let l = usize::try_from(len).unwrap_or(usize::MAX);
                 let r = v.read(l, off.try_into().map_err(AnyError::from)?)?;
-                let b = r.len() == l;
-                Ok((r, b))
+                let b = l != 0 && r.is_empty();
+                (r, b)
             }
-        }
+            items::Desc::HostFSDesc(v) => {
+                let v = v.read()?.file()?;
+                let mut ret = vec![0; len.try_into().unwrap_or(usize::MAX)];
+                let i = v.read_at(&mut ret, off)?;
+                if !ret.is_empty() && i == 0 {
+                    (Vec::new(), true)
+                } else {
+                    ret.truncate(i);
+                    (ret, false)
+                }
+            }
+        })
     }
 
     fn write(
@@ -1018,12 +1162,13 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         buf: Vec<u8>,
         off: wasi::filesystem::types::Filesize,
     ) -> Result<wasi::filesystem::types::Filesize, errors::StreamError> {
-        match self.items.get_item(res)? {
+        Ok(match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
                 v.write(&buf, off.try_into().map_err(AnyError::from)?)?;
-                Ok(buf.len() as _)
+                buf.len() as _
             }
-        }
+            items::Desc::HostFSDesc(v) => v.write()?.file()?.write_at(&buf, off)? as _,
+        })
     }
 
     fn read_directory(
@@ -1032,6 +1177,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<Resource<wasi::filesystem::types::DirectoryEntryStream>, errors::StreamError> {
         let ret: Item = match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => Box::new(v.read_directory()?).into(),
+            items::Desc::HostFSDesc(v) => Box::new(v.read_dir()?).into(),
         };
         Ok(self.register(ret)?)
     }
@@ -1042,6 +1188,25 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(_) => (),
+            items::Desc::HostFSDesc(v) => match &**v.desc() {
+                Descriptor::File(v) => v.sync_all().or_else(|e| {
+                    cfg_if!{
+                        // On windows, `sync_data` uses `FileFlushBuffers` which fails with
+                        // `ERROR_ACCESS_DENIED` if the file is not upen for writing. Ignore
+                        // this error, for POSIX compatibility.
+                        if #[cfg(windows)] {
+                            if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as _) {
+                                Ok(())
+                            } else {
+                                Err(e)
+                            }
+                        } else {
+                            return Err(e)
+                        }
+                    }
+                })?,
+                Descriptor::Dir(v) => v.open(".")?.sync_all()?,
+            },
         }
         Ok(())
     }
@@ -1058,9 +1223,10 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     return Err(ErrorKind::InvalidInput.into());
                 };
 
-                v.open(&self.iso_fs, parent, true, false, false, AccessMode::W)?
+                v.open(&self.iso_fs, parent, true, None, AccessMode::W)?
                     .create_dir(&self.iso_fs, name)?;
             }
+            items::Desc::HostFSDesc(v) => v.write()?.dir()?.create_dir(path)?,
         }
         Ok(())
     }
@@ -1071,6 +1237,10 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<wasi::filesystem::types::DescriptorStat, errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => v.stat(),
+            items::Desc::HostFSDesc(v) => Ok(meta_to_stat(match &**v.desc() {
+                Descriptor::File(v) => v.metadata(),
+                Descriptor::Dir(v) => v.dir_metadata(),
+            }?)),
         }
     }
 
@@ -1086,11 +1256,20 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     &self.iso_fs,
                     &Utf8PathBuf::from(path),
                     path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
-                    false,
-                    false,
+                    None,
                     AccessMode::RW,
                 )?
                 .stat(),
+            items::Desc::HostFSDesc(v) => {
+                let v = v.dir()?;
+                Ok(meta_to_stat(if path_flags
+                    .contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW)
+                {
+                    v.metadata(path)
+                } else {
+                    v.symlink_metadata(path)
+                }?))
+            }
         }
     }
 
@@ -1108,8 +1287,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     &self.iso_fs,
                     &Utf8PathBuf::from(path),
                     path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
-                    false,
-                    false,
+                    None,
                     AccessMode::W,
                 )?
                 .set_time(|stamp| {
@@ -1118,6 +1296,16 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     set_time(atime, &now, &mut stamp.atime);
                     Ok(())
                 })?,
+            items::Desc::HostFSDesc(v) => {
+                let v = v.write()?.dir()?;
+                let atime = time_cvt(atime).map(CapSystemTimeSpec::from_std);
+                let mtime = time_cvt(mtime).map(CapSystemTimeSpec::from_std);
+                if path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW) {
+                    DirExt::set_times(v, path, atime, mtime)
+                } else {
+                    v.set_symlink_times(path, atime, mtime)
+                }?
+            }
         }
         Ok(())
     }
@@ -1131,7 +1319,9 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         _: String,
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
-            items::Desc::IsoFSNode(_) => Err(ErrorKind::Unsupported.into()),
+            items::Desc::IsoFSNode(_) | items::Desc::HostFSDesc(_) => {
+                Err(ErrorKind::Unsupported.into())
+            }
         }
     }
 
@@ -1145,13 +1335,24 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<Resource<wasi::filesystem::types::Descriptor>, errors::StreamError> {
         let ret: Item = match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
+                if open_flags.contains(
+                    wasi::filesystem::types::OpenFlags::DIRECTORY
+                        | wasi::filesystem::types::OpenFlags::TRUNCATE,
+                ) {
+                    return Err(ErrorKind::InvalidInput.into());
+                }
+
                 let symlink =
                     path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW);
-                let create = open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE);
-                let is_dir = open_flags.contains(
-                    wasi::filesystem::types::OpenFlags::CREATE
-                        | wasi::filesystem::types::OpenFlags::DIRECTORY,
-                );
+                let create = if open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE) {
+                    Some(CreateParams {
+                        dir: open_flags.contains(wasi::filesystem::types::OpenFlags::DIRECTORY),
+                        exclusive: open_flags
+                            .contains(wasi::filesystem::types::OpenFlags::EXCLUSIVE),
+                    })
+                } else {
+                    None
+                };
                 let access = match (
                     flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
                     flags.intersects(
@@ -1164,12 +1365,12 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     (false, true) => AccessMode::W,
                     (true, true) => AccessMode::RW,
                 };
+
                 let v = v.open(
                     &self.iso_fs,
                     &Utf8PathBuf::from(path),
                     symlink,
                     create,
-                    is_dir,
                     access,
                 )?;
 
@@ -1183,6 +1384,64 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 }
 
                 Box::new(v).into()
+            }
+            items::Desc::HostFSDesc(v) => {
+                if open_flags.contains(
+                    wasi::filesystem::types::OpenFlags::DIRECTORY
+                        | wasi::filesystem::types::OpenFlags::TRUNCATE,
+                ) {
+                    return Err(ErrorKind::InvalidInput.into());
+                }
+
+                let access = match (
+                    flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
+                    flags.intersects(
+                        wasi::filesystem::types::DescriptorFlags::WRITE
+                            | wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY,
+                    ),
+                ) {
+                    (false, false) => AccessMode::NA,
+                    (true, false) => AccessMode::R,
+                    (false, true) => AccessMode::W,
+                    (true, true) => AccessMode::RW,
+                } & v.access();
+
+                let mut opts = OpenOptions::new();
+                if open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE) {
+                    access.write_or_err()?;
+                    if open_flags.contains(wasi::filesystem::types::OpenFlags::EXCLUSIVE) {
+                        opts.create_new(true);
+                    } else {
+                        opts.create(true);
+                    }
+                }
+                match access {
+                    AccessMode::NA | AccessMode::R => opts.read(true),
+                    AccessMode::W => opts.write(true),
+                    AccessMode::RW => opts.read(true).write(true),
+                };
+                if open_flags.contains(wasi::filesystem::types::OpenFlags::TRUNCATE) {
+                    opts.truncate(true);
+                }
+                if path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW) {
+                    opts.follow(FollowSymlinks::Yes);
+                } else {
+                    opts.follow(FollowSymlinks::No);
+                }
+                let is_dir = open_flags.contains(wasi::filesystem::types::OpenFlags::DIRECTORY);
+                if is_dir {
+                    opts.maybe_dir(true);
+                }
+
+                let v = v.dir()?.open_with(path, &opts)?;
+                let v = if v.metadata()?.is_dir() {
+                    Descriptor::Dir(CapDir::from_std_file(v.into_std()))
+                } else if is_dir {
+                    return Err(ErrorKind::NotADirectory.into());
+                } else {
+                    Descriptor::File(v)
+                };
+                Box::new(HostCapWrapper::new(Arc::new(v), access)).into()
             }
         };
         Ok(self.register(ret)?)
@@ -1199,11 +1458,17 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     &self.iso_fs,
                     &Utf8PathBuf::from(path),
                     false,
-                    false,
-                    false,
+                    None,
                     AccessMode::R,
                 )?
                 .read_link(),
+            items::Desc::HostFSDesc(v) => v
+                .read()?
+                .dir()?
+                .read_link(path)?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| ErrorKind::InvalidData.into()),
         }
     }
 
@@ -1219,9 +1484,10 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     return Err(ErrorKind::InvalidInput.into());
                 };
 
-                v.open(&self.iso_fs, parent, true, false, false, AccessMode::W)?
+                v.open(&self.iso_fs, parent, true, None, AccessMode::W)?
                     .unlink(name, true)?;
             }
+            items::Desc::HostFSDesc(v) => v.write()?.dir()?.remove_dir(path)?,
         }
         Ok(())
     }
@@ -1247,11 +1513,17 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     return Err(ErrorKind::InvalidInput.into());
                 };
 
-                let src = src.open(&self.iso_fs, src_path, true, false, false, AccessMode::RW)?;
-                let dst = dst.open(&self.iso_fs, dst_path, true, false, false, AccessMode::RW)?;
+                let src = src.open(&self.iso_fs, src_path, true, None, AccessMode::RW)?;
+                let dst = dst.open(&self.iso_fs, dst_path, true, None, AccessMode::RW)?;
 
                 dst.move_file(src.node(), src_file, dst_file)?;
             }
+            (items::DescR::HostFSDesc(src), items::DescR::HostFSDesc(dst)) => {
+                src.write()?
+                    .dir()?
+                    .rename(src_path, dst.write()?.dir()?, dst_path)?
+            }
+            _ => return Err(wasi::filesystem::types::ErrorCode::CrossDevice.into()),
         }
         self.items.maybe_unregister(res);
         Ok(())
@@ -1270,9 +1542,11 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     return Err(ErrorKind::InvalidInput.into());
                 };
 
-                v.open(&self.iso_fs, parent, true, false, false, AccessMode::W)?
+                v.open(&self.iso_fs, parent, true, None, AccessMode::W)?
                     .create_link(&self.iso_fs, name, &Utf8PathBuf::from(target))?;
             }
+            // Universally unsupport symlink
+            items::Desc::HostFSDesc(_) => return Err(ErrorKind::Unsupported.into()),
         }
         Ok(())
     }
@@ -1289,9 +1563,10 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     return Err(ErrorKind::InvalidInput.into());
                 };
 
-                v.open(&self.iso_fs, parent, true, false, false, AccessMode::W)?
+                v.open(&self.iso_fs, parent, true, None, AccessMode::W)?
                     .unlink(name, false)?;
             }
+            items::Desc::HostFSDesc(v) => v.write()?.dir()?.remove_file_or_symlink(path)?,
         }
         Ok(())
     }
@@ -1304,6 +1579,19 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         let res = (a, b);
         let ret = match self.items.get_item_ref(&res)? {
             (items::DescR::IsoFSNode(a), items::DescR::IsoFSNode(b)) => a.is_same(b),
+            (items::DescR::HostFSDesc(a), items::DescR::HostFSDesc(b)) => {
+                // Mostly copy upstream
+                let meta_a = match &**a.desc() {
+                    Descriptor::File(v) => v.metadata(),
+                    Descriptor::Dir(v) => v.dir_metadata(),
+                }?;
+                let meta_b = match &**b.desc() {
+                    Descriptor::File(v) => v.metadata(),
+                    Descriptor::Dir(v) => v.dir_metadata(),
+                }?;
+                meta_a.dev() == meta_b.dev() && meta_a.ino() == meta_b.ino()
+            }
+            _ => false,
         };
         self.items.maybe_unregister(res);
         Ok(ret)
@@ -1314,7 +1602,8 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         res: Resource<wasi::filesystem::types::Descriptor>,
     ) -> Result<wasi::filesystem::types::MetadataHashValue, errors::StreamError> {
         match self.items.get_item_ref(&res)? {
-            items::DescR::IsoFSNode(v) => Ok(v.metadata_hash(&self.iso_fs)),
+            items::DescR::IsoFSNode(v) => Ok(v.metadata_hash(&self.hasher)),
+            items::DescR::HostFSDesc(v) => v.metadata_hash(&self.hasher),
         }
     }
 
@@ -1330,11 +1619,15 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     &self.iso_fs,
                     &Utf8PathBuf::from(path),
                     path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
-                    false,
-                    false,
+                    None,
                     AccessMode::RW,
                 )?
-                .metadata_hash(&self.iso_fs)),
+                .metadata_hash(&self.hasher)),
+            items::DescR::HostFSDesc(v) => v.metadata_hash_at(
+                path,
+                path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
+                &self.hasher,
+            ),
         }
     }
 
@@ -1351,6 +1644,19 @@ impl wasi::filesystem::types::HostDirectoryEntryStream for WasiContext {
     ) -> Result<Option<wasi::filesystem::types::DirectoryEntry>, errors::StreamError> {
         match self.items.get_item(res)? {
             items::Readdir::IsoFSReaddir(mut v) => Ok(v.next()),
+            items::Readdir::HostFSReaddir(v) => v
+                .next()
+                .transpose()?
+                .map(|v| {
+                    Ok(wasi::filesystem::types::DirectoryEntry {
+                        type_: desc_type(v.metadata()?.file_type()),
+                        name: v
+                            .file_name()
+                            .into_string()
+                            .map_err(|_| ErrorKind::InvalidData)?,
+                    })
+                })
+                .transpose(),
         }
     }
 

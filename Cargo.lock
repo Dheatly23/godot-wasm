@@ -1782,7 +1782,10 @@ dependencies = [
  "anyhow",
  "bytes",
  "camino",
+ "cap-fs-ext",
+ "cap-std",
  "cfg-if",
+ "fs-set-times",
  "memchr",
  "parking_lot",
  "rand",
@@ -1790,7 +1793,9 @@ dependencies = [
  "scopeguard",
  "slab",
  "smallvec",
+ "system-interface",
  "wasmtime",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

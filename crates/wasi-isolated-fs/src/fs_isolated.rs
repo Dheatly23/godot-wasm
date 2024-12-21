@@ -1,5 +1,4 @@
 use std::collections::btree_map::{BTreeMap, Entry};
-use std::collections::hash_map::RandomState;
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::mem::replace;
@@ -23,8 +22,6 @@ pub(crate) static ILLEGAL_CHARS: &[char] = &['\\', '/', ':', '*', '?', '\"', '\'
 pub struct IsolatedFSController {
     limits: Arc<FSLimits>,
     root: Arc<Node>,
-
-    state: RandomState,
 }
 
 impl IsolatedFSController {
@@ -50,8 +47,6 @@ impl IsolatedFSController {
                 ))
             }),
             limits,
-
-            state: RandomState::new(),
         })
     }
 
@@ -64,8 +59,6 @@ impl IsolatedFSController {
         Self {
             limits: self.limits.clone(),
             root: self.root.clone(),
-
-            state: RandomState::new(),
         }
     }
 }
@@ -857,7 +850,7 @@ impl AccessMode {
         matches!(self, Self::W | Self::RW)
     }
 
-    fn read_or_err(self) -> Result<(), errors::StreamError> {
+    pub(crate) fn read_or_err(self) -> Result<(), errors::StreamError> {
         if self.is_read() {
             Ok(())
         } else {
@@ -865,7 +858,7 @@ impl AccessMode {
         }
     }
 
-    fn write_or_err(self) -> Result<(), errors::StreamError> {
+    pub(crate) fn write_or_err(self) -> Result<(), errors::StreamError> {
         if self.is_write() {
             Ok(())
         } else {
@@ -873,12 +866,23 @@ impl AccessMode {
         }
     }
 
-    fn access_or_err(self) -> Result<(), errors::StreamError> {
+    pub(crate) fn access_or_err(self) -> Result<(), errors::StreamError> {
         match self {
             Self::NA => Err(ErrorKind::PermissionDenied.into()),
             _ => Ok(()),
         }
     }
+}
+
+pub enum OpenMode {
+    Read(usize),
+    Write(usize),
+    Append,
+}
+
+pub struct CreateParams {
+    pub dir: bool,
+    pub exclusive: bool,
 }
 
 #[derive(Clone)]
@@ -978,11 +982,12 @@ impl CapWrapper {
         Arc::ptr_eq(&self.node, &other.node)
     }
 
-    pub fn metadata_hash(
-        &self,
-        controller: &IsolatedFSController,
-    ) -> wasi::filesystem::types::MetadataHashValue {
-        let mut h1 = controller.state.build_hasher();
+    pub fn metadata_hash<H>(&self, hasher: &H) -> wasi::filesystem::types::MetadataHashValue
+    where
+        H: BuildHasher,
+        H::Hasher: Clone,
+    {
+        let mut h1 = hasher.build_hasher();
         {
             let (size, stamp, inode) = match &self.node.0 {
                 NodeItem::File(v) => {
@@ -1027,20 +1032,17 @@ impl CapWrapper {
         f(&mut self.node.stamp())
     }
 
-    pub fn open_file(
-        &self,
-        mut access: AccessMode,
-        cursor: Option<usize>,
-    ) -> Result<FileAccessor, errors::StreamError> {
-        access = self.access & access;
-        access.access_or_err()?;
+    pub fn open_file(&self, mode: OpenMode) -> Result<FileAccessor, errors::StreamError> {
+        if let OpenMode::Read(_) = mode {
+            self.access.read_or_err()?
+        } else {
+            self.access.write_or_err()?;
+        }
 
         match &self.node.0 {
             NodeItem::File(_) => Ok(FileAccessor {
                 file: self.node.clone(),
-                access,
-                cursor: cursor.unwrap_or(0),
-                append: cursor.is_none(),
+                mode,
                 closed: false,
             }),
             NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
@@ -1053,12 +1055,16 @@ impl CapWrapper {
         controller: &IsolatedFSController,
         path: &Utf8Path,
         follow_symlink: bool,
-        create_file: bool,
-        create_dir: bool,
+        create_params: Option<CreateParams>,
         mut access: AccessMode,
     ) -> Result<Self, errors::StreamError> {
         access = self.access & access;
         access.access_or_err()?;
+
+        let (create, create_dir, create_exclusive) = match create_params {
+            None => (false, false, false),
+            Some(CreateParams { dir, exclusive }) => (true, dir, exclusive),
+        };
 
         let mut node = self.node.clone();
         let mut it = path.components().peekable();
@@ -1086,8 +1092,9 @@ impl CapWrapper {
 
             let mut v = node.dir().ok_or(ErrorKind::NotADirectory)?;
             let n = match v.get(p) {
+                Some(_) if create_exclusive => Err(ErrorKind::AlreadyExists),
                 Some(v) => Ok(v),
-                None if (create_file || create_dir) && it.peek().is_none() => {
+                None if create && it.peek().is_none() => {
                     if !access.is_write() {
                         return Err(ErrorKind::PermissionDenied.into());
                     }
@@ -1307,17 +1314,18 @@ impl CapWrapper {
 }
 
 pub struct FileAccessor {
-    access: AccessMode,
     file: Arc<Node>,
-    cursor: usize,
+    mode: OpenMode,
     closed: bool,
-    append: bool,
 }
 
 impl FileAccessor {
     #[inline(always)]
-    pub fn cursor(&self) -> usize {
-        self.cursor
+    pub fn cursor(&self) -> Option<usize> {
+        match self.mode {
+            OpenMode::Read(v) | OpenMode::Write(v) => Some(v),
+            OpenMode::Append => None,
+        }
     }
 
     #[inline(always)]
@@ -1329,11 +1337,13 @@ impl FileAccessor {
         if self.closed {
             return Err(errors::StreamError::closed());
         }
-        self.access.read_or_err()?;
+        let OpenMode::Read(cursor) = &mut self.mode else {
+            return Err(ErrorKind::PermissionDenied.into());
+        };
 
         let mut file = self.file.try_file()?;
-        let (s, l) = file.read(len, self.cursor);
-        self.cursor += l;
+        let (s, l) = file.read(len, *cursor);
+        *cursor += l;
         let mut ret = vec![0u8; l];
         ret[..s.len()].copy_from_slice(s);
         Ok(ret)
@@ -1343,11 +1353,13 @@ impl FileAccessor {
         if self.closed {
             return Err(errors::StreamError::closed());
         }
-        self.access.read_or_err()?;
+        let OpenMode::Read(cursor) = &mut self.mode else {
+            return Err(ErrorKind::PermissionDenied.into());
+        };
 
         let mut file = self.file.try_file()?;
-        let (_, l) = file.read(len, self.cursor);
-        self.cursor += l;
+        let (_, l) = file.read(len, *cursor);
+        *cursor += l;
         Ok(l)
     }
 
@@ -1355,15 +1367,18 @@ impl FileAccessor {
         if self.closed {
             return Err(errors::StreamError::closed());
         }
-        self.access.write_or_err()?;
 
         let mut v = self.file.try_file()?;
-        if self.append {
-            let i = v.len();
-            v.write(buf, i)?;
-        } else {
-            v.write(buf, self.cursor)?;
-            self.cursor += buf.len();
+        match &mut self.mode {
+            OpenMode::Read(_) => return Err(ErrorKind::PermissionDenied.into()),
+            OpenMode::Write(cursor) => {
+                v.write(buf, *cursor)?;
+                *cursor += buf.len();
+            }
+            OpenMode::Append => {
+                let i = v.len();
+                v.write(buf, i)?;
+            }
         }
         Ok(())
     }

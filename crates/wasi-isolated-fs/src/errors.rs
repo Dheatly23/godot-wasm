@@ -369,6 +369,7 @@ impl From<StreamError> for Result<FSErrorCode, AnyError> {
                 ErrorKind::ReadOnlyFilesystem => FSErrorCode::ReadOnly,
                 ErrorKind::NotSeekable => FSErrorCode::InvalidSeek,
                 ErrorKind::Unsupported => FSErrorCode::Unsupported,
+                ErrorKind::InvalidData => FSErrorCode::IllegalByteSequence,
                 _ => FSErrorCode::Io,
             },
         })

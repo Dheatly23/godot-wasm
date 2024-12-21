@@ -1,6 +1,7 @@
 pub mod clock;
 pub mod context;
 pub mod errors;
+pub mod fs_host;
 pub mod fs_isolated;
 mod items;
 pub mod stdio;
