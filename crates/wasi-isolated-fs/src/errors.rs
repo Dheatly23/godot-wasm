@@ -68,6 +68,22 @@ impl Display for BuilderIsoFSDefinedError {
 
 impl Error for BuilderIsoFSDefinedError {}
 
+pub(crate) struct BuilderIsoFSNotDefinedError;
+
+impl Debug for BuilderIsoFSNotDefinedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for BuilderIsoFSNotDefinedError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "isolated filesystem is not set")
+    }
+}
+
+impl Error for BuilderIsoFSNotDefinedError {}
+
 pub(crate) struct BuilderStdioDefinedError;
 
 impl Debug for BuilderStdioDefinedError {

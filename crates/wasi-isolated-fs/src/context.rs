@@ -1,8 +1,6 @@
 use std::borrow::{Borrow, ToOwned};
-use std::collections::btree_map::Entry;
+use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::hash_map::{HashMap, RandomState};
-use std::collections::hash_set::HashSet;
-use std::convert::AsRef;
 use std::io::{Error as IoError, ErrorKind, Read};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -13,6 +11,7 @@ use cap_fs_ext::{
     DirExt, FileTypeExt, FollowSymlinks, MetadataExt, OpenOptionsFollowExt, OpenOptionsMaybeDirExt,
     SystemTimeSpec as CapSystemTimeSpec,
 };
+use cap_std::ambient_authority;
 use cap_std::fs::{Dir as CapDir, FileType, Metadata, OpenOptions};
 use cfg_if::cfg_if;
 use fs_set_times::{SetTimes, SystemTimeSpec};
@@ -39,8 +38,8 @@ use crate::{errors, items, NullPollable};
 pub struct WasiContext {
     hasher: RandomState,
     items: Items,
-    iso_fs: IsolatedFSController,
-    preopens: Vec<(Utf8PathBuf, CapWrapper)>,
+    iso_fs: Option<IsolatedFSController>,
+    preopens: Vec<(Utf8PathBuf, FilePreopen)>,
     cwd: Utf8PathBuf,
     envs: Vec<(String, String)>,
     args: Vec<String>,
@@ -56,7 +55,7 @@ pub struct WasiContext {
 pub struct WasiContextBuilder {
     iso_fs: BuilderIsoFS,
     fs_readonly: bool,
-    preopen_dirs: HashSet<Utf8PathBuf>,
+    preopen_dirs: BTreeMap<Utf8PathBuf, (Utf8PathBuf, FilePreopenTy)>,
     cwd: Utf8PathBuf,
     envs: HashMap<String, String>,
     args: Vec<String>,
@@ -69,6 +68,7 @@ pub struct WasiContextBuilder {
 }
 
 enum BuilderIsoFS {
+    None,
     New { max_size: usize, max_node: usize },
     Exist(IsolatedFSController),
 }
@@ -82,6 +82,25 @@ enum BuilderStdout {
     Bypass,
     CbLine(Arc<StdoutCbLineBuffered>),
     CbBlock(Arc<StdoutCbBlockBuffered>),
+}
+
+enum FilePreopenTy {
+    IsoFS,
+    HostFS,
+}
+
+enum FilePreopen {
+    IsoFS(CapWrapper),
+    HostFS(HostCapWrapper),
+}
+
+impl<'a> From<&'a FilePreopen> for Item {
+    fn from(v: &'a FilePreopen) -> Item {
+        match v {
+            FilePreopen::IsoFS(v) => Box::new(v.clone()).into(),
+            FilePreopen::HostFS(v) => Box::new(v.clone()).into(),
+        }
+    }
 }
 
 enum Stdin {
@@ -107,15 +126,77 @@ impl Default for WasiContextBuilder {
     }
 }
 
+fn preopen_dir_iso_fs(
+    controller: &IsolatedFSController,
+    path: Utf8PathBuf,
+) -> AnyResult<Arc<Node>> {
+    let mut node = controller.root();
+    for c in path.components() {
+        node = match c {
+            Utf8Component::CurDir => continue,
+            Utf8Component::ParentDir | Utf8Component::Prefix(_) => {
+                return Err(errors::InvalidPathError(path.into()).into())
+            }
+            Utf8Component::Normal(s) => {
+                let mut n = node.try_dir()?;
+                let (m, t) = match n.items.entry(s.into()) {
+                    Entry::Vacant(v) => (
+                        true,
+                        v.insert(Arc::new(Node::from((
+                            Dir::new(controller)?,
+                            Arc::downgrade(&node),
+                        ))))
+                        .clone(),
+                    ),
+                    Entry::Occupied(v) => (false, v.into_mut().clone()),
+                };
+                if m {
+                    n.stamp_mut().modify();
+                } else {
+                    n.stamp_mut().access();
+                }
+                t
+            }
+            Utf8Component::RootDir => controller.root(),
+        };
+    }
+    node.try_dir()?;
+    Ok(node)
+}
+
+fn preopen_dir_host_fs(path: Utf8PathBuf) -> AnyResult<Arc<Descriptor>> {
+    Ok(Arc::new(Descriptor::Dir(CapDir::open_ambient_dir(
+        path,
+        ambient_authority(),
+    )?)))
+}
+
+fn assert_absolute_path(path: Utf8PathBuf) -> AnyResult<Utf8PathBuf> {
+    let mut it = path.components();
+    if !matches!(it.next(), Some(Utf8Component::RootDir))
+        || it.any(|v| !matches!(v, Utf8Component::Normal(s) if s.contains(ILLEGAL_CHARS)))
+    {
+        Err(errors::InvalidPathError(path.into()).into())
+    } else {
+        Ok(path)
+    }
+}
+
 impl WasiContextBuilder {
-    pub fn new() -> Self {
-        Self {
-            iso_fs: BuilderIsoFS::New {
+    fn new_iso_fs(&mut self) {
+        if matches!(self.iso_fs, BuilderIsoFS::None) {
+            self.iso_fs = BuilderIsoFS::New {
                 max_size: 0x8000_0000,
                 max_node: 0x8000_0000,
-            },
+            };
+        }
+    }
+
+    pub fn new() -> Self {
+        Self {
+            iso_fs: BuilderIsoFS::None,
             fs_readonly: false,
-            preopen_dirs: HashSet::new(),
+            preopen_dirs: BTreeMap::new(),
             cwd: Utf8PathBuf::new(),
             envs: HashMap::new(),
             args: Vec::new(),
@@ -129,6 +210,7 @@ impl WasiContextBuilder {
     }
 
     pub fn max_size(&mut self, size: usize) -> AnyResult<&mut Self> {
+        self.new_iso_fs();
         let BuilderIsoFS::New { max_size, .. } = &mut self.iso_fs else {
             return Err(errors::BuilderIsoFSDefinedError.into());
         };
@@ -137,6 +219,7 @@ impl WasiContextBuilder {
     }
 
     pub fn max_node(&mut self, node: usize) -> AnyResult<&mut Self> {
+        self.new_iso_fs();
         let BuilderIsoFS::New { max_node, .. } = &mut self.iso_fs else {
             return Err(errors::BuilderIsoFSDefinedError.into());
         };
@@ -160,18 +243,32 @@ impl WasiContextBuilder {
         self
     }
 
-    pub fn preopen_dir(&mut self, s: Utf8PathBuf) -> AnyResult<&mut Self> {
-        for c in s.components() {
-            match c {
-                Utf8Component::ParentDir | Utf8Component::Prefix(_) => (),
-                Utf8Component::Normal(s) if s.contains(ILLEGAL_CHARS) => (),
-                _ => continue,
+    pub fn preopen_dir_isolated(
+        &mut self,
+        mut host: Utf8PathBuf,
+        guest: Utf8PathBuf,
+    ) -> AnyResult<&mut Self> {
+        host = assert_absolute_path(host)?;
+        match self.preopen_dirs.entry(assert_absolute_path(guest)?) {
+            Entry::Occupied(v) => Err(errors::PathAlreadyExistError(v.key().to_string()).into()),
+            Entry::Vacant(v) => {
+                v.insert((host, FilePreopenTy::IsoFS));
+                Ok(self)
             }
-            return Err(errors::InvalidPathError(s.into()).into());
         }
-        match self.preopen_dirs.replace(s) {
-            Some(s) => Err(errors::PathAlreadyExistError(s.into()).into()),
-            None => Ok(self),
+    }
+
+    pub fn preopen_dir_host(
+        &mut self,
+        host: Utf8PathBuf,
+        guest: Utf8PathBuf,
+    ) -> AnyResult<&mut Self> {
+        match self.preopen_dirs.entry(assert_absolute_path(guest)?) {
+            Entry::Occupied(v) => Err(errors::PathAlreadyExistError(v.key().to_string()).into()),
+            Entry::Vacant(v) => {
+                v.insert((host, FilePreopenTy::HostFS));
+                Ok(self)
+            }
         }
     }
 
@@ -314,49 +411,35 @@ impl WasiContextBuilder {
             AccessMode::RW
         };
         let iso_fs = match self.iso_fs {
+            BuilderIsoFS::None => None,
             BuilderIsoFS::New { max_size, max_node } => {
-                IsolatedFSController::new(max_size, max_node)?
+                Some(IsolatedFSController::new(max_size, max_node)?)
             }
-            BuilderIsoFS::Exist(controller) => controller,
+            BuilderIsoFS::Exist(controller) => Some(controller),
         };
 
-        let mut preopens = Vec::with_capacity(self.preopen_dirs.len() + 1);
-        preopens.push(("/".into(), CapWrapper::new(iso_fs.root(), access)));
-
-        for s in self.preopen_dirs {
-            let mut node = iso_fs.root();
-            for c in s.components() {
-                node = match c {
-                    Utf8Component::CurDir => continue,
-                    Utf8Component::ParentDir | Utf8Component::Prefix(_) => {
-                        return Err(errors::InvalidPathError(s.into()).into())
-                    }
-                    Utf8Component::Normal(s) => {
-                        let mut n = node.try_dir()?;
-                        let (m, t) = match n.items.entry(s.into()) {
-                            Entry::Vacant(v) => (
-                                true,
-                                v.insert(Arc::new(Node::from((
-                                    Dir::new(&iso_fs)?,
-                                    Arc::downgrade(&node),
-                                ))))
-                                .clone(),
-                            ),
-                            Entry::Occupied(v) => (false, v.into_mut().clone()),
-                        };
-                        if m {
-                            n.stamp_mut().modify();
-                        } else {
-                            n.stamp_mut().access();
-                        }
-                        t
-                    }
-                    Utf8Component::RootDir => iso_fs.root(),
-                };
-            }
-
-            preopens.push((s, CapWrapper::new(node, access)));
-        }
+        let preopens = self
+            .preopen_dirs
+            .into_iter()
+            .map(|(dst, (src, ty))| {
+                Ok((
+                    dst,
+                    match ty {
+                        FilePreopenTy::IsoFS => FilePreopen::IsoFS(CapWrapper::new(
+                            preopen_dir_iso_fs(
+                                iso_fs.as_ref().ok_or(errors::BuilderIsoFSNotDefinedError)?,
+                                src,
+                            )?,
+                            access,
+                        )),
+                        FilePreopenTy::HostFS => FilePreopen::HostFS(HostCapWrapper::new(
+                            preopen_dir_host_fs(src)?,
+                            access,
+                        )),
+                    },
+                ))
+            })
+            .collect::<AnyResult<Vec<_>>>()?;
 
         Ok(WasiContext {
             items: Items::new(),
@@ -390,22 +473,26 @@ impl WasiContextBuilder {
     }
 }
 
-impl AsRef<IsolatedFSController> for WasiContext {
-    fn as_ref(&self) -> &IsolatedFSController {
-        &self.iso_fs
-    }
-}
-
-impl AsRef<ClockController> for WasiContext {
-    fn as_ref(&self) -> &ClockController {
-        &self.clock
-    }
-}
-
 impl WasiContext {
+    fn try_iso_fs(iso_fs: &Option<IsolatedFSController>) -> AnyResult<&IsolatedFSController> {
+        iso_fs
+            .as_ref()
+            .ok_or_else(|| AnyError::from(errors::BuilderIsoFSNotDefinedError))
+    }
+
     #[inline(always)]
     pub fn builder() -> WasiContextBuilder {
         WasiContextBuilder::new()
+    }
+
+    #[inline(always)]
+    pub fn iso_fs_controller(&self) -> Option<&IsolatedFSController> {
+        self.iso_fs.as_ref()
+    }
+
+    #[inline(always)]
+    pub fn clock_controller(&self) -> &ClockController {
+        &self.clock
     }
 
     #[inline(always)]
@@ -1239,9 +1326,10 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
                     return Err(ErrorKind::InvalidInput.into());
                 };
+                let controller = Self::try_iso_fs(&self.iso_fs)?;
 
-                v.open(&self.iso_fs, parent, true, None, AccessMode::W)?
-                    .create_dir(&self.iso_fs, name)?;
+                v.open(controller, parent, true, None, AccessMode::W)?
+                    .create_dir(controller, name)?;
             }
             items::Desc::HostFSDesc(v) => v.write()?.dir()?.create_dir(path)?,
         }
@@ -1270,7 +1358,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => v
                 .open(
-                    &self.iso_fs,
+                    Self::try_iso_fs(&self.iso_fs)?,
                     &Utf8PathBuf::from(path),
                     path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
                     None,
@@ -1301,7 +1389,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => v
                 .open(
-                    &self.iso_fs,
+                    Self::try_iso_fs(&self.iso_fs)?,
                     &Utf8PathBuf::from(path),
                     path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
                     None,
@@ -1384,7 +1472,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 };
 
                 let v = v.open(
-                    &self.iso_fs,
+                    Self::try_iso_fs(&self.iso_fs)?,
                     &Utf8PathBuf::from(path),
                     symlink,
                     create,
@@ -1472,7 +1560,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => v
                 .open(
-                    &self.iso_fs,
+                    Self::try_iso_fs(&self.iso_fs)?,
                     &Utf8PathBuf::from(path),
                     false,
                     None,
@@ -1501,8 +1589,14 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     return Err(ErrorKind::InvalidInput.into());
                 };
 
-                v.open(&self.iso_fs, parent, true, None, AccessMode::W)?
-                    .unlink(name, true)?;
+                v.open(
+                    Self::try_iso_fs(&self.iso_fs)?,
+                    parent,
+                    true,
+                    None,
+                    AccessMode::W,
+                )?
+                .unlink(name, true)?;
             }
             items::Desc::HostFSDesc(v) => v.write()?.dir()?.remove_dir(path)?,
         }
@@ -1529,9 +1623,10 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 ) else {
                     return Err(ErrorKind::InvalidInput.into());
                 };
+                let controller = Self::try_iso_fs(&self.iso_fs)?;
 
-                let src = src.open(&self.iso_fs, src_path, true, None, AccessMode::RW)?;
-                let dst = dst.open(&self.iso_fs, dst_path, true, None, AccessMode::RW)?;
+                let src = src.open(controller, src_path, true, None, AccessMode::RW)?;
+                let dst = dst.open(controller, dst_path, true, None, AccessMode::RW)?;
 
                 dst.move_file(src.node(), src_file, dst_file)?;
             }
@@ -1558,9 +1653,10 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
                     return Err(ErrorKind::InvalidInput.into());
                 };
+                let controller = Self::try_iso_fs(&self.iso_fs)?;
 
-                v.open(&self.iso_fs, parent, true, None, AccessMode::W)?
-                    .create_link(&self.iso_fs, name, &Utf8PathBuf::from(target))?;
+                v.open(controller, parent, true, None, AccessMode::W)?
+                    .create_link(controller, name, &Utf8PathBuf::from(target))?;
             }
             // Universally unsupport symlink
             items::Desc::HostFSDesc(_) => return Err(ErrorKind::Unsupported.into()),
@@ -1580,8 +1676,14 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     return Err(ErrorKind::InvalidInput.into());
                 };
 
-                v.open(&self.iso_fs, parent, true, None, AccessMode::W)?
-                    .unlink(name, false)?;
+                v.open(
+                    Self::try_iso_fs(&self.iso_fs)?,
+                    parent,
+                    true,
+                    None,
+                    AccessMode::W,
+                )?
+                .unlink(name, false)?;
             }
             items::Desc::HostFSDesc(v) => v.write()?.dir()?.remove_file_or_symlink(path)?,
         }
@@ -1633,7 +1735,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         match self.items.get_item_ref(&res)? {
             items::DescR::IsoFSNode(v) => Ok(v
                 .open(
-                    &self.iso_fs,
+                    Self::try_iso_fs(&self.iso_fs)?,
                     &Utf8PathBuf::from(path),
                     path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW),
                     None,
@@ -1710,7 +1812,7 @@ impl wasi::filesystem::preopens::Host for WasiContext {
         self.preopens
             .iter()
             .map(|(p, v)| {
-                let i = self.items.insert(Box::new(v.clone()).into());
+                let i = self.items.insert(v.into());
                 match u32::try_from(i) {
                     Ok(i) => Ok((Resource::new_own(i), p.to_string())),
                     Err(e) => {
