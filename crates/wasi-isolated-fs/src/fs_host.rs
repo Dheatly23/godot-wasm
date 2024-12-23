@@ -161,6 +161,7 @@ impl CapWrapper {
             Descriptor::File(_) => Ok(FileStream {
                 file: self.desc.clone(),
                 mode,
+                closed: false,
             }),
             _ => Err(ErrorKind::IsADirectory.into()),
         }
@@ -184,43 +185,71 @@ impl CapWrapper {
             _ => Err(ErrorKind::NotADirectory.into()),
         }
     }
+
+    pub(crate) fn read_at(
+        file: &CapFile,
+        buf: &mut [u8],
+        off: u64,
+    ) -> Result<usize, errors::StreamError> {
+        loop {
+            match file.read_at(buf, off) {
+                Ok(v) => return Ok(v),
+                Err(e) if e.kind() == ErrorKind::Interrupted => (),
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
 }
 
 pub struct FileStream {
     file: Arc<Descriptor>,
     mode: OpenMode,
+    closed: bool,
 }
 
 impl FileStream {
     pub fn read(&mut self, len: usize) -> Result<Vec<u8>, errors::StreamError> {
+        if self.closed {
+            return Err(errors::StreamError::closed());
+        }
         let OpenMode::Read(cursor) = &mut self.mode else {
             return Err(ErrorKind::PermissionDenied.into());
         };
         let file = self.file.try_file()?;
 
         let mut ret = vec![0; len];
-        let mut i = 0;
-        while i < ret.len() {
-            let l = file.read_at(&mut ret[i..], *cursor as _)?;
-            if l == 0 {
-                break;
-            }
-            i += l;
-            *cursor += l;
+        let i = CapWrapper::read_at(file, &mut ret, *cursor as _)?;
+        if i == 0 {
+            self.closed = true;
+            return Ok(Vec::new());
         }
+        *cursor += i;
         ret.truncate(i);
         Ok(ret)
     }
 
-    pub fn skip(&mut self, len: usize) -> Result<(), errors::StreamError> {
+    pub fn skip(&mut self, len: usize) -> Result<usize, errors::StreamError> {
+        if self.closed {
+            return Err(errors::StreamError::closed());
+        }
         let OpenMode::Read(cursor) = &mut self.mode else {
             return Err(ErrorKind::PermissionDenied.into());
         };
-        *cursor += len;
-        Ok(())
+        let file = self.file.try_file()?;
+
+        let mut buf = [0; 4096];
+        let i = CapWrapper::read_at(file, &mut buf[..len.min(4096)], *cursor as _)?;
+        if i == 0 {
+            self.closed = true;
+        }
+        *cursor += i;
+        Ok(i)
     }
 
     pub fn write(&mut self, mut buf: &[u8]) -> Result<(), errors::StreamError> {
+        if self.closed {
+            return Err(errors::StreamError::closed());
+        }
         let file = self.file.try_file()?;
 
         match &mut self.mode {
@@ -228,6 +257,10 @@ impl FileStream {
             OpenMode::Write(cursor) => {
                 while !buf.is_empty() {
                     let l = file.write_at(buf, *cursor as _)?;
+                    if l == 0 {
+                        self.closed = true;
+                        break;
+                    }
                     buf = &buf[l..];
                     *cursor += l;
                 }
@@ -235,11 +268,25 @@ impl FileStream {
             OpenMode::Append => {
                 while !buf.is_empty() {
                     let l = file.append(buf)?;
+                    if l == 0 {
+                        self.closed = true;
+                        break;
+                    }
                     buf = &buf[l..];
                 }
             }
         }
-        Ok(())
+
+        if self.closed {
+            Err(errors::StreamError::closed())
+        } else {
+            Ok(())
+        }
+    }
+
+    #[inline(always)]
+    pub fn close(&mut self) {
+        self.closed = true;
     }
 }
 

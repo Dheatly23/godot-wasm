@@ -521,6 +521,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         Ok(match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => Vec::new(),
             items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
+            items::IOStream::HostFSStream(mut v) => v.read(len)?,
             items::IOStream::StdinSignal(v) => v.read(len)?,
             items::IOStream::BoxedRead(mut v) => {
                 let mut ret = vec![0; len.min(1024)];
@@ -541,6 +542,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         Ok(match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => Vec::new(),
             items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
+            items::IOStream::HostFSStream(mut v) => v.read(len)?,
             items::IOStream::StdinSignal(v) => v.read(len)?,
             items::IOStream::BoxedRead(mut v) => {
                 let mut ret = vec![0; len.min(1024)];
@@ -561,6 +563,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         Ok(match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => 0,
             items::IOStream::IsoFSAccess(mut v) => v.skip(len)? as u64,
+            items::IOStream::HostFSStream(mut v) => v.skip(len)? as u64,
             items::IOStream::StdinSignal(v) => v.skip(len)? as u64,
             items::IOStream::BoxedRead(mut v) => v.read(&mut vec![0; len.min(1024)])? as u64,
             _ => return Err(ErrorKind::InvalidInput.into()),
@@ -576,6 +579,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         Ok(match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => 0,
             items::IOStream::IsoFSAccess(mut v) => v.skip(len)? as u64,
+            items::IOStream::HostFSStream(mut v) => v.skip(len)? as u64,
             items::IOStream::StdinSignal(v) => v.skip_block(len)? as u64,
             items::IOStream::BoxedRead(mut v) => v.read(&mut vec![0; len.min(1024)])? as u64,
             _ => return Err(ErrorKind::InvalidInput.into()),
@@ -589,9 +593,9 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         let ret: Item = match self.items.get_item(res)? {
             items::IOStream::IsoFSAccess(v) => v.poll()?.into(),
             items::IOStream::StdinSignal(v) => v.poll()?.into(),
-            items::IOStream::BoxedRead(_) | items::IOStream::NullStdio(_) => {
-                NullPollable::new().into()
-            }
+            items::IOStream::HostFSStream(_)
+            | items::IOStream::BoxedRead(_)
+            | items::IOStream::NullStdio(_) => NullPollable::new().into(),
             _ => return Err(IoError::from(ErrorKind::InvalidInput).into()),
         };
         self.register(ret)
@@ -613,6 +617,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => Ok(0),
             items::IOStream::IsoFSAccess(_)
+            | items::IOStream::HostFSStream(_)
             | items::IOStream::StdoutBp(_)
             | items::IOStream::StderrBp(_)
             | items::IOStream::StdoutLBuf(_)
@@ -629,6 +634,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => (),
             items::IOStream::IsoFSAccess(mut v) => v.write(&data)?,
+            items::IOStream::HostFSStream(mut v) => v.write(&data)?,
             items::IOStream::StdoutBp(v) => v.write(&data)?,
             items::IOStream::StderrBp(v) => v.write(&data)?,
             items::IOStream::StdoutLBuf(v) => v.write(&data)?,
@@ -646,6 +652,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => (),
             items::IOStream::IsoFSAccess(mut v) => v.write(&data)?,
+            items::IOStream::HostFSStream(mut v) => v.write(&data)?,
             items::IOStream::StdoutBp(v) => {
                 v.write(&data)?;
                 v.flush()?;
@@ -679,8 +686,9 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         res: Resource<wasi::io::streams::OutputStream>,
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
-            items::IOStream::NullStdio(_) => (),
-            items::IOStream::IsoFSAccess(_) => (),
+            items::IOStream::NullStdio(_)
+            | items::IOStream::IsoFSAccess(_)
+            | items::IOStream::HostFSStream(_) => (),
             items::IOStream::StdoutBp(v) => v.flush()?,
             items::IOStream::StderrBp(v) => v.flush()?,
             items::IOStream::StdoutLBuf(v) => v.flush()?,
@@ -697,6 +705,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         let ret: Item = match self.items.get_item(res)? {
             items::IOStream::IsoFSAccess(v) => v.poll()?.into(),
             items::IOStream::NullStdio(_)
+            | items::IOStream::HostFSStream(_)
             | items::IOStream::StdoutBp(_)
             | items::IOStream::StderrBp(_)
             | items::IOStream::StdoutLBuf(_)
@@ -717,6 +726,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             match &mut v {
                 items::IOStream::NullStdio(_) => (),
                 items::IOStream::IsoFSAccess(v) => v.write(data)?,
+                items::IOStream::HostFSStream(v) => v.write(data)?,
                 items::IOStream::StdoutBp(v) => v.write(data)?,
                 items::IOStream::StderrBp(v) => v.write(data)?,
                 items::IOStream::StdoutLBuf(v) => v.write(data)?,
@@ -739,6 +749,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             match &mut v {
                 items::IOStream::NullStdio(_) => (),
                 items::IOStream::IsoFSAccess(v) => v.write(data)?,
+                items::IOStream::HostFSStream(v) => v.write(data)?,
                 items::IOStream::StdoutBp(v) => v.write(data)?,
                 items::IOStream::StderrBp(v) => v.write(data)?,
                 items::IOStream::StdoutLBuf(v) => v.write(data)?,
@@ -749,7 +760,9 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         }
 
         match v {
-            items::IOStream::NullStdio(_) | items::IOStream::IsoFSAccess(_) => (),
+            items::IOStream::NullStdio(_)
+            | items::IOStream::IsoFSAccess(_)
+            | items::IOStream::HostFSStream(_) => (),
             items::IOStream::StdoutBp(v) => v.flush()?,
             items::IOStream::StderrBp(v) => v.flush()?,
             items::IOStream::StdoutLBuf(v) => v.flush()?,
@@ -772,9 +785,11 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             }
             (
                 items::IOStream::IsoFSAccess(_)
+                | items::IOStream::HostFSStream(_)
                 | items::IOStream::StdinSignal(_)
                 | items::IOStream::BoxedRead(_),
                 items::IOStream::IsoFSAccess(_)
+                | items::IOStream::HostFSStream(_)
                 | items::IOStream::StdoutBp(_)
                 | items::IOStream::StderrBp(_)
                 | items::IOStream::StdoutLBuf(_)
@@ -790,6 +805,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
 
             let b = match &mut input {
                 items::IOStream::IsoFSAccess(v) => v.read(i)?,
+                items::IOStream::HostFSStream(v) => v.read(i)?,
                 items::IOStream::StdinSignal(v) => v.read(i)?,
                 items::IOStream::BoxedRead(v) => {
                     let mut r = vec![0; i.min(1024)];
@@ -866,6 +882,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
 
             match &mut output {
                 items::IOStream::IsoFSAccess(v) => v.write(&b)?,
+                items::IOStream::HostFSStream(v) => v.write(&b)?,
                 items::IOStream::StdoutBp(v) => v.write(&b)?,
                 items::IOStream::StderrBp(v) => v.write(&b)?,
                 items::IOStream::StdoutLBuf(v) => v.write(&b)?,
@@ -1135,17 +1152,17 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         len: wasi::filesystem::types::Filesize,
         off: wasi::filesystem::types::Filesize,
     ) -> Result<(Vec<u8>, bool), errors::StreamError> {
+        let len = usize::try_from(len).unwrap_or(usize::MAX);
         Ok(match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
-                let l = usize::try_from(len).unwrap_or(usize::MAX);
-                let r = v.read(l, off.try_into().map_err(AnyError::from)?)?;
-                let b = l != 0 && r.is_empty();
+                let r = v.read(len, off.try_into().map_err(AnyError::from)?)?;
+                let b = len != 0 && r.is_empty();
                 (r, b)
             }
             items::Desc::HostFSDesc(v) => {
                 let v = v.read()?.file()?;
-                let mut ret = vec![0; len.try_into().unwrap_or(usize::MAX)];
-                let i = v.read_at(&mut ret, off)?;
+                let mut ret = vec![0; len];
+                let i = HostCapWrapper::read_at(v, &mut ret, off)?;
                 if !ret.is_empty() && i == 0 {
                     (Vec::new(), true)
                 } else {
