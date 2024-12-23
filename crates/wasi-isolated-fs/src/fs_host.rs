@@ -15,6 +15,7 @@ use crate::fs_isolated::AccessMode;
 #[doc(no_inline)]
 pub use crate::fs_isolated::OpenMode;
 
+#[non_exhaustive]
 pub enum Descriptor {
     Dir(CapDir),
     File(CapFile),
