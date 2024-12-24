@@ -138,6 +138,14 @@ getrandom = { version = "^0.2", features = ["custom"] }
 version = "^27.0"
 default-features = false
 
+[workspace.dependencies.wiggle]
+version = "^27.0"
+default-features = false
+features = [
+  "wasmtime",
+  "witx",
+]
+
 [workspace.dependencies.once_cell]
 version = "^1.20"
 features = [

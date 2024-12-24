@@ -63,12 +63,17 @@ impl Descriptor {
 pub struct CapWrapper {
     desc: Arc<Descriptor>,
     access: AccessMode,
+    pub(crate) cursor: Option<usize>,
 }
 
 impl CapWrapper {
     #[inline(always)]
     pub fn new(desc: Arc<Descriptor>, access: AccessMode) -> Self {
-        Self { desc, access }
+        Self {
+            desc,
+            access,
+            cursor: None,
+        }
     }
 
     #[inline(always)]

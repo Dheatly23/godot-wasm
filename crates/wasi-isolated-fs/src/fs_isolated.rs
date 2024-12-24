@@ -889,6 +889,7 @@ pub struct CreateParams {
 pub struct CapWrapper {
     access: AccessMode,
     node: Arc<Node>,
+    pub(crate) cursor: Option<usize>,
 }
 
 impl CapWrapper {
@@ -914,7 +915,11 @@ impl CapWrapper {
 
     #[inline(always)]
     pub fn new(node: Arc<Node>, access: AccessMode) -> Self {
-        Self { node, access }
+        Self {
+            node,
+            access,
+            cursor: None,
+        }
     }
 
     #[inline(always)]
@@ -1114,11 +1119,9 @@ impl CapWrapper {
             node = n;
         }
 
-        if follow_symlink {
-            node = node.follow_link(controller, LINK_DEPTH)?;
-        }
+        node = node.follow_link(controller, LINK_DEPTH)?;
 
-        Ok(Self { node, access })
+        Ok(Self::new(node, access))
     }
 
     pub fn read(&self, len: usize, off: usize) -> Result<Vec<u8>, errors::StreamError> {
@@ -1173,9 +1176,8 @@ impl CapWrapper {
         }
         self.access.write_or_err()?;
 
-        Ok(Self {
-            node: self
-                .node
+        Ok(Self::new(
+            self.node
                 .dir()
                 .ok_or(ErrorKind::NotADirectory)?
                 .add::<Error>(name, || {
@@ -1185,8 +1187,8 @@ impl CapWrapper {
                     ))))
                 })?
                 .ok_or(ErrorKind::AlreadyExists)?,
-            access: self.access,
-        })
+            self.access,
+        ))
     }
 
     pub fn create_file(
@@ -1199,9 +1201,8 @@ impl CapWrapper {
         }
         self.access.write_or_err()?;
 
-        Ok(Self {
-            node: self
-                .node
+        Ok(Self::new(
+            self.node
                 .dir()
                 .ok_or(ErrorKind::NotADirectory)?
                 .add::<Error>(name, || {
@@ -1211,8 +1212,8 @@ impl CapWrapper {
                     ))))
                 })?
                 .ok_or(ErrorKind::AlreadyExists)?,
-            access: self.access,
-        })
+            self.access,
+        ))
     }
 
     pub fn create_link(
@@ -1226,9 +1227,8 @@ impl CapWrapper {
         }
         self.access.write_or_err()?;
 
-        Ok(Self {
-            node: self
-                .node
+        Ok(Self::new(
+            self.node
                 .dir()
                 .ok_or(ErrorKind::NotADirectory)?
                 .add::<Error>(name, || {
@@ -1238,8 +1238,8 @@ impl CapWrapper {
                     ))))
                 })?
                 .ok_or(ErrorKind::AlreadyExists)?,
-            access: self.access,
-        })
+            self.access,
+        ))
     }
 
     pub fn move_file(

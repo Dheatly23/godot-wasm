@@ -414,6 +414,15 @@ impl From<StreamError> for AnyError {
     }
 }
 
+impl From<StreamError> for crate::bindings::types::Error {
+    fn from(v: StreamError) -> Self {
+        match <Result<FSErrorCode, AnyError>>::from(v) {
+            Ok(v) => crate::bindings::types::Errno::from(v).into(),
+            Err(e) => Self::trap(e),
+        }
+    }
+}
+
 pub struct NetworkError(NetworkErrorInner);
 
 enum NetworkErrorInner {

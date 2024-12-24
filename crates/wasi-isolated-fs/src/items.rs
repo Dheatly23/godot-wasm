@@ -113,9 +113,19 @@ macro_rules! item_def {
         }
 
         $(
-        impl ResItem for $ot {
+        impl ResItem for Resource<$ot> {
             type ItemOut<'a> = $oi<'a>;
             type ItemOutRef<'a> = $oir<'a>;
+
+            #[inline(always)]
+            fn is_owned(&self) -> bool {
+                self.owned()
+            }
+
+            #[inline(always)]
+            fn id(&self) -> u32 {
+                self.rep()
+            }
 
             #[inline(always)]
             fn from_item<'a>(item: Item) -> Option<$oi<'a>> {
@@ -255,6 +265,8 @@ pub(crate) trait ResItem {
     type ItemOut<'a>;
     type ItemOutRef<'a>;
 
+    fn is_owned(&self) -> bool;
+    fn id(&self) -> u32;
     fn from_item<'a>(item: Item) -> Option<Self::ItemOut<'a>>;
     fn from_item_ref(item: &Item) -> Option<Self::ItemOutRef<'_>>;
     fn from_item_mut(item: &mut Item) -> Option<Self::ItemOut<'_>>;
@@ -324,44 +336,43 @@ impl<T> BorrowMut<T> for MaybeBorrowMut<'_, T> {
     }
 }
 
-impl<T: ResItem + 'static> GetItem for Resource<T> {
+impl<T: ResItem + 'static> GetItem for T {
     type Output<'a> = T::ItemOut<'a>;
     type OutputRef<'a> = T::ItemOutRef<'a>;
 
     fn get_item(self, items: &mut Items) -> AnyResult<Self::Output<'_>> {
-        if self.owned() {
+        if self.is_owned() {
             items
-                .remove(self.rep().try_into()?)
+                .remove(self.id().try_into()?)
                 .and_then(T::from_item)
-                .ok_or_else(|| errors::InvalidResourceIDError::from_iter([self.rep()]).into())
+                .ok_or_else(|| errors::InvalidResourceIDError::from_iter([self.id()]).into())
         } else {
             items
-                .get_mut(self.rep().try_into()?)
+                .get_mut(self.id().try_into()?)
                 .and_then(T::from_item_mut)
-                .ok_or_else(|| errors::InvalidResourceIDError::from_iter([self.rep()]).into())
+                .ok_or_else(|| errors::InvalidResourceIDError::from_iter([self.id()]).into())
         }
     }
 
     fn get_item_ref<'a>(&self, items: &'a Items) -> AnyResult<Self::OutputRef<'a>> {
         items
-            .get(self.rep().try_into()?)
+            .get(self.id().try_into()?)
             .and_then(T::from_item_ref)
-            .ok_or_else(|| errors::InvalidResourceIDError::from_iter([self.rep()]).into())
+            .ok_or_else(|| errors::InvalidResourceIDError::from_iter([self.id()]).into())
     }
 
     fn maybe_unregister(self, items: &mut Items) {
-        if self.owned() {
-            let Ok(i) = usize::try_from(self.rep()) else {
-                return;
-            };
-            items.remove(i);
+        if self.is_owned() {
+            if let Ok(i) = usize::try_from(self.id()) {
+                items.remove(i);
+            }
         }
     }
 }
 
 macro_rules! impl_getitem_tuple {
     (#tuple $($t:ident),+) => {
-        impl<$($t: ResItem + 'static),+> GetItem for ($(Resource<$t>,)+) {
+        impl<$($t: ResItem + 'static),+> GetItem for ($($t,)+) {
             type Output<'a> = ($($t::ItemOut<'a>,)+);
             type OutputRef<'a> = ($($t::ItemOutRef<'a>,)+);
 
@@ -372,7 +383,7 @@ macro_rules! impl_getitem_tuple {
 
                 // Check for duplicates.
                 {
-                    let arr = [$($t.rep()),+];
+                    let arr = [$($t.id()),+];
                     for (ix, &i) in arr.iter().enumerate() {
                         for &j in &arr[ix + 1..] {
                             if i == j {
@@ -388,14 +399,14 @@ macro_rules! impl_getitem_tuple {
                 $(
                 // SAFETY: Slab remove does not move other elements.
                 let $t = unsafe {
-                    let ix = usize::try_from($t.rep()).ok();
-                    let temp = if $t.owned() {
+                    let ix = usize::try_from($t.id()).ok();
+                    let temp = if $t.is_owned() {
                         ix.and_then(|i| items.remove(i)).and_then($t::from_item)
                     } else {
                         ix.and_then(|i| items.get_mut(i)).and_then(|v| $t::from_item_mut(&mut *(&raw mut *v)))
                     };
                     if temp.is_none() {
-                        errval.extend([$t.rep()]);
+                        errval.extend([$t.id()]);
                     }
                     temp
                 };
@@ -414,9 +425,9 @@ macro_rules! impl_getitem_tuple {
 
                 $(
                 let $t = {
-                    let temp = usize::try_from($t.rep()).ok().and_then(|i| items.get(i)).and_then($t::from_item_ref);
+                    let temp = usize::try_from($t.id()).ok().and_then(|i| items.get(i)).and_then($t::from_item_ref);
                     if temp.is_none() {
-                        errval.extend([$t.rep()]);
+                        errval.extend([$t.id()]);
                     }
                     temp
                 };
@@ -433,8 +444,8 @@ macro_rules! impl_getitem_tuple {
                 let ($($t,)+) = self;
 
                 $(
-                if $t.owned() {
-                    if let Ok(ix) = usize::try_from($t.rep()) {
+                if $t.is_owned() {
+                    if let Ok(ix) = usize::try_from($t.id()) {
                         items.remove(ix);
                     }
                 }
@@ -460,7 +471,7 @@ impl_getitem_tuple! {
     Ac, Ad, Ae, Af
 }
 
-impl<T: ResItem + 'static> GetItem for Vec<Resource<T>> {
+impl<T: ResItem + 'static> GetItem for Vec<T> {
     type Output<'a> = Vec<T::ItemOut<'a>>;
     type OutputRef<'a> = Vec<T::ItemOutRef<'a>>;
 
@@ -470,8 +481,8 @@ impl<T: ResItem + 'static> GetItem for Vec<Resource<T>> {
         // Check for duplicates.
         for (ix, i) in self.iter().enumerate() {
             for j in &self[ix + 1..] {
-                if i.rep() == j.rep() {
-                    errval.extend([i.rep()]);
+                if i.id() == j.id() {
+                    errval.extend([i.id()]);
                 }
             }
         }
@@ -481,8 +492,8 @@ impl<T: ResItem + 'static> GetItem for Vec<Resource<T>> {
 
         let mut ret = Vec::with_capacity(self.len());
         for r in self.into_iter() {
-            let ix = usize::try_from(r.rep()).ok();
-            let v = if r.owned() {
+            let ix = usize::try_from(r.id()).ok();
+            let v = if r.is_owned() {
                 ix.and_then(|i| items.remove(i)).and_then(T::from_item)
             } else {
                 ix.and_then(|i| items.get_mut(i)).and_then(|v| {
@@ -495,7 +506,7 @@ impl<T: ResItem + 'static> GetItem for Vec<Resource<T>> {
             };
 
             let Some(v) = v else {
-                errval.extend([r.rep()]);
+                errval.extend([r.id()]);
                 continue;
             };
             if errval.is_empty() {
@@ -514,13 +525,13 @@ impl<T: ResItem + 'static> GetItem for Vec<Resource<T>> {
         let mut errval = errors::InvalidResourceIDError::default();
         let mut ret = Vec::with_capacity(self.len());
         for r in self.iter() {
-            let v = usize::try_from(r.rep())
+            let v = usize::try_from(r.id())
                 .ok()
                 .and_then(|i| items.get(i))
                 .and_then(T::from_item_ref);
 
             let Some(v) = v else {
-                errval.extend([r.rep()]);
+                errval.extend([r.id()]);
                 continue;
             };
             if errval.is_empty() {
@@ -537,11 +548,10 @@ impl<T: ResItem + 'static> GetItem for Vec<Resource<T>> {
 
     fn maybe_unregister(self, items: &mut Items) {
         for r in self.into_iter() {
-            if r.owned() {
-                let Ok(i) = usize::try_from(r.rep()) else {
-                    continue;
-                };
-                items.remove(i);
+            if r.is_owned() {
+                if let Ok(i) = usize::try_from(r.id()) {
+                    items.remove(i);
+                }
             }
         }
     }
