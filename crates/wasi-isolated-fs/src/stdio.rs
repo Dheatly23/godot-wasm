@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result as AnyResult;
-use memchr::memchr;
+use memchr::memchr_iter;
 use parking_lot::{Condvar, Mutex};
 use scopeguard::{defer, guard, guard_on_unwind};
 use smallvec::SmallVec;
@@ -267,19 +267,18 @@ impl Default for LineBuffer {
 }
 
 impl LineBuffer {
-    pub fn write<F, E>(&mut self, mut f: F, mut data: &[u8]) -> Result<(), E>
+    pub fn write<F, E>(&mut self, mut f: F, data: &[u8]) -> Result<(), E>
     where
         for<'a> F: FnMut(&'a str) -> Result<(), E>,
     {
         let Self { buf, len, s } = &mut *guard_on_unwind(self, |this| this.len = 0);
 
-        while !data.is_empty() {
-            let mut d;
-            (d, data) = if let Some(i) = memchr(LINESEP, data) {
-                data.split_at(i + 1)
-            } else {
-                (data, &[] as &[_])
-            };
+        let mut i = 0;
+        let mut it = memchr_iter(LINESEP, data);
+        while i < data.len() {
+            let e = it.next().map_or(data.len(), |e| e + 1);
+            let mut d = &data[i..e];
+            i = e;
 
             while !d.is_empty() {
                 if *len == 0 && *d.last().unwrap() == LINESEP {
