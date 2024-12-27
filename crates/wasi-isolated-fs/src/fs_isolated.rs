@@ -799,6 +799,13 @@ impl Node {
 
         ret.follow_link(controller, d)
     }
+
+    pub fn follow_symlink(
+        self: Arc<Self>,
+        controller: &IsolatedFSController,
+    ) -> Result<Arc<Self>, errors::StreamError> {
+        self.follow_link(controller, LINK_DEPTH)
+    }
 }
 
 impl From<(File, Weak<Node>)> for Node {
@@ -1119,9 +1126,19 @@ impl CapWrapper {
             node = n;
         }
 
-        node = node.follow_link(controller, LINK_DEPTH)?;
+        if follow_symlink {
+            node = node.follow_link(controller, LINK_DEPTH)?;
+        }
 
         Ok(Self::new(node, access))
+    }
+
+    pub fn follow_symlink(
+        mut self,
+        controller: &IsolatedFSController,
+    ) -> Result<Self, errors::StreamError> {
+        self.node = self.node.follow_symlink(controller)?;
+        Ok(self)
     }
 
     pub fn read(&self, len: usize, off: usize) -> Result<Vec<u8>, errors::StreamError> {

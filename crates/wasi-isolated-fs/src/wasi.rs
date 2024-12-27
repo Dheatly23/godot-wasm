@@ -960,13 +960,16 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     (true, true) => AccessMode::RW,
                 };
 
-                let v = v.open(
-                    try_iso_fs(&self.iso_fs)?,
-                    &Utf8PathBuf::from(path),
-                    symlink,
-                    create,
-                    access,
-                )?;
+                let controller = try_iso_fs(&self.iso_fs)?;
+                let v = v
+                    .open(
+                        controller,
+                        &Utf8PathBuf::from(path),
+                        symlink,
+                        create,
+                        access,
+                    )?
+                    .follow_symlink(controller)?;
 
                 if flags.contains(wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY)
                     && !v.node().is_dir()
