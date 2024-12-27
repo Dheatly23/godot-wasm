@@ -746,6 +746,14 @@ impl Node {
         }
     }
 
+    pub(crate) fn inode(&self) -> usize {
+        match &self.0 {
+            NodeItem::Dir(v) => v.lock().inode(),
+            NodeItem::File(v) => v.lock().inode(),
+            NodeItem::Link(v) => v.read().inode(),
+        }
+    }
+
     fn parent_or_root(self: &Arc<Self>, controller: &IsolatedFSController) -> Option<Arc<Self>> {
         self.parent().or_else(|| {
             if Arc::ptr_eq(self, &controller.root) {
@@ -1035,11 +1043,13 @@ impl CapWrapper {
         }
     }
 
-    pub fn set_time(
-        &self,
-        f: impl FnOnce(&mut Timestamp) -> Result<(), errors::StreamError>,
-    ) -> Result<(), errors::StreamError> {
-        self.access.write_or_err()?;
+    pub fn set_time<E>(&self, f: impl FnOnce(&mut Timestamp) -> Result<(), E>) -> Result<(), E>
+    where
+        E: From<errors::StreamError>,
+    {
+        self.access
+            .write_or_err()
+            .map_err(errors::StreamError::from)?;
 
         f(&mut self.node.stamp())
     }

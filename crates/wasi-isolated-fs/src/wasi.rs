@@ -375,7 +375,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         }
 
         let mut n = 0;
-        let mut l = usize::try_from(len).map_err(AnyError::from)?;
+        let mut l = usize::try_from(len).unwrap_or(usize::MAX);
         while l > 0 {
             let i = l.min(4096);
 
@@ -435,7 +435,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         }
 
         let mut n = 0;
-        let mut l = usize::try_from(len).map_err(AnyError::from)?;
+        let mut l = usize::try_from(len).unwrap_or(usize::MAX);
         while l > 0 {
             let i = l.min(4096);
 
@@ -560,7 +560,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         res: Resource<wasi::filesystem::types::Descriptor>,
         off: wasi::filesystem::types::Filesize,
     ) -> Result<Resource<wasi::io::streams::InputStream>, errors::StreamError> {
-        self.open_file(res, OpenMode::Read(off.try_into().map_err(AnyError::from)?))
+        self.open_file(res, OpenMode::Read(off.try_into()?))
     }
 
     fn write_via_stream(
@@ -568,10 +568,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         res: Resource<wasi::filesystem::types::Descriptor>,
         off: wasi::filesystem::types::Filesize,
     ) -> Result<Resource<wasi::io::streams::OutputStream>, errors::StreamError> {
-        self.open_file(
-            res,
-            OpenMode::Write(off.try_into().map_err(AnyError::from)?),
-        )
+        self.open_file(res, OpenMode::Write(off.try_into()?))
     }
 
     fn append_via_stream(
@@ -691,7 +688,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         size: wasi::filesystem::types::Filesize,
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
-            items::Desc::IsoFSNode(v) => v.resize(size.try_into().map_err(AnyError::from)?)?,
+            items::Desc::IsoFSNode(v) => v.resize(size.try_into()?)?,
             items::Desc::HostFSDesc(v) => v.write()?.file()?.set_len(size)?,
         }
         Ok(())
@@ -704,7 +701,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         mtime: wasi::filesystem::types::NewTimestamp,
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
-            items::Desc::IsoFSNode(v) => v.set_time(|stamp| {
+            items::Desc::IsoFSNode(v) => v.set_time(|stamp| -> Result<_, errors::StreamError> {
                 let now = SystemTime::now();
                 set_time(mtime, &now, &mut stamp.mtime);
                 set_time(atime, &now, &mut stamp.atime);
@@ -731,9 +728,13 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         let len = usize::try_from(len).unwrap_or(usize::MAX);
         Ok(match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
-                let r = v.read(len, off.try_into().map_err(AnyError::from)?)?;
-                let b = len != 0 && r.is_empty();
-                (r, b)
+                if let Ok(off) = usize::try_from(off) {
+                    let r = v.read(len, off)?;
+                    let b = len != 0 && r.is_empty();
+                    (r, b)
+                } else {
+                    (Vec::new(), true)
+                }
             }
             items::Desc::HostFSDesc(v) => {
                 let v = v.read()?.file()?;
@@ -757,7 +758,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<wasi::filesystem::types::Filesize, errors::StreamError> {
         Ok(match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
-                v.write(&buf, off.try_into().map_err(AnyError::from)?)?;
+                v.write(&buf, off.try_into()?)?;
                 buf.len() as _
             }
             items::Desc::HostFSDesc(v) => v.write()?.file()?.write_at(&buf, off)? as _,
@@ -884,7 +885,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     None,
                     AccessMode::W,
                 )?
-                .set_time(|stamp| {
+                .set_time(|stamp| -> Result<_, errors::StreamError> {
                     let now = SystemTime::now();
                     set_time(mtime, &now, &mut stamp.mtime);
                     set_time(atime, &now, &mut stamp.atime);
@@ -1335,7 +1336,7 @@ impl wasi::clocks::wall_clock::Host for WasiContext {
     fn now(&mut self) -> AnyResult<wasi::clocks::wall_clock::Datetime> {
         let t = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .map_err(AnyError::from)?;
+            .unwrap_or(Duration::ZERO);
         Ok(wasi::clocks::wall_clock::Datetime {
             seconds: t.as_secs(),
             nanoseconds: t.subsec_nanos(),

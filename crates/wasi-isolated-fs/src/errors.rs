@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::io::{Error as IoError, ErrorKind};
+use std::num::TryFromIntError;
 
 use anyhow::Error as AnyError;
 
@@ -339,6 +340,12 @@ enum StreamErrorInner {
 impl StreamError {
     pub const fn closed() -> Self {
         Self(StreamErrorInner::Closed)
+    }
+}
+
+impl From<TryFromIntError> for StreamError {
+    fn from(_: TryFromIntError) -> Self {
+        Self(StreamErrorInner::Wasi(FSErrorCode::Overflow))
     }
 }
 
