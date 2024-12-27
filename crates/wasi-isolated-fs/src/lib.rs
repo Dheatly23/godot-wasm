@@ -8,6 +8,8 @@ mod preview1;
 pub mod stdio;
 mod wasi;
 
+static EMPTY_BUF: [u8; 4096] = [0; 4096];
+
 #[allow(clippy::too_many_arguments)]
 pub mod bindings {
     use crate::errors::{NetworkError, StreamError};

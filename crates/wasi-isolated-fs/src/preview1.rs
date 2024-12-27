@@ -1,19 +1,22 @@
 #![allow(unused_variables)]
 
+use std::borrow::Cow;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use anyhow::Error as AnyError;
-use cap_fs_ext::FileTypeExt;
+use cap_fs_ext::{FileTypeExt, MetadataExt};
 use cfg_if::cfg_if;
+use fs_set_times::SetTimes;
 use system_interface::fs::FileIoExt;
 use wiggle::{GuestMemory, GuestPtr};
 
 use crate::bindings::types::*;
-use crate::bindings::wasi;
 use crate::context::WasiContext;
 use crate::fs_host::Descriptor;
+use crate::fs_isolated::NodeItem;
 use crate::items::{Item, MaybeBorrowMut, ResItem};
+use crate::EMPTY_BUF;
 
 struct ResOwned<T>(T);
 
@@ -133,6 +136,161 @@ impl ResItem for Fd {
     }
 }
 
+struct MemIO<'a, 'b> {
+    mem: &'a mut GuestMemory<'b>,
+    len: Size,
+    off: Size,
+    iov: IovecArray,
+}
+
+impl<'a, 'b> MemIO<'a, 'b> {
+    fn new(mem: &'a mut GuestMemory<'b>, iov: IovecArray) -> Result<Self, Error> {
+        let mut len: Size = 0;
+        for p in iov.iter() {
+            len = len.saturating_add(mem.read(p?)?.buf_len);
+        }
+
+        Ok(Self {
+            mem,
+            len,
+            iov,
+            off: 0,
+        })
+    }
+
+    fn read<T>(
+        &mut self,
+        mut t: T,
+        mut f: impl FnMut(&mut T, Size) -> Result<(Cow<'_, [u8]>, Size), Error>,
+    ) -> Result<Size, Error> {
+        if self.len == 0 {
+            return Ok(0);
+        }
+
+        let mut n = 0;
+        let Iovec {
+            buf: mut p,
+            buf_len: mut blen,
+        } = self.mem.read(self.iov.as_ptr())?;
+        blen -= self.off;
+        p = p.add(self.off)?;
+        while self.len > 0 {
+            let (s, mut l) = f(&mut t, self.len)?;
+            if l == 0 {
+                // EOF
+                break;
+            }
+
+            debug_assert!(
+                l <= self.len,
+                "too many bytes returned (asked for {} bytes, got {} bytes)",
+                self.len,
+                l
+            );
+            n += l;
+            self.len -= l;
+            let mut s = &s[..];
+            while l > 0 {
+                // Skip empty iovecs
+                while blen == 0 {
+                    debug_assert_ne!(self.iov.len(), 0, "IO slice ran out before length ran out (remaining length: {}, writing length: {})", self.len, l);
+                    self.iov = self.iov.as_ptr().add(1)?.as_array(self.iov.len() - 1);
+                    self.off = 0;
+                    Iovec {
+                        buf: p,
+                        buf_len: blen,
+                    } = self.mem.read(self.iov.as_ptr())?;
+                }
+
+                let i = l.min(blen);
+                let p_ = p;
+                l -= i;
+                blen -= i;
+                self.off += i;
+                p = p.add(i)?;
+
+                s = if let Some((a, b)) = s.split_at_checked(i.try_into()?) {
+                    // Copy data
+                    self.mem.copy_from_slice(a, p_.as_array(i))?;
+                    b
+                } else {
+                    // Copy remaining data
+                    let mut j = s.len() as Size;
+                    self.mem.copy_from_slice(s, p_.as_array(j))?;
+
+                    // Fill zeros
+                    let mut p = p_.add(j)?;
+                    j = i - j;
+                    while j > 0 {
+                        let k = j.min(EMPTY_BUF.len() as _);
+                        self.mem
+                            .copy_from_slice(&EMPTY_BUF[..k as usize], p.as_array(k))?;
+                        p = p.add(k)?;
+                        j -= k;
+                    }
+                    &[]
+                };
+            }
+        }
+
+        Ok(n)
+    }
+}
+
+fn to_timestamp(t: SystemTime) -> Timestamp {
+    match t.duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(v) => v.as_nanos() as _,
+        Err(_) => 0,
+    }
+}
+
+fn to_filetype(f: cap_std::fs::FileType) -> Filetype {
+    if f.is_dir() {
+        Filetype::Directory
+    } else if f.is_symlink() {
+        Filetype::SymbolicLink
+    } else if f.is_block_device() {
+        Filetype::BlockDevice
+    } else if f.is_char_device() {
+        Filetype::CharacterDevice
+    } else if f.is_file() {
+        Filetype::RegularFile
+    } else {
+        Filetype::Unknown
+    }
+}
+
+fn set_time(
+    dst: &mut SystemTime,
+    now: &SystemTime,
+    time: Timestamp,
+    is_set: bool,
+    is_now: bool,
+) -> Result<(), Error> {
+    *dst = match (is_set, is_now) {
+        (true, true) => return Err(Errno::Inval.into()),
+        (true, false) => SystemTime::UNIX_EPOCH + Duration::from_nanos(time),
+        (false, true) => *now,
+        (false, false) => return Ok(()),
+    };
+    Ok(())
+}
+
+fn time_cvt(
+    time: Timestamp,
+    is_set: bool,
+    is_now: bool,
+) -> Result<Option<fs_set_times::SystemTimeSpec>, Error> {
+    match (is_set, is_now) {
+        (true, true) => Err(Errno::Inval.into()),
+        (true, false) => Ok(Some(fs_set_times::SystemTimeSpec::Absolute(
+            SystemTime::UNIX_EPOCH + Duration::from_nanos(time),
+        ))),
+        (false, true) => Ok(Some(fs_set_times::SystemTimeSpec::SymbolicNow)),
+        (false, false) => Ok(None),
+    }
+}
+
 impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiContext {
     fn args_get(
         &mut self,
@@ -221,10 +379,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         _: Timestamp,
     ) -> Result<Timestamp, Error> {
         match id {
-            Clockid::Realtime => match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-                Ok(v) => Ok(v.as_nanos() as _),
-                Err(e) => Err(Error::trap(e.into())),
-            },
+            Clockid::Realtime => Ok(to_timestamp(SystemTime::now())),
             Clockid::Monotonic => Ok(self.clock.now()),
             _ => Err(Errno::Badf.into()),
         }
@@ -309,7 +464,6 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     fn fd_fdstat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Fdstat, Error> {
         Ok(match self.items.get_item(fd)? {
             FdItem::IsoFSNode(v) => {
-                let m = v.stat()?;
                 let mut rights = Rights::FD_DATASYNC
                     | Rights::FD_SYNC
                     | Rights::FD_ADVISE
@@ -357,11 +511,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
 
                 Fdstat {
-                    fs_filetype: match m.type_ {
-                        wasi::filesystem::types::DescriptorType::Directory => Filetype::Directory,
-                        wasi::filesystem::types::DescriptorType::RegularFile => Filetype::RegularFile,
-                        wasi::filesystem::types::DescriptorType::SymbolicLink => Filetype::SymbolicLink,
-                        _ => unreachable!("isolated filesystem cannot contain anything but link, directory, and file"),
+                    fs_filetype: match v.node().0 {
+                        NodeItem::Dir(_) => Filetype::Directory,
+                        NodeItem::File(_) => Filetype::RegularFile,
+                        NodeItem::Link(_) => Filetype::SymbolicLink,
                     },
                     fs_flags: if v.node().is_file() && v.cursor.is_none() {
                         Fdflags::APPEND
@@ -373,11 +526,11 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
             }
             FdItem::HostFSDesc(v) => {
-                let m = match &**v.desc() {
+                let f = match &**v.desc() {
                     Descriptor::File(v) => v.metadata(),
                     Descriptor::Dir(v) => v.dir_metadata(),
-                }?;
-                let f = m.file_type();
+                }?
+                .file_type();
                 let mut rights = Rights::FD_DATASYNC
                     | Rights::FD_SYNC
                     | Rights::FD_ADVISE
@@ -419,19 +572,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
 
                 Fdstat {
-                    fs_filetype: if f.is_dir() {
-                        Filetype::Directory
-                    } else if f.is_symlink() {
-                        Filetype::SymbolicLink
-                    } else if f.is_block_device() {
-                        Filetype::BlockDevice
-                    } else if f.is_char_device() {
-                        Filetype::CharacterDevice
-                    } else if f.is_file() {
-                        Filetype::RegularFile
-                    } else {
-                        Filetype::Unknown
-                    },
+                    fs_filetype: to_filetype(f),
                     fs_flags: if matches!(**v.desc(), Descriptor::File(_)) && v.cursor.is_none() {
                         Fdflags::APPEND
                     } else {
@@ -441,51 +582,208 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     fs_rights_inheriting: rights,
                 }
             }
-            _ => return Err(Errno::Inval.into()),
+            FdItem::StdinSignal(_) | FdItem::BoxedRead(_) => {
+                let rights = Rights::FD_READ;
+                Fdstat {
+                    fs_filetype: Filetype::Unknown,
+                    fs_flags: Fdflags::empty(),
+                    fs_rights_base: rights,
+                    fs_rights_inheriting: rights,
+                }
+            }
+            FdItem::StdoutBp(_)
+            | FdItem::StderrBp(_)
+            | FdItem::StdoutLBuf(_)
+            | FdItem::StdoutBBuf(_) => {
+                let rights = Rights::FD_WRITE;
+                Fdstat {
+                    fs_filetype: Filetype::Unknown,
+                    fs_flags: Fdflags::empty(),
+                    fs_rights_base: rights,
+                    fs_rights_inheriting: rights,
+                }
+            }
+            FdItem::NullStdio(_) => {
+                let rights = Rights::FD_READ | Rights::FD_WRITE;
+                Fdstat {
+                    fs_filetype: Filetype::Unknown,
+                    fs_flags: Fdflags::empty(),
+                    fs_rights_base: rights,
+                    fs_rights_inheriting: rights,
+                }
+            }
         })
     }
 
     fn fd_fdstat_set_flags(
         &mut self,
-        mem: &mut GuestMemory<'_>,
+        _: &mut GuestMemory<'_>,
         fd: Fd,
-        flags: Fdflags,
+        _: Fdflags,
     ) -> Result<(), Error> {
-        todo!()
+        self.items.get_item(fd)?;
+        Err(Errno::Notsup.into())
     }
 
     fn fd_fdstat_set_rights(
         &mut self,
-        mem: &mut GuestMemory<'_>,
+        _: &mut GuestMemory<'_>,
         fd: Fd,
-        fs_rights_base: Rights,
-        fs_rights_inheriting: Rights,
+        _: Rights,
+        _: Rights,
     ) -> Result<(), Error> {
-        todo!()
+        self.items.get_item(fd)?;
+        Err(Errno::Notsup.into())
     }
 
-    fn fd_filestat_get(&mut self, mem: &mut GuestMemory<'_>, fd: Fd) -> Result<Filestat, Error> {
-        todo!()
+    fn fd_filestat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Filestat, Error> {
+        Ok(match self.items.get_item(fd)? {
+            FdItem::IsoFSNode(v) => {
+                fn map_stamp(
+                    stamp: &crate::fs_isolated::Timestamp,
+                ) -> (Timestamp, Timestamp, Timestamp) {
+                    (
+                        to_timestamp(stamp.ctime),
+                        to_timestamp(stamp.mtime),
+                        to_timestamp(stamp.atime),
+                    )
+                }
+
+                let (filetype, size, (ctim, mtim, atim)) = match &v.node().0 {
+                    NodeItem::Dir(v) => {
+                        let v = v.lock();
+                        (Filetype::Directory, v.len(), map_stamp(v.stamp()))
+                    }
+                    NodeItem::File(v) => {
+                        let v = v.lock();
+                        (Filetype::Directory, v.len(), map_stamp(v.stamp()))
+                    }
+                    NodeItem::Link(v) => {
+                        let v = v.read();
+                        (Filetype::Directory, v.len(), map_stamp(v.stamp()))
+                    }
+                };
+
+                Filestat {
+                    dev: 127,
+                    ino: (v.node().inode() as u64)
+                        .wrapping_mul(9973)
+                        .wrapping_add(Arc::as_ptr(v.node()) as u64),
+                    nlink: 0,
+                    size: size as _,
+                    filetype,
+                    ctim,
+                    mtim,
+                    atim,
+                }
+            }
+            FdItem::HostFSDesc(v) => {
+                fn f(v: std::io::Result<cap_std::time::SystemTime>) -> Timestamp {
+                    v.ok().map_or(0, |v| to_timestamp(v.into_std()))
+                }
+
+                let m = match &**v.desc() {
+                    Descriptor::File(v) => v.metadata(),
+                    Descriptor::Dir(v) => v.dir_metadata(),
+                }?;
+                let filetype = to_filetype(m.file_type());
+                let nlink = m.nlink();
+                let size = m.len();
+                let ctim = f(m.created());
+                let mtim = f(m.modified());
+                let atim = f(m.accessed());
+                let inode = crate::fs_host::CapWrapper::meta_hash(m, &self.hasher);
+
+                Filestat {
+                    dev: 1,
+                    ino: inode.lower ^ inode.upper,
+                    size: size as _,
+                    filetype,
+                    nlink,
+                    ctim,
+                    mtim,
+                    atim,
+                }
+            }
+            FdItem::StdinSignal(_)
+            | FdItem::BoxedRead(_)
+            | FdItem::StdoutBp(_)
+            | FdItem::StderrBp(_)
+            | FdItem::StdoutLBuf(_)
+            | FdItem::StdoutBBuf(_)
+            | FdItem::NullStdio(_) => Filestat {
+                dev: 0,
+                ino: 0,
+                filetype: Filetype::Unknown,
+                size: 0,
+                nlink: 0,
+                ctim: 0,
+                mtim: 0,
+                atim: 0,
+            },
+        })
     }
 
     fn fd_filestat_set_size(
         &mut self,
-        mem: &mut GuestMemory<'_>,
+        _: &mut GuestMemory<'_>,
         fd: Fd,
         size: Filesize,
     ) -> Result<(), Error> {
-        todo!()
+        match self.items.get_item(fd)? {
+            FdItem::IsoFSNode(v) => v.resize(size.try_into().map_err(AnyError::from)?)?,
+            FdItem::HostFSDesc(v) => v.write()?.file()?.set_len(size)?,
+            _ => return Err(Errno::Inval.into()),
+        }
+        Ok(())
     }
 
     fn fd_filestat_set_times(
         &mut self,
-        mem: &mut GuestMemory<'_>,
+        _: &mut GuestMemory<'_>,
         fd: Fd,
         atim: Timestamp,
         mtim: Timestamp,
         fst_flags: Fstflags,
     ) -> Result<(), Error> {
-        todo!()
+        match self.items.get_item(fd)? {
+            FdItem::IsoFSNode(v) => v.set_time(|stamp| -> Result<_, Error> {
+                let now = SystemTime::now();
+                set_time(
+                    &mut stamp.mtime,
+                    &now,
+                    mtim,
+                    fst_flags.contains(Fstflags::MTIM),
+                    fst_flags.contains(Fstflags::MTIM_NOW),
+                )?;
+                set_time(
+                    &mut stamp.atime,
+                    &now,
+                    atim,
+                    fst_flags.contains(Fstflags::ATIM),
+                    fst_flags.contains(Fstflags::ATIM_NOW),
+                )?;
+                Ok(())
+            })?,
+            FdItem::HostFSDesc(v) => {
+                let atime = time_cvt(
+                    atim,
+                    fst_flags.contains(Fstflags::ATIM),
+                    fst_flags.contains(Fstflags::ATIM_NOW),
+                )?;
+                let mtime = time_cvt(
+                    mtim,
+                    fst_flags.contains(Fstflags::MTIM),
+                    fst_flags.contains(Fstflags::MTIM_NOW),
+                )?;
+                match &**v.write()?.desc() {
+                    Descriptor::File(v) => v.set_times(atime, mtime),
+                    Descriptor::Dir(v) => SetTimes::set_times(v, atime, mtime),
+                }?
+            }
+            _ => return Err(Errno::Inval.into()),
+        }
+        Ok(())
     }
 
     fn fd_pread(
@@ -493,9 +791,33 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         mem: &mut GuestMemory<'_>,
         fd: Fd,
         iovs: IovecArray,
-        offset: Filesize,
+        mut offset: Filesize,
     ) -> Result<Size, Error> {
-        todo!()
+        let mut memio = MemIO::new(mem, iovs)?;
+
+        match self.items.get_item(fd)? {
+            FdItem::IsoFSNode(v) => {
+                v.access().read_or_err()?;
+                let mut off = usize::try_from(offset)?;
+                memio.read(v.node().file().ok_or(Errno::Isdir)?, |v, len| {
+                    let (s, l) = v.read(len.try_into()?, off);
+                    off += l;
+                    Ok((s.into(), l as Size))
+                })
+            }
+            FdItem::HostFSDesc(v) => memio.read(v.read()?.file()?, |v, len| {
+                let mut ret = vec![0; len.try_into()?];
+                let l = crate::fs_host::CapWrapper::read_at(v, &mut ret, offset)?;
+                Ok(if l == 0 {
+                    (Vec::new().into(), 0)
+                } else {
+                    offset += l as Filesize;
+                    ret.truncate(l);
+                    (ret.into(), l as Size)
+                })
+            }),
+            _ => Err(Errno::Inval.into()),
+        }
     }
 
     fn fd_prestat_get(&mut self, mem: &mut GuestMemory<'_>, fd: Fd) -> Result<Prestat, Error> {

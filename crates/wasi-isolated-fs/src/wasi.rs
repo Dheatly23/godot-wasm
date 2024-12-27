@@ -21,7 +21,7 @@ use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
 use crate::fs_isolated::{AccessMode, CreateParams, IsolatedFSController, OpenMode};
 use crate::items::Item;
 use crate::stdio::NullStdio;
-use crate::{errors, items, NullPollable};
+use crate::{errors, items, NullPollable, EMPTY_BUF};
 
 fn try_iso_fs(iso_fs: &Option<IsolatedFSController>) -> AnyResult<&IsolatedFSController> {
     iso_fs
@@ -182,8 +182,6 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         Ok(())
     }
 }
-
-static EMPTY_BUF: [u8; 4096] = [0; 4096];
 
 impl wasi::io::streams::HostOutputStream for WasiContext {
     fn check_write(
