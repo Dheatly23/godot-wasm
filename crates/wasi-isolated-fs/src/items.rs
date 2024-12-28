@@ -177,15 +177,15 @@ item_def! {
 impl<'t> MaybeBorrowMut<'t, Item> {
     pub fn to<T>(self) -> Result<MaybeBorrowMut<'t, T>, Self>
     where
-        Item: Into<Result<T, Item>>,
-        for<'a> &'a mut Item: Into<Result<&'a mut T, &'a mut Item>>,
+        T: TryFrom<Item, Error = Item>,
+        for<'a> &'a mut T: TryFrom<&'a mut Item, Error = &'a mut Item>,
     {
         match self {
-            Self::Owned(v) => match v.into() {
+            Self::Owned(v) => match v.try_into() {
                 Ok(v) => Ok(MaybeBorrowMut::Owned(v)),
                 Err(v) => Err(MaybeBorrowMut::Owned(v)),
             },
-            Self::Borrowed(v) => match v.into() {
+            Self::Borrowed(v) => match v.try_into() {
                 Ok(v) => Ok(MaybeBorrowMut::Borrowed(v)),
                 Err(v) => Err(MaybeBorrowMut::Borrowed(v)),
             },
