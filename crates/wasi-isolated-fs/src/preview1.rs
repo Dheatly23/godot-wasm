@@ -805,17 +805,19 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     Ok((s.into(), l as Size))
                 })
             }
-            FdItem::HostFSDesc(v) => memio.read(v.read()?.file()?, |v, len| {
-                let mut ret = vec![0; len.try_into()?];
-                let l = crate::fs_host::CapWrapper::read_at(v, &mut ret, offset)?;
-                Ok(if l == 0 {
-                    (Vec::new().into(), 0)
-                } else {
+            FdItem::HostFSDesc(v) => memio.read(
+                (
+                    v.read()?.file()?,
+                    vec![0u8; usize::try_from(memio.len)?.min(EMPTY_BUF.len())],
+                ),
+                |(v, ret), len| {
+                    let i = ret.len().min(len.try_into()?);
+                    let ret = &mut ret[..i];
+                    let l = crate::fs_host::CapWrapper::read_at(v, &mut *ret, offset)?;
                     offset += l as Filesize;
-                    ret.truncate(l);
-                    (ret.into(), l as Size)
-                })
-            }),
+                    Ok(((&ret[..l]).into(), l as Size))
+                },
+            ),
             _ => Err(Errno::Inval.into()),
         }
     }
