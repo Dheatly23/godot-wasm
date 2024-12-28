@@ -1241,21 +1241,23 @@ impl wasi::filesystem::types::HostDirectoryEntryStream for WasiContext {
         res: Resource<wasi::filesystem::types::DirectoryEntryStream>,
     ) -> Result<Option<wasi::filesystem::types::DirectoryEntry>, errors::StreamError> {
         match self.items.get_item(res)? {
-            items::Readdir::IsoFSReaddir(mut v) => Ok(v.next()),
-            items::Readdir::HostFSReaddir(v) => v
-                .next()
-                .transpose()?
-                .map(|v| {
-                    Ok(wasi::filesystem::types::DirectoryEntry {
-                        type_: desc_type(v.metadata()?.file_type()),
-                        name: v
-                            .file_name()
-                            .into_string()
-                            .map_err(|_| ErrorKind::InvalidData)?,
-                    })
+            items::Readdir::IsoFSReaddir(mut v) => v.next().map(|v| {
+                v.map(|(k, v)| wasi::filesystem::types::DirectoryEntry {
+                    name: k.to_string(),
+                    type_: v.file_type(),
                 })
-                .transpose(),
+            }),
+            items::Readdir::HostFSReaddir(v) => (&**v).next().transpose()?.map(|v| {
+                Ok(wasi::filesystem::types::DirectoryEntry {
+                    type_: desc_type(v.metadata()?.file_type()),
+                    name: v
+                        .file_name()
+                        .into_string()
+                        .map_err(|_| ErrorKind::InvalidData)?,
+                })
+            }),
         }
+        .transpose()
     }
 
     fn drop(

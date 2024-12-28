@@ -63,17 +63,12 @@ impl Descriptor {
 pub struct CapWrapper {
     desc: Arc<Descriptor>,
     access: AccessMode,
-    pub(crate) cursor: Option<usize>,
 }
 
 impl CapWrapper {
     #[inline(always)]
     pub fn new(desc: Arc<Descriptor>, access: AccessMode) -> Self {
-        Self {
-            desc,
-            access,
-            cursor: None,
-        }
+        Self { desc, access }
     }
 
     #[inline(always)]
@@ -298,8 +293,10 @@ impl FileStream {
 
 pub struct ReadDir(Mutex<CapReadDir>);
 
-impl ReadDir {
-    pub fn next(&self) -> Option<Result<DirEntry, errors::StreamError>> {
+impl Iterator for &'_ ReadDir {
+    type Item = Result<DirEntry, errors::StreamError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
         let ret = self.0.lock().next();
         match ret {
             None => None,

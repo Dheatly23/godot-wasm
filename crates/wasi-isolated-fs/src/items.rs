@@ -12,6 +12,7 @@ use crate::clock::ClockPollable;
 use crate::errors;
 use crate::fs_host::{CapWrapper as HostCapWrapper, FileStream, ReadDir as HostReadDir};
 use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
+use crate::preview1::P1File;
 use crate::stdio::{
     NullStdio, StderrBypass, StdinSignal, StdinSignalPollable, StdoutBypass, StdoutCbBlockBuffered,
     StdoutCbLineBuffered,
@@ -153,6 +154,7 @@ item_def! {
         HostFSDesc(Box<HostCapWrapper>),
     },
     IOStream | IOStreamR(wasi::io::streams::InputStream, wasi::io::streams::OutputStream) {
+        P1File(Box<P1File>),
         IsoFSAccess(Box<FileAccessor>),
         HostFSStream(Box<FileStream>),
         StdinSignal(Arc<StdinSignal>),

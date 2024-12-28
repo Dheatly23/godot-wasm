@@ -764,7 +764,7 @@ impl Node {
         })
     }
 
-    fn file_type(&self) -> wasi::filesystem::types::DescriptorType {
+    pub(crate) fn file_type(&self) -> wasi::filesystem::types::DescriptorType {
         match self.0 {
             NodeItem::Dir(_) => wasi::filesystem::types::DescriptorType::Directory,
             NodeItem::File(_) => wasi::filesystem::types::DescriptorType::RegularFile,
@@ -904,7 +904,6 @@ pub struct CreateParams {
 pub struct CapWrapper {
     access: AccessMode,
     node: Arc<Node>,
-    pub(crate) cursor: Option<usize>,
 }
 
 impl CapWrapper {
@@ -930,11 +929,7 @@ impl CapWrapper {
 
     #[inline(always)]
     pub fn new(node: Arc<Node>, access: AccessMode) -> Self {
-        Self {
-            node,
-            access,
-            cursor: None,
-        }
+        Self { node, access }
     }
 
     #[inline(always)]
@@ -1325,7 +1320,10 @@ impl CapWrapper {
         self.access.read_or_err()?;
 
         if self.node.is_dir() {
-            Ok(DirEntryAccessor(DirEntryInner::Current(self.node.clone())))
+            Ok(DirEntryAccessor {
+                node: Some(self.node.clone()),
+                key: None,
+            })
         } else {
             Err(ErrorKind::NotADirectory.into())
         }
@@ -1420,63 +1418,40 @@ impl FileAccessor {
     }
 }
 
-pub struct DirEntryAccessor(DirEntryInner);
-
-enum DirEntryInner {
-    Current(Arc<Node>),
-    Parent(Arc<Node>),
-    Item(Arc<str>, Arc<Node>),
-    None,
+pub struct DirEntryAccessor {
+    node: Option<Arc<Node>>,
+    key: Option<Arc<str>>,
 }
 
 impl Iterator for DirEntryAccessor {
-    type Item = wasi::filesystem::types::DirectoryEntry;
+    type Item = Result<(Arc<str>, Arc<Node>), errors::StreamError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match replace(&mut self.0, DirEntryInner::None) {
-            DirEntryInner::Current(d) => {
-                self.0 = DirEntryInner::Parent(d);
+        let Some(d) = self.node.as_mut()?.dir() else {
+            return Some(Err(ErrorKind::NotADirectory.into()));
+        };
 
-                Some(wasi::filesystem::types::DirectoryEntry {
-                    name: ".".to_string(),
-                    type_: wasi::filesystem::types::DescriptorType::Directory,
-                })
-            }
-            DirEntryInner::Parent(d) => {
-                let k = d
-                    .dir()
-                    .expect("Expected directory")
-                    .items
-                    .first_key_value()
-                    .map(|(v, _)| v.clone());
-                if let Some(k) = k {
-                    self.0 = DirEntryInner::Item(k, d);
-                }
+        let Some(k) = self.key.take() else {
+            let Some((k, v)) = d.items.first_key_value() else {
+                drop(d);
+                self.node = None;
+                return None;
+            };
+            self.key = Some(k.clone());
+            return Some(Ok((k.clone(), v.clone())));
+        };
 
-                Some(wasi::filesystem::types::DirectoryEntry {
-                    name: "..".to_string(),
-                    type_: wasi::filesystem::types::DescriptorType::Directory,
-                })
-            }
-            DirEntryInner::Item(c, d) => {
-                let dir = d.dir().expect("Expected directory");
-                let mut it = dir.items.range(c..);
-                let (k, v) = it.next()?;
-                let ret = wasi::filesystem::types::DirectoryEntry {
-                    name: k.to_string(),
-                    type_: v.file_type(),
-                };
+        let mut it = d.items.range(k..);
+        let (k, v) = it.next()?;
+        let ret = (k.clone(), v.clone());
 
-                let n = it.next().map(|(v, _)| v.clone());
-                if let Some(k) = n {
-                    drop(dir);
-                    self.0 = DirEntryInner::Item(k, d);
-                }
-
-                Some(ret)
-            }
-            DirEntryInner::None => None,
-        }
+        let Some((k, _)) = it.next() else {
+            drop(d);
+            self.node = None;
+            return None;
+        };
+        self.key = Some(k.clone());
+        Some(Ok(ret))
     }
 }
 

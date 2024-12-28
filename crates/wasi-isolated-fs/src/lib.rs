@@ -4,7 +4,7 @@ pub mod errors;
 pub mod fs_host;
 pub mod fs_isolated;
 mod items;
-mod preview1;
+pub mod preview1;
 pub mod stdio;
 mod wasi;
 

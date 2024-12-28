@@ -1,6 +1,8 @@
 #![allow(unused_variables)]
 
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
+use std::mem::transmute;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -9,7 +11,7 @@ use cap_fs_ext::{FileTypeExt, MetadataExt};
 use cfg_if::cfg_if;
 use fs_set_times::SetTimes;
 use system_interface::fs::FileIoExt;
-use wiggle::{GuestMemory, GuestPtr};
+use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
 use crate::bindings::types::*;
 use crate::context::WasiContext;
@@ -17,6 +19,123 @@ use crate::fs_host::Descriptor;
 use crate::fs_isolated::NodeItem;
 use crate::items::{Item, MaybeBorrowMut, ResItem};
 use crate::EMPTY_BUF;
+
+pub struct P1File {
+    preopen: Option<String>,
+    cursor: Option<usize>,
+    desc: P1Desc,
+}
+
+#[non_exhaustive]
+pub enum P1Desc {
+    IsoFS(crate::fs_isolated::CapWrapper),
+    HostFS(crate::fs_host::CapWrapper),
+}
+
+pub enum P1DescR<'a> {
+    IsoFS(MaybeBorrowMut<'a, crate::fs_isolated::CapWrapper>),
+    HostFS(MaybeBorrowMut<'a, crate::fs_host::CapWrapper>),
+}
+
+impl From<P1Desc> for P1DescR<'_> {
+    fn from(v: P1Desc) -> Self {
+        match v {
+            P1Desc::IsoFS(v) => Self::IsoFS(v.into()),
+            P1Desc::HostFS(v) => Self::HostFS(v.into()),
+        }
+    }
+}
+
+impl<'a> From<&'a mut P1Desc> for P1DescR<'a> {
+    fn from(v: &'a mut P1Desc) -> Self {
+        match v {
+            P1Desc::IsoFS(v) => Self::IsoFS(v.into()),
+            P1Desc::HostFS(v) => Self::HostFS(v.into()),
+        }
+    }
+}
+
+impl From<crate::fs_isolated::CapWrapper> for P1Desc {
+    fn from(v: crate::fs_isolated::CapWrapper) -> Self {
+        Self::IsoFS(v)
+    }
+}
+
+impl From<crate::fs_host::CapWrapper> for P1Desc {
+    fn from(v: crate::fs_host::CapWrapper) -> Self {
+        Self::HostFS(v)
+    }
+}
+
+impl From<crate::fs_isolated::CapWrapper> for P1File {
+    fn from(v: crate::fs_isolated::CapWrapper) -> Self {
+        Self::new(v.into())
+    }
+}
+
+impl From<crate::fs_host::CapWrapper> for P1File {
+    fn from(v: crate::fs_host::CapWrapper) -> Self {
+        Self::new(v.into())
+    }
+}
+
+impl P1File {
+    #[inline(always)]
+    pub fn new(desc: P1Desc) -> Self {
+        Self {
+            preopen: None,
+            cursor: Some(0),
+            desc,
+        }
+    }
+
+    #[inline(always)]
+    pub fn with_cursor(desc: P1Desc, cursor: usize) -> Self {
+        Self {
+            preopen: None,
+            cursor: None,
+            desc,
+        }
+    }
+
+    #[inline(always)]
+    pub fn with_append(desc: P1Desc) -> Self {
+        Self {
+            preopen: None,
+            cursor: None,
+            desc,
+        }
+    }
+
+    #[inline(always)]
+    pub fn with_preopen(desc: P1Desc, preopen: String) -> Self {
+        Self {
+            preopen: Some(preopen),
+            cursor: Some(0),
+            desc,
+        }
+    }
+
+    #[inline(always)]
+    pub fn desc(&self) -> &P1Desc {
+        &self.desc
+    }
+
+    #[inline(always)]
+    pub fn get_cursor(&self) -> Option<usize> {
+        self.cursor
+    }
+
+    #[inline(always)]
+    pub fn set_cursor(&mut self, cursor: Option<usize>) {
+        self.cursor = cursor;
+    }
+
+    #[inline(always)]
+    pub fn preopen(&self) -> Option<&str> {
+        self.preopen.as_deref()
+    }
+}
 
 struct ResOwned<T>(T);
 
@@ -52,8 +171,11 @@ impl<T: ResItem> ResItem for ResOwned<T> {
 
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum FdItem<'a> {
-    IsoFSNode(MaybeBorrowMut<'a, Box<crate::fs_isolated::CapWrapper>>),
-    HostFSDesc(MaybeBorrowMut<'a, Box<crate::fs_host::CapWrapper>>),
+    P1File {
+        preopen: Option<Cow<'a, str>>,
+        cursor: Option<MaybeBorrowMut<'a, usize>>,
+        desc: P1DescR<'a>,
+    },
     StdinSignal(MaybeBorrowMut<'a, Arc<crate::stdio::StdinSignal>>),
     StdoutBp(MaybeBorrowMut<'a, Arc<crate::stdio::StdoutBypass>>),
     StderrBp(MaybeBorrowMut<'a, Arc<crate::stdio::StderrBypass>>),
@@ -65,14 +187,13 @@ pub(crate) enum FdItem<'a> {
 
 #[allow(clippy::enum_variant_names, clippy::borrowed_box, dead_code)]
 pub(crate) enum FdItemR<'a> {
-    IsoFSNode(&'a Box<crate::fs_isolated::CapWrapper>),
-    HostFSDesc(&'a Box<crate::fs_host::CapWrapper>),
-    StdinSignal(&'a Arc<crate::stdio::StdinSignal>),
-    StdoutBp(&'a Arc<crate::stdio::StdoutBypass>),
-    StderrBp(&'a Arc<crate::stdio::StderrBypass>),
-    StdoutLBuf(&'a Arc<crate::stdio::StdoutCbLineBuffered>),
-    StdoutBBuf(&'a Arc<crate::stdio::StdoutCbBlockBuffered>),
-    BoxedRead(&'a Box<dyn Send + Sync + std::io::Read>),
+    P1File(&'a P1File),
+    StdinSignal(&'a crate::stdio::StdinSignal),
+    StdoutBp(&'a crate::stdio::StdoutBypass),
+    StderrBp(&'a crate::stdio::StderrBypass),
+    StdoutLBuf(&'a crate::stdio::StdoutCbLineBuffered),
+    StdoutBBuf(&'a crate::stdio::StdoutCbBlockBuffered),
+    BoxedRead(&'a (dyn Send + Sync + std::io::Read)),
     NullStdio(&'a crate::stdio::NullStdio),
 }
 
@@ -92,8 +213,11 @@ impl ResItem for Fd {
 
     fn from_item<'a>(item: Item) -> Option<Self::ItemOut<'a>> {
         Some(match item {
-            Item::IsoFSNode(v) => FdItem::IsoFSNode(v.into()),
-            Item::HostFSDesc(v) => FdItem::HostFSDesc(v.into()),
+            Item::P1File(v) => FdItem::P1File {
+                preopen: v.preopen.map(Cow::Owned),
+                cursor: v.cursor.map(MaybeBorrowMut::Owned),
+                desc: v.desc.into(),
+            },
             Item::StdinSignal(v) => FdItem::StdinSignal(v.into()),
             Item::StdoutBp(v) => FdItem::StdoutBp(v.into()),
             Item::StderrBp(v) => FdItem::StderrBp(v.into()),
@@ -107,8 +231,7 @@ impl ResItem for Fd {
 
     fn from_item_ref(item: &Item) -> Option<Self::ItemOutRef<'_>> {
         Some(match item {
-            Item::IsoFSNode(v) => FdItemR::IsoFSNode(v),
-            Item::HostFSDesc(v) => FdItemR::HostFSDesc(v),
+            Item::P1File(v) => FdItemR::P1File(v),
             Item::StdinSignal(v) => FdItemR::StdinSignal(v),
             Item::StdoutBp(v) => FdItemR::StdoutBp(v),
             Item::StderrBp(v) => FdItemR::StderrBp(v),
@@ -122,8 +245,11 @@ impl ResItem for Fd {
 
     fn from_item_mut(item: &mut Item) -> Option<Self::ItemOut<'_>> {
         Some(match item {
-            Item::IsoFSNode(v) => FdItem::IsoFSNode(v.into()),
-            Item::HostFSDesc(v) => FdItem::HostFSDesc(v.into()),
+            Item::P1File(v) => FdItem::P1File {
+                preopen: v.preopen.as_deref().map(Cow::Borrowed),
+                cursor: v.cursor.as_mut().map(MaybeBorrowMut::Borrowed),
+                desc: (&mut v.desc).into(),
+            },
             Item::StdinSignal(v) => FdItem::StdinSignal(v.into()),
             Item::StdoutBp(v) => FdItem::StdoutBp(v.into()),
             Item::StderrBp(v) => FdItem::StderrBp(v.into()),
@@ -136,95 +262,90 @@ impl ResItem for Fd {
     }
 }
 
-struct MemIO<'a, 'b> {
+struct MemIO<'a, 'b, T> {
     mem: &'a mut GuestMemory<'b>,
     len: Size,
-    off: Size,
-    iov: IovecArray,
+    iov: T,
 }
 
-impl<'a, 'b> MemIO<'a, 'b> {
-    fn new(mem: &'a mut GuestMemory<'b>, iov: IovecArray) -> Result<Self, Error> {
+impl<'a, 'b> MemIO<'a, 'b, IovecArray> {
+    fn new_read(mem: &'a mut GuestMemory<'b>, iov: IovecArray) -> Result<Self, Error> {
         let mut len: Size = 0;
         for p in iov.iter() {
             len = len.saturating_add(mem.read(p?)?.buf_len);
         }
 
-        Ok(Self {
-            mem,
-            len,
-            iov,
-            off: 0,
-        })
+        Ok(Self { mem, len, iov })
     }
 
     fn read<T>(
-        &mut self,
+        self,
         mut t: T,
         mut f: impl FnMut(&mut T, Size) -> Result<(Cow<'_, [u8]>, Size), Error>,
     ) -> Result<Size, Error> {
-        if self.len == 0 {
+        let Self { mem, mut len, iov } = self;
+        if len == 0 {
             return Ok(0);
         }
 
+        let mut iov = iov.iter();
         let mut n = 0;
         let Iovec {
             buf: mut p,
             buf_len: mut blen,
-        } = self.mem.read(self.iov.as_ptr())?;
-        blen -= self.off;
-        p = p.add(self.off)?;
-        while self.len > 0 {
-            let (s, mut l) = f(&mut t, self.len)?;
+        } = mem.read(
+            iov.next()
+                .expect("IovecArray ran out before reading complete")?,
+        )?;
+        while len > 0 {
+            let (s, mut l) = f(&mut t, len)?;
             if l == 0 {
                 // EOF
                 break;
             }
 
             debug_assert!(
-                l <= self.len,
+                l <= len,
                 "too many bytes returned (asked for {} bytes, got {} bytes)",
-                self.len,
+                len,
                 l
             );
             n += l;
-            self.len -= l;
+            len -= l;
             let mut s = &s[..];
             while l > 0 {
                 // Skip empty iovecs
                 while blen == 0 {
-                    debug_assert_ne!(self.iov.len(), 0, "IO slice ran out before length ran out (remaining length: {}, writing length: {})", self.len, l);
-                    self.iov = self.iov.as_ptr().add(1)?.as_array(self.iov.len() - 1);
-                    self.off = 0;
                     Iovec {
                         buf: p,
                         buf_len: blen,
-                    } = self.mem.read(self.iov.as_ptr())?;
+                    } = mem.read(
+                        iov.next()
+                            .expect("IovecArray ran out before reading complete")?,
+                    )?;
                 }
 
                 let i = l.min(blen);
                 let p_ = p;
                 l -= i;
                 blen -= i;
-                self.off += i;
                 p = p.add(i)?;
 
                 s = if let Some((a, b)) = s.split_at_checked(i.try_into()?) {
                     // Copy data
-                    self.mem.copy_from_slice(a, p_.as_array(i))?;
+                    mem.copy_from_slice(a, p_.as_array(i))?;
                     b
                 } else {
                     // Copy remaining data
                     let mut j = s.len() as Size;
-                    self.mem.copy_from_slice(s, p_.as_array(j))?;
+                    mem.copy_from_slice(s, p_.as_array(j))?;
 
                     // Fill zeros
                     let mut p = p_.add(j)?;
                     j = i - j;
                     while j > 0 {
                         let k = j.min(EMPTY_BUF.len() as _);
-                        self.mem
-                            .copy_from_slice(&EMPTY_BUF[..k as usize], p.as_array(k))?;
+                        mem.copy_from_slice(&EMPTY_BUF[..k as usize], p.as_array(k))?;
                         p = p.add(k)?;
                         j -= k;
                     }
@@ -234,6 +355,68 @@ impl<'a, 'b> MemIO<'a, 'b> {
         }
 
         Ok(n)
+    }
+}
+
+impl<'a, 'b> MemIO<'a, 'b, CiovecArray> {
+    fn new_write(mem: &'a mut GuestMemory<'b>, iov: CiovecArray) -> Result<Self, Error> {
+        let mut len: Size = 0;
+        for p in iov.iter() {
+            len = len.saturating_add(mem.read(p?)?.buf_len);
+        }
+
+        Ok(Self { mem, len, iov })
+    }
+
+    fn write(self, mut f: impl FnMut(&[u8]) -> Result<Size, Error>) -> Result<Size, Error> {
+        let Self { mem, iov, len } = self;
+        if len == 0 {
+            return Ok(0);
+        }
+
+        let Some(Ciovec { buf, buf_len }) = iov
+            .iter()
+            .filter_map(|i| match i.and_then(|i| mem.read(i)) {
+                Ok(v) if v.buf_len == 0 => None,
+                v => Some(v),
+            })
+            .next()
+            .transpose()?
+        else {
+            return Ok(0);
+        };
+
+        let buf = buf.offset();
+        let s = usize::try_from(buf)?;
+        let l = usize::try_from(buf_len)?;
+
+        let src = match mem {
+            GuestMemory::Unshared(mem) => mem.get(s..).and_then(|v| v.get(..l)),
+            GuestMemory::Shared(mem) => mem
+                .get(s..)
+                .and_then(|v| v.get(..l))
+                .map(|v| unsafe { transmute::<&[UnsafeCell<u8>], &[u8]>(v) }),
+        };
+        match src {
+            Some(src) => f(src),
+            None => Err(GuestError::PtrOutOfBounds(Region {
+                start: buf,
+                len: buf_len,
+            })
+            .into()),
+        }
+    }
+}
+
+fn iso_inode(v: &Arc<crate::fs_isolated::Node>) -> Inode {
+    (v.inode() as Inode) ^ (Arc::as_ptr(v) as Inode)
+}
+
+fn iso_filetype(v: &crate::fs_isolated::Node) -> Filetype {
+    match v.0 {
+        NodeItem::Dir(_) => Filetype::Directory,
+        NodeItem::File(_) => Filetype::RegularFile,
+        NodeItem::Link(_) => Filetype::SymbolicLink,
     }
 }
 
@@ -394,15 +577,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         advice: Advice,
     ) -> Result<(), Error> {
         match self.items.get_item(fd)? {
-            FdItem::IsoFSNode(_)
-            | FdItem::StdinSignal(_)
-            | FdItem::StdoutBp(_)
-            | FdItem::StderrBp(_)
-            | FdItem::StdoutLBuf(_)
-            | FdItem::StdoutBBuf(_)
-            | FdItem::BoxedRead(_)
-            | FdItem::NullStdio(_) => (),
-            FdItem::HostFSDesc(v) => v.file()?.advise(
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => v.file()?.advise(
                 off,
                 len,
                 match advice {
@@ -414,6 +592,14 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     Advice::Noreuse => system_interface::fs::Advice::NoReuse,
                 },
             )?,
+            FdItem::P1File { .. }
+            | FdItem::StdinSignal(_)
+            | FdItem::StdoutBp(_)
+            | FdItem::StderrBp(_)
+            | FdItem::StdoutLBuf(_)
+            | FdItem::StdoutBBuf(_)
+            | FdItem::BoxedRead(_)
+            | FdItem::NullStdio(_) => (),
         }
         Ok(())
     }
@@ -436,8 +622,14 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
 
     fn fd_datasync(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), Error> {
         match self.items.get_item(fd)? {
-            FdItem::IsoFSNode(_) => (),
-            FdItem::HostFSDesc(v) => match &**v.desc() {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(_),
+                ..
+            } => (),
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => match &**v.desc() {
                 Descriptor::File(v) => v.sync_data().or_else(|e| {
                     cfg_if!{
                         // On windows, `sync_data` uses `FileFlushBuffers` which fails with
@@ -463,7 +655,11 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
 
     fn fd_fdstat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Fdstat, Error> {
         Ok(match self.items.get_item(fd)? {
-            FdItem::IsoFSNode(v) => {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                cursor,
+                ..
+            } => {
                 let mut rights = Rights::FD_DATASYNC
                     | Rights::FD_SYNC
                     | Rights::FD_ADVISE
@@ -511,12 +707,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
 
                 Fdstat {
-                    fs_filetype: match v.node().0 {
-                        NodeItem::Dir(_) => Filetype::Directory,
-                        NodeItem::File(_) => Filetype::RegularFile,
-                        NodeItem::Link(_) => Filetype::SymbolicLink,
-                    },
-                    fs_flags: if v.node().is_file() && v.cursor.is_none() {
+                    fs_filetype: iso_filetype(v.node()),
+                    fs_flags: if v.node().is_file() && cursor.is_none() {
                         Fdflags::APPEND
                     } else {
                         Fdflags::empty()
@@ -525,7 +717,11 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     fs_rights_inheriting: rights,
                 }
             }
-            FdItem::HostFSDesc(v) => {
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                cursor,
+                ..
+            } => {
                 let f = match &**v.desc() {
                     Descriptor::File(v) => v.metadata(),
                     Descriptor::Dir(v) => v.dir_metadata(),
@@ -573,7 +769,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
 
                 Fdstat {
                     fs_filetype: to_filetype(f),
-                    fs_flags: if matches!(**v.desc(), Descriptor::File(_)) && v.cursor.is_none() {
+                    fs_flags: if matches!(**v.desc(), Descriptor::File(_)) && cursor.is_none() {
                         Fdflags::APPEND
                     } else {
                         Fdflags::empty()
@@ -638,7 +834,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
 
     fn fd_filestat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Filestat, Error> {
         Ok(match self.items.get_item(fd)? {
-            FdItem::IsoFSNode(v) => {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => {
                 fn map_stamp(
                     stamp: &crate::fs_isolated::Timestamp,
                 ) -> (Timestamp, Timestamp, Timestamp) {
@@ -656,19 +855,17 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     }
                     NodeItem::File(v) => {
                         let v = v.lock();
-                        (Filetype::Directory, v.len(), map_stamp(v.stamp()))
+                        (Filetype::RegularFile, v.len(), map_stamp(v.stamp()))
                     }
                     NodeItem::Link(v) => {
                         let v = v.read();
-                        (Filetype::Directory, v.len(), map_stamp(v.stamp()))
+                        (Filetype::SymbolicLink, v.len(), map_stamp(v.stamp()))
                     }
                 };
 
                 Filestat {
                     dev: 127,
-                    ino: (v.node().inode() as u64)
-                        .wrapping_mul(9973)
-                        .wrapping_add(Arc::as_ptr(v.node()) as u64),
+                    ino: iso_inode(v.node()),
                     nlink: 0,
                     size: size as _,
                     filetype,
@@ -677,7 +874,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     atim,
                 }
             }
-            FdItem::HostFSDesc(v) => {
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => {
                 fn f(v: std::io::Result<cap_std::time::SystemTime>) -> Timestamp {
                     v.ok().map_or(0, |v| to_timestamp(v.into_std()))
                 }
@@ -731,8 +931,14 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         size: Filesize,
     ) -> Result<(), Error> {
         match self.items.get_item(fd)? {
-            FdItem::IsoFSNode(v) => v.resize(size.try_into().map_err(AnyError::from)?)?,
-            FdItem::HostFSDesc(v) => v.write()?.file()?.set_len(size)?,
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => v.resize(size.try_into().map_err(AnyError::from)?)?,
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => v.write()?.file()?.set_len(size)?,
             _ => return Err(Errno::Inval.into()),
         }
         Ok(())
@@ -747,7 +953,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fst_flags: Fstflags,
     ) -> Result<(), Error> {
         match self.items.get_item(fd)? {
-            FdItem::IsoFSNode(v) => v.set_time(|stamp| -> Result<_, Error> {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => v.set_time(|stamp| -> Result<_, Error> {
                 let now = SystemTime::now();
                 set_time(
                     &mut stamp.mtime,
@@ -765,7 +974,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 )?;
                 Ok(())
             })?,
-            FdItem::HostFSDesc(v) => {
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => {
                 let atime = time_cvt(
                     atim,
                     fst_flags.contains(Fstflags::ATIM),
@@ -793,10 +1005,13 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         iovs: IovecArray,
         mut offset: Filesize,
     ) -> Result<Size, Error> {
-        let mut memio = MemIO::new(mem, iovs)?;
+        let memio = MemIO::new_read(mem, iovs)?;
 
         match self.items.get_item(fd)? {
-            FdItem::IsoFSNode(v) => {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => {
                 v.access().read_or_err()?;
                 let mut off = usize::try_from(offset)?;
                 memio.read(v.node().file().ok_or(Errno::Isdir)?, |v, len| {
@@ -805,25 +1020,37 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     Ok((s.into(), l as Size))
                 })
             }
-            FdItem::HostFSDesc(v) => memio.read(
-                (
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => {
+                let v = (
                     v.read()?.file()?,
                     vec![0u8; usize::try_from(memio.len)?.min(EMPTY_BUF.len())],
-                ),
-                |(v, ret), len| {
+                );
+                memio.read(v, |(v, ret), len| {
                     let i = ret.len().min(len.try_into()?);
                     let ret = &mut ret[..i];
                     let l = crate::fs_host::CapWrapper::read_at(v, &mut *ret, offset)?;
                     offset += l as Filesize;
                     Ok(((&ret[..l]).into(), l as Size))
-                },
-            ),
+                })
+            }
             _ => Err(Errno::Inval.into()),
         }
     }
 
-    fn fd_prestat_get(&mut self, mem: &mut GuestMemory<'_>, fd: Fd) -> Result<Prestat, Error> {
-        todo!()
+    fn fd_prestat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Prestat, Error> {
+        if let FdItem::P1File {
+            preopen: Some(s), ..
+        } = self.items.get_item(fd)?
+        {
+            Ok(Prestat::Dir(PrestatDir {
+                pr_name_len: s.len().try_into()?,
+            }))
+        } else {
+            Err(Errno::Badf.into())
+        }
     }
 
     fn fd_prestat_dir_name(
@@ -833,7 +1060,19 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         path: GuestPtr<u8>,
         path_len: Size,
     ) -> Result<(), Error> {
-        todo!()
+        if let FdItem::P1File {
+            preopen: Some(s), ..
+        } = self.items.get_item(fd)?
+        {
+            if s.len() > usize::try_from(path_len)? {
+                return Err(Errno::Nametoolong.into());
+            }
+
+            mem.copy_from_slice(s.as_bytes(), path.as_array(s.len().try_into()?))?;
+            Ok(())
+        } else {
+            Err(Errno::Notdir.into())
+        }
     }
 
     fn fd_pwrite(
@@ -841,9 +1080,37 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         mem: &mut GuestMemory<'_>,
         fd: Fd,
         iovs: CiovecArray,
-        offset: Filesize,
+        mut offset: Filesize,
     ) -> Result<Size, Error> {
-        todo!()
+        let memio = MemIO::new_write(mem, iovs)?;
+
+        match self.items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => {
+                v.access().write_or_err()?;
+                let mut v = v.node().file().ok_or(Errno::Isdir)?;
+                let mut off = usize::try_from(offset)?;
+                memio.write(|s| {
+                    v.write(s, off)?;
+                    off += s.len();
+                    Ok(s.len() as Size)
+                })
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => {
+                let v = v.write()?.file()?;
+                memio.write(|s| {
+                    let l = v.write_at(s, offset)?;
+                    offset += l as Filesize;
+                    Ok(l as Size)
+                })
+            }
+            _ => Err(Errno::Inval.into()),
+        }
     }
 
     fn fd_read(
@@ -852,7 +1119,53 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fd: Fd,
         iovs: IovecArray,
     ) -> Result<Size, Error> {
-        todo!()
+        let memio = MemIO::new_read(mem, iovs)?;
+
+        match self.items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                cursor,
+                ..
+            } => {
+                v.access().read_or_err()?;
+                let v = v.node().file().ok_or(Errno::Isdir)?;
+                let Some(mut c) = cursor else { return Ok(0) };
+                let old = *c;
+
+                let r = memio.read(v, |v, len| {
+                    let (s, l) = v.read(len.try_into()?, *c);
+                    *c += l;
+                    Ok((s.into(), l as Size))
+                });
+                if r.is_err() {
+                    *c = old;
+                }
+                r
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                cursor,
+                ..
+            } => {
+                let v = v.read()?.file()?;
+                let Some(mut c) = cursor else { return Ok(0) };
+                let old = *c;
+                let b = vec![0u8; usize::try_from(memio.len)?.min(EMPTY_BUF.len())];
+
+                let r = memio.read((v, b), |(v, ret), len| {
+                    let i = ret.len().min(len.try_into()?);
+                    let ret = &mut ret[..i];
+                    let l = crate::fs_host::CapWrapper::read_at(v, &mut *ret, *c as _)?;
+                    *c += l;
+                    Ok(((&ret[..l]).into(), l as Size))
+                });
+                if r.is_err() {
+                    *c = old;
+                }
+                r
+            }
+            _ => Err(Errno::Inval.into()),
+        }
     }
 
     fn fd_readdir(
@@ -863,7 +1176,157 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         buf_len: Size,
         cookie: Dircookie,
     ) -> Result<Size, Error> {
-        todo!()
+        fn write_dirent(buf: &mut [u8], d: Dirent) {
+            *buf[Dirent::offset_of_d_next() as usize..]
+                .split_first_chunk_mut()
+                .unwrap()
+                .0 = d.d_next.to_le_bytes();
+            *buf[Dirent::offset_of_d_ino() as usize..]
+                .split_first_chunk_mut()
+                .unwrap()
+                .0 = d.d_ino.to_le_bytes();
+            *buf[Dirent::offset_of_d_namlen() as usize..]
+                .split_first_chunk_mut()
+                .unwrap()
+                .0 = d.d_namlen.to_le_bytes();
+            buf[Dirent::offset_of_d_type() as usize] = d.d_type.into();
+        }
+
+        fn f<S: AsRef<str>>(
+            mem: &mut GuestMemory<'_>,
+            buf: GuestPtr<u8>,
+            buf_len: Size,
+            cookie: Dircookie,
+            cur_ino: Inode,
+            it: impl IntoIterator<Item = Result<(Inode, Filetype, S), Error>>,
+        ) -> Result<Size, Error> {
+            let buf = buf.offset();
+            let s = usize::try_from(buf)?;
+            let l = usize::try_from(buf_len)?;
+            let b = match mem {
+                GuestMemory::Unshared(mem) => mem.get_mut(s..).and_then(|v| v.get_mut(..l)),
+                GuestMemory::Shared(mem) => mem.get(s..).and_then(|v| v.get(..l)).map(|v| {
+                    // SAFETY: Responsibility for shared access exclusivity is on guest.
+                    #[allow(mutable_transmutes)]
+                    unsafe {
+                        transmute::<&[UnsafeCell<u8>], &mut [u8]>(v)
+                    }
+                }),
+            };
+            let Some(mut buf) = b else {
+                return Err(GuestError::PtrOutOfBounds(Region {
+                    start: buf,
+                    len: buf_len,
+                })
+                .into());
+            };
+
+            let entry_size = Dirent::guest_size() as usize;
+
+            let mut i = entry_size + 1;
+            if cookie == 0 {
+                let Some((b, r)) = buf.split_at_mut_checked(i) else {
+                    return Ok(0);
+                };
+                write_dirent(
+                    b,
+                    Dirent {
+                        d_next: 1,
+                        d_ino: cur_ino,
+                        d_namlen: 1,
+                        d_type: Filetype::Directory,
+                    },
+                );
+                b[entry_size] = b'.';
+                buf = r;
+            }
+
+            if cookie <= 1 {
+                let Some((b, r)) = buf.split_at_mut_checked(entry_size + 2) else {
+                    return Ok(i as _);
+                };
+                write_dirent(
+                    b,
+                    Dirent {
+                        d_next: 2,
+                        d_ino: cur_ino,
+                        d_namlen: 2,
+                        d_type: Filetype::Directory,
+                    },
+                );
+                b[entry_size..entry_size + 2].copy_from_slice(b"..");
+                (i, buf) = (i + b.len(), r);
+            }
+
+            for (v, next) in it.into_iter().zip(3 as Dircookie..) {
+                let (ino, ft, name) = v?;
+                if cookie >= next {
+                    continue;
+                }
+
+                let name = name.as_ref().as_bytes();
+                let nl = Size::try_from(name.len()).unwrap_or(Size::MIN) as usize;
+                let name = &name[..nl];
+                let Some((b, r)) = entry_size
+                    .checked_add(nl)
+                    .and_then(|i| buf.split_at_mut_checked(i))
+                else {
+                    break;
+                };
+                write_dirent(
+                    b,
+                    Dirent {
+                        d_next: next,
+                        d_ino: ino,
+                        d_namlen: nl as _,
+                        d_type: ft,
+                    },
+                );
+                b[entry_size..].copy_from_slice(name);
+                (i, buf) = (i + b.len(), r);
+            }
+
+            Ok(i as _)
+        }
+
+        match self.items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => f(
+                mem,
+                buf,
+                buf_len,
+                cookie,
+                iso_inode(v.node()),
+                v.read_directory()?.map(|v| {
+                    v.map(|(k, v)| (v.inode() as Inode, iso_filetype(&v), k))
+                        .map_err(Error::from)
+                }),
+            ),
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => {
+                let inode = v.metadata_hash(&self.hasher)?;
+                f(
+                    mem,
+                    buf,
+                    buf_len,
+                    cookie,
+                    inode.lower ^ inode.upper,
+                    v.read_dir()?.map(|v| {
+                        let v = v?;
+                        let m = v.metadata()?;
+                        let name = v.file_name().into_string().ok().ok_or(Errno::Inval)?;
+                        let ft = to_filetype(m.file_type());
+                        let inode = crate::fs_host::CapWrapper::meta_hash(m, &self.hasher);
+                        Ok((inode.lower ^ inode.upper, ft, name))
+                    }),
+                )
+            }
+            _ => Err(Errno::Inval.into()),
+        }
     }
 
     fn fd_renumber(&mut self, mem: &mut GuestMemory<'_>, fd: Fd, to: Fd) -> Result<(), Error> {
