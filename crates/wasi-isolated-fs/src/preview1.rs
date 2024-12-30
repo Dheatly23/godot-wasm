@@ -17,7 +17,7 @@ use crate::bindings::types::*;
 use crate::context::WasiContext;
 use crate::fs_host::Descriptor;
 use crate::fs_isolated::NodeItem;
-use crate::items::{Item, MaybeBorrowMut, ResItem};
+use crate::items::{Item, Items};
 use crate::EMPTY_BUF;
 
 pub struct P1File {
@@ -33,24 +33,15 @@ pub enum P1Desc {
 }
 
 pub enum P1DescR<'a> {
-    IsoFS(MaybeBorrowMut<'a, crate::fs_isolated::CapWrapper>),
-    HostFS(MaybeBorrowMut<'a, crate::fs_host::CapWrapper>),
-}
-
-impl From<P1Desc> for P1DescR<'_> {
-    fn from(v: P1Desc) -> Self {
-        match v {
-            P1Desc::IsoFS(v) => Self::IsoFS(v.into()),
-            P1Desc::HostFS(v) => Self::HostFS(v.into()),
-        }
-    }
+    IsoFS(&'a mut crate::fs_isolated::CapWrapper),
+    HostFS(&'a mut crate::fs_host::CapWrapper),
 }
 
 impl<'a> From<&'a mut P1Desc> for P1DescR<'a> {
     fn from(v: &'a mut P1Desc) -> Self {
         match v {
-            P1Desc::IsoFS(v) => Self::IsoFS(v.into()),
-            P1Desc::HostFS(v) => Self::HostFS(v.into()),
+            P1Desc::IsoFS(v) => Self::IsoFS(v),
+            P1Desc::HostFS(v) => Self::HostFS(v),
         }
     }
 }
@@ -137,54 +128,23 @@ impl P1File {
     }
 }
 
-struct ResOwned<T>(T);
-
-impl<T: ResItem> ResItem for ResOwned<T> {
-    type ItemOut<'a> = T::ItemOut<'a>;
-    type ItemOutRef<'a> = T::ItemOutRef<'a>;
-
-    #[inline(always)]
-    fn is_owned(&self) -> bool {
-        true
-    }
-
-    #[inline(always)]
-    fn id(&self) -> u32 {
-        self.0.id()
-    }
-
-    #[inline(always)]
-    fn from_item<'a>(item: Item) -> Option<T::ItemOut<'a>> {
-        T::from_item(item)
-    }
-
-    #[inline(always)]
-    fn from_item_ref(item: &Item) -> Option<T::ItemOutRef<'_>> {
-        T::from_item_ref(item)
-    }
-
-    #[inline(always)]
-    fn from_item_mut(item: &mut Item) -> Option<T::ItemOut<'_>> {
-        T::from_item_mut(item)
-    }
-}
-
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum FdItem<'a> {
     P1File {
-        preopen: Option<Cow<'a, str>>,
-        cursor: Option<MaybeBorrowMut<'a, usize>>,
+        preopen: Option<&'a str>,
+        cursor: Option<&'a mut usize>,
         desc: P1DescR<'a>,
     },
-    StdinSignal(MaybeBorrowMut<'a, Arc<crate::stdio::StdinSignal>>),
-    StdoutBp(MaybeBorrowMut<'a, Arc<crate::stdio::StdoutBypass>>),
-    StderrBp(MaybeBorrowMut<'a, Arc<crate::stdio::StderrBypass>>),
-    StdoutLBuf(MaybeBorrowMut<'a, Arc<crate::stdio::StdoutCbLineBuffered>>),
-    StdoutBBuf(MaybeBorrowMut<'a, Arc<crate::stdio::StdoutCbBlockBuffered>>),
-    BoxedRead(MaybeBorrowMut<'a, Box<dyn Send + Sync + std::io::Read>>),
-    NullStdio(MaybeBorrowMut<'a, crate::stdio::NullStdio>),
+    StdinSignal(&'a crate::stdio::StdinSignal),
+    StdoutBp(&'a crate::stdio::StdoutBypass),
+    StderrBp(&'a crate::stdio::StderrBypass),
+    StdoutLBuf(&'a crate::stdio::StdoutCbLineBuffered),
+    StdoutBBuf(&'a crate::stdio::StdoutCbBlockBuffered),
+    BoxedRead(&'a mut (dyn Send + Sync + std::io::Read)),
+    NullStdio(&'a mut crate::stdio::NullStdio),
 }
 
+/*
 #[allow(clippy::enum_variant_names, clippy::borrowed_box, dead_code)]
 pub(crate) enum FdItemR<'a> {
     P1File(&'a P1File),
@@ -197,69 +157,41 @@ pub(crate) enum FdItemR<'a> {
     NullStdio(&'a crate::stdio::NullStdio),
 }
 
-impl ResItem for Fd {
-    type ItemOut<'a> = FdItem<'a>;
-    type ItemOutRef<'a> = FdItemR<'a>;
+fn get_item_ref(items: &Items, fd: Fd) -> Result<FdItemR<'_>, Error> {
+    // SAFETY: Yeah we need that file ID.
+    let fd = unsafe {fd.inner()};
+    Ok(match items.get(fd.try_into()?) {
+        Some(Item::P1File(v)) => FdItemR::P1File(v),
+        Some(Item::StdinSignal(v)) => FdItemR::StdinSignal(v),
+        Some(Item::StdoutBp(v)) => FdItemR::StdoutBp(v),
+        Some(Item::StderrBp(v)) => FdItemR::StderrBp(v),
+        Some(Item::StdoutLBuf(v)) => FdItemR::StdoutLBuf(v),
+        Some(Item::StdoutBBuf(v)) => FdItemR::StdoutBBuf(v),
+        Some(Item::BoxedRead(v)) => FdItemR::BoxedRead(v),
+        Some(Item::NullStdio(v)) => FdItemR::NullStdio(v),
+        _ => return Err(Errno::Badf.into()),
+    })
+}
+*/
 
-    #[inline(always)]
-    fn is_owned(&self) -> bool {
-        false
-    }
-
-    #[inline(always)]
-    fn id(&self) -> u32 {
-        unsafe { self.inner() }
-    }
-
-    fn from_item<'a>(item: Item) -> Option<Self::ItemOut<'a>> {
-        Some(match item {
-            Item::P1File(v) => FdItem::P1File {
-                preopen: v.preopen.map(Cow::Owned),
-                cursor: v.cursor.map(MaybeBorrowMut::Owned),
-                desc: v.desc.into(),
-            },
-            Item::StdinSignal(v) => FdItem::StdinSignal(v.into()),
-            Item::StdoutBp(v) => FdItem::StdoutBp(v.into()),
-            Item::StderrBp(v) => FdItem::StderrBp(v.into()),
-            Item::StdoutLBuf(v) => FdItem::StdoutLBuf(v.into()),
-            Item::StdoutBBuf(v) => FdItem::StdoutBBuf(v.into()),
-            Item::BoxedRead(v) => FdItem::BoxedRead(v.into()),
-            Item::NullStdio(v) => FdItem::NullStdio(v.into()),
-            _ => return None,
-        })
-    }
-
-    fn from_item_ref(item: &Item) -> Option<Self::ItemOutRef<'_>> {
-        Some(match item {
-            Item::P1File(v) => FdItemR::P1File(v),
-            Item::StdinSignal(v) => FdItemR::StdinSignal(v),
-            Item::StdoutBp(v) => FdItemR::StdoutBp(v),
-            Item::StderrBp(v) => FdItemR::StderrBp(v),
-            Item::StdoutLBuf(v) => FdItemR::StdoutLBuf(v),
-            Item::StdoutBBuf(v) => FdItemR::StdoutBBuf(v),
-            Item::BoxedRead(v) => FdItemR::BoxedRead(v),
-            Item::NullStdio(v) => FdItemR::NullStdio(v),
-            _ => return None,
-        })
-    }
-
-    fn from_item_mut(item: &mut Item) -> Option<Self::ItemOut<'_>> {
-        Some(match item {
-            Item::P1File(v) => FdItem::P1File {
-                preopen: v.preopen.as_deref().map(Cow::Borrowed),
-                cursor: v.cursor.as_mut().map(MaybeBorrowMut::Borrowed),
-                desc: (&mut v.desc).into(),
-            },
-            Item::StdinSignal(v) => FdItem::StdinSignal(v.into()),
-            Item::StdoutBp(v) => FdItem::StdoutBp(v.into()),
-            Item::StderrBp(v) => FdItem::StderrBp(v.into()),
-            Item::StdoutLBuf(v) => FdItem::StdoutLBuf(v.into()),
-            Item::StdoutBBuf(v) => FdItem::StdoutBBuf(v.into()),
-            Item::BoxedRead(v) => FdItem::BoxedRead(v.into()),
-            Item::NullStdio(v) => FdItem::NullStdio(v.into()),
-            _ => return None,
-        })
-    }
+fn get_item(items: &mut Items, fd: Fd) -> Result<FdItem<'_>, Error> {
+    // SAFETY: Yeah we need that file ID.
+    let fd = unsafe { fd.inner() };
+    Ok(match items.get_mut(fd.try_into()?) {
+        Some(Item::P1File(v)) => FdItem::P1File {
+            preopen: v.preopen.as_deref(),
+            cursor: v.cursor.as_mut(),
+            desc: (&mut v.desc).into(),
+        },
+        Some(Item::StdinSignal(v)) => FdItem::StdinSignal(v),
+        Some(Item::StdoutBp(v)) => FdItem::StdoutBp(v),
+        Some(Item::StderrBp(v)) => FdItem::StderrBp(v),
+        Some(Item::StdoutLBuf(v)) => FdItem::StdoutLBuf(v),
+        Some(Item::StdoutBBuf(v)) => FdItem::StdoutBBuf(v),
+        Some(Item::BoxedRead(v)) => FdItem::BoxedRead(v),
+        Some(Item::NullStdio(v)) => FdItem::NullStdio(v),
+        _ => return Err(Errno::Badf.into()),
+    })
 }
 
 struct MemIO<'a, 'b, T> {
@@ -576,7 +508,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         len: Filesize,
         advice: Advice,
     ) -> Result<(), Error> {
-        match self.items.get_item(fd)? {
+        match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::HostFS(v),
                 ..
@@ -611,17 +543,19 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         _: Filesize,
         _: Filesize,
     ) -> Result<(), Error> {
-        self.items.get_item(fd)?;
+        get_item(&mut self.items, fd)?;
         Err(Errno::Notsup.into())
     }
 
     fn fd_close(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), Error> {
-        self.items.get_item(ResOwned(fd))?;
+        self.items
+            .remove(unsafe { fd.inner().try_into()? })
+            .ok_or(Errno::Badf)?;
         Ok(())
     }
 
     fn fd_datasync(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), Error> {
-        match self.items.get_item(fd)? {
+        match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(_),
                 ..
@@ -654,7 +588,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     }
 
     fn fd_fdstat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Fdstat, Error> {
-        Ok(match self.items.get_item(fd)? {
+        Ok(match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 cursor,
@@ -817,7 +751,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fd: Fd,
         _: Fdflags,
     ) -> Result<(), Error> {
-        self.items.get_item(fd)?;
+        get_item(&mut self.items, fd)?;
         Err(Errno::Notsup.into())
     }
 
@@ -828,12 +762,12 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         _: Rights,
         _: Rights,
     ) -> Result<(), Error> {
-        self.items.get_item(fd)?;
+        get_item(&mut self.items, fd)?;
         Err(Errno::Notsup.into())
     }
 
     fn fd_filestat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Filestat, Error> {
-        Ok(match self.items.get_item(fd)? {
+        Ok(match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 ..
@@ -930,7 +864,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fd: Fd,
         size: Filesize,
     ) -> Result<(), Error> {
-        match self.items.get_item(fd)? {
+        match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 ..
@@ -952,7 +886,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         mtim: Timestamp,
         fst_flags: Fstflags,
     ) -> Result<(), Error> {
-        match self.items.get_item(fd)? {
+        match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 ..
@@ -1007,7 +941,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<Size, Error> {
         let memio = MemIO::new_read(mem, iovs)?;
 
-        match self.items.get_item(fd)? {
+        match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 ..
@@ -1043,7 +977,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     fn fd_prestat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Prestat, Error> {
         if let FdItem::P1File {
             preopen: Some(s), ..
-        } = self.items.get_item(fd)?
+        } = get_item(&mut self.items, fd)?
         {
             Ok(Prestat::Dir(PrestatDir {
                 pr_name_len: s.len().try_into()?,
@@ -1062,7 +996,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<(), Error> {
         if let FdItem::P1File {
             preopen: Some(s), ..
-        } = self.items.get_item(fd)?
+        } = get_item(&mut self.items, fd)?
         {
             if s.len() > usize::try_from(path_len)? {
                 return Err(Errno::Nametoolong.into());
@@ -1084,7 +1018,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<Size, Error> {
         let memio = MemIO::new_write(mem, iovs)?;
 
-        match self.items.get_item(fd)? {
+        match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 ..
@@ -1121,7 +1055,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<Size, Error> {
         let memio = MemIO::new_read(mem, iovs)?;
 
-        match self.items.get_item(fd)? {
+        match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 cursor,
@@ -1129,7 +1063,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             } => {
                 v.access().read_or_err()?;
                 let v = v.node().file().ok_or(Errno::Isdir)?;
-                let Some(mut c) = cursor else { return Ok(0) };
+                let Some(c) = cursor else { return Ok(0) };
                 let old = *c;
 
                 let r = memio.read(v, |v, len| {
@@ -1148,7 +1082,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 ..
             } => {
                 let v = v.read()?.file()?;
-                let Some(mut c) = cursor else { return Ok(0) };
+                let Some(c) = cursor else { return Ok(0) };
                 let old = *c;
                 let b = vec![0u8; usize::try_from(memio.len)?.min(EMPTY_BUF.len())];
 
@@ -1289,7 +1223,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             Ok(i as _)
         }
 
-        match self.items.get_item(fd)? {
+        match get_item(&mut self.items, fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 ..
