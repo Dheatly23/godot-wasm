@@ -1859,7 +1859,30 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fd: Fd,
         new_path: GuestPtr<str>,
     ) -> Result<(), Error> {
-        todo!()
+        let path = mem.as_cow_str(old_path)?;
+        let target = mem.as_cow_str(new_path)?;
+
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File(P1File {
+                desc: P1Desc::IsoFS(v),
+                ..
+            }) => {
+                let p = to_utf8_path(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(Errno::Inval.into());
+                };
+                let controller = try_iso_fs(&self.iso_fs)?;
+
+                v.open(controller, parent, true, None, AccessMode::W)?
+                    .create_link(controller, name, &to_utf8_path(target))?;
+            }
+            FdItem::P1File(P1File {
+                desc: P1Desc::HostFS(_),
+                ..
+            }) => return Err(Errno::Notsup.into()),
+            _ => return Err(Errno::Badf.into()),
+        }
+        Ok(())
     }
 
     fn path_unlink_file(
@@ -1868,7 +1891,28 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fd: Fd,
         path: GuestPtr<str>,
     ) -> Result<(), Error> {
-        todo!()
+        let path = mem.as_cow_str(path)?;
+
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File(P1File {
+                desc: P1Desc::IsoFS(v),
+                ..
+            }) => {
+                let p = to_utf8_path(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(Errno::Inval.into());
+                };
+
+                v.open(try_iso_fs(&self.iso_fs)?, parent, true, None, AccessMode::W)?
+                    .unlink(name, false)?;
+            }
+            FdItem::P1File(P1File {
+                desc: P1Desc::HostFS(v),
+                ..
+            }) => v.write()?.dir()?.remove_file_or_symlink(to_path(path))?,
+            _ => return Err(Errno::Badf.into()),
+        }
+        Ok(())
     }
 
     fn poll_oneoff(
