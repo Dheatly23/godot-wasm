@@ -78,7 +78,7 @@ impl P1Items {
 
 pub struct P1File {
     preopen: Option<String>,
-    cursor: Option<usize>,
+    cursor: Option<u64>,
     desc: P1Desc,
 }
 
@@ -137,7 +137,7 @@ impl P1File {
     }
 
     #[inline(always)]
-    pub fn with_cursor(desc: P1Desc, cursor: usize) -> Self {
+    pub fn with_cursor(desc: P1Desc, cursor: u64) -> Self {
         Self {
             preopen: None,
             cursor: None,
@@ -169,12 +169,12 @@ impl P1File {
     }
 
     #[inline(always)]
-    pub fn get_cursor(&self) -> Option<usize> {
+    pub fn get_cursor(&self) -> Option<u64> {
         self.cursor
     }
 
     #[inline(always)]
-    pub fn set_cursor(&mut self, cursor: Option<usize>) {
+    pub fn set_cursor(&mut self, cursor: Option<u64>) {
         self.cursor = cursor;
     }
 
@@ -204,7 +204,7 @@ macro_rules! p1item_gen {
         enum FdItem<'a> {
             P1File {
                 preopen: Option<&'a str>,
-                cursor: Option<&'a mut usize>,
+                cursor: Option<&'a mut u64>,
                 desc: P1DescR<'a>,
             },
             $($i($t2)),*
@@ -1109,8 +1109,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 let old = *c;
 
                 let r = memio.read(v, |v, len| {
-                    let (s, l) = v.read(len.try_into()?, *c);
-                    *c += l;
+                    let (s, l) = v.read(len.try_into()?, (*c).try_into().unwrap_or(usize::MAX));
+                    *c += l as u64;
                     Ok((s.into(), l as Size))
                 });
                 if r.is_err() {
@@ -1136,7 +1136,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     let mut ret = vec![0; EMPTY_BUF.len().min(len.try_into()?)];
                     let l = crate::fs_host::CapWrapper::read_at(v, &mut ret, *c as _)?;
                     ret.truncate(l);
-                    *c += l;
+                    *c += l as u64;
                     has_read = true;
                     Ok((ret.into(), l as Size))
                 });
@@ -1321,7 +1321,37 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         offset: Filedelta,
         whence: Whence,
     ) -> Result<Filesize, Error> {
-        todo!()
+        Ok(match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                cursor: Some(c),
+                ..
+            } => {
+                let l = v.node().file().ok_or(Errno::Isdir)?.len() as u64;
+                *c = match whence {
+                    Whence::Set => offset.try_into().ok(),
+                    Whence::Cur => c.checked_add_signed(offset),
+                    Whence::End => l.checked_add_signed(offset),
+                }
+                .ok_or(Errno::Inval)?;
+                *c as _
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                cursor: Some(c),
+                ..
+            } => {
+                let v = v.file()?;
+                *c = match whence {
+                    Whence::Set => offset.try_into().ok(),
+                    Whence::Cur => c.checked_add_signed(offset),
+                    Whence::End => v.metadata()?.len().checked_add_signed(offset),
+                }
+                .ok_or(Errno::Inval)?;
+                *c as _
+            }
+            _ => return Err(Errno::Badf.into()),
+        })
     }
 
     fn fd_sync(&mut self, mem: &mut GuestMemory<'_>, fd: Fd) -> Result<(), Error> {
