@@ -9,7 +9,6 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::Error as AnyError;
 use cap_fs_ext::{FileTypeExt, MetadataExt};
-use cfg_if::cfg_if;
 use fs_set_times::SetTimes;
 use system_interface::fs::FileIoExt;
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
@@ -603,25 +602,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             FdItem::P1File {
                 desc: P1DescR::HostFS(v),
                 ..
-            } => match &**v.desc() {
-                Descriptor::File(v) => v.sync_data().or_else(|e| {
-                    cfg_if!{
-                        // On windows, `sync_data` uses `FileFlushBuffers` which fails with
-                        // `ERROR_ACCESS_DENIED` if the file is not upen for writing. Ignore
-                        // this error, for POSIX compatibility.
-                        if #[cfg(windows)] {
-                            if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as _) {
-                                Ok(())
-                            } else {
-                                Err(e)
-                            }
-                        } else {
-                            return Err(e)
-                        }
-                    }
-                })?,
-                Descriptor::Dir(v) => v.open(".")?.sync_data()?,
-            },
+            } => v.sync_data()?,
             _ => return Err(Errno::Badf.into()),
         }
         Ok(())
@@ -1354,12 +1335,26 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         })
     }
 
-    fn fd_sync(&mut self, mem: &mut GuestMemory<'_>, fd: Fd) -> Result<(), Error> {
-        todo!()
+    fn fd_sync(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), Error> {
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(_),
+                ..
+            } => (),
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => v.sync()?,
+            _ => return Err(Errno::Badf.into()),
+        }
+        Ok(())
     }
 
-    fn fd_tell(&mut self, mem: &mut GuestMemory<'_>, fd: Fd) -> Result<Filesize, Error> {
-        todo!()
+    fn fd_tell(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Filesize, Error> {
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File { cursor: c, .. } => Ok(c.copied().unwrap_or(0) as _),
+            _ => Err(Errno::Badf.into()),
+        }
     }
 
     fn fd_write(

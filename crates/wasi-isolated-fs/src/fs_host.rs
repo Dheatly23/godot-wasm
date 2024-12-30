@@ -1,11 +1,12 @@
 use std::hash::{BuildHasher, Hasher};
-use std::io::ErrorKind;
+use std::io::{Error as IoError, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
 use cap_fs_ext::MetadataExt;
 use cap_std::fs::{Dir as CapDir, DirEntry, File as CapFile, Metadata, ReadDir as CapReadDir};
+use cfg_if::cfg_if;
 use parking_lot::Mutex;
 use system_interface::fs::FileIoExt;
 
@@ -55,6 +56,23 @@ impl Descriptor {
         match self {
             Self::Dir(v) => Some(v),
             _ => None,
+        }
+    }
+}
+
+fn err_sync_handle(e: IoError) -> Result<(), IoError> {
+    cfg_if! {
+        // On windows, `sync_data` uses `FileFlushBuffers` which fails with
+        // `ERROR_ACCESS_DENIED` if the file is not upen for writing. Ignore
+        // this error, for POSIX compatibility.
+        if #[cfg(windows)] {
+            if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as _) {
+                Ok(())
+            } else {
+                Err(e)
+            }
+        } else {
+            Err(e)
         }
     }
 }
@@ -166,6 +184,22 @@ impl CapWrapper {
             }),
             _ => Err(ErrorKind::IsADirectory.into()),
         }
+    }
+
+    pub fn sync_data(&self) -> Result<(), errors::StreamError> {
+        match &*self.desc {
+            Descriptor::File(v) => v.sync_data().or_else(err_sync_handle),
+            Descriptor::Dir(v) => v.open(".")?.sync_data(),
+        }
+        .map_err(errors::StreamError::from)
+    }
+
+    pub fn sync(&self) -> Result<(), errors::StreamError> {
+        match &*self.desc {
+            Descriptor::File(v) => v.sync_all().or_else(err_sync_handle),
+            Descriptor::Dir(v) => v.open(".")?.sync_all(),
+        }
+        .map_err(errors::StreamError::from)
     }
 
     pub fn read_dir(&self) -> Result<ReadDir, errors::StreamError> {

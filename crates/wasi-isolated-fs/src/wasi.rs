@@ -9,7 +9,6 @@ use cap_fs_ext::{
     SystemTimeSpec as CapSystemTimeSpec,
 };
 use cap_std::fs::{Dir as CapDir, FileType, Metadata, OpenOptions};
-use cfg_if::cfg_if;
 use fs_set_times::{SetTimes, SystemTimeSpec};
 use rand::prelude::*;
 use system_interface::fs::{Advice, FdFlags, FileIoExt, GetSetFdFlags};
@@ -607,25 +606,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(_) => (),
-            items::Desc::HostFSDesc(v) => match &**v.desc() {
-                Descriptor::File(v) => v.sync_data().or_else(|e| {
-                    cfg_if!{
-                        // On windows, `sync_data` uses `FileFlushBuffers` which fails with
-                        // `ERROR_ACCESS_DENIED` if the file is not upen for writing. Ignore
-                        // this error, for POSIX compatibility.
-                        if #[cfg(windows)] {
-                            if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as _) {
-                                Ok(())
-                            } else {
-                                Err(e)
-                            }
-                        } else {
-                            return Err(e)
-                        }
-                    }
-                })?,
-                Descriptor::Dir(v) => v.open(".")?.sync_data()?,
-            },
+            items::Desc::HostFSDesc(v) => v.sync_data()?,
         }
         Ok(())
     }
@@ -780,25 +761,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(_) => (),
-            items::Desc::HostFSDesc(v) => match &**v.desc() {
-                Descriptor::File(v) => v.sync_all().or_else(|e| {
-                    cfg_if!{
-                        // On windows, `sync_data` uses `FileFlushBuffers` which fails with
-                        // `ERROR_ACCESS_DENIED` if the file is not upen for writing. Ignore
-                        // this error, for POSIX compatibility.
-                        if #[cfg(windows)] {
-                            if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as _) {
-                                Ok(())
-                            } else {
-                                Err(e)
-                            }
-                        } else {
-                            return Err(e)
-                        }
-                    }
-                })?,
-                Descriptor::Dir(v) => v.open(".")?.sync_all()?,
-            },
+            items::Desc::HostFSDesc(v) => v.sync()?,
         }
         Ok(())
     }
