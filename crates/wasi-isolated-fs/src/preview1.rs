@@ -622,7 +622,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 })?,
                 Descriptor::Dir(v) => v.open(".")?.sync_data()?,
             },
-            _ => return Err(Errno::Inval.into()),
+            _ => return Err(Errno::Badf.into()),
         }
         Ok(())
     }
@@ -913,7 +913,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 desc: P1DescR::HostFS(v),
                 ..
             } => v.write()?.file()?.set_len(size)?,
-            _ => return Err(Errno::Inval.into()),
+            _ => return Err(Errno::Badf.into()),
         }
         Ok(())
     }
@@ -967,7 +967,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     Descriptor::Dir(v) => SetTimes::set_times(v, atime, mtime),
                 }?
             }
-            _ => return Err(Errno::Inval.into()),
+            _ => return Err(Errno::Badf.into()),
         }
         Ok(())
     }
@@ -1012,7 +1012,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     Ok((ret.into(), l as Size))
                 })
             }
-            _ => Err(Errno::Inval.into()),
+            _ => Err(Errno::Badf.into()),
         }
     }
 
@@ -1085,7 +1085,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     Ok(l as Size)
                 })
             }
-            _ => Err(Errno::Inval.into()),
+            _ => Err(Errno::Badf.into()),
         }
     }
 
@@ -1145,7 +1145,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
                 r
             }
-            _ => Err(Errno::Inval.into()),
+            _ => Err(Errno::Badf.into()),
         }
     }
 
@@ -1306,7 +1306,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     }),
                 )
             }
-            _ => Err(Errno::Inval.into()),
+            _ => Err(Errno::Badf.into()),
         }
     }
 
@@ -1316,7 +1316,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
 
     fn fd_seek(
         &mut self,
-        mem: &mut GuestMemory<'_>,
+        _: &mut GuestMemory<'_>,
         fd: Fd,
         offset: Filedelta,
         whence: Whence,
