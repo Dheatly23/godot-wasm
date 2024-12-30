@@ -15,18 +15,12 @@ use system_interface::fs::{Advice, FdFlags, FileIoExt, GetSetFdFlags};
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
-use crate::context::{Stderr, Stdin, Stdout, WasiContext};
+use crate::context::{try_iso_fs, Stderr, Stdin, Stdout, WasiContext};
 use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
-use crate::fs_isolated::{AccessMode, CreateParams, IsolatedFSController, OpenMode};
+use crate::fs_isolated::{AccessMode, CreateParams, OpenMode};
 use crate::items::Item;
 use crate::stdio::NullStdio;
 use crate::{errors, items, NullPollable, EMPTY_BUF};
-
-fn try_iso_fs(iso_fs: &Option<IsolatedFSController>) -> AnyResult<&IsolatedFSController> {
-    iso_fs
-        .as_ref()
-        .ok_or_else(|| AnyError::from(errors::BuilderIsoFSNotDefinedError))
-}
 
 impl wasi::io::poll::HostPollable for WasiContext {
     fn ready(&mut self, res: Resource<wasi::io::poll::Pollable>) -> AnyResult<bool> {

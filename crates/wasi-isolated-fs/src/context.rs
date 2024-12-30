@@ -534,3 +534,11 @@ impl WasiContext {
             .ok_or_else(|| errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 }
+
+pub(crate) fn try_iso_fs(
+    iso_fs: &Option<IsolatedFSController>,
+) -> AnyResult<&IsolatedFSController> {
+    iso_fs
+        .as_ref()
+        .ok_or_else(|| errors::BuilderIsoFSNotDefinedError.into())
+}

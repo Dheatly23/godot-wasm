@@ -4,19 +4,21 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::btree_map::BTreeMap;
 use std::mem::transmute;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::Error as AnyError;
-use cap_fs_ext::{FileTypeExt, MetadataExt};
+use camino::{Utf8Path, Utf8PathBuf};
+use cap_fs_ext::{DirExt, FileTypeExt, MetadataExt, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
 use fs_set_times::SetTimes;
 use system_interface::fs::FileIoExt;
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
 use crate::bindings::types::*;
-use crate::context::WasiContext;
+use crate::context::{try_iso_fs, WasiContext};
 use crate::fs_host::Descriptor;
-use crate::fs_isolated::NodeItem;
+use crate::fs_isolated::{AccessMode, CreateParams, NodeItem};
 use crate::EMPTY_BUF;
 
 #[derive(Default)]
@@ -235,6 +237,12 @@ p1item_gen! {
     NullStdio(crate::stdio::NullStdio, &'a mut crate::stdio::NullStdio),
 }
 
+impl From<Box<P1File>> for P1Item {
+    fn from(v: Box<P1File>) -> Self {
+        Self::P1File(v)
+    }
+}
+
 struct MemIO<'a, 'b, T> {
     mem: &'a mut GuestMemory<'b>,
     len: Size,
@@ -444,6 +452,120 @@ fn time_cvt(
         ))),
         (false, true) => Ok(Some(fs_set_times::SystemTimeSpec::SymbolicNow)),
         (false, false) => Ok(None),
+    }
+}
+
+fn to_utf8_path(s: Cow<'_, str>) -> Cow<'_, Utf8Path> {
+    match s {
+        Cow::Borrowed(s) => Cow::Borrowed(Utf8Path::new(s)),
+        Cow::Owned(s) => Cow::Owned(Utf8PathBuf::from(s)),
+    }
+}
+
+fn to_path(s: Cow<'_, str>) -> Cow<'_, Path> {
+    match s {
+        Cow::Borrowed(s) => Cow::Borrowed(Path::new(s)),
+        Cow::Owned(s) => Cow::Owned(PathBuf::from(s)),
+    }
+}
+
+fn from_iso_stamp(stamp: &crate::fs_isolated::Timestamp) -> (Timestamp, Timestamp, Timestamp) {
+    (
+        to_timestamp(stamp.ctime),
+        to_timestamp(stamp.mtime),
+        to_timestamp(stamp.atime),
+    )
+}
+
+fn from_cap_stamp(stamp: std::io::Result<cap_std::time::SystemTime>) -> Timestamp {
+    stamp.ok().map_or(0, |v| to_timestamp(v.into_std()))
+}
+
+fn iso_filestat(f: &crate::fs_isolated::CapWrapper) -> Filestat {
+    let (filetype, size, (ctim, mtim, atim)) = match &f.node().0 {
+        NodeItem::Dir(v) => {
+            let v = v.lock();
+            (Filetype::Directory, v.len(), from_iso_stamp(v.stamp()))
+        }
+        NodeItem::File(v) => {
+            let v = v.lock();
+            (Filetype::RegularFile, v.len(), from_iso_stamp(v.stamp()))
+        }
+        NodeItem::Link(v) => {
+            let v = v.read();
+            (Filetype::SymbolicLink, v.len(), from_iso_stamp(v.stamp()))
+        }
+    };
+
+    Filestat {
+        dev: 127,
+        ino: iso_inode(f.node()),
+        nlink: 0,
+        size: size as _,
+        filetype,
+        ctim,
+        mtim,
+        atim,
+    }
+}
+
+fn iso_filestat_set_times(
+    f: &crate::fs_isolated::CapWrapper,
+    atime: Timestamp,
+    mtime: Timestamp,
+    flags: Fstflags,
+) -> Result<(), Error> {
+    f.access().write_or_err()?;
+
+    f.set_time(|stamp| -> Result<_, Error> {
+        let now = SystemTime::now();
+        set_time(
+            &mut stamp.mtime,
+            &now,
+            mtime,
+            flags.contains(Fstflags::MTIM),
+            flags.contains(Fstflags::MTIM_NOW),
+        )?;
+        set_time(
+            &mut stamp.atime,
+            &now,
+            atime,
+            flags.contains(Fstflags::ATIM),
+            flags.contains(Fstflags::ATIM_NOW),
+        )?;
+        Ok(())
+    })
+}
+
+fn host_metadata(f: &crate::fs_host::CapWrapper) -> std::io::Result<cap_std::fs::Metadata> {
+    match &**f.desc() {
+        Descriptor::File(v) => v.metadata(),
+        Descriptor::Dir(v) => v.dir_metadata(),
+    }
+}
+
+fn host_filestat<H>(m: cap_std::fs::Metadata, hasher: &H) -> Filestat
+where
+    H: std::hash::BuildHasher,
+    H::Hasher: Clone,
+{
+    let filetype = to_filetype(m.file_type());
+    let nlink = m.nlink();
+    let size = m.len();
+    let ctim = from_cap_stamp(m.created());
+    let mtim = from_cap_stamp(m.modified());
+    let atim = from_cap_stamp(m.accessed());
+    let inode = crate::fs_host::CapWrapper::meta_hash(m, hasher);
+
+    Filestat {
+        dev: 1,
+        ino: inode.lower ^ inode.upper,
+        size: size as _,
+        filetype,
+        nlink,
+        ctim,
+        mtim,
+        atim,
     }
 }
 
@@ -677,11 +799,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 cursor,
                 ..
             } => {
-                let f = match &**v.desc() {
-                    Descriptor::File(v) => v.metadata(),
-                    Descriptor::Dir(v) => v.dir_metadata(),
-                }?
-                .file_type();
+                let f = host_metadata(v)?.file_type();
                 let mut rights = Rights::FD_DATASYNC
                     | Rights::FD_SYNC
                     | Rights::FD_ADVISE
@@ -788,85 +906,22 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     }
 
     fn fd_filestat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Filestat, Error> {
-        Ok(match self.p1_items.get_item(fd)? {
+        match self.p1_items.get_item(fd)? {
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 ..
-            } => {
-                fn map_stamp(
-                    stamp: &crate::fs_isolated::Timestamp,
-                ) -> (Timestamp, Timestamp, Timestamp) {
-                    (
-                        to_timestamp(stamp.ctime),
-                        to_timestamp(stamp.mtime),
-                        to_timestamp(stamp.atime),
-                    )
-                }
-
-                let (filetype, size, (ctim, mtim, atim)) = match &v.node().0 {
-                    NodeItem::Dir(v) => {
-                        let v = v.lock();
-                        (Filetype::Directory, v.len(), map_stamp(v.stamp()))
-                    }
-                    NodeItem::File(v) => {
-                        let v = v.lock();
-                        (Filetype::RegularFile, v.len(), map_stamp(v.stamp()))
-                    }
-                    NodeItem::Link(v) => {
-                        let v = v.read();
-                        (Filetype::SymbolicLink, v.len(), map_stamp(v.stamp()))
-                    }
-                };
-
-                Filestat {
-                    dev: 127,
-                    ino: iso_inode(v.node()),
-                    nlink: 0,
-                    size: size as _,
-                    filetype,
-                    ctim,
-                    mtim,
-                    atim,
-                }
-            }
+            } => Ok(iso_filestat(v)),
             FdItem::P1File {
                 desc: P1DescR::HostFS(v),
                 ..
-            } => {
-                fn f(v: std::io::Result<cap_std::time::SystemTime>) -> Timestamp {
-                    v.ok().map_or(0, |v| to_timestamp(v.into_std()))
-                }
-
-                let m = match &**v.desc() {
-                    Descriptor::File(v) => v.metadata(),
-                    Descriptor::Dir(v) => v.dir_metadata(),
-                }?;
-                let filetype = to_filetype(m.file_type());
-                let nlink = m.nlink();
-                let size = m.len();
-                let ctim = f(m.created());
-                let mtim = f(m.modified());
-                let atim = f(m.accessed());
-                let inode = crate::fs_host::CapWrapper::meta_hash(m, &self.hasher);
-
-                Filestat {
-                    dev: 1,
-                    ino: inode.lower ^ inode.upper,
-                    size: size as _,
-                    filetype,
-                    nlink,
-                    ctim,
-                    mtim,
-                    atim,
-                }
-            }
+            } => Ok(host_filestat(host_metadata(v)?, &self.hasher)),
             FdItem::StdinSignal(_)
             | FdItem::BoxedRead(_)
             | FdItem::StdoutBp(_)
             | FdItem::StderrBp(_)
             | FdItem::StdoutLBuf(_)
             | FdItem::StdoutBBuf(_)
-            | FdItem::NullStdio(_) => Filestat {
+            | FdItem::NullStdio(_) => Ok(Filestat {
                 dev: 0,
                 ino: 0,
                 filetype: Filetype::Unknown,
@@ -875,8 +930,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 ctim: 0,
                 mtim: 0,
                 atim: 0,
-            },
-        })
+            }),
+        }
     }
 
     fn fd_filestat_set_size(
@@ -911,24 +966,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             FdItem::P1File {
                 desc: P1DescR::IsoFS(v),
                 ..
-            } => v.set_time(|stamp| -> Result<_, Error> {
-                let now = SystemTime::now();
-                set_time(
-                    &mut stamp.mtime,
-                    &now,
-                    mtim,
-                    fst_flags.contains(Fstflags::MTIM),
-                    fst_flags.contains(Fstflags::MTIM_NOW),
-                )?;
-                set_time(
-                    &mut stamp.atime,
-                    &now,
-                    atim,
-                    fst_flags.contains(Fstflags::ATIM),
-                    fst_flags.contains(Fstflags::ATIM_NOW),
-                )?;
-                Ok(())
-            })?,
+            } => iso_filestat_set_times(v, atim, mtim, fst_flags),
             FdItem::P1File {
                 desc: P1DescR::HostFS(v),
                 ..
@@ -946,11 +984,11 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 match &**v.write()?.desc() {
                     Descriptor::File(v) => v.set_times(atime, mtime),
                     Descriptor::Dir(v) => SetTimes::set_times(v, atime, mtime),
-                }?
+                }
+                .map_err(Error::from)
             }
-            _ => return Err(Errno::Badf.into()),
+            _ => Err(Errno::Badf.into()),
         }
-        Ok(())
     }
 
     fn fd_pread(
@@ -1428,7 +1466,31 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fd: Fd,
         path: GuestPtr<str>,
     ) -> Result<(), Error> {
-        todo!()
+        let path = mem.as_cow_str(path)?;
+
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => {
+                v.access().write_or_err()?;
+
+                let p = to_utf8_path(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(Errno::Inval.into());
+                };
+                let controller = try_iso_fs(&self.iso_fs)?;
+
+                v.open(controller, parent, true, None, AccessMode::W)?
+                    .create_dir(controller, name)?;
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => v.write()?.dir()?.create_dir(to_path(path))?,
+            _ => return Err(Errno::Badf.into()),
+        }
+        Ok(())
     }
 
     fn path_filestat_get(
@@ -1438,7 +1500,43 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         flags: Lookupflags,
         path: GuestPtr<str>,
     ) -> Result<Filestat, Error> {
-        todo!()
+        let follow_symlink = flags.contains(Lookupflags::SYMLINK_FOLLOW);
+        let path = mem.as_cow_str(path)?;
+
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => {
+                let p = to_utf8_path(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(Errno::Inval.into());
+                };
+
+                Ok(iso_filestat(&v.open(
+                    try_iso_fs(&self.iso_fs)?,
+                    parent,
+                    follow_symlink,
+                    None,
+                    AccessMode::W,
+                )?))
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => {
+                let v = v.dir()?;
+                let p = to_path(path);
+
+                let m = if follow_symlink {
+                    v.metadata(p)
+                } else {
+                    v.symlink_metadata(p)
+                }?;
+                Ok(host_filestat(m, &self.hasher))
+            }
+            _ => Err(Errno::Badf.into()),
+        }
     }
 
     fn path_filestat_set_times(
@@ -1451,19 +1549,74 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         mtim: Timestamp,
         fst_flags: Fstflags,
     ) -> Result<(), Error> {
-        todo!()
+        let follow_symlink = flags.contains(Lookupflags::SYMLINK_FOLLOW);
+        let path = mem.as_cow_str(path)?;
+
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => {
+                let p = to_utf8_path(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(Errno::Inval.into());
+                };
+
+                iso_filestat_set_times(
+                    &v.open(
+                        try_iso_fs(&self.iso_fs)?,
+                        parent,
+                        follow_symlink,
+                        None,
+                        AccessMode::W,
+                    )?,
+                    atim,
+                    mtim,
+                    fst_flags,
+                )
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => {
+                let v = v.dir()?;
+                let p = to_path(path);
+                let atime = time_cvt(
+                    atim,
+                    fst_flags.contains(Fstflags::ATIM),
+                    fst_flags.contains(Fstflags::ATIM_NOW),
+                )?
+                .map(cap_fs_ext::SystemTimeSpec::from_std);
+                let mtime = time_cvt(
+                    mtim,
+                    fst_flags.contains(Fstflags::MTIM),
+                    fst_flags.contains(Fstflags::MTIM_NOW),
+                )?
+                .map(cap_fs_ext::SystemTimeSpec::from_std);
+
+                if follow_symlink {
+                    DirExt::set_times(v, p, atime, mtime)
+                } else {
+                    v.set_symlink_times(p, atime, mtime)
+                }
+                .map_err(Error::from)
+            }
+            _ => Err(Errno::Badf.into()),
+        }
     }
 
     fn path_link(
         &mut self,
-        mem: &mut GuestMemory<'_>,
+        _: &mut GuestMemory<'_>,
         old_fd: Fd,
-        old_flags: Lookupflags,
-        old_path: GuestPtr<str>,
+        _: Lookupflags,
+        _: GuestPtr<str>,
         new_fd: Fd,
-        new_path: GuestPtr<str>,
+        _: GuestPtr<str>,
     ) -> Result<(), Error> {
-        todo!()
+        self.p1_items.get_item(old_fd)?;
+        self.p1_items.get_item(new_fd)?;
+        Err(Errno::Notsup.into())
     }
 
     fn path_open(
@@ -1477,7 +1630,108 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fs_rights_inheriting: Rights,
         fdflags: Fdflags,
     ) -> Result<Fd, Error> {
-        todo!()
+        let follow_symlink = dirflags.contains(Lookupflags::SYMLINK_FOLLOW);
+        let access = match (
+            fs_rights_base.contains(Rights::FD_READ),
+            fs_rights_base.contains(Rights::FD_WRITE),
+        ) {
+            (false, false) => AccessMode::NA,
+            (true, false) => AccessMode::R,
+            (false, true) => AccessMode::W,
+            (true, true) => AccessMode::RW,
+        };
+        let create = oflags.contains(Oflags::CREAT);
+        let exclusive = oflags.contains(Oflags::EXCL);
+        let is_dir = oflags.contains(Oflags::DIRECTORY);
+        let is_truncate = oflags.contains(Oflags::TRUNC);
+        let append = fdflags.contains(Fdflags::APPEND);
+        let path = mem.as_cow_str(path)?;
+
+        if is_dir && is_truncate {
+            return Err(Errno::Inval.into());
+        }
+
+        let ret: P1Desc = match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => {
+                let create = if create {
+                    Some(CreateParams {
+                        dir: is_dir,
+                        exclusive,
+                    })
+                } else {
+                    None
+                };
+
+                let controller = try_iso_fs(&self.iso_fs)?;
+                let v = v
+                    .open(
+                        controller,
+                        &to_utf8_path(path),
+                        follow_symlink,
+                        create,
+                        access,
+                    )?
+                    .follow_symlink(controller)?;
+
+                if is_truncate {
+                    v.resize(0)?;
+                }
+
+                v.into()
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => {
+                let mut opts = cap_std::fs::OpenOptions::new();
+                if create {
+                    access.write_or_err()?;
+                    if exclusive {
+                        opts.create_new(true);
+                    } else {
+                        opts.create(true);
+                    }
+                }
+                match access {
+                    AccessMode::NA | AccessMode::R => opts.read(true),
+                    AccessMode::W => opts.write(true),
+                    AccessMode::RW => opts.read(true).write(true),
+                };
+                if is_truncate {
+                    opts.truncate(true);
+                }
+                opts.follow(if follow_symlink {
+                    cap_fs_ext::FollowSymlinks::Yes
+                } else {
+                    cap_fs_ext::FollowSymlinks::No
+                });
+                if is_dir {
+                    opts.maybe_dir(true);
+                }
+
+                let v = v.dir()?.open_with(to_path(path), &opts)?;
+                let v = if v.metadata()?.is_dir() {
+                    crate::fs_host::Descriptor::Dir(cap_std::fs::Dir::from_std_file(v.into_std()))
+                } else if is_dir {
+                    return Err(Errno::Notdir.into());
+                } else {
+                    crate::fs_host::Descriptor::File(v)
+                };
+
+                crate::fs_host::CapWrapper::new(Arc::new(v), access).into()
+            }
+            _ => return Err(Errno::Badf.into()),
+        };
+
+        let ret = if append {
+            P1File::with_append(ret)
+        } else {
+            P1File::new(ret)
+        };
+        Ok(self.p1_items.register(Box::new(ret).into()))
     }
 
     fn path_readlink(
@@ -1488,7 +1742,38 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         buf: GuestPtr<u8>,
         buf_len: Size,
     ) -> Result<Size, Error> {
-        todo!()
+        let path = mem.as_cow_str(path)?;
+
+        let mut s = match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => v
+                .open(
+                    try_iso_fs(&self.iso_fs)?,
+                    &to_utf8_path(path),
+                    false,
+                    None,
+                    AccessMode::R,
+                )?
+                .read_link()?,
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => v
+                .read()?
+                .dir()?
+                .read_link(to_path(path))?
+                .into_os_string()
+                .into_string()
+                .map_err(|_| Errno::Inval)?,
+            _ => return Err(Errno::Badf.into()),
+        }
+        .into_bytes();
+
+        s.truncate(buf_len.try_into().unwrap_or(usize::MAX));
+        mem.copy_from_slice(&s, buf.as_array(buf_len))?;
+        Ok(s.len() as _)
     }
 
     fn path_remove_directory(
@@ -1497,7 +1782,28 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fd: Fd,
         path: GuestPtr<str>,
     ) -> Result<(), Error> {
-        todo!()
+        let path = mem.as_cow_str(path)?;
+
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                ..
+            } => {
+                let p = to_utf8_path(path);
+                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
+                    return Err(Errno::Inval.into());
+                };
+
+                v.open(try_iso_fs(&self.iso_fs)?, parent, true, None, AccessMode::W)?
+                    .unlink(name, true)?;
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                ..
+            } => v.write()?.dir()?.remove_dir(to_path(path))?,
+            _ => return Err(Errno::Badf.into()),
+        }
+        Ok(())
     }
 
     fn path_rename(
