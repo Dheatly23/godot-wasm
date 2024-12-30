@@ -20,7 +20,7 @@ use crate::{bail_with_site, site_context};
 #[derive(Clone)]
 pub struct CharSlice<'a>(pub &'a [char]);
 
-impl<'a> Display for CharSlice<'a> {
+impl Display for CharSlice<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         for &c in self.0 {
             f.write_char(c)?;
@@ -29,13 +29,13 @@ impl<'a> Display for CharSlice<'a> {
     }
 }
 
-impl<'a> Debug for CharSlice<'a> {
+impl Debug for CharSlice<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         <Self as Display>::fmt(self, f)
     }
 }
 
-impl<'a, R> Slice<R> for CharSlice<'a>
+impl<R> Slice<R> for CharSlice<'_>
 where
     R: SliceIndex<[char], Output = [char]>,
 {
@@ -45,7 +45,7 @@ where
     }
 }
 
-impl<'a> Offset for CharSlice<'a> {
+impl Offset for CharSlice<'_> {
     #[inline]
     fn offset(&self, o: &Self) -> usize {
         // SAFETY: First and second should be coming from same slice
@@ -69,7 +69,7 @@ fn cmp_char_iter(
     }
 }
 
-impl<'a, 'b> Compare<CharSlice<'b>> for CharSlice<'a> {
+impl<'b> Compare<CharSlice<'b>> for CharSlice<'_> {
     fn compare(&self, o: CharSlice<'b>) -> CompareResult {
         let (s, o) = (self.0, o.0);
         let l = s.len().min(o.len());
@@ -92,7 +92,7 @@ impl<'a, 'b> Compare<CharSlice<'b>> for CharSlice<'a> {
     }
 }
 
-impl<'a, 'b> Compare<&'b str> for CharSlice<'a> {
+impl<'b> Compare<&'b str> for CharSlice<'_> {
     fn compare(&self, o: &'b str) -> CompareResult {
         cmp_char_iter(self.0.iter().copied(), o.chars())
     }
@@ -138,14 +138,14 @@ impl<'a> InputIter for CharSlice<'a> {
     }
 }
 
-impl<'a> InputLength for CharSlice<'a> {
+impl InputLength for CharSlice<'_> {
     #[inline]
     fn input_len(&self) -> usize {
         self.0.len()
     }
 }
 
-impl<'a> InputTake for CharSlice<'a> {
+impl InputTake for CharSlice<'_> {
     #[inline]
     fn take(&self, c: usize) -> Self {
         Self(&self.0[..c])
@@ -158,7 +158,7 @@ impl<'a> InputTake for CharSlice<'a> {
     }
 }
 
-impl<'a> InputTakeAtPosition for CharSlice<'a> {
+impl InputTakeAtPosition for CharSlice<'_> {
     type Item = char;
 
     fn split_at_position<P, E: ParseError<Self>>(&self, predicate: P) -> IResult<Self, Self, E>
@@ -397,7 +397,7 @@ impl<I: Display> Debug for SingleError<I> {
 
 impl<I: Display> Error for SingleError<I> {}
 
-impl<'a> SingleError<CharSlice<'a>> {
+impl SingleError<CharSlice<'_>> {
     pub fn into_owned(self) -> SingleError<String> {
         SingleError {
             input: self.input.0.iter().collect(),

@@ -275,21 +275,21 @@ struct ParamCacheGuard<'a> {
     data: &'a mut [ValRaw],
 }
 
-impl<'a> Drop for ParamCacheGuard<'a> {
+impl Drop for ParamCacheGuard<'_> {
     fn drop(&mut self) {
         let v = self.len.replace(self.len.get() - self.data.len());
         debug_assert_eq!(v, self.old_len);
     }
 }
 
-impl<'a> Deref for ParamCacheGuard<'a> {
+impl Deref for ParamCacheGuard<'_> {
     type Target = [ValRaw];
     fn deref(&self) -> &[ValRaw] {
         &*self.data
     }
 }
 
-impl<'a> DerefMut for ParamCacheGuard<'a> {
+impl DerefMut for ParamCacheGuard<'_> {
     fn deref_mut(&mut self) -> &mut [ValRaw] {
         &mut *self.data
     }
@@ -376,7 +376,7 @@ where
     }
     drop(args);
 
-    f.call_unchecked(&mut ctx, v.as_mut_ptr(), v.len())?;
+    f.call_unchecked(&mut ctx, &mut *v)?;
 
     ri.zip(v.iter())
         .map(|(t, v)| from_raw(&mut ctx, t, *v))

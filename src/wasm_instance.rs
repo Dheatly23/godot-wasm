@@ -466,7 +466,7 @@ where
     }
 }
 
-impl<'a, T> InstanceArgs<'a, T>
+impl<T> InstanceArgs<'_, T>
 where
     T: Send + AsRef<StoreData> + AsMut<StoreData>,
 {

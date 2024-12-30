@@ -130,7 +130,7 @@ impl<const N: usize> FilterFlags<N> {
 }
 
 #[allow(dead_code)]
-impl<'a, const N: usize> FilterFlagsRef<'a, N> {
+impl<const N: usize> FilterFlagsRef<'_, N> {
     pub fn slice(&self, i: impl RangeBounds<usize> + Debug) -> Self {
         let Self { r, o, l } = *self;
         let Some((o, l)) = rebound(o, l, i.start_bound(), i.end_bound()) else {
@@ -504,7 +504,7 @@ pub struct FilterItem<'a> {
     pub method: Option<&'a str>,
 }
 
-impl<'a> Debug for FilterItem<'a> {
+impl Debug for FilterItem<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         static UNKNOWN: &str = "<unknown>";
         write!(
@@ -517,13 +517,13 @@ impl<'a> Debug for FilterItem<'a> {
     }
 }
 
-impl<'a> Display for FilterItem<'a> {
+impl Display for FilterItem<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         <Self as Debug>::fmt(self, f)
     }
 }
 
-impl<'a> Error for FilterItem<'a> {}
+impl Error for FilterItem<'_> {}
 
 #[allow(clippy::type_complexity)]
 fn parse_line(
