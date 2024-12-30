@@ -58,6 +58,7 @@ features = [
   "demangle",
   "addr2line",
   "debug-builtins",
+  "signals-based-traps",
 ]
 
 [dependencies.wasmtime-wasi]
