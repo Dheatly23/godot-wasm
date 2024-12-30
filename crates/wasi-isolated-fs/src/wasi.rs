@@ -1067,8 +1067,8 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 };
                 let controller = try_iso_fs(&self.iso_fs)?;
 
-                let src = src.open(controller, src_path, true, None, AccessMode::RW)?;
-                let dst = dst.open(controller, dst_path, true, None, AccessMode::RW)?;
+                let src = src.open(controller, src_path, true, None, AccessMode::W)?;
+                let dst = dst.open(controller, dst_path, true, None, AccessMode::W)?;
 
                 dst.move_file(src.node(), src_file, dst_file)?;
             }
