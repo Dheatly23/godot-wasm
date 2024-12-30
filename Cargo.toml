@@ -22,7 +22,7 @@ rayon = "^1.8"
 nom = "^7.1"
 either = "^1.0"
 #wasi-common = { version = "^18.0", optional = true }
-wasmparser = { version = "^0.221", optional = true }
+wasmparser = { version = "^0.222", optional = true }
 wat = { version = "~1", optional = true }
 #cap-std = { version = "^3.0", optional = true }
 async-trait = { version = "^0.1", optional = true }
@@ -39,7 +39,7 @@ camino = { workspace = true, optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "d32d569ed61ef8427470acdc41e8e708828fe412"
+rev = "8eaf184625ffb28b92c594ea70532e5d669dda21"
 features = [
   "experimental-threads",
   "register-docs",
@@ -59,10 +59,11 @@ features = [
   "demangle",
   "addr2line",
   "debug-builtins",
+  "signals-based-traps",
 ]
 
 [dependencies.wasmtime-wasi]
-version = "^27.0"
+version = "^28.0"
 optional = true
 default-features = false
 features = [
@@ -135,11 +136,11 @@ rand_core = { version = "^0.6", features = ["getrandom"] }
 getrandom = { version = "^0.2", features = ["custom"] }
 
 [workspace.dependencies.wasmtime]
-version = "^27.0"
+version = "^28.0"
 default-features = false
 
 [workspace.dependencies.wiggle]
-version = "^27.0"
+version = "^28.0"
 default-features = false
 features = [
   "wasmtime",
