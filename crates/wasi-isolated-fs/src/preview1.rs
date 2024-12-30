@@ -1363,7 +1363,63 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fd: Fd,
         iovs: CiovecArray,
     ) -> Result<Size, Error> {
-        todo!()
+        let memio = MemIO::new_write(mem, iovs)?;
+
+        match self.p1_items.get_item(fd)? {
+            FdItem::P1File {
+                desc: P1DescR::IsoFS(v),
+                cursor,
+                ..
+            } => {
+                v.access().write_or_err()?;
+                let mut v = v.node().file().ok_or(Errno::Isdir)?;
+
+                if let Some(c) = cursor {
+                    let old = *c;
+                    let r = memio.write(|s| {
+                        v.write(s, (*c).try_into().unwrap_or(usize::MAX))?;
+                        *c += s.len() as u64;
+                        Ok(s.len() as Size)
+                    });
+                    if r.is_err() {
+                        *c = old;
+                    }
+                    r
+                } else {
+                    memio.write(|s| {
+                        let i = v.len();
+                        v.write(s, i)?;
+                        Ok(s.len() as Size)
+                    })
+                }
+            }
+            FdItem::P1File {
+                desc: P1DescR::HostFS(v),
+                cursor,
+                ..
+            } => {
+                let v = v.write()?.file()?;
+
+                if let Some(c) = cursor {
+                    let old = *c;
+                    let r = memio.write(|s| {
+                        let l = v.write_at(s, *c)?;
+                        *c += l as u64;
+                        Ok(l as Size)
+                    });
+                    if r.is_err() {
+                        *c = old;
+                    }
+                    r
+                } else {
+                    memio.write(|s| {
+                        let l = v.append(s)?;
+                        Ok(l as Size)
+                    })
+                }
+            }
+            _ => Err(Errno::Badf.into()),
+        }
     }
 
     fn path_create_directory(
