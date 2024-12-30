@@ -20,6 +20,7 @@ use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
 use crate::fs_isolated::{AccessMode, CapWrapper, Dir, IsolatedFSController, Node, ILLEGAL_CHARS};
 use crate::items::Items;
 pub use crate::items::{Item, MaybeBorrowMut};
+use crate::preview1::P1Items;
 use crate::stdio::{
     StderrBypass, StdinProvider, StdinSignal, StdoutBypass, StdoutCbBlockBuffered,
     StdoutCbLineBuffered,
@@ -27,8 +28,9 @@ use crate::stdio::{
 
 pub struct WasiContext {
     pub(crate) hasher: RandomState,
-    pub(crate) items: Items,
     pub(crate) iso_fs: Option<IsolatedFSController>,
+    pub(crate) items: Items,
+    pub(crate) p1_items: P1Items,
     pub(crate) preopens: Vec<(Utf8PathBuf, FilePreopen)>,
     pub(crate) cwd: Utf8PathBuf,
     pub(crate) envs: Vec<(String, String)>,
@@ -436,6 +438,7 @@ impl WasiContextBuilder {
 
         Ok(WasiContext {
             items: Items::new(),
+            p1_items: P1Items::new(),
             iso_fs,
             preopens,
             cwd: self.cwd,
@@ -488,6 +491,11 @@ impl WasiContext {
             Some(Stdin::Signal((_, v))) => Some(v),
             _ => None,
         }
+    }
+
+    #[inline(always)]
+    pub fn p1_items(&mut self) -> &mut P1Items {
+        &mut self.p1_items
     }
 
     pub fn register<T: 'static>(&mut self, v: impl Into<Item>) -> AnyResult<Resource<T>> {
