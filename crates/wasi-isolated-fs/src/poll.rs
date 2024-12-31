@@ -106,7 +106,7 @@ impl PollController {
 
                 // SAFETY: Signal is locked, so all nodes are held.
                 unsafe {
-                    if *i.state.get() != WaitState::Waiting {
+                    if replace(&mut *i.state.get(), WaitState::Inactive) != WaitState::Waiting {
                         continue;
                     }
 
