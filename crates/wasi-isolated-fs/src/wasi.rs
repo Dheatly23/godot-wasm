@@ -19,6 +19,7 @@ use crate::context::{try_iso_fs, Stderr, Stdin, Stdout, WasiContext};
 use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
 use crate::fs_isolated::{AccessMode, CreateParams, OpenMode};
 use crate::items::Item;
+use crate::poll::PollController;
 use crate::stdio::NullStdio;
 use crate::{errors, items, NullPollable, EMPTY_BUF};
 
@@ -49,21 +50,56 @@ impl wasi::io::poll::HostPollable for WasiContext {
 impl wasi::io::poll::Host for WasiContext {
     fn poll(&mut self, res: Vec<Resource<wasi::io::poll::Pollable>>) -> AnyResult<Vec<u32>> {
         let polls = self.items.get_item(res)?;
-        Ok(polls
-            .into_iter()
-            .enumerate()
-            .filter_map(|(i, p)| {
-                if match p {
-                    items::Poll::NullPoll(_) => true,
-                    items::Poll::StdinPoll(v) => v.is_ready(),
-                    items::Poll::ClockPoll(v) => v.is_ready(),
-                } {
-                    Some(i as u32)
-                } else {
-                    None
+        match &*polls {
+            [] => return Err(IoError::from(ErrorKind::InvalidInput).into()),
+            [v] => {
+                match v {
+                    items::Poll::NullPoll(_) => (),
+                    items::Poll::StdinPoll(v) => v.block()?,
+                    items::Poll::ClockPoll(v) => v.block()?,
                 }
-            })
-            .collect())
+                return Ok(vec![0]);
+            }
+            _ => (),
+        }
+
+        let mut controller = None;
+        for _ in 0..3 {
+            let ret: Vec<_> = polls
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    if match p {
+                        items::Poll::NullPoll(_) => true,
+                        items::Poll::StdinPoll(v) => v.is_ready(),
+                        items::Poll::ClockPoll(v) => v.is_ready(),
+                    } {
+                        Some(i as u32)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if !ret.is_empty() {
+                return Ok(ret);
+            }
+
+            let c = controller.get_or_insert_with(|| {
+                let mut c = PollController::default();
+                for i in &polls {
+                    match i {
+                        items::Poll::NullPoll(_) => (),
+                        items::Poll::StdinPoll(v) => c.add_signal(&v.0),
+                        items::Poll::ClockPoll(v) => c.set_instant(v.until),
+                    }
+                }
+
+                c
+            });
+            c.poll();
+        }
+
+        Err(IoError::from(ErrorKind::TimedOut).into())
     }
 }
 

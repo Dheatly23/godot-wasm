@@ -1,6 +1,9 @@
 use std::io::{
     stderr, stdout, Error as IoError, ErrorKind, IoSlice, Result as IoResult, Stderr, Stdout, Write,
 };
+use std::mem::replace;
+use std::panic::{RefUnwindSafe, UnwindSafe};
+use std::ptr::null;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -10,6 +13,8 @@ use parking_lot::{Condvar, Mutex};
 use scopeguard::{defer, guard, guard_on_unwind};
 use smallvec::SmallVec;
 
+use crate::poll::WaitData;
+
 const MAX_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Default)]
@@ -18,8 +23,8 @@ pub struct NullStdio {
 }
 
 pub struct StdinSignal {
-    inner: Mutex<StdinInner>,
-    cond: Condvar,
+    pub(crate) inner: Mutex<StdinInner>,
+    pub(crate) cond: Condvar,
     f: Box<dyn Fn() + Send + Sync>,
 }
 
@@ -27,12 +32,19 @@ pub struct StdinProvider(Arc<StdinSignal>);
 
 type StdinInnerData = SmallVec<[u8; 32]>;
 
-struct StdinInner {
+pub(crate) struct StdinInner {
     closed: bool,
     data: StdinInnerData,
     start: usize,
     end: usize,
+
+    pub(crate) head: *const WaitData,
 }
+
+unsafe impl Send for StdinInner {}
+unsafe impl Sync for StdinInner {}
+impl UnwindSafe for StdinInner {}
+impl RefUnwindSafe for StdinInner {}
 
 impl StdinInner {
     fn len(&self) -> usize {
@@ -112,6 +124,21 @@ impl StdinInner {
         );
         ret
     }
+
+    pub(crate) fn is_ready(&self) -> bool {
+        self.closed || self.end != self.start
+    }
+
+    fn notify(&mut self) {
+        let mut p = replace(&mut self.head, null());
+        while !p.is_null() {
+            // SAFETY: Signal is locked, so all nodes are held.
+            unsafe {
+                (*p).waited();
+                p = *(*p).next.get();
+            }
+        }
+    }
 }
 
 impl StdinSignal {
@@ -122,6 +149,8 @@ impl StdinSignal {
                 data: StdinInnerData::from_buf(Default::default()),
                 start: 0,
                 end: 0,
+
+                head: null(),
             }),
             cond: Condvar::new(),
             f,
@@ -131,8 +160,7 @@ impl StdinSignal {
     }
 
     pub fn is_ready(&self) -> bool {
-        let guard = self.inner.lock();
-        guard.closed || guard.end != guard.start
+        self.inner.lock().is_ready()
     }
 
     pub fn read(&self, len: usize) -> IoResult<Vec<u8>> {
@@ -216,17 +244,19 @@ impl StdinProvider {
             return;
         }
         guard.push_data(buf);
+        guard.notify();
         self.0.cond.notify_one();
     }
 
     pub fn close(&self) {
         let mut guard = self.0.inner.lock();
         guard.closed = true;
+        guard.notify();
         self.0.cond.notify_one();
     }
 }
 
-pub struct StdinSignalPollable(Arc<StdinSignal>);
+pub struct StdinSignalPollable(pub(crate) Arc<StdinSignal>);
 
 impl StdinSignalPollable {
     #[inline(always)]

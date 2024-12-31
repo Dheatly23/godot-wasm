@@ -46,7 +46,7 @@ impl ClockController {
 }
 
 pub struct ClockPollable {
-    until: Instant,
+    pub(crate) until: Instant,
 }
 
 impl ClockPollable {
