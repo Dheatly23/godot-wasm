@@ -3,6 +3,7 @@ use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::hash_map::{HashMap, RandomState};
 use std::io::Read;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::Result as AnyResult;
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
@@ -42,6 +43,8 @@ pub struct WasiContext {
     pub(crate) stdin: Option<Stdin>,
     pub(crate) stdout: Option<Stdout>,
     pub(crate) stderr: Option<Stderr>,
+
+    pub(crate) timeout: Option<Instant>,
 }
 
 pub struct WasiContextBuilder {
@@ -465,6 +468,7 @@ impl WasiContextBuilder {
                 BuilderStdout::CbBlock(v) => Stderr::CbBlock(v),
             }),
             hasher: RandomState::new(),
+            timeout: None,
         })
     }
 }
@@ -496,6 +500,11 @@ impl WasiContext {
     #[inline(always)]
     pub fn p1_items(&mut self) -> &mut P1Items {
         &mut self.p1_items
+    }
+
+    #[inline(always)]
+    pub fn set_timeout(&mut self, timeout: Instant) {
+        self.timeout = Some(timeout);
     }
 
     pub fn register<T: 'static>(&mut self, v: impl Into<Item>) -> AnyResult<Resource<T>> {

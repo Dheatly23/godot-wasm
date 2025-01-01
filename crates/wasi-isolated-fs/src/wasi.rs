@@ -51,7 +51,7 @@ impl wasi::io::poll::Host for WasiContext {
     fn poll(&mut self, res: Vec<Resource<wasi::io::poll::Pollable>>) -> AnyResult<Vec<u32>> {
         let polls = self.items.get_item(res)?;
         match &*polls {
-            [] => return Err(IoError::from(ErrorKind::InvalidInput).into()),
+            [] => return Ok(Vec::new()),
             [v] => {
                 match v {
                     items::Poll::NullPoll(_) => (),
@@ -63,7 +63,7 @@ impl wasi::io::poll::Host for WasiContext {
             _ => (),
         }
 
-        let mut controller = None;
+        let mut controller: Option<PollController> = None;
         for _ in 0..3 {
             let ret: Vec<_> = polls
                 .iter()
@@ -71,7 +71,9 @@ impl wasi::io::poll::Host for WasiContext {
                 .filter_map(|(i, p)| {
                     if match p {
                         items::Poll::NullPoll(_) => true,
-                        items::Poll::StdinPoll(v) => v.is_ready(),
+                        items::Poll::StdinPoll(v) => {
+                            controller.as_ref().map_or(false, |c| c.is_waited(&v.0)) || v.is_ready()
+                        }
                         items::Poll::ClockPoll(v) => v.is_ready(),
                     } {
                         Some(i as u32)
@@ -85,7 +87,7 @@ impl wasi::io::poll::Host for WasiContext {
             }
 
             let c = controller.get_or_insert_with(|| {
-                let mut c = PollController::default();
+                let mut c = PollController::new(self.timeout);
                 for i in &polls {
                     match i {
                         items::Poll::NullPoll(_) => (),
@@ -96,10 +98,12 @@ impl wasi::io::poll::Host for WasiContext {
 
                 c
             });
-            c.poll();
+            if c.poll() {
+                break;
+            }
         }
 
-        Err(IoError::from(ErrorKind::TimedOut).into())
+        Ok(Vec::new())
     }
 }
 

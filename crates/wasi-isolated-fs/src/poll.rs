@@ -10,11 +10,12 @@ use smallvec::SmallVec;
 
 use crate::stdio::StdinSignal;
 
-#[derive(Default)]
 pub(crate) struct PollController {
     min_instant: Option<Instant>,
     //min_systime: Option<SystemTime>,
     signals: SmallVec<[WaitData; 8]>,
+
+    timeout: Option<Instant>,
 }
 
 pub(crate) struct WaitData {
@@ -41,6 +42,16 @@ impl WaitData {
 }
 
 impl PollController {
+    pub(crate) fn new(timeout: Option<Instant>) -> Self {
+        Self {
+            min_instant: None,
+            //min_systime: None,
+            signals: SmallVec::new(),
+
+            timeout,
+        }
+    }
+
     pub(crate) fn set_instant(&mut self, t: Instant) {
         let Some(v) = &mut self.min_instant else {
             self.min_instant = Some(t);
@@ -70,7 +81,14 @@ impl PollController {
         }
     }
 
-    pub(crate) fn poll(&mut self) {
+    pub(crate) fn is_waited(&self, signal: &Arc<StdinSignal>) -> bool {
+        let w = Arc::downgrade(signal);
+        self.signals
+            .iter()
+            .any(|v| unsafe { *v.state.get() == WaitState::Waited && Weak::ptr_eq(&v.signal, &w) })
+    }
+
+    pub(crate) fn poll(&mut self) -> bool {
         let mut dur = None;
 
         if let Some(t) = &self.min_instant {
@@ -94,7 +112,7 @@ impl PollController {
         //}
 
         if dur.map_or(false, |d| d.is_zero()) {
-            return;
+            return false;
         }
 
         let signals = guard(&self.signals, |s| {
@@ -106,8 +124,9 @@ impl PollController {
 
                 // SAFETY: Signal is locked, so all nodes are held.
                 unsafe {
-                    if replace(&mut *i.state.get(), WaitState::Inactive) != WaitState::Waiting {
-                        continue;
+                    match *i.state.get() {
+                        WaitState::Inactive | WaitState::Waited => continue,
+                        WaitState::Waiting => *i.state.get() = WaitState::Inactive,
                     }
 
                     let p: *const WaitData = replace(&mut (*i.prev.get()), null());
@@ -126,17 +145,20 @@ impl PollController {
             }
         });
 
+        let mut has_waited = false;
         for i in signals.iter() {
             let Some(s) = i.signal.upgrade() else {
                 continue;
             };
             let mut g = s.inner.lock();
-            if g.is_ready() {
-                return;
-            }
 
             // SAFETY: Signal is locked, so all nodes are held.
             unsafe {
+                if g.is_ready() || *i.state.get() == WaitState::Waited {
+                    *i.state.get() = WaitState::Waited;
+                    has_waited = true;
+                    continue;
+                }
                 *i.state.get() = WaitState::Waiting;
 
                 if !g.head.is_null() {
@@ -146,11 +168,21 @@ impl PollController {
             }
             g.head = i;
         }
+        if has_waited {
+            return false;
+        }
 
         // Limit waiting time
-        park_timeout(
-            dur.unwrap_or_else(|| Duration::from_secs(1))
-                .min(Duration::from_secs(5)),
-        );
+        let mut dur = dur.unwrap_or_else(|| Duration::from_secs(1));
+        match self
+            .timeout
+            .map(|t| t.checked_duration_since(Instant::now()))
+        {
+            Some(Some(t)) => dur = dur.min(t),
+            None => (),
+            Some(None) => return true,
+        }
+        park_timeout(dur);
+        self.timeout.map_or(false, |t| t <= Instant::now())
     }
 }
