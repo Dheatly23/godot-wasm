@@ -6,7 +6,7 @@ use std::collections::btree_map::BTreeMap;
 use std::mem::transmute;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::Error as AnyError;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -219,7 +219,7 @@ macro_rules! p1item_gen {
 p1item_gen! {
     <'a>
     P1File(Box<P1File>, &'a mut P1File, &'a P1File),
-    StdinSignal(Arc<crate::stdio::StdinSignal>, &'a crate::stdio::StdinSignal, &'a crate::stdio::StdinSignal),
+    StdinSignal(Arc<crate::stdio::StdinSignal>, &'a Arc<crate::stdio::StdinSignal>, &'a Arc<crate::stdio::StdinSignal>),
     StdoutBp(Arc<crate::stdio::StdoutBypass>, &'a crate::stdio::StdoutBypass, &'a crate::stdio::StdoutBypass),
     StderrBp(Arc<crate::stdio::StderrBypass>, &'a crate::stdio::StderrBypass, &'a crate::stdio::StderrBypass),
     StdoutLBuf(Arc<crate::stdio::StdoutCbLineBuffered>, &'a crate::stdio::StdoutCbLineBuffered, &'a crate::stdio::StdoutCbLineBuffered),
@@ -1974,7 +1974,135 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         out: GuestPtr<Event>,
         nsubscriptions: Size,
     ) -> Result<Size, Error> {
-        todo!()
+        if nsubscriptions == 0 {
+            return Err(Errno::Inval.into());
+        }
+
+        enum Poll {
+            Always,
+            Instant(Instant),
+            SystemTime(SystemTime),
+            Signal(crate::stdio::StdinSignalPollable),
+        }
+
+        let now = Instant::now();
+        let now_st = SystemTime::now();
+        let polls = in_
+            .as_array(nsubscriptions)
+            .iter()
+            .map(|i| {
+                let sub = mem.read(i?)?;
+                Ok((
+                    match &sub.u {
+                        SubscriptionU::Clock(v) => match v.id {
+                            Clockid::Monotonic | Clockid::Realtime
+                                if !v.flags.contains(Subclockflags::SUBSCRIPTION_CLOCK_ABSTIME) =>
+                            {
+                                Poll::Instant(now + Duration::from_nanos(v.timeout))
+                            }
+                            Clockid::Monotonic => {
+                                Poll::Instant(self.clock.poll_until(v.timeout)?.until)
+                            }
+                            Clockid::Realtime => Poll::SystemTime(
+                                SystemTime::UNIX_EPOCH + Duration::from_nanos(v.timeout),
+                            ),
+                            _ => return Err(Errno::Inval.into()),
+                        },
+                        SubscriptionU::FdRead(v) => {
+                            match self.p1_items.get_item(v.file_descriptor)? {
+                                // File is always ready
+                                FdItem::P1File(_) | FdItem::NullStdio(_) | FdItem::BoxedRead(_) => {
+                                    Poll::Always
+                                }
+                                FdItem::StdinSignal(v) => Poll::Signal(v.poll()?),
+                                _ => return Err(Errno::Badf.into()),
+                            }
+                        }
+                        SubscriptionU::FdWrite(v) => {
+                            match self.p1_items.get_item(v.file_descriptor)? {
+                                // File is always ready
+                                FdItem::P1File(_)
+                                | FdItem::NullStdio(_)
+                                | FdItem::StdoutBp(_)
+                                | FdItem::StderrBp(_)
+                                | FdItem::StdoutLBuf(_)
+                                | FdItem::StdoutBBuf(_) => Poll::Always,
+                                _ => return Err(Errno::Badf.into()),
+                            }
+                        }
+                    },
+                    sub,
+                ))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        let mut controller: Option<crate::poll::PollController> = None;
+        for _ in 0..3 {
+            let mut n: Size = 0;
+            let now = Instant::now();
+            let now_st = SystemTime::now();
+            for (i, (p, s)) in polls.iter().enumerate() {
+                if !match p {
+                    Poll::Always => true,
+                    Poll::Instant(t) => *t <= now,
+                    Poll::SystemTime(t) => *t <= now_st,
+                    Poll::Signal(v) => {
+                        controller.as_ref().map_or(false, |c| c.is_waited(&v.0)) || v.is_ready()
+                    }
+                } {
+                    continue;
+                }
+
+                mem.write(
+                    out.add(i as _)?,
+                    Event {
+                        userdata: s.userdata,
+                        error: Errno::Success,
+                        type_: match s.u {
+                            SubscriptionU::Clock(_) => Eventtype::Clock,
+                            SubscriptionU::FdRead(_) => Eventtype::FdRead,
+                            SubscriptionU::FdWrite(_) => Eventtype::FdWrite,
+                        },
+                        fd_readwrite: match s.u {
+                            SubscriptionU::Clock(_) => EventFdReadwrite {
+                                flags: Eventrwflags::empty(),
+                                nbytes: 0,
+                            },
+                            SubscriptionU::FdRead(_) | SubscriptionU::FdWrite(_) => {
+                                EventFdReadwrite {
+                                    flags: Eventrwflags::empty(),
+                                    nbytes: EMPTY_BUF.len() as _,
+                                }
+                            }
+                        },
+                    },
+                )?;
+                n += 1;
+            }
+
+            if n > 0 {
+                return Ok(n);
+            }
+
+            let c = controller.get_or_insert_with(|| {
+                let mut c = crate::poll::PollController::new(self.timeout);
+                for (p, _) in &polls {
+                    match p {
+                        Poll::Always => (),
+                        Poll::Instant(t) => c.set_instant(*t),
+                        Poll::SystemTime(t) => c.set_systime(*t),
+                        Poll::Signal(v) => c.add_signal(&v.0),
+                    }
+                }
+
+                c
+            });
+            if c.poll() {
+                break;
+            }
+        }
+
+        Ok(0)
     }
 
     fn proc_exit(&mut self, mem: &mut GuestMemory<'_>, rval: Exitcode) -> AnyError {

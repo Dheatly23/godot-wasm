@@ -3,7 +3,7 @@ use std::mem::replace;
 use std::ptr::null;
 use std::sync::{Arc, Weak};
 use std::thread::{current, park_timeout, Thread};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use scopeguard::guard;
 use smallvec::SmallVec;
@@ -12,7 +12,7 @@ use crate::stdio::StdinSignal;
 
 pub(crate) struct PollController {
     min_instant: Option<Instant>,
-    //min_systime: Option<SystemTime>,
+    min_systime: Option<SystemTime>,
     signals: SmallVec<[WaitData; 8]>,
 
     timeout: Option<Instant>,
@@ -45,7 +45,7 @@ impl PollController {
     pub(crate) fn new(timeout: Option<Instant>) -> Self {
         Self {
             min_instant: None,
-            //min_systime: None,
+            min_systime: None,
             signals: SmallVec::new(),
 
             timeout,
@@ -60,13 +60,13 @@ impl PollController {
         *v = (*v).min(t);
     }
 
-    //pub(crate) fn set_systime(&mut self, t: SystemTime) {
-    //    let Some(v) = &mut self.min_systime else {
-    //        self.min_systime = Some(t);
-    //        return;
-    //    };
-    //    *v = (*v).min(t);
-    //}
+    pub(crate) fn set_systime(&mut self, t: SystemTime) {
+        let Some(v) = &mut self.min_systime else {
+            self.min_systime = Some(t);
+            return;
+        };
+        *v = (*v).min(t);
+    }
 
     pub(crate) fn add_signal(&mut self, signal: &Arc<StdinSignal>) {
         let w = Arc::downgrade(signal);
@@ -99,15 +99,15 @@ impl PollController {
             };
         }
 
-        //if let Some(t) = &self.min_systime {
-        //    let d = t
-        //        .duration_since(SystemTime::now())
-        //        .unwrap_or(Duration::ZERO);
-        //    dur = match dur {
-        //        None => Some(d),
-        //        Some(b) => Some(d.min(b)),
-        //    };
-        //}
+        if let Some(t) = &self.min_systime {
+            let d = t
+                .duration_since(SystemTime::now())
+                .unwrap_or(Duration::ZERO);
+            dur = match dur {
+                None => Some(d),
+                Some(b) => Some(d.min(b)),
+            };
+        }
 
         if dur.map_or(false, |d| d.is_zero()) {
             return false;
