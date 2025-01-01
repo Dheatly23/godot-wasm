@@ -92,9 +92,7 @@ impl PollController {
         let mut dur = None;
 
         if let Some(t) = &self.min_instant {
-            let d = t
-                .checked_duration_since(Instant::now())
-                .unwrap_or(Duration::ZERO);
+            let d = t.saturating_duration_since(Instant::now());
             dur = match dur {
                 None => Some(d),
                 Some(b) => Some(d.min(b)),
