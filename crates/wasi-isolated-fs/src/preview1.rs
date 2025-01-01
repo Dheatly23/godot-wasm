@@ -2041,7 +2041,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             let mut n: Size = 0;
             let now = Instant::now();
             let now_st = SystemTime::now();
-            for (i, (p, s)) in polls.iter().enumerate() {
+            for (p, s) in &polls {
                 if !match p {
                     Poll::Always => true,
                     Poll::Instant(t) => *t <= now,
@@ -2054,7 +2054,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
 
                 mem.write(
-                    out.add(i as _)?,
+                    out.add(n)?,
                     Event {
                         userdata: s.userdata,
                         error: Errno::Success,
