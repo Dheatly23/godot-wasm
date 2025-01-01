@@ -11,6 +11,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use cap_fs_ext::{DirExt, FileTypeExt, MetadataExt, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
 use fs_set_times::SetTimes;
 use rand::Rng;
+use smallvec::SmallVec;
 use system_interface::fs::FileIoExt;
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
@@ -230,15 +231,20 @@ p1item_gen! {
 struct MemIO<'a, 'b, T> {
     mem: &'a mut GuestMemory<'b>,
     len: Size,
-    iov: T,
+    iov: SmallVec<[T; 16]>,
 }
 
-impl<'a, 'b> MemIO<'a, 'b, IovecArray> {
+impl<'a, 'b> MemIO<'a, 'b, Iovec> {
     fn new_read(mem: &'a mut GuestMemory<'b>, iov: IovecArray) -> Result<Self, Error> {
-        let mut len: Size = 0;
-        for p in iov.iter() {
-            len = len.saturating_add(mem.read(p?)?.buf_len);
-        }
+        let iov = iov
+            .iter()
+            .filter_map(|i| match i.and_then(|p| mem.read(p)) {
+                Ok(Iovec { buf_len: 0, .. }) => None,
+                v => Some(v),
+            })
+            .take(256)
+            .collect::<Result<SmallVec<[_; 16]>, _>>()?;
+        let len = iov.iter().fold(0, |a, v| v.buf_len.saturating_add(a));
 
         Ok(Self { mem, len, iov })
     }
@@ -253,15 +259,14 @@ impl<'a, 'b> MemIO<'a, 'b, IovecArray> {
             return Ok(0);
         }
 
-        let mut iov = iov.iter();
+        let mut iov = iov.into_iter();
         let mut n = 0;
         let Iovec {
             buf: mut p,
             buf_len: mut blen,
-        } = mem.read(
-            iov.next()
-                .expect("IovecArray ran out before reading complete")?,
-        )?;
+        } = iov
+            .next()
+            .expect("IovecArray ran out before reading complete");
         while len > 0 {
             let (s, mut l) = f(&mut t, len)?;
             if l == 0 {
@@ -284,10 +289,9 @@ impl<'a, 'b> MemIO<'a, 'b, IovecArray> {
                     Iovec {
                         buf: p,
                         buf_len: blen,
-                    } = mem.read(
-                        iov.next()
-                            .expect("IovecArray ran out before reading complete")?,
-                    )?;
+                    } = iov
+                        .next()
+                        .expect("IovecArray ran out before reading complete");
                 }
 
                 let i = l.min(blen);
@@ -323,12 +327,17 @@ impl<'a, 'b> MemIO<'a, 'b, IovecArray> {
     }
 }
 
-impl<'a, 'b> MemIO<'a, 'b, CiovecArray> {
+impl<'a, 'b> MemIO<'a, 'b, Ciovec> {
     fn new_write(mem: &'a mut GuestMemory<'b>, iov: CiovecArray) -> Result<Self, Error> {
-        let mut len: Size = 0;
-        for p in iov.iter() {
-            len = len.saturating_add(mem.read(p?)?.buf_len);
-        }
+        let iov = iov
+            .iter()
+            .filter_map(|i| match i.and_then(|p| mem.read(p)) {
+                Ok(Ciovec { buf_len: 0, .. }) => None,
+                v => Some(v),
+            })
+            .take(256)
+            .collect::<Result<SmallVec<[_; 16]>, _>>()?;
+        let len = iov.iter().fold(0, |a, v| v.buf_len.saturating_add(a));
 
         Ok(Self { mem, len, iov })
     }
@@ -339,15 +348,7 @@ impl<'a, 'b> MemIO<'a, 'b, CiovecArray> {
             return Ok(0);
         }
 
-        let Some(Ciovec { buf, buf_len }) = iov
-            .iter()
-            .filter_map(|i| match i.and_then(|i| mem.read(i)) {
-                Ok(v) if v.buf_len == 0 => None,
-                v => Some(v),
-            })
-            .next()
-            .transpose()?
-        else {
+        let Some(Ciovec { buf, buf_len }) = iov.into_iter().find(|v| v.buf_len > 0) else {
             return Ok(0);
         };
 
