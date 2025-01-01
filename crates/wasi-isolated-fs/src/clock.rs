@@ -7,7 +7,7 @@ use anyhow::Result as AnyResult;
 use crate::bindings::wasi;
 use crate::errors;
 
-const MAX_TIMEOUT: Duration = Duration::from_secs(1);
+const MAX_TIMEOUT: Duration = Duration::from_millis(100);
 
 pub struct ClockController {
     epoch: Instant,
@@ -54,8 +54,7 @@ impl ClockPollable {
         Instant::now() >= self.until
     }
 
-    pub fn block(&self) -> AnyResult<()> {
-        let stamp = Instant::now();
+    pub fn block(&self, timeout: Option<Instant>) -> AnyResult<()> {
         loop {
             let d = self.until.saturating_duration_since(Instant::now());
             if d.is_zero() {
@@ -63,7 +62,7 @@ impl ClockPollable {
             }
 
             sleep(d.min(MAX_TIMEOUT));
-            if stamp.elapsed() >= MAX_TIMEOUT {
+            if timeout.map_or(false, |t| t <= Instant::now()) {
                 return Err(IoError::from(ErrorKind::TimedOut).into());
             }
         }

@@ -36,7 +36,7 @@ impl wasi::io::poll::HostPollable for WasiContext {
         match self.items.get_item(res)? {
             items::Poll::NullPoll(_) => (),
             items::Poll::StdinPoll(v) => v.block(self.timeout)?,
-            items::Poll::ClockPoll(v) => v.block()?,
+            items::Poll::ClockPoll(v) => v.block(self.timeout)?,
         }
         Ok(())
     }
@@ -56,7 +56,7 @@ impl wasi::io::poll::Host for WasiContext {
                 match v {
                     items::Poll::NullPoll(_) => (),
                     items::Poll::StdinPoll(v) => v.block(self.timeout)?,
-                    items::Poll::ClockPoll(v) => v.block()?,
+                    items::Poll::ClockPoll(v) => v.block(self.timeout)?,
                 }
                 return Ok(vec![0]);
             }
