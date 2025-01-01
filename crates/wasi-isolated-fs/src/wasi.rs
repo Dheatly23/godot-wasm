@@ -35,7 +35,7 @@ impl wasi::io::poll::HostPollable for WasiContext {
     fn block(&mut self, res: Resource<wasi::io::poll::Pollable>) -> AnyResult<()> {
         match self.items.get_item(res)? {
             items::Poll::NullPoll(_) => (),
-            items::Poll::StdinPoll(v) => v.block()?,
+            items::Poll::StdinPoll(v) => v.block(self.timeout)?,
             items::Poll::ClockPoll(v) => v.block()?,
         }
         Ok(())
@@ -55,7 +55,7 @@ impl wasi::io::poll::Host for WasiContext {
             [v] => {
                 match v {
                     items::Poll::NullPoll(_) => (),
-                    items::Poll::StdinPoll(v) => v.block()?,
+                    items::Poll::StdinPoll(v) => v.block(self.timeout)?,
                     items::Poll::ClockPoll(v) => v.block()?,
                 }
                 return Ok(vec![0]);
@@ -189,7 +189,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
             items::IOStream::NullStdio(_) => 0,
             items::IOStream::IsoFSAccess(mut v) => v.skip(len)? as u64,
             items::IOStream::HostFSStream(mut v) => v.skip(len)? as u64,
-            items::IOStream::StdinSignal(v) => v.skip_block(len)? as u64,
+            items::IOStream::StdinSignal(v) => v.skip_block(len, self.timeout)? as u64,
             items::IOStream::BoxedRead(mut v) => v.read(&mut vec![0; len.min(1024)])? as u64,
             _ => return Err(ErrorKind::InvalidInput.into()),
         })
@@ -472,7 +472,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
 
             let b = match &mut input {
                 items::IOStream::IsoFSAccess(v) => v.read(i)?,
-                items::IOStream::StdinSignal(v) => v.read_block(i)?,
+                items::IOStream::StdinSignal(v) => v.read_block(i, self.timeout)?,
                 items::IOStream::BoxedRead(v) => {
                     let mut r = vec![0; i.min(1024)];
                     let i = v.read(&mut r)?;

@@ -174,8 +174,11 @@ impl StdinSignal {
         Ok(ret)
     }
 
-    pub fn read_block(&self, len: usize) -> IoResult<Vec<u8>> {
-        let timeout = Instant::now() + MAX_TIMEOUT;
+    pub fn read_block(&self, len: usize, timeout: Option<Instant>) -> IoResult<Vec<u8>> {
+        let mut t = Instant::now() + MAX_TIMEOUT;
+        if let Some(v) = timeout {
+            t = t.min(v);
+        }
         let mut guard = self.inner.lock();
 
         let (a, b) = loop {
@@ -183,7 +186,7 @@ impl StdinSignal {
             let (a, b) = guard.pop_data(len);
             if !closed && a.is_empty() && b.is_empty() {
                 (self.f)();
-                if self.cond.wait_until(&mut guard, timeout).timed_out() {
+                if self.cond.wait_until(&mut guard, t).timed_out() {
                     return Err(ErrorKind::TimedOut.into());
                 }
             } else {
@@ -204,8 +207,11 @@ impl StdinSignal {
         Ok(a.len() + b.len())
     }
 
-    pub fn skip_block(&self, len: usize) -> IoResult<usize> {
-        let timeout = Instant::now() + MAX_TIMEOUT;
+    pub fn skip_block(&self, len: usize, timeout: Option<Instant>) -> IoResult<usize> {
+        let mut t = Instant::now() + MAX_TIMEOUT;
+        if let Some(v) = timeout {
+            t = t.min(v);
+        }
         let mut guard = self.inner.lock();
 
         let (a, b) = loop {
@@ -213,7 +219,7 @@ impl StdinSignal {
             let (a, b) = guard.pop_data(len);
             if !closed && a.is_empty() && b.is_empty() {
                 (self.f)();
-                if self.cond.wait_until(&mut guard, timeout).timed_out() {
+                if self.cond.wait_until(&mut guard, t).timed_out() {
                     return Err(ErrorKind::TimedOut.into());
                 }
             } else {
@@ -264,11 +270,14 @@ impl StdinSignalPollable {
         self.0.is_ready()
     }
 
-    pub fn block(&self) -> AnyResult<()> {
-        let timeout = Instant::now() + MAX_TIMEOUT;
+    pub fn block(&self, timeout: Option<Instant>) -> AnyResult<()> {
+        let mut t = Instant::now() + MAX_TIMEOUT;
+        if let Some(v) = timeout {
+            t = t.min(v);
+        }
         let mut guard = self.0.inner.lock();
         while !guard.closed && guard.end == guard.start {
-            if self.0.cond.wait_until(&mut guard, timeout).timed_out() {
+            if self.0.cond.wait_until(&mut guard, t).timed_out() {
                 return Err(IoError::from(ErrorKind::TimedOut).into());
             }
         }
