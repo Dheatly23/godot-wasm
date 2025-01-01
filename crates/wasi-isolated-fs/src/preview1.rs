@@ -1,5 +1,3 @@
-#![allow(unused_variables)]
-
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::btree_map::BTreeMap;
@@ -12,6 +10,7 @@ use anyhow::Error as AnyError;
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_fs_ext::{DirExt, FileTypeExt, MetadataExt, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
 use fs_set_times::SetTimes;
+use rand::Rng;
 use system_interface::fs::FileIoExt;
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
@@ -131,7 +130,7 @@ impl P1File {
     pub fn with_cursor(desc: P1Desc, cursor: u64) -> Self {
         Self {
             preopen: None,
-            cursor: None,
+            cursor: Some(cursor),
             desc,
         }
     }
@@ -1544,20 +1543,13 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             FdItem::P1File(P1File {
                 desc: P1Desc::IsoFS(v),
                 ..
-            }) => {
-                let p = to_utf8_path(path);
-                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
-                    return Err(Errno::Inval.into());
-                };
-
-                Ok(iso_filestat(&v.open(
-                    try_iso_fs(&self.iso_fs)?,
-                    parent,
-                    follow_symlink,
-                    None,
-                    AccessMode::W,
-                )?))
-            }
+            }) => Ok(iso_filestat(&v.open(
+                try_iso_fs(&self.iso_fs)?,
+                &to_utf8_path(path),
+                follow_symlink,
+                None,
+                AccessMode::W,
+            )?)),
             FdItem::P1File(P1File {
                 desc: P1Desc::HostFS(v),
                 ..
@@ -1593,25 +1585,18 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             FdItem::P1File(P1File {
                 desc: P1Desc::IsoFS(v),
                 ..
-            }) => {
-                let p = to_utf8_path(path);
-                let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
-                    return Err(Errno::Inval.into());
-                };
-
-                iso_filestat_set_times(
-                    &v.open(
-                        try_iso_fs(&self.iso_fs)?,
-                        parent,
-                        follow_symlink,
-                        None,
-                        AccessMode::W,
-                    )?,
-                    atim,
-                    mtim,
-                    fst_flags,
-                )
-            }
+            }) => iso_filestat_set_times(
+                &v.open(
+                    try_iso_fs(&self.iso_fs)?,
+                    &to_utf8_path(path),
+                    follow_symlink,
+                    None,
+                    AccessMode::W,
+                )?,
+                atim,
+                mtim,
+                fst_flags,
+            ),
             FdItem::P1File(P1File {
                 desc: P1Desc::HostFS(v),
                 ..
@@ -1664,7 +1649,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         path: GuestPtr<str>,
         oflags: Oflags,
         fs_rights_base: Rights,
-        fs_rights_inheriting: Rights,
+        _fs_rights_inheriting: Rights,
         fdflags: Fdflags,
     ) -> Result<Fd, Error> {
         let follow_symlink = dirflags.contains(Lookupflags::SYMLINK_FOLLOW);
@@ -1986,7 +1971,6 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
 
         let now = Instant::now();
-        let now_st = SystemTime::now();
         let polls = in_
             .as_array(nsubscriptions)
             .iter()
@@ -2105,16 +2089,16 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(0)
     }
 
-    fn proc_exit(&mut self, mem: &mut GuestMemory<'_>, rval: Exitcode) -> AnyError {
-        todo!()
+    fn proc_exit(&mut self, _: &mut GuestMemory<'_>, rval: Exitcode) -> AnyError {
+        crate::errors::ProcessExit::new(rval).into()
     }
 
-    fn proc_raise(&mut self, mem: &mut GuestMemory<'_>, sig: Signal) -> Result<(), Error> {
-        todo!()
+    fn proc_raise(&mut self, _: &mut GuestMemory<'_>, _: Signal) -> Result<(), Error> {
+        Err(Errno::Notsup.into())
     }
 
-    fn sched_yield(&mut self, mem: &mut GuestMemory<'_>) -> Result<(), Error> {
-        todo!()
+    fn sched_yield(&mut self, _: &mut GuestMemory<'_>) -> Result<(), Error> {
+        Ok(())
     }
 
     fn random_get(
@@ -2123,44 +2107,57 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         buf: GuestPtr<u8>,
         buf_len: Size,
     ) -> Result<(), Error> {
-        todo!()
+        let buf = buf.offset();
+        let s = usize::try_from(buf)?;
+        let l = usize::try_from(buf_len)?;
+
+        let src = match mem {
+            GuestMemory::Unshared(mem) => mem.get_mut(s..).and_then(|v| v.get_mut(..l)),
+            GuestMemory::Shared(mem) => mem.get(s..).and_then(|v| v.get(..l)).map(|v| {
+                // SAFETY: Responsibility for shared access exclusivity is on guest.
+                #[allow(mutable_transmutes)]
+                unsafe {
+                    transmute::<&[UnsafeCell<u8>], &mut [u8]>(v)
+                }
+            }),
+        };
+        if let Some(src) = src {
+            self.secure_rng.fill(src);
+            Ok(())
+        } else {
+            Err(GuestError::PtrOutOfBounds(Region {
+                start: buf,
+                len: buf_len,
+            })
+            .into())
+        }
     }
 
-    fn sock_accept(
-        &mut self,
-        mem: &mut GuestMemory<'_>,
-        fd: Fd,
-        flags: Fdflags,
-    ) -> Result<Fd, Error> {
-        todo!()
+    fn sock_accept(&mut self, _: &mut GuestMemory<'_>, _: Fd, _: Fdflags) -> Result<Fd, Error> {
+        Err(Errno::Notsock.into())
     }
 
     fn sock_recv(
         &mut self,
-        mem: &mut GuestMemory<'_>,
-        fd: Fd,
-        ri_data: IovecArray,
-        ri_flags: Riflags,
+        _: &mut GuestMemory<'_>,
+        _: Fd,
+        _: IovecArray,
+        _: Riflags,
     ) -> Result<(Size, Roflags), Error> {
-        todo!()
+        Err(Errno::Notsock.into())
     }
 
     fn sock_send(
         &mut self,
-        mem: &mut GuestMemory<'_>,
-        fd: Fd,
-        si_data: CiovecArray,
-        si_flags: Siflags,
+        _: &mut GuestMemory<'_>,
+        _: Fd,
+        _: CiovecArray,
+        _: Siflags,
     ) -> Result<Size, Error> {
-        todo!()
+        Err(Errno::Notsock.into())
     }
 
-    fn sock_shutdown(
-        &mut self,
-        mem: &mut GuestMemory<'_>,
-        fd: Fd,
-        how: Sdflags,
-    ) -> Result<(), Error> {
-        todo!()
+    fn sock_shutdown(&mut self, _: &mut GuestMemory<'_>, _: Fd, _: Sdflags) -> Result<(), Error> {
+        Err(Errno::Notsock.into())
     }
 }
