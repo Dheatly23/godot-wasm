@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use std::mem::replace;
 use std::ptr::null;
 use std::sync::{Arc, Weak};
-use std::thread::{current, park_timeout, Thread};
+use std::thread::{current, park_timeout, sleep, Thread};
 use std::time::{Duration, Instant, SystemTime};
 
 use scopeguard::guard;
@@ -180,7 +180,11 @@ impl PollController {
             None => (),
             Some(None) => return true,
         }
-        park_timeout(dur);
+        if signals.is_empty() {
+            sleep(dur);
+        } else {
+            park_timeout(dur);
+        }
         self.timeout.map_or(false, |t| t <= Instant::now())
     }
 }
