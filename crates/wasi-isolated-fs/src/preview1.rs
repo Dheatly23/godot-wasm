@@ -1113,7 +1113,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 let old = *c;
 
                 let r = memio.read(v, |v, len| {
-                    let (s, l) = v.read(len.try_into()?, (*c).try_into().unwrap_or(usize::MAX));
+                    let (s, l) = v.read(
+                        len.try_into().unwrap_or(usize::MAX),
+                        (*c).try_into().unwrap_or(usize::MAX),
+                    );
                     *c += l as u64;
                     Ok((s.into(), l as Size))
                 });
@@ -1137,7 +1140,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                         return Ok(((&[]).into(), 0));
                     }
 
-                    let mut ret = vec![0; EMPTY_BUF.len().min(len.try_into()?)];
+                    let mut ret =
+                        vec![0; EMPTY_BUF.len().min(len.try_into().unwrap_or(usize::MAX))];
                     let l = crate::fs_host::CapWrapper::read_at(v, &mut ret, *c as _)?;
                     ret.truncate(l);
                     *c += l as u64;
@@ -1149,6 +1153,21 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
                 r
             }
+            FdItem::NullStdio(_) => memio.read((), |_, len| {
+                let l = EMPTY_BUF.len().min(len.try_into().unwrap_or(usize::MAX));
+                Ok(((&EMPTY_BUF[..l]).into(), l as Size))
+            }),
+            FdItem::StdinSignal(v) => memio.read(v, |v, len| {
+                let ret = v.read(len.try_into().unwrap_or(usize::MAX))?;
+                let l = ret.len() as Size;
+                Ok((ret.into(), l))
+            }),
+            FdItem::BoxedRead(v) => memio.read(v, |v, len| {
+                let mut ret = vec![0; len.min(1024) as usize];
+                let i = v.read(&mut ret)?;
+                ret.truncate(i);
+                Ok((ret.into(), i as Size))
+            }),
             _ => Err(Errno::Badf.into()),
         }
     }
@@ -1440,6 +1459,39 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                         Ok(l as Size)
                     })
                 }
+            }
+            FdItem::NullStdio(_) => Ok(memio.len),
+            FdItem::StdoutBp(v) => {
+                let r = memio.write(|s| {
+                    v.write(s)?;
+                    Ok(s.len() as _)
+                })?;
+                v.flush()?;
+                Ok(r)
+            }
+            FdItem::StderrBp(v) => {
+                let r = memio.write(|s| {
+                    v.write(s)?;
+                    Ok(s.len() as _)
+                })?;
+                v.flush()?;
+                Ok(r)
+            }
+            FdItem::StdoutLBuf(v) => {
+                let r = memio.write(|s| {
+                    v.write(s)?;
+                    Ok(s.len() as _)
+                })?;
+                v.flush()?;
+                Ok(r)
+            }
+            FdItem::StdoutBBuf(v) => {
+                let r = memio.write(|s| {
+                    v.write(s)?;
+                    Ok(s.len() as _)
+                })?;
+                v.flush()?;
+                Ok(r)
             }
             _ => Err(Errno::Badf.into()),
         }
