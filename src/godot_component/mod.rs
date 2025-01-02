@@ -40,7 +40,6 @@ pub struct GodotCtx {
     table: Slab<SendSyncWrapper<Variant>>,
 
     pub inst_id: Option<InstanceId>,
-    arg_arr: Option<SendSyncWrapper<VariantArray>>,
 
     pub filter: filter::Filter,
 }
@@ -140,11 +139,6 @@ impl GodotCtx {
         let v = var.to_variant();
         drop(var);
         self.try_insert(v).map(WasmResource::new_own)
-    }
-
-    pub fn get_arg_arr(&mut self) -> &mut VariantArray {
-        self.arg_arr
-            .get_or_insert_with(|| SendSyncWrapper::new(<_>::default()))
     }
 }
 

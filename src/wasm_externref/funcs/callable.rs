@@ -34,20 +34,19 @@ func_registry! {
     call => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let c = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
 
-        let mut v = ctx.data_mut().as_mut().get_arg_arr().clone();
-        v.clear();
+        let mut v = Vec::new();
         if let Some(f) = f {
             let f: TypedFunc<u32, (Option<Rooted<ExternRef>>, u32)> = site_context!(f.typed(&ctx))?;
             loop {
                 let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
-                v.push(&externref_to_variant(&ctx, e)?);
+                v.push(externref_to_variant(&ctx, e)?);
                 if n == 0 {
                     break;
                 }
             }
         }
 
-        let r = ctx.data_mut().as_mut().release_store(move || c.callv(&v));
+        let r = ctx.data_mut().as_mut().release_store(move || c.call(&v));
         variant_to_externref(ctx, r)
     },
     callv => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {

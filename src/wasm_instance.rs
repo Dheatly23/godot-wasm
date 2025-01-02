@@ -191,7 +191,6 @@ impl Default for InnerLock {
 pub struct StoreData {
     inner_lock: InnerLock,
     pub error_signal: Option<String>,
-    arg_arr: Option<SendSyncWrapper<VariantArray>>,
 
     #[cfg(feature = "epoch-timeout")]
     pub epoch_timeout: u64,
@@ -589,11 +588,6 @@ impl InnerLock {
 }
 
 impl StoreData {
-    pub fn get_arg_arr(&mut self) -> &mut VariantArray {
-        self.arg_arr
-            .get_or_insert_with(|| SendSyncWrapper::new(<_>::default()))
-    }
-
     #[inline]
     pub(crate) fn release_store<F, R>(&mut self, f: F) -> R
     where
