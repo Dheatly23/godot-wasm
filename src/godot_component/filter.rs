@@ -102,7 +102,7 @@ impl<const N: usize> FilterFlags<N> {
     }
 
     pub fn fill(&mut self, Range { start, end }: Range<usize>, v: bool) {
-        self.0.fill(start.min(N)..end.min(N), v);
+        self.0.fill(start.min(N * 8)..end.min(N * 8), v);
     }
 }
 
