@@ -120,7 +120,7 @@ impl<const N: usize> FilterFlags<N> {
                 if v {
                     *p |= !(255 << re);
                 } else {
-                    *p &= 255 << rs;
+                    *p &= 255 << re;
                 }
             } else {
                 *p = if v { 255 } else { 0 };
