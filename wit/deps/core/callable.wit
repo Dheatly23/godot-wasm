@@ -13,8 +13,17 @@ interface callable {
     method-name: func(var: borrow<godot-var>) -> option<godot-var>;
 
     call: func(var: borrow<godot-var>, args: list<option<borrow<godot-var>>>) -> option<godot-var>;
+    call-deferred: func(var: borrow<godot-var>, args: list<option<borrow<godot-var>>>);
     callv: func(var: borrow<godot-var>, args: borrow<godot-var>) -> option<godot-var>;
 
     bind: func(var: borrow<godot-var>, args: list<option<borrow<godot-var>>>) -> godot-var;
     bindv: func(var: borrow<godot-var>, args: borrow<godot-var>) -> godot-var;
+    unbind: func(var: borrow<godot-var>, n: s64) -> godot-var;
+
+    get-argument-count: func(var: borrow<godot-var>) -> s64;
+    get-bound-arguments: func(var: borrow<godot-var>) -> godot-var;
+    get-bound-arguments-count: func(var: borrow<godot-var>) -> s64;
+
+    rpc: func(var: borrow<godot-var>, args: list<option<borrow<godot-var>>>);
+    rpc-id: func(var: borrow<godot-var>, peer-id: s64, args: list<option<borrow<godot-var>>>);
 }
