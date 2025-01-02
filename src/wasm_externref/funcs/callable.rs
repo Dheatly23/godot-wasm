@@ -49,6 +49,24 @@ func_registry! {
         let r = ctx.data_mut().as_mut().release_store(move || c.call(&v));
         variant_to_externref(ctx, r)
     },
+    call_deferred => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<()> {
+        let c = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
+
+        let mut v = Vec::new();
+        if let Some(f) = f {
+            let f: TypedFunc<u32, (Option<Rooted<ExternRef>>, u32)> = site_context!(f.typed(&ctx))?;
+            loop {
+                let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
+                v.push(externref_to_variant(&ctx, e)?);
+                if n == 0 {
+                    break;
+                }
+            }
+        }
+
+        ctx.data_mut().as_mut().release_store(move || c.call_deferred(&v));
+        Ok(())
+    },
     callv => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
         let a = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, args)?))?;
@@ -61,5 +79,38 @@ func_registry! {
         let a = site_context!(from_var_any::<VariantArray>(&externref_to_variant(&ctx, args)?))?;
 
         variant_to_externref(ctx, v.bindv(&a).to_variant())
+    },
+    bind => |mut ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, f: Option<Func>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let c = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
+
+        let mut v = Vec::new();
+        if let Some(f) = f {
+            let f: TypedFunc<u32, (Option<Rooted<ExternRef>>, u32)> = site_context!(f.typed(&ctx))?;
+            loop {
+                let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
+                v.push(externref_to_variant(&ctx, e)?);
+                if n == 0 {
+                    break;
+                }
+            }
+        }
+
+        variant_to_externref(ctx, c.bind(&v).to_variant())
+    },
+    unbind => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, n: u64| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
+        variant_to_externref(ctx, v.unbind(n as _).to_variant())
+    },
+    get_argument_count => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u64> {
+        let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
+        Ok(v.get_argument_count() as _)
+    },
+    get_bound_arguments => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
+        let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
+        variant_to_externref(ctx, v.get_bound_arguments().to_variant())
+    },
+    get_bound_arguments_count => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u64> {
+        let v = site_context!(from_var_any::<Callable>(&externref_to_variant(&ctx, v)?))?;
+        Ok(v.get_bound_arguments_count() as _)
     },
 }
