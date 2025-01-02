@@ -9,11 +9,12 @@ use nom::character::complete::{char as char_, space0};
 use nom::combinator::{map, opt};
 use nom::sequence::{delimited, pair, preceded, separated_pair};
 use nom::{Err as NomErr, IResult};
+use rbitset::BitSet;
 
 use crate::rw_struct::{CharSlice, SingleError};
 
 #[derive(Debug, Clone)]
-pub struct FilterFlags<const N: usize>([u8; N]);
+pub struct FilterFlags<const N: usize>(BitSet<u8, N>);
 
 #[derive(Debug, Clone, Copy)]
 pub struct FilterFlagsRef<'a, const N: usize> {
@@ -31,7 +32,9 @@ pub struct FilterFlagsMut<'a, const N: usize> {
 
 impl<const N: usize> Default for FilterFlags<N> {
     fn default() -> Self {
-        Self([255; N])
+        let mut ret = <BitSet<u8, N>>::new();
+        ret.fill(0..N, true);
+        Self(ret)
     }
 }
 
@@ -87,45 +90,19 @@ impl<const N: usize> FilterFlags<N> {
     }
 
     pub fn get(&self, i: usize) -> bool {
-        let (i, r) = (i / 8, i % 8);
-        match self.0.get(i) {
-            Some(&v) => v & (1 << r) != 0,
-            None => false,
-        }
+        self.0.try_contains(i).unwrap_or_default()
     }
 
     pub fn set(&mut self, i: usize, v: bool) {
-        let (i, r) = (i / 8, i % 8);
-        if let Some(p) = self.0.get_mut(i) {
-            if v {
-                *p |= 1 << r;
-            } else {
-                *p &= !(1 << r);
-            }
-        }
+        let _ = if v {
+            self.0.try_insert(i)
+        } else {
+            self.0.try_remove(i)
+        };
     }
 
     pub fn fill(&mut self, Range { start, end }: Range<usize>, v: bool) {
-        let (is, rs) = (start / 8, start % 8);
-        let (ie, re) = (end / 8, end % 8);
-        for i in is..=ie {
-            let Some(p) = self.0.get_mut(i) else { continue };
-            if i == is {
-                if v {
-                    *p |= 255 << rs;
-                } else {
-                    *p &= !(255 << rs);
-                }
-            } else if i == ie {
-                if v {
-                    *p |= !(255 << re);
-                } else {
-                    *p &= 255 << re;
-                }
-            } else {
-                *p = if v { 255 } else { 0 };
-            }
-        }
+        self.0.fill(start.min(N)..end.min(N), v);
     }
 }
 

@@ -732,6 +732,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "rayon",
+ "rbitset",
  "scopeguard",
  "slab",
  "wasmparser 0.222.0",
@@ -1345,6 +1346,15 @@ checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "rbitset"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4551dde8e4d78fac99b89a85b00d2f32850fd9f6d51ce741a31605a4a0678bd"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]
