@@ -3,13 +3,14 @@ use std::fmt::{Debug, Display, Formatter, Result as FmtResult, Write as _};
 use std::ops::{Bound, Range, RangeBounds};
 
 use godot::prelude::*;
-use nom::branch::alt;
-use nom::bytes::complete::{tag, take_while1};
-use nom::character::complete::{char as char_, space0};
-use nom::combinator::{all_consuming, map, opt, rest};
-use nom::sequence::{pair, preceded, separated_pair};
-use nom::{Err as NomErr, IResult};
+use nom::bytes::complete::take_while1;
+use nom::character::complete::{alpha1, char as char_, space0, space1};
+use nom::combinator::{all_consuming, opt, value};
+use nom::error::{ErrorKind, ParseError};
+use nom::sequence::preceded;
+use nom::{Err as NomErr, IResult, Parser};
 use rbitset::BitSet;
+use smol_str::SmolStr;
 
 use crate::rw_struct::{CharSlice, SingleError};
 
@@ -310,6 +311,7 @@ macro_rules! filter_macro {
                 }
             }
 
+            #[cfg(test)]
             pub fn print_filter<const N: usize>(filter: $crate::godot_component::filter::FilterFlagsRef<'_, N>, f: $crate::godot_component::filter::FilterItem<'_>) {
                 $(($crate::godot_component::filter::FilterItem {
                     allow: filter.get(indices::$i),
@@ -348,6 +350,7 @@ macro_rules! filter_macro {
                 }
             }
 
+            #[cfg(test)]
             pub fn print_filter<const N: usize>(filter: $crate::godot_component::filter::FilterFlagsRef<'_, N>, f: $crate::godot_component::filter::FilterItem<'_>) {
                 $($i::print_filter(
                     filter.slice(indices::$i.0..indices::$i.0 + indices::$i.1),
@@ -362,7 +365,9 @@ macro_rules! filter_macro {
 }
 
 use crate::godot_component::filter_data::indices::filter_len as ENDPOINT;
-use crate::godot_component::filter_data::{parse_filter, print_filter};
+use crate::godot_component::filter_data::parse_filter;
+#[cfg(test)]
+use crate::godot_component::filter_data::print_filter;
 const DATA_LEN: usize = (ENDPOINT + 7) / 8;
 
 pub type Filter = FilterFlags<DATA_LEN>;
@@ -500,6 +505,7 @@ pub struct FilterItem<'a> {
 }
 
 impl FilterItem<'_> {
+    #[cfg(test)]
     pub fn print_filter(&self) {
         eprintln!(
             "{} {}.{}.{}",
@@ -536,48 +542,70 @@ impl Error for FilterItem<'_> {}
 fn parse_line(
     i: CharSlice<'_>,
 ) -> IResult<CharSlice<'_>, Option<(bool, [Option<&'_ [char]>; 3])>, SingleError<CharSlice<'_>>> {
-    let f = |c: char| c.is_alphanumeric() || matches!(c, ':' | '-');
+    fn item(i: CharSlice<'_>) -> IResult<CharSlice<'_>, CharSlice<'_>, SingleError<CharSlice<'_>>> {
+        take_while1::<_, CharSlice<'_>, SingleError<CharSlice<'_>>>(|c: char| {
+            c.is_alphanumeric() || matches!(c, ':' | '-')
+        })(i)
+    }
 
-    all_consuming(preceded(
-        space0,
-        alt((
-            map(pair(alt((tag("#"), tag("//"))), rest), |_| None),
-            opt(separated_pair(
-                alt((map(tag("deny"), |_| false), map(tag("allow"), |_| true))),
-                char_(' '),
-                alt((
-                    map(char_('*'), |_| [None; 3]),
-                    map(
-                        pair(
-                            take_while1(f),
-                            alt((
-                                map(tag(".*"), |_: CharSlice| None),
-                                opt(preceded(
-                                    char_('.'),
-                                    pair(
-                                        take_while1(f),
-                                        alt((
-                                            map(tag(".*"), |_: CharSlice| None),
-                                            opt(preceded(char_('.'), take_while1(f))),
-                                        )),
-                                    ),
-                                )),
-                            )),
-                        ),
-                        |v| match v {
-                            (module, None) => [Some(module.0), None, None],
-                            (module, Some((interface, None))) => {
-                                [Some(module.0), Some(interface.0), None]
-                            }
-                            (module, Some((interface, Some(method)))) => {
-                                [Some(module.0), Some(interface.0), Some(method.0)]
-                            }
-                        },
-                    ),
-                )),
-            )),
-        )),
-    ))(i)
+    fn item_or_any(
+        i: CharSlice<'_>,
+    ) -> IResult<CharSlice<'_>, Option<CharSlice<'_>>, SingleError<CharSlice<'_>>> {
+        item.map(Some).or(value(None, char_('*'))).parse(i)
+    }
+
+    fn maybe_item_or_any(
+        i: CharSlice<'_>,
+    ) -> IResult<CharSlice<'_>, Option<&'_ [char]>, SingleError<CharSlice<'_>>> {
+        opt(item_or_any).map(|v| v.flatten().map(|v| v.0)).parse(i)
+    }
+
+    fn maybe_dotted_item_or_any(
+        i: CharSlice<'_>,
+    ) -> IResult<CharSlice<'_>, Option<&'_ [char]>, SingleError<CharSlice<'_>>> {
+        opt(preceded(char_('.'), item_or_any))
+            .map(|v| v.flatten().map(|v| v.0))
+            .parse(i)
+    }
+
+    let (i, _) = space0(i)?;
+    if matches!(i.0, [] | ['#', ..] | ['/', '/', ..]) {
+        // Comment
+        return Ok((CharSlice(&[]), None));
+    }
+
+    let (i, v) = alpha1(i)?;
+    let v_ = if v.0.len() < 8 {
+        v.0.iter().flat_map(|v| v.to_lowercase()).collect()
+    } else {
+        SmolStr::new_static("")
+    };
+    let allow = match &*v_ {
+        "deny" | "d" | "-" => false,
+        "allow" | "a" | "+" => true,
+        _ => {
+            return Err(NomErr::Error(SingleError::from_error_kind(
+                v,
+                ErrorKind::OneOf,
+            )))
+        }
+    };
+    let (i, _) = space1(i)?;
+
+    let (i, module) = maybe_item_or_any(i)?;
+    let (i, interface) = if module.is_some() {
+        maybe_dotted_item_or_any(i)?
+    } else {
+        (i, None)
+    };
+    let (i, method) = if interface.is_some() {
+        maybe_dotted_item_or_any(i)?
+    } else {
+        (i, None)
+    };
+    let (i, _) = all_consuming(space0)(i)?;
+
+    Ok((i, Some((allow, [module, interface, method]))))
 }
 
 fn parse_script(s: CharSlice<'_>) -> Result<Filter, NomErr<SingleError<String>>> {
