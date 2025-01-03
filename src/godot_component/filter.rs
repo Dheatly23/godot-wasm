@@ -542,16 +542,13 @@ impl Error for FilterItem<'_> {}
 fn parse_line(
     i: CharSlice<'_>,
 ) -> IResult<CharSlice<'_>, Option<(bool, [Option<&'_ [char]>; 3])>, SingleError<CharSlice<'_>>> {
-    fn item(i: CharSlice<'_>) -> IResult<CharSlice<'_>, CharSlice<'_>, SingleError<CharSlice<'_>>> {
-        take_while1::<_, CharSlice<'_>, SingleError<CharSlice<'_>>>(|c: char| {
-            c.is_alphanumeric() || matches!(c, ':' | '-')
-        })(i)
-    }
-
     fn item_or_any(
         i: CharSlice<'_>,
     ) -> IResult<CharSlice<'_>, Option<CharSlice<'_>>, SingleError<CharSlice<'_>>> {
-        item.map(Some).or(value(None, char_('*'))).parse(i)
+        take_while1(|c: char| c.is_alphanumeric() || matches!(c, ':' | '-'))
+            .map(Some)
+            .or(value(None, char_('*')))
+            .parse(i)
     }
 
     fn maybe_item_or_any(
