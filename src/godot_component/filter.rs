@@ -6,8 +6,8 @@ use godot::prelude::*;
 use nom::branch::alt;
 use nom::bytes::complete::{tag, take_while1};
 use nom::character::complete::{char as char_, space0};
-use nom::combinator::{map, opt};
-use nom::sequence::{delimited, pair, preceded, separated_pair};
+use nom::combinator::{all_consuming, map, opt, rest};
+use nom::sequence::{pair, preceded, separated_pair};
 use nom::{Err as NomErr, IResult};
 use rbitset::BitSet;
 
@@ -309,6 +309,14 @@ macro_rules! filter_macro {
                     Err($crate::godot_component::filter::FilterItem::default())
                 }
             }
+
+            pub fn print_filter<const N: usize>(filter: $crate::godot_component::filter::FilterFlagsRef<'_, N>, f: $crate::godot_component::filter::FilterItem<'_>) {
+                $(($crate::godot_component::filter::FilterItem {
+                    allow: filter.get(indices::$i),
+                    $t: Some($s),
+                    ..f
+                }).print_filter();)*
+            }
         }
     };
     ($t:ident [$($i:ident <$($p:ident)::+> -> $s:literal),* $(,)?]) => {
@@ -327,7 +335,7 @@ macro_rules! filter_macro {
 
             pub fn run_filter<const N: usize>(filter: $crate::godot_component::filter::FilterFlagsRef<'_, N>, i: usize) -> Result<(), $crate::godot_component::filter::FilterItem<'static>> {
                 $(if i < indices::$i.0 + indices::$i.1 {
-                    match $i::run_filter(filter, i) {
+                    match $i::run_filter(filter.slice(indices::$i.0..indices::$i.0 + indices::$i.1), i) {
                         Err(e) => Err($crate::godot_component::filter::FilterItem {
                             $t: Some($s),
                             ..e
@@ -339,12 +347,22 @@ macro_rules! filter_macro {
                     Err($crate::godot_component::filter::FilterItem::default())
                 }
             }
+
+            pub fn print_filter<const N: usize>(filter: $crate::godot_component::filter::FilterFlagsRef<'_, N>, f: $crate::godot_component::filter::FilterItem<'_>) {
+                $($i::print_filter(
+                    filter.slice(indices::$i.0..indices::$i.0 + indices::$i.1),
+                    $crate::godot_component::filter::FilterItem {
+                        $t: Some($s),
+                        ..f
+                    },
+                );)*
+            }
         }
     };
 }
 
 use crate::godot_component::filter_data::indices::filter_len as ENDPOINT;
-use crate::godot_component::filter_data::parse_filter;
+use crate::godot_component::filter_data::{parse_filter, print_filter};
 const DATA_LEN: usize = (ENDPOINT + 7) / 8;
 
 pub type Filter = FilterFlags<DATA_LEN>;
@@ -358,8 +376,8 @@ impl FromGodot for Filter {
         if v.is_nil() {
             Ok(Self::default())
         } else if v.get_type() == VariantType::STRING {
-            let v = v.try_to()?;
-            parse_script(&v).map_err(|e| ConvertError::with_error_value(e, v))
+            let v = v.try_to::<GString>()?;
+            parse_script(CharSlice(v.chars())).map_err(|e| ConvertError::with_error_value(e, v))
         } else {
             from_dict(v.try_to()?)
         }
@@ -481,6 +499,18 @@ pub struct FilterItem<'a> {
     pub method: Option<&'a str>,
 }
 
+impl FilterItem<'_> {
+    pub fn print_filter(&self) {
+        eprintln!(
+            "{} {}.{}.{}",
+            if self.allow { "A" } else { "D" },
+            self.module.unwrap_or("*"),
+            self.interface.unwrap_or("*"),
+            self.method.unwrap_or("*"),
+        );
+    }
+}
+
 impl Debug for FilterItem<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         static UNKNOWN: &str = "<unknown>";
@@ -505,12 +535,13 @@ impl Error for FilterItem<'_> {}
 #[allow(clippy::type_complexity)]
 fn parse_line(
     i: CharSlice<'_>,
-) -> IResult<CharSlice<'_>, Option<([Option<&'_ [char]>; 3], bool)>, SingleError<CharSlice<'_>>> {
+) -> IResult<CharSlice<'_>, Option<(bool, [Option<&'_ [char]>; 3])>, SingleError<CharSlice<'_>>> {
     let f = |c: char| c.is_alphanumeric() || matches!(c, ':' | '-');
 
-    map(
-        delimited(
-            space0,
+    all_consuming(preceded(
+        space0,
+        alt((
+            map(pair(alt((tag("#"), tag("//"))), rest), |_| None),
             opt(separated_pair(
                 alt((map(tag("deny"), |_| false), map(tag("allow"), |_| true))),
                 char_(' '),
@@ -545,25 +576,20 @@ fn parse_line(
                     ),
                 )),
             )),
-            char_('\n'),
-        ),
-        |v| v.map(|(v, f)| (f, v)),
-    )(i)
+        )),
+    ))(i)
 }
 
-fn parse_script(s: &GString) -> Result<Filter, NomErr<SingleError<String>>> {
-    let mut s = CharSlice(s.chars());
-
+fn parse_script(s: CharSlice<'_>) -> Result<Filter, NomErr<SingleError<String>>> {
     let mut ret = Filter::default();
     let mut f = ret.slice_mut(..ENDPOINT);
     let mut module = String::new();
     let mut interface = String::new();
     let mut method = String::new();
-    while !s.0.is_empty() {
-        let (s_, v) = parse_line(s).map_err(|e| e.map(SingleError::into_owned))?;
-        s = s_;
+    for s in s.0.split(|c| *c == '\n').map(CharSlice) {
+        let (_, v) = parse_line(s).map_err(|e| e.map(SingleError::into_owned))?;
 
-        let Some((t, allow)) = v else {
+        let Some((allow, t)) = v else {
             continue;
         };
         let module = if let Some(t) = t[0] {
@@ -599,4 +625,30 @@ fn parse_script(s: &GString) -> Result<Filter, NomErr<SingleError<String>>> {
     }
 
     Ok(ret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn to_char_array(s: &str) -> Vec<char> {
+        s.chars().collect()
+    }
+
+    #[test]
+    fn test_filter_flags() {
+        const SCRIPT: &str = r"
+# How filter script works:
+# Start applying from top to bottom
+# Lower filter override higher filter
+// Use # or // to comment
+deny *
+allow godot:core.typeis
+allow godot:core.primitive.*
+    deny godot:core.primitive.from-vector2i
+deny godot:core.primitive.to-vector2i";
+        let f = parse_script(CharSlice(&to_char_array(SCRIPT))).unwrap();
+        println!("{:?}", f);
+        print_filter(f.as_ref(), FilterItem::default());
+    }
 }
