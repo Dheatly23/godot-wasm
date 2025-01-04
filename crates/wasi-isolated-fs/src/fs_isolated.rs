@@ -746,6 +746,23 @@ impl Node {
         }
     }
 
+    pub fn len_and_stamp(&self) -> (usize, Timestamp) {
+        match &self.0 {
+            NodeItem::File(v) => {
+                let v = v.lock();
+                (v.len(), v.stamp.clone())
+            }
+            NodeItem::Dir(v) => {
+                let v = v.lock();
+                (v.len(), v.stamp.clone())
+            }
+            NodeItem::Link(v) => {
+                let v = v.read();
+                (v.len(), v.stamp.clone())
+            }
+        }
+    }
+
     pub(crate) fn inode(&self) -> usize {
         match &self.0 {
             NodeItem::Dir(v) => v.lock().inode(),

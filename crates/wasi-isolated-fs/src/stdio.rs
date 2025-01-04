@@ -501,20 +501,20 @@ impl LineBuffer {
     }
 }
 
-type StdoutCb = Box<dyn Send + Sync + FnMut(&[u8])>;
+pub type StdoutCbLineFn = Box<dyn Send + Sync + FnMut(&str)>;
 
 pub struct StdoutCbLineBuffered(Mutex<StdoutCbLineBufferedInner>);
 
 struct StdoutCbLineBufferedInner {
     buf: LineBuffer,
-    cb: StdoutCb,
+    cb: StdoutCbLineFn,
 }
 
 impl StdoutCbLineBuffered {
-    pub fn new(f: impl 'static + Send + Sync + FnMut(&[u8])) -> Self {
+    pub fn new(cb: StdoutCbLineFn) -> Self {
         Self(Mutex::new(StdoutCbLineBufferedInner {
             buf: Default::default(),
-            cb: Box::new(f),
+            cb,
         }))
     }
 
@@ -539,26 +539,28 @@ impl StdoutCbLineBufferedInner {
     fn split(&mut self) -> (&mut LineBuffer, impl use<'_> + FnMut(&str) -> IoResult<()>) {
         let Self { buf, cb } = self;
         (buf, |s| {
-            cb(s.as_bytes());
+            cb(s);
             Ok(())
         })
     }
 }
+
+pub type StdoutCbBlockFn = Box<dyn Send + Sync + FnMut(&[u8])>;
 
 pub struct StdoutCbBlockBuffered(Mutex<StdoutCbBlockBufferedInner>);
 
 struct StdoutCbBlockBufferedInner {
     buf: Box<[u8; 1024]>,
     len: usize,
-    cb: StdoutCb,
+    cb: StdoutCbBlockFn,
 }
 
 impl StdoutCbBlockBuffered {
-    pub fn new(f: impl 'static + Send + Sync + FnMut(&[u8])) -> Self {
+    pub fn new(cb: StdoutCbBlockFn) -> Self {
         Self(Mutex::new(StdoutCbBlockBufferedInner {
             buf: Box::new([0; 1024]),
             len: 0,
-            cb: Box::new(f),
+            cb,
         }))
     }
 

@@ -21,10 +21,10 @@ use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
 use crate::fs_isolated::{AccessMode, CapWrapper, Dir, IsolatedFSController, Node, ILLEGAL_CHARS};
 use crate::items::Items;
 pub use crate::items::{Item, MaybeBorrowMut};
-use crate::preview1::P1Items;
+use crate::preview1::{P1File, P1Item, P1Items};
 use crate::stdio::{
-    StderrBypass, StdinProvider, StdinSignal, StdoutBypass, StdoutCbBlockBuffered,
-    StdoutCbLineBuffered,
+    NullStdio, StderrBypass, StdinProvider, StdinSignal, StdoutBypass, StdoutCbBlockBuffered,
+    StdoutCbBlockFn, StdoutCbLineBuffered, StdoutCbLineFn,
 };
 
 pub struct WasiContext {
@@ -293,7 +293,7 @@ impl WasiContextBuilder {
         Ok(self)
     }
 
-    pub fn signal_read_builder(
+    pub fn stdin_read_builder(
         &mut self,
         f: Box<dyn Send + Sync + FnMut() -> AnyResult<Box<dyn Send + Sync + Read>>>,
     ) -> AnyResult<&mut Self> {
@@ -312,10 +312,7 @@ impl WasiContextBuilder {
         Ok(self)
     }
 
-    pub fn stdout_line_buffer(
-        &mut self,
-        f: impl 'static + Send + Sync + FnMut(&[u8]),
-    ) -> AnyResult<&mut Self> {
+    pub fn stdout_line_buffer(&mut self, f: StdoutCbLineFn) -> AnyResult<&mut Self> {
         if self.stdout.is_some() {
             return Err(errors::BuilderStdioDefinedError.into());
         }
@@ -325,10 +322,7 @@ impl WasiContextBuilder {
         Ok(self)
     }
 
-    pub fn stdout_block_buffer(
-        &mut self,
-        f: impl 'static + Send + Sync + FnMut(&[u8]),
-    ) -> AnyResult<&mut Self> {
+    pub fn stdout_block_buffer(&mut self, f: StdoutCbBlockFn) -> AnyResult<&mut Self> {
         if self.stdout.is_some() {
             return Err(errors::BuilderStdioDefinedError.into());
         }
@@ -346,10 +340,7 @@ impl WasiContextBuilder {
         Ok(self)
     }
 
-    pub fn stderr_line_buffer(
-        &mut self,
-        f: impl 'static + Send + Sync + FnMut(&[u8]),
-    ) -> AnyResult<&mut Self> {
+    pub fn stderr_line_buffer(&mut self, f: StdoutCbLineFn) -> AnyResult<&mut Self> {
         if self.stderr.is_some() {
             return Err(errors::BuilderStdioDefinedError.into());
         }
@@ -359,10 +350,7 @@ impl WasiContextBuilder {
         Ok(self)
     }
 
-    pub fn stderr_block_buffer(
-        &mut self,
-        f: impl 'static + Send + Sync + FnMut(&[u8]),
-    ) -> AnyResult<&mut Self> {
+    pub fn stderr_block_buffer(&mut self, f: StdoutCbBlockFn) -> AnyResult<&mut Self> {
         if self.stderr.is_some() {
             return Err(errors::BuilderStdioDefinedError.into());
         }
@@ -439,10 +427,57 @@ impl WasiContextBuilder {
             })
             .collect::<AnyResult<Vec<_>>>()?;
 
+        let mut stdin = self.stdin.map(|v| match v {
+            BuilderStdin::Signal(f) => Stdin::Signal(StdinSignal::new(f)),
+            BuilderStdin::Read(v) => Stdin::Read(v),
+        });
+        let mut stdout = self.stdout.map(|v| match v {
+            BuilderStdout::Bypass => Stdout::Bypass(Default::default()),
+            BuilderStdout::CbLine(v) => Stdout::CbLine(v),
+            BuilderStdout::CbBlock(v) => Stdout::CbBlock(v),
+        });
+        let mut stderr = self.stderr.map(|v| match v {
+            BuilderStdout::Bypass => Stderr::Bypass(Default::default()),
+            BuilderStdout::CbLine(v) => Stderr::CbLine(v),
+            BuilderStdout::CbBlock(v) => Stderr::CbBlock(v),
+        });
+
+        let p1_items = [
+            match &mut stdin {
+                None => P1Item::from(NullStdio::default()),
+                Some(Stdin::Signal((v, _))) => v.clone().into(),
+                Some(Stdin::Read(v)) => v()?.into(),
+            },
+            match &mut stdout {
+                None => NullStdio::default().into(),
+                Some(Stdout::Bypass(v)) => v.clone().into(),
+                Some(Stdout::CbLine(v)) => v.clone().into(),
+                Some(Stdout::CbBlock(v)) => v.clone().into(),
+            },
+            match &mut stderr {
+                None => NullStdio::default().into(),
+                Some(Stderr::Bypass(v)) => v.clone().into(),
+                Some(Stderr::CbLine(v)) => v.clone().into(),
+                Some(Stderr::CbBlock(v)) => v.clone().into(),
+            },
+        ]
+        .into_iter()
+        .chain(preopens.iter().map(|(k, v)| {
+            Box::new(P1File::with_preopen(
+                match v {
+                    FilePreopen::IsoFS(v) => v.clone().into(),
+                    FilePreopen::HostFS(v) => v.clone().into(),
+                },
+                k.as_str().to_string(),
+            ))
+            .into()
+        }))
+        .collect::<P1Items>();
+
         Ok(WasiContext {
             items: Items::new(),
-            p1_items: P1Items::new(),
             iso_fs,
+            p1_items,
             preopens,
             cwd: self.cwd,
             envs: self.envs.into_iter().collect(),
@@ -453,20 +488,9 @@ impl WasiContextBuilder {
                 .insecure_rng
                 .unwrap_or_else(|| Box::new(Xoshiro512StarStar::from_entropy())),
             secure_rng: self.secure_rng.unwrap_or_else(|| Box::new(OsRng)),
-            stdin: self.stdin.map(|v| match v {
-                BuilderStdin::Signal(f) => Stdin::Signal(StdinSignal::new(f)),
-                BuilderStdin::Read(v) => Stdin::Read(v),
-            }),
-            stdout: self.stdout.map(|v| match v {
-                BuilderStdout::Bypass => Stdout::Bypass(Default::default()),
-                BuilderStdout::CbLine(v) => Stdout::CbLine(v),
-                BuilderStdout::CbBlock(v) => Stdout::CbBlock(v),
-            }),
-            stderr: self.stderr.map(|v| match v {
-                BuilderStdout::Bypass => Stderr::Bypass(Default::default()),
-                BuilderStdout::CbLine(v) => Stderr::CbLine(v),
-                BuilderStdout::CbBlock(v) => Stderr::CbBlock(v),
-            }),
+            stdin,
+            stdout,
+            stderr,
             hasher: RandomState::new(),
             timeout: None,
         })

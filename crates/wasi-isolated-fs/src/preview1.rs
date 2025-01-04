@@ -81,6 +81,19 @@ impl P1Items {
     }
 }
 
+impl FromIterator<P1Item> for P1Items {
+    fn from_iter<T>(it: T) -> Self
+    where
+        T: IntoIterator<Item = P1Item>,
+    {
+        let mut ret = Self::new();
+        for (v, k) in it.into_iter().zip(0u32..) {
+            ret.tree.insert(k, v);
+        }
+        ret
+    }
+}
+
 pub struct P1File {
     preopen: Option<String>,
     cursor: Option<u64>,
