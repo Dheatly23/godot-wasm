@@ -142,6 +142,9 @@ getrandom = { version = "^0.2", features = ["custom"] }
 [workspace.dependencies.wasmtime]
 version = "^28.0"
 default-features = false
+features = [
+  "std",
+]
 
 [workspace.dependencies.wiggle]
 version = "^28.0"

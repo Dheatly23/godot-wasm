@@ -28,7 +28,6 @@ workspace = true
 features = [
   "runtime",
   "component-model",
-  "std",
 ]
 
 [dependencies.smallvec]
