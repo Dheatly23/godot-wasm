@@ -399,32 +399,23 @@ where
     let callable = SendSyncWrapper::new(callable);
     let ty_cloned = ty.clone();
     let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> AnyResult<()> {
-        let r = {
-            let mut arg_arr = ctx.data_mut().as_mut().get_arg_arr().clone();
-            let pi = ty
-                .params()
-                .enumerate()
-                .map(|(ix, t)| unsafe { from_raw(&mut ctx, t, args[ix]) });
+        let p = ty
+            .params()
+            .enumerate()
+            .map(|(ix, t)| unsafe { from_raw(&mut ctx, t, args[ix]) })
+            .collect::<AnyResult<Vec<_>>>()?;
 
-            match &*callable {
-                CallableEnum::ObjectMethod(obj, method) => {
-                    let mut obj = match obj.clone().try_cast::<WeakRef>() {
-                        Ok(obj) => site_context!(from_var_any(obj.get_ref()))?,
-                        Err(obj) => obj,
-                    };
-                    let p = pi.collect::<AnyResult<Vec<_>>>()?;
-                    ctx.data_mut()
-                        .as_mut()
-                        .release_store(|| site_context!(obj.try_call(method, &p)))?
-                }
-                CallableEnum::Callable(c) => {
-                    arg_arr.clear();
-                    for v in pi {
-                        arg_arr.push(&v?);
-                    }
-                    ctx.data_mut().as_mut().release_store(|| c.callv(&arg_arr))
-                }
+        let r = match &*callable {
+            CallableEnum::ObjectMethod(obj, method) => {
+                let mut obj = match obj.clone().try_cast::<WeakRef>() {
+                    Ok(obj) => site_context!(from_var_any(obj.get_ref()))?,
+                    Err(obj) => obj,
+                };
+                ctx.data_mut()
+                    .as_mut()
+                    .release_store(move || site_context!(obj.try_call(method, &p)))?
             }
+            CallableEnum::Callable(c) => ctx.data_mut().as_mut().release_store(move || c.call(&p)),
         };
 
         if let Some(msg) = ctx.data_mut().as_mut().error_signal.take() {

@@ -11,9 +11,11 @@ interface object {
     get-script: func(var: borrow<godot-var>) -> option<godot-var>;
 
     get-property-list: func(var: borrow<godot-var>) -> godot-var;
+    get-meta-list: func(var: borrow<godot-var>) -> godot-var;
     get-method-list: func(var: borrow<godot-var>) -> godot-var;
     get-signal-list: func(var: borrow<godot-var>) -> godot-var;
 
+    has-meta: func(var: borrow<godot-var>, name: borrow<godot-var>) -> bool;
     has-method: func(var: borrow<godot-var>, name: borrow<godot-var>) -> bool;
     has-signal: func(var: borrow<godot-var>, name: borrow<godot-var>) -> bool;
 
@@ -32,6 +34,10 @@ interface object {
 
     get-indexed: func(var: borrow<godot-var>, path: borrow<godot-var>) -> option<godot-var>;
     set-indexed: func(var: borrow<godot-var>, path: borrow<godot-var>, val: option<borrow<godot-var>>);
+
+    get-meta: func(var: borrow<godot-var>, name: borrow<godot-var>, default: option<borrow<godot-var>>) -> option<godot-var>;
+    set-meta: func(var: borrow<godot-var>, name: borrow<godot-var>, val: option<borrow<godot-var>>);
+    remove-meta: func(var: borrow<godot-var>, name: borrow<godot-var>);
 
     can-translate-messages: func(var: borrow<godot-var>) -> bool;
     set-message-translation: func(var: borrow<godot-var>, val: bool);

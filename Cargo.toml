@@ -36,10 +36,12 @@ slab = { workspace = true, optional = true }
 bytes = { workspace = true, optional = true }
 memchr = { workspace = true, optional = true }
 camino = { workspace = true, optional = true }
+rbitset = { version = "^0.3", optional = true }
+smol_str = { version = "^0.3", optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "8eaf184625ffb28b92c594ea70532e5d669dda21"
+rev = "b6199598c3dca3f7ff2463a24d69ed51fb7fe70e"
 features = [
   "experimental-threads",
   "register-docs",
@@ -103,6 +105,8 @@ wasi-preview2 = [
 ]
 godot-component = [
   "dep:slab",
+  "dep:rbitset",
+  "dep:smol_str",
   "component-model",
 ]
 

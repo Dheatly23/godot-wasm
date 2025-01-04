@@ -12,8 +12,10 @@ filter_macro! {method [
     is_class -> "is-class",
     get_script -> "get-script",
     get_property_list -> "get-property-list",
+    get_meta_list -> "get-meta-list",
     get_method_list -> "get-method-list",
     get_signal_list -> "get-signal-list",
+    has_meta -> "has-meta",
     has_method -> "has-method",
     has_signal -> "has-signal",
     call -> "call",
@@ -28,6 +30,9 @@ filter_macro! {method [
     set_deferred -> "set-deferred",
     get_indexed -> "get-indexed",
     set_indexed -> "set-indexed",
+    get_meta -> "get-meta",
+    set_meta -> "set-meta",
+    remove_meta -> "remove-meta",
     can_translate_messages -> "can-translate-messages",
     set_message_translation -> "set-message-translation",
     tr -> "tr",
@@ -86,6 +91,13 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         self.set_into_var(r)
     }
 
+    fn get_meta_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, get_meta_list)?;
+        let o: Gd<Object> = self.get_value(var)?;
+        let r = self.release_store(move || o.get_meta_list());
+        self.set_into_var(r)
+    }
+
     fn get_method_list(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, get_method_list)?;
         let o: Gd<Object> = self.get_value(var)?;
@@ -98,6 +110,17 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         let o: Gd<Object> = self.get_value(var)?;
         let r = self.release_store(move || o.get_signal_list());
         self.set_into_var(r)
+    }
+
+    fn has_meta(
+        &mut self,
+        var: WasmResource<Variant>,
+        name: WasmResource<Variant>,
+    ) -> AnyResult<bool> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, has_meta)?;
+        let o: Gd<Object> = self.get_value(var)?;
+        let n: StringName = self.get_value(name)?;
+        Ok(self.release_store(move || o.has_meta(&n)))
     }
 
     fn has_method(
@@ -297,6 +320,46 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         let n: NodePath = self.get_value(name)?;
         let v = self.maybe_get_var(val)?;
         self.release_store(move || o.set_indexed(&n, &v));
+        Ok(())
+    }
+
+    fn get_meta(
+        &mut self,
+        var: WasmResource<Variant>,
+        name: WasmResource<Variant>,
+        default: Option<WasmResource<Variant>>,
+    ) -> AnyResult<Option<WasmResource<Variant>>> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, get_meta)?;
+        let o: Gd<Object> = self.get_value(var)?;
+        let name: StringName = self.get_value(name)?;
+        let default = self.maybe_get_var(default)?;
+        let r = self.release_store(move || o.get_meta_ex(&name).default(&default).done());
+        self.set_var(r)
+    }
+
+    fn set_meta(
+        &mut self,
+        var: WasmResource<Variant>,
+        name: WasmResource<Variant>,
+        val: Option<WasmResource<Variant>>,
+    ) -> AnyResult<()> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, set_meta)?;
+        let mut o: Gd<Object> = self.get_value(var)?;
+        let n: StringName = self.get_value(name)?;
+        let v = self.maybe_get_var(val)?;
+        self.release_store(move || o.set_meta(&n, &v));
+        Ok(())
+    }
+
+    fn remove_meta(
+        &mut self,
+        var: WasmResource<Variant>,
+        name: WasmResource<Variant>,
+    ) -> AnyResult<()> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, remove_meta)?;
+        let mut o: Gd<Object> = self.get_value(var)?;
+        let name: StringName = self.get_value(name)?;
+        self.release_store(move || o.remove_meta(&name));
         Ok(())
     }
 

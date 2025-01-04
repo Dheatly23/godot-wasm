@@ -31,7 +31,11 @@ impl Display for CharSlice<'_> {
 
 impl Debug for CharSlice<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        <Self as Display>::fmt(self, f)
+        f.write_char('"')?;
+        for &c in self.0 {
+            Display::fmt(&c.escape_debug(), f)?;
+        }
+        f.write_char('"')
     }
 }
 
@@ -379,23 +383,23 @@ pub struct SingleError<I> {
     context: Option<&'static str>,
 }
 
-impl<I: Display> Display for SingleError<I> {
+impl<I: Debug> Display for SingleError<I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "error {:?} at: {}", self.kind, self.input)?;
+        write!(f, "error {:?} at: {:?}", self.kind, self.input)?;
         if let Some(ctx) = self.context {
-            write!(f, "in section '{}', at: {}", ctx, self.input)?;
+            write!(f, "in section '{}', at: {:?}", ctx, self.input)?;
         }
         Ok(())
     }
 }
 
-impl<I: Display> Debug for SingleError<I> {
+impl<I: Debug> Debug for SingleError<I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         <Self as Display>::fmt(self, f)
     }
 }
 
-impl<I: Display> Error for SingleError<I> {}
+impl<I: Debug> Error for SingleError<I> {}
 
 impl SingleError<CharSlice<'_>> {
     pub fn into_owned(self) -> SingleError<String> {
