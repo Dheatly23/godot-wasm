@@ -549,12 +549,17 @@ impl WasiContext {
             )?;
             let mut n = site_context!(f.node().try_file())?;
 
-            let mut ret = vec![0u8; length as usize];
-            let mut s = &mut ret[..];
-            while !s.is_empty() {
-                let (v, n) = n.read(s.len(), off);
-                s[..v.len()].copy_from_slice(v);
-                s = &mut s[n..];
+            let mut l = length as usize;
+            let mut ret = Vec::new();
+            while l > 0 {
+                let (v, n) = n.read(l, off);
+                if n == 0 {
+                    break;
+                }
+                let i = ret.len();
+                ret.extend_from_slice(v);
+                ret.resize(i + n, 0);
+                l -= n;
                 off += n;
             }
 
