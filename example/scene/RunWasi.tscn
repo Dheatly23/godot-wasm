@@ -125,7 +125,7 @@ color = Color(0, 0, 0, 0.752941)
 [node name="ExecFileDialog" type="FileDialog" parent="."]
 canvas_item_default_texture_filter = 0
 position = Vector2i(0, 36)
-size = Vector2i(326, 157)
+size = Vector2i(326, 175)
 ok_button_text = "Open"
 mode_overrides_title = false
 file_mode = 0
@@ -174,10 +174,12 @@ theme_override_constants/margin_bottom = 2
 
 [node name="Tabs" type="TabContainer" parent="ArgEnvDialog/Panel/Margin"]
 layout_mode = 2
+current_tab = 0
 
 [node name="Arguments" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs"]
 layout_mode = 2
 size_flags_horizontal = 3
+metadata/_tab_index = 0
 
 [node name="Args" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments"]
 layout_mode = 2
@@ -203,6 +205,7 @@ text = "Remove"
 visible = false
 layout_mode = 2
 size_flags_horizontal = 3
+metadata/_tab_index = 1
 
 [node name="Envs" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables"]
 layout_mode = 2
@@ -227,6 +230,7 @@ text = "Remove"
 [node name="Mounts" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs"]
 visible = false
 layout_mode = 2
+metadata/_tab_index = 2
 
 [node name="Mounts" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts"]
 layout_mode = 2
@@ -355,6 +359,7 @@ access = 2
 [connection signal="close_requested" from="ExecFileDialog" to="Overlay" method="hide"]
 [connection signal="confirmed" from="ExecFileDialog" to="Overlay" method="hide"]
 [connection signal="file_selected" from="ExecFileDialog" to="." method="__select_exec_file"]
+[connection signal="file_selected" from="ExecFileDialog" to="Overlay" method="hide" unbinds=1]
 [connection signal="about_to_popup" from="FileNameDialog" to="Overlay" method="show"]
 [connection signal="canceled" from="FileNameDialog" to="Overlay" method="hide"]
 [connection signal="close_requested" from="FileNameDialog" to="Overlay" method="hide"]

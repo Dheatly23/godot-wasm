@@ -4,7 +4,7 @@ signal message_emitted(msg)
 
 @export_file("*.wasm","*.wat") var wasm_file := ""
 
-@onready var wasi_ctx: WasiContext = WasiContext.new()
+@onready var wasi_ctx: WasiContext = WasiContext.new().initialize(null)
 
 @onready var file_tree: Tree = $Center/Panel/Margin/VBox/FileEdit/VBox2/FileTree
 @onready var file_title: LineEdit = $Center/Panel/Margin/VBox/FileEdit/VBox/HBoxContainer/FileLabel
@@ -136,7 +136,7 @@ func __refresh_files():
 	root.set_metadata(0, ".")
 	__list_tree_item(".", root)
 
-func __open_file_context(position: Vector2, mouse_button_index: int):
+func __open_file_context(mouse_position: Vector2, mouse_button_index: int):
 	if mouse_button_index != MOUSE_BUTTON_RIGHT:
 		return
 	var t := file_tree.get_selected()
@@ -148,8 +148,8 @@ func __open_file_context(position: Vector2, mouse_button_index: int):
 	file_popup.set_item_disabled(0, is_not_dir)
 	file_popup.set_item_disabled(1, is_not_dir)
 
-	position += file_tree.get_global_position()
-	file_popup.popup(Rect2(position, Vector2(50, 10)))
+	mouse_position += file_tree.get_global_position()
+	file_popup.popup(Rect2(mouse_position, Vector2(50, 10)))
 
 func __select_popup(id):
 	match id:
@@ -168,9 +168,9 @@ func __select_popup(id):
 			if t == null:
 				return
 			var path: String = t.get_parent().get_metadata(0)
-			var name := t.get_parent().get_text(0)
+			var file_name := t.get_parent().get_text(0)
 
-			if !wasi_ctx.file_delete_file(path, name, false):
+			if !wasi_ctx.file_delete_file(path, file_name, false):
 				message_emitted.emit("Cannot delete file")
 
 			__refresh_files()
@@ -181,15 +181,15 @@ func __create_file():
 		return
 	var path: String = t.get_metadata(0)
 
-	var name := file_name_dialog_text.text
-	if name == "":
+	var file_name := file_name_dialog_text.text
+	if file_name == "":
 		return
 
 	if create_file:
-		if !wasi_ctx.file_make_file(path, name, false):
+		if !wasi_ctx.file_make_file(path, file_name, false):
 			message_emitted.emit("Cannot create file")
 	else:
-		if !wasi_ctx.file_make_dir(path, name, false):
+		if !wasi_ctx.file_make_dir(path, file_name, false):
 			message_emitted.emit("Cannot create folder")
 
 	__refresh_files()
