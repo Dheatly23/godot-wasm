@@ -4,10 +4,10 @@ use either::{Either, Left, Right};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use wasmtime::component::{Linker, ResourceTable};
+use wasi_isolated_fs::bindings::{Command, LinkOptions};
+use wasi_isolated_fs::context::WasiContext as WasiCtx;
+use wasmtime::component::Linker;
 use wasmtime::Store;
-use wasmtime_wasi::bindings::sync::Command;
-use wasmtime_wasi::{add_to_linker_sync, WasiCtx, WasiCtxBuilder, WasiView};
 
 #[cfg(feature = "godot-component")]
 use crate::godot_component::filter::Filter;
@@ -92,7 +92,6 @@ pub struct StoreData {
     #[cfg(feature = "memory-limiter")]
     memory_limits: MemoryLimit,
 
-    table: ResourceTable,
     wasi_ctx: WasiCtx,
     #[cfg(not(feature = "godot-component"))]
     inner_lock: InnerLock,
@@ -130,16 +129,6 @@ impl AsMut<InnerLock> for StoreData {
     }
 }
 
-impl WasiView for StoreData {
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
-    }
-
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.wasi_ctx
-    }
-}
-
 fn instantiate(
     _inst_id: InstanceId,
     config: CommandConfig,
@@ -154,19 +143,19 @@ fn instantiate(
     } = config;
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
-    let mut builder = WasiCtxBuilder::new();
+    let mut builder = WasiCtx::builder();
     if let Config {
         with_wasi: true,
         wasi_context: Some(ctx),
         ..
     } = &config
     {
-        WasiContext::build_ctx(ctx.clone(), &mut builder, &config)
+        WasiContext::build_ctx(ctx, &mut builder, &config)
     } else {
-        builder.inherit_stdout().inherit_stderr();
+        builder.stdout_bypass()?.stderr_bypass()?;
         WasiContext::init_ctx_no_context(&mut builder, &config)
     }?;
-    let wasi_ctx = builder.build();
+    let wasi_ctx = builder.build()?;
 
     #[cfg(feature = "godot-component")]
     let godot_ctx = if use_comp_godot {
@@ -189,7 +178,6 @@ fn instantiate(
             #[cfg(feature = "memory-limiter")]
             memory_limits: MemoryLimit::from_config(&config),
 
-            table: ResourceTable::new(),
             wasi_ctx,
             #[cfg(not(feature = "godot-component"))]
             inner_lock: InnerLock::default(),
@@ -203,14 +191,23 @@ fn instantiate(
     store.limiter(|data| &mut data.memory_limits);
 
     let mut linker = <Linker<StoreData>>::new(store.engine());
-    add_to_linker_sync(&mut linker)?;
+    Command::add_to_linker(
+        &mut linker,
+        LinkOptions::default()
+            .cli_exit_with_code(true)
+            .clocks_timezone(true)
+            .network_error_code(true),
+        |v| &mut v.wasi_ctx,
+    )?;
     #[cfg(feature = "godot-component")]
-    godot_add_to_linker(&mut linker, |v| {
-        v.godot_ctx
-            .as_mut()
-            .right()
-            .expect("Godot component is enabled, but no context is provided")
-    })?;
+    if use_comp_godot {
+        godot_add_to_linker(&mut linker, |v| {
+            v.godot_ctx
+                .as_mut()
+                .right()
+                .expect("Godot component is enabled, but no context is provided")
+        })?;
+    }
 
     let bindings = Command::instantiate(&mut store, &comp, &linker)?;
 

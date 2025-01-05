@@ -912,9 +912,27 @@ pub enum OpenMode {
     Append,
 }
 
+#[derive(Default)]
 pub struct CreateParams {
     pub dir: bool,
     pub exclusive: bool,
+}
+
+impl CreateParams {
+    pub const fn new() -> Self {
+        Self {
+            dir: false,
+            exclusive: false,
+        }
+    }
+
+    pub const fn dir(self, dir: bool) -> Self {
+        Self { dir, ..self }
+    }
+
+    pub const fn exclusive(self, exclusive: bool) -> Self {
+        Self { exclusive, ..self }
+    }
 }
 
 #[derive(Clone)]

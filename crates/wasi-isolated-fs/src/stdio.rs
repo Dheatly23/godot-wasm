@@ -236,6 +236,10 @@ impl StdinSignal {
 }
 
 impl StdinProvider {
+    pub fn dup(&self) -> Self {
+        Self(self.0.clone())
+    }
+
     pub fn consumer(&self) -> Arc<StdinSignal> {
         self.0.clone()
     }

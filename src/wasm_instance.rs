@@ -1,9 +1,5 @@
-#[cfg(feature = "wasi")]
-use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
-#[cfg(feature = "wasi")]
-use std::sync::Arc;
 use std::{ffi, fmt, mem, ptr};
 
 use anyhow::{bail, Result as AnyResult};
@@ -13,10 +9,14 @@ use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
+#[cfg(feature = "wasi")]
+use wasi_isolated_fs::bindings::wasi_snapshot_preview1::add_to_linker;
+#[cfg(feature = "wasi")]
+use wasi_isolated_fs::context::WasiContext as WasiCtx;
+#[cfg(feature = "wasi")]
+use wasi_isolated_fs::stdio::StdinProvider;
 #[cfg(feature = "component-model")]
 use wasmtime::component::Instance as InstanceComp;
-#[cfg(feature = "wasi")]
-use wasmtime::component::ResourceTable;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
@@ -25,10 +25,6 @@ use wasmtime::{
     AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, SharedMemory, Store,
     StoreContextMut,
 };
-#[cfg(feature = "wasi")]
-use wasmtime_wasi::preview1::{add_to_linker_sync, WasiP1Ctx};
-#[cfg(feature = "wasi")]
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::godot_util::{
     option_to_variant, variant_to_option, PackedArrayLike, PhantomProperty, SendSyncWrapper,
@@ -36,10 +32,7 @@ use crate::godot_util::{
 };
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
-use crate::wasi_ctx::stdio::{
-    BlockWritePipe, ByteBufferReadPipe, InnerStdin, LineWritePipe, OuterStdin, StreamWrapper,
-    UnbufferedWritePipe,
-};
+use crate::wasi_ctx::stdio::PackedByteArrayReader;
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
@@ -140,7 +133,7 @@ pub struct InstanceData<T> {
     pub module: Gd<WasmModule>,
 
     #[cfg(feature = "wasi")]
-    pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
+    pub wasi_stdin: Option<StdinProvider>,
 }
 
 #[allow(dead_code)]
@@ -207,7 +200,7 @@ pub struct StoreData {
     pub use_extern: bool,
 
     #[cfg(feature = "wasi")]
-    pub wasi_ctx: MaybeWasi,
+    pub wasi_ctx: Option<WasiCtx>,
 }
 
 impl AsRef<Self> for StoreData {
@@ -231,38 +224,6 @@ impl AsRef<InnerLock> for StoreData {
 impl AsMut<InnerLock> for StoreData {
     fn as_mut(&mut self) -> &mut InnerLock {
         &mut self.inner_lock
-    }
-}
-
-#[allow(dead_code, clippy::large_enum_variant)]
-#[derive(Default)]
-pub enum MaybeWasi {
-    #[default]
-    NoCtx,
-    #[cfg(feature = "wasi")]
-    Preview1(WasiP1Ctx),
-    #[cfg(feature = "wasi-preview2")]
-    Preview2(WasiCtx, ResourceTable),
-}
-
-#[cfg(feature = "wasi")]
-impl WasiView for StoreData {
-    fn table(&mut self) -> &mut ResourceTable {
-        match &mut self.wasi_ctx {
-            MaybeWasi::Preview1(v) => v.table(),
-            #[cfg(feature = "wasi-preview2")]
-            MaybeWasi::Preview2(_, tbl) => tbl,
-            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
-        }
-    }
-
-    fn ctx(&mut self) -> &mut WasiCtx {
-        match &mut self.wasi_ctx {
-            MaybeWasi::Preview1(v) => v.ctx(),
-            #[cfg(feature = "wasi-preview2")]
-            MaybeWasi::Preview2(ctx, _) => ctx,
-            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
-        }
     }
 }
 
@@ -375,59 +336,58 @@ where
         let mut wasi_linker = None;
         #[cfg(feature = "wasi")]
         if config.with_wasi {
-            let mut builder = WasiCtxBuilder::new();
+            let mut builder = WasiCtx::builder();
 
             let StoreData { wasi_ctx, .. } = store.data_mut().as_mut();
 
             if config.wasi_stdin == PipeBindingType::Instance {
                 if let Some(data) = config.wasi_stdin_data.clone() {
-                    builder.stdin(StreamWrapper::from(ByteBufferReadPipe::new(data)));
+                    let data = SendSyncWrapper::new(data);
+                    builder.stdin_read_builder(Box::new(move || {
+                        Ok(Box::new(PackedByteArrayReader::from((*data).clone())))
+                    }))
                 } else {
                     let signal =
                         SendSyncWrapper::new(Signal::from_object_signal(obj, c"stdin_request"));
-                    let (outer, inner) = OuterStdin::new(move || signal.emit(&[]));
-                    builder.stdin(outer);
-                    wasi_stdin = Some(inner as _);
-                }
+                    builder.stdin_signal(Box::new(move || signal.emit(&[])))
+                }?;
             }
             if config.wasi_stdout == PipeBindingType::Instance {
                 let signal = Signal::from_object_signal(obj, c"stdout_emit");
                 match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => {
-                        builder.stdout(UnbufferedWritePipe::new(WasiContext::emit_binary(signal)))
+                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
+                        builder.stdout_block_buffer(Box::new(WasiContext::emit_binary(signal)))
                     }
-                    PipeBufferType::LineBuffer => builder.stdout(StreamWrapper::from(
-                        LineWritePipe::new(WasiContext::emit_string(signal)),
-                    )),
-                    PipeBufferType::BlockBuffer => builder.stdout(StreamWrapper::from(
-                        BlockWritePipe::new(WasiContext::emit_string(signal)),
-                    )),
-                };
+                    PipeBufferType::LineBuffer => {
+                        builder.stdout_line_buffer(Box::new(WasiContext::emit_string(signal)))
+                    }
+                }?;
             }
             if config.wasi_stderr == PipeBindingType::Instance {
                 let signal = Signal::from_object_signal(obj, c"stderr_emit");
                 match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => {
-                        builder.stderr(UnbufferedWritePipe::new(WasiContext::emit_binary(signal)))
+                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
+                        builder.stderr_block_buffer(Box::new(WasiContext::emit_binary(signal)))
                     }
-                    PipeBufferType::LineBuffer => builder.stderr(StreamWrapper::from(
-                        LineWritePipe::new(WasiContext::emit_string(signal)),
-                    )),
-                    PipeBufferType::BlockBuffer => builder.stderr(StreamWrapper::from(
-                        BlockWritePipe::new(WasiContext::emit_string(signal)),
-                    )),
-                };
+                    PipeBufferType::LineBuffer => {
+                        builder.stderr_line_buffer(Box::new(WasiContext::emit_string(signal)))
+                    }
+                }?;
             }
 
             match &config.wasi_context {
-                Some(ctx) => WasiContext::build_ctx(ctx.clone(), &mut builder, config),
+                Some(ctx) => WasiContext::build_ctx(ctx, &mut builder, config),
                 None => WasiContext::init_ctx_no_context(&mut builder, config),
             }?;
-            *wasi_ctx = MaybeWasi::Preview1(builder.build_p1());
+            let ctx = builder.build()?;
+            wasi_stdin = ctx.stdin_provider().map(|v| v.dup());
+            *wasi_ctx = Some(ctx);
             let mut r = <Linker<T>>::new(store.engine());
-            add_to_linker_sync(&mut r, |data| match &mut data.as_mut().wasi_ctx {
-                MaybeWasi::Preview1(v) => v,
-                _ => panic!("WASI Preview 1 context required, but none supplied"),
+            add_to_linker(&mut r, |data| {
+                data.as_mut()
+                    .wasi_ctx
+                    .as_mut()
+                    .expect("WASI context required, but none supplied")
             })?;
             wasi_linker = Some(r);
         }
@@ -1126,7 +1086,7 @@ impl WasmInstance {
             if #[cfg(feature = "wasi")] {
                 self.unwrap_data(|m| {
                     if let Some(stdin) = &m.wasi_stdin {
-                        stdin.add_line(_line)?;
+                        stdin.write(_line.to_string().as_bytes());
                     }
                     Ok(())
                 });
@@ -1143,7 +1103,7 @@ impl WasmInstance {
             if #[cfg(feature = "wasi")] {
                 self.unwrap_data(|m| {
                     if let Some(stdin) = &m.wasi_stdin {
-                        stdin.close_pipe();
+                        stdin.close();
                     }
                     Ok(())
                 });

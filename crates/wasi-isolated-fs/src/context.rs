@@ -37,7 +37,7 @@ pub struct WasiContext {
     pub(crate) envs: Vec<(String, String)>,
     pub(crate) args: Vec<String>,
     pub(crate) clock: ClockController,
-    pub(crate) clock_tz: Box<dyn wasi::clocks::timezone::Host>,
+    pub(crate) clock_tz: Box<dyn Send + Sync + wasi::clocks::timezone::Host>,
     pub(crate) insecure_rng: Box<dyn Send + Sync + RngCore>,
     pub(crate) secure_rng: Box<dyn Send + Sync + RngCore>,
     pub(crate) stdin: Option<Stdin>,
@@ -54,7 +54,7 @@ pub struct WasiContextBuilder {
     cwd: Utf8PathBuf,
     envs: HashMap<String, String>,
     args: Vec<String>,
-    clock_tz: Box<dyn wasi::clocks::timezone::Host>,
+    clock_tz: Box<dyn Send + Sync + wasi::clocks::timezone::Host>,
     insecure_rng: Option<Box<dyn Send + Sync + RngCore>>,
     secure_rng: Option<Box<dyn Send + Sync + RngCore>>,
     stdin: Option<BuilderStdin>,
@@ -267,7 +267,10 @@ impl WasiContextBuilder {
         }
     }
 
-    pub fn clock_timezone(&mut self, tz: Box<dyn wasi::clocks::timezone::Host>) -> &mut Self {
+    pub fn clock_timezone(
+        &mut self,
+        tz: Box<dyn Send + Sync + wasi::clocks::timezone::Host>,
+    ) -> &mut Self {
         self.clock_tz = tz;
         self
     }

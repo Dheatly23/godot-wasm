@@ -39,7 +39,6 @@ pub const EPOCH_DEADLINE: u64 = 5u64.saturating_mul(EPOCH_MULTIPLIER);
 #[cfg(feature = "epoch-timeout")]
 pub const EPOCH_INTERVAL: time::Duration = time::Duration::from_millis(1000 / EPOCH_MULTIPLIER);
 
-/*
 #[cfg(feature = "wasi")]
 pub const FILE_NOTEXIST: u32 = 0;
 #[cfg(feature = "wasi")]
@@ -48,7 +47,6 @@ pub const FILE_FILE: u32 = 1;
 pub const FILE_DIR: u32 = 2;
 #[cfg(feature = "wasi")]
 pub const FILE_LINK: u32 = 3;
-*/
 
 pub const TYPE_I32: i64 = 1;
 pub const TYPE_I64: i64 = 2;

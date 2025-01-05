@@ -1,324 +1,88 @@
-//pub mod memfs;
 pub mod stdio;
-//pub mod timestamp;
 
 use std::collections::HashMap;
+use std::io::ErrorKind;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use anyhow::Result as AnyResult;
 use camino::{Utf8Path, Utf8PathBuf};
 
 use godot::prelude::*;
-use wasmtime_wasi::{DirPerms, FilePerms, WasiCtxBuilder};
-
-//use crate::wasi_ctx::memfs::{open, Capability, Dir, File, FileEntry, Link, Node};
-use crate::wasi_ctx::stdio::StreamWrapper;
-use crate::wasi_ctx::stdio::{BlockWritePipe, LineWritePipe, UnbufferedWritePipe};
-//use crate::wasi_ctx::timestamp::{from_unix_time, to_unix_time};
-use crate::godot_util::{
-    gstring_from_maybe_utf8, option_to_variant, variant_to_option, SendSyncWrapper,
+use once_cell::sync::OnceCell;
+use parking_lot::{Mutex, MutexGuard};
+use wasi_isolated_fs::context::WasiContextBuilder;
+use wasi_isolated_fs::fs_isolated::{
+    AccessMode, CapWrapper, CreateParams, Dir, File, IsolatedFSController, Link, Node,
 };
-use crate::site_context;
+
+use crate::godot_util::{
+    from_var_any, option_to_variant, variant_to_option, PhantomProperty, SendSyncWrapper,
+    StructPacking,
+};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
+use crate::wasm_util::{FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST};
+use crate::{bail_with_site, site_context, variant_dispatch};
 
-/*
-fn warn_vfs_deprecated() {
-    static WARNED: AtomicBool = AtomicBool::new(false);
-
-    if !WARNED.swap(true, Ordering::SeqCst) {
-        godot_warn!("Due to wasi-common deprecation, virtual FS methods is going to be removed");
+fn to_unix_time(time: SystemTime) -> i128 {
+    match time.duration_since(SystemTime::UNIX_EPOCH) {
+        Ok(d) => i128::from(d.as_secs()),
+        Err(d) => {
+            let d = d.duration();
+            let mut r = -i128::from(d.as_secs());
+            if d.subsec_nanos() > 0 {
+                r = r.saturating_sub(1);
+            }
+            r
+        }
     }
 }
-*/
+
+fn from_unix_time(time: i64) -> Option<SystemTime> {
+    if time >= 0 {
+        SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(time as _))
+    } else {
+        SystemTime::UNIX_EPOCH.checked_sub(Duration::from_secs(time.wrapping_neg() as _))
+    }
+}
 
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
 pub struct WasiContext {
     base: Base<RefCounted>,
-    #[init(val = false)]
-    #[export]
+    data: OnceCell<Mutex<WasiContextInner>>,
+
+    /// Flag to pass through stdio into terminal.
+    #[var(get = is_bypass_stdio, set = set_bypass_stdio)]
+    #[allow(dead_code)]
+    bypass_stdio: PhantomProperty<bool>,
+
+    /// Flag to force filesystem to be read-only.
+    #[var(get = is_fs_readonly, set = set_fs_readonly)]
+    #[allow(dead_code)]
+    fs_readonly: PhantomProperty<bool>,
+}
+
+struct WasiContextInner {
     bypass_stdio: bool,
-    #[init(val = false)]
-    #[export]
     fs_readonly: bool,
 
-    //#[init(val = Arc::new(Dir::new(<Weak<Dir>>::new())))]
-    //memfs_root: Arc<Dir>,
-    #[init(val = HashMap::new())]
+    memfs_controller: IsolatedFSController,
     physical_mount: HashMap<Utf8PathBuf, Utf8PathBuf>,
-    #[init(val = HashMap::new())]
     envs: HashMap<String, String>,
 }
 
 impl WasiContext {
-    pub fn emit_binary(signal: Signal) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
-        let signal = SendSyncWrapper::new(signal);
-        move |buf| signal.emit(&[PackedByteArray::from(buf).to_variant()])
-    }
-
-    pub fn emit_string(signal: Signal) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
-        let signal = SendSyncWrapper::new(signal);
-        move |buf| signal.emit(&[gstring_from_maybe_utf8(buf).to_variant()])
-    }
-
-    /*
-    pub fn init_ctx_no_context(mut ctx: WasiCtx, config: &Config) -> Result<WasiCtx, Error> {
-        for (k, v) in &config.wasi_envs {
-            ctx.push_env(k, v)?;
-        }
-
-        for a in &config.wasi_args {
-            ctx.push_arg(a)?;
-        }
-
-        Ok(ctx)
-    }
-
-    pub fn build_ctx(
-        this: Gd<Self>,
-        mut ctx: WasiCtxBuilder,
-        config: &Config,
-    ) -> Result<WasiCtx, Error> {
-        let inst_id = this.instance_id();
-        let o = this.bind();
-        if let (PipeBindingType::Context, Some(file)) =
-            (&config.wasi_stdin, &config.wasi_stdin_file)
-        {
-            warn_vfs_deprecated();
-
-            let root = Some(o.memfs_root.clone());
-            let node = if let FileEntry::Occupied(v) = site_context!(open(
-                file,
-                o.memfs_root.clone(),
-                &Some(o.memfs_root.clone()),
-                true,
-                false,
-            ))? {
-                v.into_inner()
-            } else {
-                bail_with_site!("Path \"{}\" not found!", file)
-            };
-
-            let OpenResult::File(file) = site_context!(node.open(
-                root,
-                Capability {
-                    read: true,
-                    write: false
-                },
-                true,
-                OFlags::empty(),
-                FdFlags::empty(),
-            ))?
-            else {
-                bail_with_site!("Path \"{}\" should be a file!", file)
-            };
-            ctx.stdin(file);
-        }
-        // TODO: Emit signal
-        if config.wasi_stdout == PipeBindingType::Context {
-            if o.bypass_stdio {
-                ctx.inherit_stdout();
-            } else {
-                ctx.stdout(match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| {
-                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                            "stdout_emit".into(),
-                            &[PackedByteArray::from(buf).to_variant()],
-                        );
-                    })) as _,
-                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
-                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                            "stdout_emit".into(),
-                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
-                        );
-                    })) as _,
-                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| {
-                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                            "stdout_emit".into(),
-                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
-                        );
-                    })) as _,
-                });
-            }
-        }
-        if config.wasi_stderr == PipeBindingType::Context {
-            if o.bypass_stdio {
-                ctx.inherit_stderr();
-            } else {
-                ctx.stderr(match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => Box::new(UnbufferedWritePipe::new(move |buf| {
-                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                            "stderr_emit".into(),
-                            &[PackedByteArray::from(buf).to_variant()],
-                        );
-                    })) as _,
-                    PipeBufferType::LineBuffer => Box::new(LineWritePipe::new(move |buf| {
-                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                            "stderr_emit".into(),
-                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
-                        );
-                    })) as _,
-                    PipeBufferType::BlockBuffer => Box::new(BlockWritePipe::new(move |buf| {
-                        <Gd<RefCounted>>::from_instance_id(inst_id).emit_signal(
-                            "stderr_emit".into(),
-                            &[GString::from(String::from_utf8_lossy(buf)).to_variant()],
-                        );
-                    })) as _,
-                });
-            }
-        }
-
-        let c = ctx.build();
-        drop(ctx);
-        let mut ctx = Self::init_ctx_no_context(c, config)?;
-
-        for (k, v) in o
-            .envs
-            .iter()
-            .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
-        {
-            ctx.push_env(k, v)?;
-        }
-
-        let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
-
-        for (guest, host) in o.physical_mount.iter() {
-            let dir = site_context!(PhysicalDir::open_ambient_dir(host, ambient_authority()))?;
-            let OpenResult2::Dir(dir) = site_context!(CapDir::from_cap_std(dir).open_file_(
-                false,
-                ".",
-                OFlags::DIRECTORY,
-                true,
-                fs_writable,
-                FdFlags::empty(),
-            ))?
-            else {
-                bail_with_site!("Path should be a directory!")
-            };
-            site_context!(ctx.push_preopened_dir(Box::new(dir), guest))?;
-        }
-
-        let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
-            Some(o.memfs_root.clone()),
-            Capability {
-                read: true,
-                write: !o.fs_readonly,
-            },
-            true,
-            OFlags::DIRECTORY,
-            FdFlags::empty(),
-        ))?
-        else {
-            bail_with_site!("Root should be a directory!")
-        };
-        site_context!(ctx.push_preopened_dir(root, "."))?;
-
-        Ok(ctx)
-    }
-    */
-
-    pub fn init_ctx_no_context(ctx: &mut WasiCtxBuilder, config: &Config) -> AnyResult<()> {
-        ctx.allow_blocking_current_thread(true);
-
-        for (k, v) in &config.wasi_envs {
-            ctx.env(k, v);
-        }
-
-        ctx.args(&config.wasi_args);
-
-        Ok(())
-    }
-
-    pub fn build_ctx(this: Gd<Self>, ctx: &mut WasiCtxBuilder, config: &Config) -> AnyResult<()> {
-        let o = this.bind();
-
-        if config.wasi_stdout == PipeBindingType::Context {
-            if o.bypass_stdio {
-                ctx.inherit_stdout();
-            } else {
-                let signal = Signal::from_object_signal(&this, c"stdout_emit");
-                match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => {
-                        ctx.stdout(UnbufferedWritePipe::new(Self::emit_binary(signal)))
-                    }
-                    PipeBufferType::LineBuffer => ctx.stdout(StreamWrapper::from(
-                        LineWritePipe::new(Self::emit_string(signal)),
-                    )),
-                    PipeBufferType::BlockBuffer => ctx.stdout(StreamWrapper::from(
-                        BlockWritePipe::new(Self::emit_binary(signal)),
-                    )),
-                };
-            }
-        }
-        if config.wasi_stderr == PipeBindingType::Context {
-            if o.bypass_stdio {
-                ctx.inherit_stderr();
-            } else {
-                let signal = Signal::from_object_signal(&this, c"stderr_emit");
-                match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => {
-                        ctx.stderr(UnbufferedWritePipe::new(Self::emit_binary(signal)))
-                    }
-                    PipeBufferType::LineBuffer => ctx.stderr(StreamWrapper::from(
-                        LineWritePipe::new(Self::emit_string(signal)),
-                    )),
-                    PipeBufferType::BlockBuffer => ctx.stderr(StreamWrapper::from(
-                        BlockWritePipe::new(Self::emit_binary(signal)),
-                    )),
-                };
-            }
-        }
-
-        Self::init_ctx_no_context(&mut *ctx, config)?;
-
-        for (k, v) in o
-            .envs
-            .iter()
-            .filter(|(k, _)| !config.wasi_envs.contains_key(&**k))
-        {
-            ctx.env(k, v);
-        }
-
-        let fs_writable = !(o.fs_readonly || config.wasi_fs_readonly);
-        let (perms, file_perms) = if fs_writable {
-            (
-                DirPerms::READ | DirPerms::MUTATE,
-                FilePerms::READ | FilePerms::WRITE,
-            )
+    fn get_data(&self) -> AnyResult<MutexGuard<'_, WasiContextInner>> {
+        if let Some(data) = self.data.get() {
+            Ok(data.lock())
         } else {
-            (DirPerms::READ, FilePerms::READ)
-        };
-
-        for (guest, host) in o.physical_mount.iter() {
-            site_context!(ctx.preopened_dir(host, guest, perms, file_perms))?;
+            bail_with_site!("Uninitialized instance")
         }
-
-        // XXX: Cannot do memory filesystem yet :((
-        /*
-        let OpenResult::Dir(root) = site_context!(o.memfs_root.clone().open(
-            Some(o.memfs_root.clone()),
-            Capability {
-                read: true,
-                write: fs_writable,
-            },
-            true,
-            OFlags::DIRECTORY,
-            FdFlags::empty(),
-        ))?
-        else {
-            bail_with_site!("Root should be a directory!")
-        };
-        site_context!(ctx.push_preopened_dir(root, "."))?;
-        */
-
-        Ok(())
     }
 
-    /*
-    fn wrap_result<F, T>(f: F) -> Option<T>
-    where
-        F: FnOnce() -> Result<T, Error>,
-    {
-        match f() {
+    fn wrap_data<T>(&self, f: impl FnOnce(&mut WasiContextInner) -> AnyResult<T>) -> Option<T> {
+        match self.get_data().and_then(|mut v| f(&mut v)) {
             Ok(v) => Some(v),
             Err(e) => {
                 godot_error!("{}", e);
@@ -326,7 +90,83 @@ impl WasiContext {
             }
         }
     }
-    */
+
+    pub fn emit_binary(signal: Signal) -> impl Fn(&[u8]) + Send + Sync + Clone + 'static {
+        let signal = SendSyncWrapper::new(signal);
+        move |buf| signal.emit(&[PackedByteArray::from(buf).to_variant()])
+    }
+
+    pub fn emit_string(signal: Signal) -> impl Fn(&str) + Send + Sync + Clone + 'static {
+        let signal = SendSyncWrapper::new(signal);
+        move |buf| signal.emit(&[buf.to_variant()])
+    }
+
+    pub fn init_ctx_no_context(ctx: &mut WasiContextBuilder, config: &Config) -> AnyResult<()> {
+        ctx.envs(config.wasi_envs.iter().map(|(k, v)| (k.clone(), v.clone())))
+            .args(config.wasi_args.iter().cloned());
+        Ok(())
+    }
+
+    pub fn build_ctx(
+        this: &Gd<Self>,
+        ctx: &mut WasiContextBuilder,
+        config: &Config,
+    ) -> AnyResult<()> {
+        let o = this.bind();
+        let o = o.get_data()?;
+
+        if config.wasi_stdout == PipeBindingType::Context {
+            if o.bypass_stdio {
+                ctx.stdout_bypass()
+            } else {
+                let signal = Signal::from_object_signal(this, c"stdout_emit");
+                match config.wasi_stdout_buffer {
+                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
+                        ctx.stdout_block_buffer(Box::new(WasiContext::emit_binary(signal)))
+                    }
+                    PipeBufferType::LineBuffer => {
+                        ctx.stdout_line_buffer(Box::new(WasiContext::emit_string(signal)))
+                    }
+                }
+            }?;
+        }
+        if config.wasi_stderr == PipeBindingType::Context {
+            if o.bypass_stdio {
+                ctx.stderr_bypass()
+            } else {
+                let signal = Signal::from_object_signal(this, c"stderr_emit");
+                match config.wasi_stderr_buffer {
+                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
+                        ctx.stderr_block_buffer(Box::new(WasiContext::emit_binary(signal)))
+                    }
+                    PipeBufferType::LineBuffer => {
+                        ctx.stderr_line_buffer(Box::new(WasiContext::emit_string(signal)))
+                    }
+                }
+            }?;
+        }
+
+        Self::init_ctx_no_context(&mut *ctx, config)?;
+
+        ctx.envs(
+            o.envs
+                .iter()
+                .filter_map(|(k, v)| match config.wasi_envs.contains_key(k) {
+                    true => None,
+                    false => Some((k.clone(), v.clone())),
+                }),
+        )
+        .fs_readonly(o.fs_readonly || config.wasi_fs_readonly);
+
+        site_context!(ctx.isolated_fs_controller(&o.memfs_controller))?;
+        site_context!(ctx.preopen_dir_isolated("/".parse().unwrap(), "/".parse().unwrap()))?;
+
+        for (guest, host) in o.physical_mount.iter() {
+            site_context!(ctx.preopen_dir_host(host.clone(), guest.clone()))?;
+        }
+
+        Ok(())
+    }
 }
 
 #[godot_api]
@@ -337,145 +177,198 @@ impl WasiContext {
     fn stderr_emit(message: Variant);
 
     #[func]
-    fn add_env_variable(&mut self, key: GString, value: GString) {
-        self.envs.insert(key.to_string(), value.to_string());
-    }
+    fn initialize(&self, config: Variant) -> Option<Gd<WasiContext>> {
+        let r = self.data.get_or_try_init(move || -> AnyResult<_> {
+            let config = site_context!(variant_to_option::<Dictionary>(config))?;
 
-    #[func]
-    fn get_env_variable(&self, key: GString) -> Variant {
-        self.envs
-            .get(&key.to_string())
-            .map_or_else(Variant::nil, |v| v.to_variant())
-    }
+            Ok(Mutex::new(WasiContextInner {
+                memfs_controller: site_context!(IsolatedFSController::new(
+                    site_context!(config
+                        .as_ref()
+                        .and_then(|c| c.get("memfs.max_size"))
+                        .map(from_var_any::<i64>)
+                        .transpose())?
+                    .map_or(isize::MAX as usize, |v| v as usize),
+                    site_context!(config
+                        .as_ref()
+                        .and_then(|c| c.get("memfs.max_node"))
+                        .map(from_var_any::<i64>)
+                        .transpose())?
+                    .map_or(isize::MAX as usize, |v| v as usize),
+                ))?,
+                physical_mount: HashMap::new(),
+                envs: HashMap::new(),
 
-    #[func]
-    fn delete_env_variable(&mut self, key: GString) -> Variant {
-        option_to_variant(self.envs.remove(&key.to_string()).map(GString::from))
-    }
+                bypass_stdio: false,
+                fs_readonly: false,
+            }))
+        });
 
-    #[func]
-    fn mount_physical_dir(&mut self, host_path: GString, guest_path: Variant) {
-        let host_path = host_path.to_string();
-        let guest_path = match variant_to_option(guest_path) {
-            Ok(v) => v,
-            Err(e) => {
-                godot_error!("{}", e);
-                return;
-            }
-        };
-        self.physical_mount.insert(
-            guest_path.unwrap_or_else(|| host_path.clone()).into(),
-            host_path.into(),
-        );
-    }
-
-    #[func]
-    fn get_mounts(&self) -> Dictionary {
-        self.physical_mount
-            .iter()
-            .map(|(k, v)| {
-                (
-                    GString::from(<_ as AsRef<str>>::as_ref(k)),
-                    GString::from(<_ as AsRef<str>>::as_ref(v)),
-                )
-            })
-            .collect()
-    }
-
-    #[func]
-    fn unmount_physical_dir(&mut self, guest_path: GString) -> bool {
-        self.physical_mount
-            .remove(Utf8Path::new(&guest_path.to_string()))
-            .is_some()
-    }
-
-    /*
-    #[func]
-    fn file_is_exist(&self, path: GString, follow_symlink: Variant) -> u32 {
-        warn_vfs_deprecated();
-
-        let Ok(follow_symlink) = variant_to_option(follow_symlink) else {
-            return FILE_NOTEXIST;
-        };
-        match open(
-            &path.to_string(),
-            self.memfs_root.clone(),
-            &Some(self.memfs_root.clone()),
-            follow_symlink.unwrap_or(false),
-            false,
-        ) {
-            Ok(FileEntry::Occupied(f)) => match f.filetype() {
-                FileType::Directory => FILE_DIR,
-                FileType::RegularFile => FILE_FILE,
-                FileType::SymbolicLink => FILE_LINK,
-                _ => FILE_NOTEXIST,
-            },
-            _ => FILE_NOTEXIST,
+        if let Err(e) = r {
+            godot_error!("{e:?}");
+            None
+        } else {
+            Some(self.to_gd())
         }
     }
 
     #[func]
+    fn is_bypass_stdio(&self) -> bool {
+        self.wrap_data(|v| Ok(v.bypass_stdio)).unwrap_or_default()
+    }
+
+    #[func]
+    fn set_bypass_stdio(&self, v: bool) {
+        self.wrap_data(|this| {
+            this.bypass_stdio = v;
+            Ok(())
+        });
+    }
+
+    #[func]
+    fn is_fs_readonly(&self) -> bool {
+        self.wrap_data(|v| Ok(v.fs_readonly)).unwrap_or_default()
+    }
+
+    #[func]
+    fn set_fs_readonly(&self, v: bool) {
+        self.wrap_data(move |this| {
+            this.fs_readonly = v;
+            Ok(())
+        });
+    }
+
+    #[func]
+    fn add_env_variable(&self, key: GString, value: GString) {
+        self.wrap_data(move |this| {
+            this.envs.insert(key.to_string(), value.to_string());
+            Ok(())
+        });
+    }
+
+    #[func]
+    fn get_env_variable(&self, key: GString) -> Variant {
+        option_to_variant(
+            self.wrap_data(move |this| Ok(this.envs.get(&key.to_string()).map(GString::from)))
+                .flatten(),
+        )
+    }
+
+    #[func]
+    fn delete_env_variable(&self, key: GString) -> Variant {
+        option_to_variant(
+            self.wrap_data(move |this| Ok(this.envs.remove(&key.to_string()).map(GString::from)))
+                .flatten(),
+        )
+    }
+
+    #[func]
+    fn mount_physical_dir(&self, host_path: GString, guest_path: Variant) {
+        self.wrap_data(move |this| {
+            let host_path = host_path.to_string();
+            let guest_path =
+                site_context!(variant_to_option(guest_path))?.unwrap_or_else(|| host_path.clone());
+            this.physical_mount
+                .insert(guest_path.into(), host_path.into());
+            Ok(())
+        });
+    }
+
+    #[func]
+    fn get_mounts(&self) -> Variant {
+        option_to_variant(self.wrap_data(|this| {
+            Ok(this
+                .physical_mount
+                .iter()
+                .map(|(k, v)| (GString::from(k.as_str()), GString::from(v.as_str())))
+                .collect::<Dictionary>())
+        }))
+    }
+
+    #[func]
+    fn unmount_physical_dir(&mut self, guest_path: GString) -> Variant {
+        option_to_variant(self.wrap_data(|this| {
+            Ok(this
+                .physical_mount
+                .remove(Utf8Path::new(&guest_path.to_string()))
+                .is_some())
+        }))
+    }
+
+    #[func]
+    fn file_is_exist(&self, path: GString, follow_symlink: Variant) -> Variant {
+        option_to_variant(self.wrap_data(move |this| {
+            match CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                &this.memfs_controller,
+                &Utf8PathBuf::from(path.to_string()),
+                site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                None,
+                AccessMode::RW,
+            ) {
+                Ok(f) => {
+                    let n = &**f.node();
+                    Ok(if n.is_link() {
+                        FILE_LINK
+                    } else if n.is_dir() {
+                        FILE_DIR
+                    } else {
+                        FILE_FILE
+                    })
+                }
+                Err(e) if e.io().map(|e| e.kind()) == Some(ErrorKind::NotFound) => {
+                    Ok(FILE_NOTEXIST)
+                }
+                Err(e) => site_context!(Err(e)),
+            }
+        }))
+    }
+
+    #[func]
     fn file_make_dir(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
-        warn_vfs_deprecated();
-
-        Self::wrap_result(move || {
-            let follow_symlink = variant_to_option(follow_symlink)?;
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-            let Some(dir) = f.as_any().downcast_ref::<Dir>() else {
-                bail_with_site!("Path {path} is not a directory")
-            };
-            let mut ret = false;
-            dir.content
-                .write()
-                .entry(name.to_string())
-                .or_insert_with(|| {
-                    ret = true;
-                    Arc::new(Dir::new(Arc::downgrade(&*f)))
-                });
-
-            Ok(ret)
+        self.wrap_data(move |this| {
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let mut n = site_context!(f.node().try_dir())?;
+            site_context!(n.add(name.to_string(), || -> AnyResult<_> {
+                Ok(Arc::new(Node::from((
+                    Dir::new(&this.memfs_controller)?,
+                    Arc::downgrade(f.node()),
+                ))))
+            }))
+            .map(|v| v.is_some())
         })
-        .unwrap_or(false)
+        .unwrap_or_default()
     }
 
     #[func]
     fn file_make_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
-        warn_vfs_deprecated();
-
-        Self::wrap_result(move || {
-            let follow_symlink = variant_to_option(follow_symlink)?;
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-            let Some(dir) = f.as_any().downcast_ref::<Dir>() else {
-                bail_with_site!("Path {path} is not a directory")
-            };
-            let mut ret = false;
-            dir.content
-                .write()
-                .entry(name.to_string())
-                .or_insert_with(|| {
-                    ret = true;
-                    Arc::new(File::new(Arc::downgrade(&*f)))
-                });
-
-            Ok(ret)
+        self.wrap_data(move |this| {
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let mut n = site_context!(f.node().try_dir())?;
+            site_context!(n.add(name.to_string(), || -> AnyResult<_> {
+                Ok(Arc::new(Node::from((
+                    File::new(&this.memfs_controller)?,
+                    Arc::downgrade(f.node()),
+                ))))
+            }))
+            .map(|v| v.is_some())
         })
-        .unwrap_or(false)
+        .unwrap_or_default()
     }
 
     #[func]
@@ -486,178 +379,131 @@ impl WasiContext {
         link: GString,
         follow_symlink: Variant,
     ) -> bool {
-        warn_vfs_deprecated();
-
-        Self::wrap_result(move || {
-            let follow_symlink = variant_to_option(follow_symlink)?;
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-            let Some(dir) = f.as_any().downcast_ref::<Dir>() else {
-                bail_with_site!("Path {path} is not a directory")
-            };
-            let mut ret = false;
-            dir.content
-                .write()
-                .entry(name.to_string())
-                .or_insert_with(|| {
-                    ret = true;
-                    Arc::new(Link::new(Arc::downgrade(&*f), link.to_string().into()))
-                });
-
-            Ok(ret)
+        self.wrap_data(move |this| {
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let mut n = site_context!(f.node().try_dir())?;
+            site_context!(n.add(name.to_string(), || -> AnyResult<_> {
+                Ok(Arc::new(Node::from((
+                    Link::new(&this.memfs_controller, &Utf8PathBuf::from(link.to_string()))?,
+                    Arc::downgrade(f.node()),
+                ))))
+            }))
+            .map(|v| v.is_some())
         })
-        .unwrap_or(false)
+        .unwrap_or_default()
     }
 
     #[func]
     fn file_delete_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
-        warn_vfs_deprecated();
+        self.wrap_data(move |this| {
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let mut n = site_context!(f.node().try_dir())?;
 
-        Self::wrap_result(move || {
-            let follow_symlink = variant_to_option(follow_symlink)?;
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-            let Some(dir) = f.as_any().downcast_ref::<Dir>() else {
-                bail_with_site!("Path {path} is not a directory")
-            };
-
-            if dir.content.write().remove(&name.to_string()).is_none() {
-                bail_with_site!("File {name} does not exists in {path}");
-            }
-
-            Ok(())
+            Ok(n.remove(&name.to_string()))
         })
-        .is_some()
+        .unwrap_or_default()
     }
 
     #[func]
-    fn file_dir_list(&self, path: GString, follow_symlink: Variant) -> PackedStringArray {
-        warn_vfs_deprecated();
+    fn file_dir_list(&self, path: GString, follow_symlink: Variant) -> Variant {
+        option_to_variant(self.wrap_data(move |this| {
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let n = site_context!(f.node().try_dir())?;
 
-        Self::wrap_result(move || {
-            let follow_symlink = variant_to_option(follow_symlink)?;
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-            let Some(dir) = f.as_any().downcast_ref::<Dir>() else {
-                bail_with_site!("Path {path} is not a directory")
-            };
-
-            let ret = dir.content.read().keys().map(GString::from).collect();
-            Ok(ret)
-        })
-        .unwrap_or_else(PackedStringArray::new)
+            Ok(n.iter()
+                .map(|(k, _)| GString::from(k))
+                .collect::<PackedStringArray>())
+        }))
     }
 
     #[func]
     fn file_stat(&self, path: GString, follow_symlink: Variant) -> Variant {
-        warn_vfs_deprecated();
+        option_to_variant(self.wrap_data(move |this| {
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let n = &**f.node();
 
-        option_to_variant(Self::wrap_result(move || {
-            let follow_symlink = variant_to_option(follow_symlink)?;
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-
-            let stat = f.filestat();
-            let mut dict = Dictionary::new();
-            dict.insert(
+            let mut ret = Dictionary::new();
+            ret.set(
                 "filetype",
-                match stat.filetype {
-                    FileType::Directory => FILE_DIR,
-                    FileType::RegularFile => FILE_FILE,
-                    FileType::SymbolicLink => FILE_LINK,
-                    _ => FILE_NOTEXIST,
+                if n.is_link() {
+                    FILE_LINK
+                } else if n.is_dir() {
+                    FILE_DIR
+                } else {
+                    FILE_FILE
                 },
             );
-            dict.insert("size", stat.size as i64);
-
-            fn g(time: SystemTime) -> i64 {
-                let v = to_unix_time(time);
-                match i64::try_from(v) {
-                    Ok(v) => v,
-                    Err(_) if v >= 0 => i64::MAX,
-                    Err(_) => i64::MIN,
-                }
-            }
-
-            dict.insert("atime", stat.atim.map_or(0, g));
-            dict.insert("mtime", stat.mtim.map_or(0, g));
-            dict.insert("ctime", stat.ctim.map_or(0, g));
-
-            Ok(dict)
+            let (len, stamp) = n.len_and_stamp();
+            ret.set("size", len as u64);
+            ret.set("atime", to_unix_time(stamp.atime) as i64);
+            ret.set("mtime", to_unix_time(stamp.mtime) as i64);
+            ret.set("ctime", to_unix_time(stamp.ctime) as i64);
+            Ok(ret)
         }))
     }
 
     #[func]
     fn file_set_time(&self, path: GString, time: Dictionary, follow_symlink: Variant) -> bool {
-        warn_vfs_deprecated();
-
-        Self::wrap_result(move || {
-            let follow_symlink = variant_to_option(follow_symlink)?;
+        self.wrap_data(move |this| {
             let mtime = time
                 .get("mtime")
-                .and_then(|v| variant_to_option::<i64>(v).transpose())
-                .transpose()?;
+                .map(variant_to_option::<i64>)
+                .transpose()?
+                .flatten();
             let atime = time
                 .get("atime")
-                .and_then(|v| variant_to_option::<i64>(v).transpose())
-                .transpose()?;
+                .map(variant_to_option::<i64>)
+                .transpose()?
+                .flatten();
 
-            let (mtime, atime) = match (
-                mtime.and_then(from_unix_time),
-                atime.and_then(from_unix_time),
-            ) {
-                (None, None) => {
-                    let t = Some(SystemTime::now());
-                    (t, t)
-                }
-                (t @ Some(_), None) => (t, t),
-                t @ (_, Some(_)) => t,
-            };
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let mut stamp = f.node().stamp();
 
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-
-            let stamp = f.timestamp();
-            if let Some(mtime) = mtime {
-                stamp.mtime.set_stamp(mtime);
+            if let Some(t) = mtime.and_then(from_unix_time) {
+                stamp.mtime = t;
             }
-            if let Some(atime) = atime {
-                stamp.atime.set_stamp(atime);
+            if let Some(t) = atime.and_then(from_unix_time) {
+                stamp.atime = t;
             }
 
             Ok(())
@@ -667,24 +513,17 @@ impl WasiContext {
 
     #[func]
     fn file_link_target(&self, path: GString, follow_symlink: Variant) -> Variant {
-        warn_vfs_deprecated();
-
-        option_to_variant(Self::wrap_result(move || {
-            let follow_symlink = variant_to_option(follow_symlink)?;
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-            let Some(link) = f.as_any().downcast_ref::<Link>() else {
-                bail_with_site!("Path {path} is not a symlink")
-            };
-
-            Ok(GString::from(&link.path))
+        option_to_variant(self.wrap_data(move |this| {
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            site_context!(f.read_link())
         }))
     }
 
@@ -692,63 +531,34 @@ impl WasiContext {
     fn file_read(
         &self,
         path: GString,
-        length: i64,
+        length: u64,
         offset: Variant,
         follow_symlink: Variant,
     ) -> Variant {
-        warn_vfs_deprecated();
+        option_to_variant(self.wrap_data(move |this| {
+            let mut off = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
 
-        option_to_variant(Self::wrap_result(move || {
-            let length = length as usize;
-            let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
-            let follow_symlink = variant_to_option(follow_symlink)?;
-            let offset = offset.unwrap_or(0);
-            let end = if length > 0 {
-                match offset.checked_add(length) {
-                    None => bail_with_site!("Length overflowed"),
-                    v => v,
-                }
-            } else {
-                None
-            };
-
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                self.memfs_root.clone(),
-                &Some(self.memfs_root.clone()),
-                follow_symlink.unwrap_or(false),
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-            let Some(f) = f.as_any().downcast_ref::<File>() else {
-                bail_with_site!("Path {path} is not a file")
-            };
-
-            let guard = f.content.read();
-            let mut s = None;
-            if let Some(end) = end {
-                s = guard.get(offset..end);
-            }
-            if s.is_none() {
-                s = guard.get(offset..);
-            }
-            if let Some(s) = s {
-                Ok(PackedByteArray::from(s))
-            } else if let Some(end) = end {
-                bail_with_site!(
-                    "Index {}..{} overflowed (file size is {})",
-                    offset,
-                    end,
-                    guard.len()
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
                 )
-            } else {
-                bail_with_site!(
-                    "Index {}.. overflowed (file size is {})",
-                    offset,
-                    guard.len()
-                )
+            )?;
+            let mut n = site_context!(f.node().try_file())?;
+
+            let mut ret = vec![0u8; length as usize];
+            let mut s = &mut ret[..];
+            while !s.is_empty() {
+                let (v, n) = n.read(s.len(), off);
+                s[..v.len()].copy_from_slice(v);
+                s = &mut s[n..];
+                off += n;
             }
+
+            Ok(PackedByteArray::from(ret))
         }))
     }
 
@@ -761,192 +571,63 @@ impl WasiContext {
         truncate: Variant,
         follow_symlink: Variant,
     ) -> bool {
-        warn_vfs_deprecated();
+        fn write_it<T, const N: usize>(
+            f: &mut File,
+            mut off: usize,
+            it: impl IntoIterator<Item = T>,
+            c: impl Fn(T, &mut [u8; N]),
+        ) -> AnyResult<()> {
+            let mut buf = [[0u8; N]; 4];
+            let mut i = 0;
+            for v in it {
+                c(v, &mut buf[i]);
 
-        fn f<R>(
-            root: Arc<Dir>,
-            path: GString,
-            follow_symlink: bool,
-            truncate: bool,
-            offset: usize,
-            end: usize,
-            f_: impl FnOnce(&mut [u8]) -> Result<R, Error>,
-        ) -> Result<R, Error> {
-            let Ok(FileEntry::Occupied(f)) = open(
-                &path.to_string(),
-                root.clone(),
-                &Some(root),
-                follow_symlink,
-                false,
-            ) else {
-                bail_with_site!("Failed to open path {path}")
-            };
-            let Some(f) = f.as_any().downcast_ref::<File>() else {
-                bail_with_site!("Path {path} is not a file")
-            };
-
-            let mut guard = f.content.write();
-            if truncate || guard.len() < end {
-                guard.resize(end, 0);
+                i += 1;
+                if i == buf.len() {
+                    i = 0;
+                    f.write(buf.as_flattened(), off)?;
+                    off += N * buf.len();
+                }
             }
 
-            f_(&mut guard[offset..end])
+            if i > 0 {
+                f.write(buf[..i].as_flattened(), off)?;
+            }
+            Ok(())
         }
 
-        fn g<const N: usize, T>(
-            root: Arc<Dir>,
-            path: GString,
-            follow_symlink: bool,
-            truncate: bool,
-            offset: Option<usize>,
-            data: &[T],
-            f_: impl Fn(&T, &mut [u8; N]),
-        ) -> Result<(), Error> {
-            let offset = offset.unwrap_or(0);
-            let Some(end) = data
-                .len()
-                .checked_mul(N)
-                .and_then(|v| v.checked_add(offset))
-            else {
-                bail_with_site!("Length overflowed")
-            };
+        self.wrap_data(move |this| {
+            let off = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
 
-            let f_ = move |s: &mut [u8]| {
-                for (s, d) in data.iter().zip(s.chunks_mut(N)) {
-                    f_(s, d.try_into().unwrap())
-                }
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    Some(CreateParams::new()),
+                    AccessMode::RW,
+                )
+            )?;
+            let mut n = site_context!(f.node().try_file())?;
 
-                Ok(())
-            };
+            if variant_to_option::<bool>(truncate)?.unwrap_or(false) {
+                site_context!(n.resize(0))?;
+            }
 
-            f(root, path, follow_symlink, truncate, offset, end, f_)
-        }
-
-        Self::wrap_result(move || {
-            let offset = variant_to_option::<i64>(offset)?.map(|v| v as usize);
-            let truncate = variant_to_option(truncate)?.unwrap_or(false);
-            let follow_symlink = variant_to_option(follow_symlink)?.unwrap_or(false);
-            match VariantDispatch::from(&data) {
-                VariantDispatch::PackedByteArray(s) => {
-                    let s = s.as_slice();
-                    let offset = offset.unwrap_or(0);
-                    let Some(end) = s.len().checked_add(offset) else {
-                        bail_with_site!("Length overflowed")
-                    };
-
-                    f(
-                        self.memfs_root.clone(),
-                        path,
-                        follow_symlink,
-                        truncate,
-                        offset,
-                        end,
-                        move |d| {
-                            d.copy_from_slice(s);
-                            Ok(())
-                        },
-                    )
-                }
-                VariantDispatch::String(s) => {
-                    let s = s.to_string();
-                    let s = s.as_bytes();
-                    let offset = offset.unwrap_or(0);
-                    let Some(end) = s.len().checked_add(offset) else {
-                        bail_with_site!("Length overflowed")
-                    };
-
-                    f(
-                        self.memfs_root.clone(),
-                        path,
-                        follow_symlink,
-                        truncate,
-                        offset,
-                        end,
-                        move |d| {
-                            d.copy_from_slice(s);
-                            Ok(())
-                        },
-                    )
-                }
-                VariantDispatch::PackedInt32Array(s) => g::<4, _>(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    s.as_slice(),
-                    |s, d| *d = s.to_le_bytes(),
-                ),
-                VariantDispatch::PackedInt64Array(s) => g::<8, _>(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    s.as_slice(),
-                    |s, d| *d = s.to_le_bytes(),
-                ),
-                VariantDispatch::PackedFloat32Array(s) => g::<4, _>(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    s.as_slice(),
-                    |s, d| *d = s.to_le_bytes(),
-                ),
-                VariantDispatch::PackedFloat64Array(s) => g::<8, _>(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    s.as_slice(),
-                    |s, d| *d = s.to_le_bytes(),
-                ),
-                VariantDispatch::PackedVector2Array(s) => g::<8, _>(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    s.as_slice(),
-                    |s, d| {
-                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[4..]).unwrap() = s.y.to_le_bytes();
-                    },
-                ),
-                VariantDispatch::PackedVector3Array(s) => g::<12, _>(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    s.as_slice(),
-                    |s, d| {
-                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.x.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.y.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[8..]).unwrap() = s.z.to_le_bytes();
-                    },
-                ),
-                VariantDispatch::PackedColorArray(s) => g::<16, _>(
-                    self.memfs_root.clone(),
-                    path,
-                    follow_symlink,
-                    truncate,
-                    offset,
-                    s.as_slice(),
-                    |s, d| {
-                        *<&mut [u8; 4]>::try_from(&mut d[..4]).unwrap() = s.r.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[4..8]).unwrap() = s.g.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[8..12]).unwrap() = s.b.to_le_bytes();
-                        *<&mut [u8; 4]>::try_from(&mut d[12..]).unwrap() = s.a.to_le_bytes();
-                    },
-                ),
+            variant_dispatch!{data {
+                PACKED_BYTE_ARRAY => site_context!(n.write(data.as_slice(), off))?,
+                STRING => site_context!(n.write(data.to_string().as_bytes(), off))?,
+                PACKED_INT32_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), |v, s| *s = v.to_le_bytes()))?,
+                PACKED_INT64_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), |v, s| *s = v.to_le_bytes()))?,
+                PACKED_FLOAT32_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), |v, s| *s = v.to_le_bytes()))?,
+                PACKED_FLOAT64_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), |v, s| *s = v.to_le_bytes()))?,
+                PACKED_VECTOR2_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), StructPacking::<f32>::write_array))?,
+                PACKED_VECTOR3_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), StructPacking::<f32>::write_array))?,
+                PACKED_COLOR_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), StructPacking::<f32>::write_array))?,
                 _ => bail_with_site!("Unknown value type {:?}", data.get_type()),
-            }
-        })
-        .is_some()
+            }};
+
+            Ok(())
+        }).is_some()
     }
-    */
 }

@@ -430,6 +430,16 @@ impl From<StreamError> for crate::bindings::types::Error {
     }
 }
 
+impl StreamError {
+    #[inline(always)]
+    pub fn io(&self) -> Option<&IoError> {
+        match &self.0 {
+            StreamErrorInner::Io(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
 pub struct NetworkError(NetworkErrorInner);
 
 enum NetworkErrorInner {
