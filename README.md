@@ -33,11 +33,7 @@ Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
   * Newer `extern` API using externrefs, with interop with legacy API.
     Some programming language might not support it at all.
   * Component-based API. Requires component model.
-* WASI common API ~~with in-memory filesystem~~.
-
-  **NOTE:** In-memory filesystem is currently disabled due to dependency problems.
-  It will be enabled in the future if possible.
-
+* WASI common API with in-memory filesystem.
 * Native resource support to ease import/export.
 * Optional support for component model and WASI 0.2
 
