@@ -1,0 +1,73 @@
+[gd_scene load_steps=3 format=3 uid="uid://dfl1g8vtwmt2f"]
+
+[ext_resource type="Theme" uid="uid://cia5aaiffmela" path="res://theme/default.tres" id="1_chlx7"]
+[ext_resource type="Script" path="res://script/TestWasi.gd" id="2_juees"]
+
+[node name="Root" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme = ExtResource("1_chlx7")
+script = ExtResource("2_juees")
+
+[node name="Center" type="CenterContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Panel" type="PanelContainer" parent="Center"]
+custom_minimum_size = Vector2(200, 200)
+layout_mode = 2
+
+[node name="VBox" type="VBoxContainer" parent="Center/Panel"]
+layout_mode = 2
+
+[node name="HBox" type="HBoxContainer" parent="Center/Panel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Content" type="CodeEdit" parent="Center/Panel/VBox/HBox"]
+custom_minimum_size = Vector2(300, 300)
+layout_mode = 2
+size_flags_horizontal = 3
+editable = false
+gutters_draw_line_numbers = true
+
+[node name="VBox" type="VBoxContainer" parent="Center/Panel/VBox/HBox"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Center/Panel/VBox/HBox/VBox"]
+layout_mode = 2
+text = "Files"
+
+[node name="Tree" type="Tree" parent="Center/Panel/VBox/HBox/VBox"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="VBox2" type="VBoxContainer" parent="Center/Panel/VBox/HBox"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="Center/Panel/VBox/HBox/VBox2"]
+layout_mode = 2
+text = "Tests"
+
+[node name="Items" type="ItemList" parent="Center/Panel/VBox/HBox/VBox2"]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RunTest" type="Button" parent="Center/Panel/VBox"]
+layout_mode = 2
+disabled = true
+text = "Run Tests"
+
+[connection signal="item_activated" from="Center/Panel/VBox/HBox/VBox/Tree" to="." method="__open_file"]
+[connection signal="pressed" from="Center/Panel/VBox/RunTest" to="." method="__run_test"]
