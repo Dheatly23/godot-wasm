@@ -45,11 +45,15 @@ use crate::wasm_engine::{get_engine, ModuleData, ModuleType, WasmModule};
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_util::reset_epoch;
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
-use crate::wasm_util::{config_store_common, raw_call, HostModuleCache, MEMORY_EXPORT};
+use crate::wasm_util::{
+    config_store_common, raw_call, HasEpochTimeout, HostModuleCache, MEMORY_EXPORT,
+};
 use crate::{bail_with_site, site_context, variant_dispatch};
 
 enum MemoryType {
@@ -227,6 +231,18 @@ impl AsMut<InnerLock> for StoreData {
     }
 }
 
+impl HasEpochTimeout for StoreData {
+    #[cfg(feature = "epoch-timeout")]
+    fn get_epoch_timeout(&self) -> u64 {
+        self.epoch_timeout
+    }
+
+    #[cfg(feature = "wasi")]
+    fn get_wasi_ctx(&mut self) -> Option<&mut WasiCtx> {
+        self.wasi_ctx.as_mut()
+    }
+}
+
 #[cfg(feature = "memory-limiter")]
 pub struct MemoryLimit {
     pub max_memory: u64,
@@ -318,7 +334,7 @@ struct InstanceArgs<'a, T> {
 
 impl<T> InstanceData<T>
 where
-    T: Send + AsRef<StoreData> + AsMut<StoreData>,
+    T: Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     pub fn instantiate<C: GodotClass>(
         obj: &Gd<C>,
@@ -427,7 +443,7 @@ where
 
 impl<T> InstanceArgs<'_, T>
 where
-    T: Send + AsRef<StoreData> + AsMut<StoreData>,
+    T: Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     fn instantiate_wasm(&mut self, module: &ModuleData) -> AnyResult<InstanceWasm> {
         #[allow(irrefutable_let_patterns)]
@@ -765,9 +781,7 @@ impl RustCallable for WasmCallable {
         let r = self.this.bind().unwrap_data(|m| {
             m.acquire_store(|_, #[allow(unused_mut)] mut store| {
                 #[cfg(feature = "epoch-timeout")]
-                if let v @ 1.. = store.data().epoch_timeout {
-                    store.set_epoch_deadline(v);
-                }
+                reset_epoch(&mut store);
 
                 // SAFETY: Function pointer is valid.
                 unsafe {
@@ -870,9 +884,7 @@ impl WasmInstance {
                 let ty = f.ty(&store);
 
                 #[cfg(feature = "epoch-timeout")]
-                if let v @ 1.. = store.data().epoch_timeout {
-                    store.set_epoch_deadline(v);
-                }
+                reset_epoch(&mut store);
 
                 unsafe { raw_call(store, &f, &ty, args.iter_shared()) }
             })
@@ -944,10 +956,8 @@ impl WasmInstance {
         cfg_if! {
             if #[cfg(feature = "epoch-timeout")] {
                 self.unwrap_data(|m| {
-                    m.acquire_store(|_, mut store| {
-                        if let v @ 1.. = store.data().epoch_timeout {
-                            store.set_epoch_deadline(v);
-                        }
+                    m.acquire_store(|_, store| {
+                        reset_epoch(store);
                         Ok(())
                     })
                 });

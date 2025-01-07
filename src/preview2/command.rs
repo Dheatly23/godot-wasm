@@ -19,8 +19,9 @@ use crate::wasm_engine::WasmModule;
 #[cfg(feature = "memory-limiter")]
 use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
+use crate::wasm_util::HasEpochTimeout;
 #[cfg(feature = "epoch-timeout")]
-use crate::wasm_util::config_store_epoch;
+use crate::wasm_util::{config_store_epoch, reset_epoch};
 use crate::{bail_with_site, site_context};
 
 #[derive(Default)]
@@ -99,6 +100,18 @@ pub struct StoreData {
     godot_ctx: Either<InnerLock, GodotCtx>,
 }
 
+impl AsRef<Self> for StoreData {
+    fn as_ref(&self) -> &Self {
+        self
+    }
+}
+
+impl AsMut<Self> for StoreData {
+    fn as_mut(&mut self) -> &mut Self {
+        self
+    }
+}
+
 impl AsRef<InnerLock> for StoreData {
     fn as_ref(&self) -> &InnerLock {
         cfg_if! {
@@ -126,6 +139,18 @@ impl AsMut<InnerLock> for StoreData {
                 &mut self.inner_lock
             }
         }
+    }
+}
+
+impl HasEpochTimeout for StoreData {
+    #[cfg(feature = "epoch-timeout")]
+    fn get_epoch_timeout(&self) -> u64 {
+        self.epoch_timeout
+    }
+
+    #[cfg(feature = "wasi")]
+    fn get_wasi_ctx(&mut self) -> Option<&mut WasiCtx> {
+        Some(self.wasi_ctx)
     }
 }
 
@@ -317,11 +342,9 @@ impl WasiCommand {
         self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
                 #[cfg(feature = "epoch-timeout")]
-                if let v @ 1.. = store.data().epoch_timeout {
-                    store.set_epoch_deadline(v);
-                }
+                reset_epoch(&mut store);
 
-                Ok(m.bindings.wasi_cli_run().call_run(&mut store)?.is_ok())
+                Ok(m.bindings.wasi_cli_run().call_run(store)?.is_ok())
             })
         })
         .unwrap_or_default()

@@ -13,8 +13,9 @@ use crate::wasm_engine::WasmModule;
 #[cfg(feature = "memory-limiter")]
 use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
+use crate::wasm_util::HasEpochTimeout;
 #[cfg(feature = "epoch-timeout")]
-use crate::wasm_util::config_store_epoch;
+use crate::wasm_util::{config_store_epoch, reset_epoch};
 use crate::{bail_with_site, site_context};
 
 #[derive(Default)]
@@ -91,6 +92,18 @@ impl AsMut<InnerLock> for WasmScriptLikeStore {
 impl AsMut<GodotCtx> for WasmScriptLikeStore {
     fn as_mut(&mut self) -> &mut GodotCtx {
         &mut self.godot_ctx
+    }
+}
+
+impl HasEpochTimeout for WasmScriptLikeStore {
+    #[cfg(feature = "epoch-timeout")]
+    fn get_epoch_timeout(&self) -> u64 {
+        self.epoch_timeout
+    }
+
+    #[cfg(feature = "wasi")]
+    fn get_wasi_ctx(&mut self) -> Option<&mut WasiCtx> {
+        None
     }
 }
 
@@ -235,9 +248,7 @@ impl WasmScriptLike {
         self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
                 #[cfg(feature = "epoch-timeout")]
-                if let v @ 1.. = store.data().epoch_timeout {
-                    store.set_epoch_deadline(v);
-                }
+                reset_epoch(&mut store);
 
                 let res = store.data_mut().godot_ctx.set_into_var(args)?;
                 let ret = m
