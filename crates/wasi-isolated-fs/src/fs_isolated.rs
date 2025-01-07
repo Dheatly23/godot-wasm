@@ -1144,7 +1144,7 @@ impl CapWrapper {
 
             let mut v = node.dir().ok_or(ErrorKind::NotADirectory)?;
             let n = match v.get(p) {
-                Some(_) if create_exclusive => Err(ErrorKind::AlreadyExists),
+                Some(_) if create_exclusive && it.peek().is_none() => Err(ErrorKind::AlreadyExists),
                 Some(v) => Ok(v),
                 None if create && it.peek().is_none() => {
                     if !access.is_write() {
@@ -1153,9 +1153,9 @@ impl CapWrapper {
 
                     v.add::<Error>(p, || {
                         Ok(Arc::new(if create_dir {
-                            Node::from((File::new(controller)?, Arc::downgrade(&node)))
-                        } else {
                             Node::from((Dir::new(controller)?, Arc::downgrade(&node)))
+                        } else {
+                            Node::from((File::new(controller)?, Arc::downgrade(&node)))
                         }))
                     })?
                     .ok_or(ErrorKind::AlreadyExists)
