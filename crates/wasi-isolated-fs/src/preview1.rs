@@ -1240,9 +1240,9 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
 
             let entry_size = Dirent::guest_size() as usize;
 
-            let mut i = entry_size + 1;
+            let mut i = 0;
             if cookie == 0 {
-                let Some((b, r)) = buf.split_at_mut_checked(i) else {
+                let Some((b, r)) = buf.split_at_mut_checked(entry_size + 1) else {
                     return Ok(0);
                 };
                 write_dirent(
@@ -1255,7 +1255,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     },
                 );
                 b[entry_size] = b'.';
-                buf = r;
+                (i, buf) = (i + b.len(), r);
             }
 
             if cookie <= 1 {
@@ -1282,7 +1282,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
 
                 let name = name.as_ref().as_bytes();
-                let nl = Size::try_from(name.len()).unwrap_or(Size::MIN) as usize;
+                let nl = usize::try_from(Size::try_from(name.len()).unwrap_or(Size::MAX))?;
                 let name = &name[..nl];
                 let Some((b, r)) = entry_size
                     .checked_add(nl)

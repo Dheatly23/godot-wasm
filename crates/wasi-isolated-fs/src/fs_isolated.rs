@@ -1466,26 +1466,28 @@ impl Iterator for DirEntryAccessor {
             return Some(Err(ErrorKind::NotADirectory.into()));
         };
 
-        let Some(k) = self.key.take() else {
-            let Some((k, v)) = d.items.first_key_value() else {
-                drop(d);
-                self.node = None;
-                return None;
-            };
-            self.key = Some(k.clone());
-            return Some(Ok((k.clone(), v.clone())));
+        let Some(k) = self
+            .key
+            .take()
+            .or_else(|| d.items.first_key_value().map(|(k, _)| k.clone()))
+        else {
+            drop(d);
+            self.node = None;
+            return None;
         };
 
         let mut it = d.items.range(k..);
         let (k, v) = it.next()?;
         let ret = (k.clone(), v.clone());
 
-        let Some((k, _)) = it.next() else {
+        if let Some((k, _)) = it.next() {
+            self.key = Some(k.clone());
+            drop(d);
+        } else {
             drop(d);
             self.node = None;
-            return None;
-        };
-        self.key = Some(k.clone());
+        }
+
         Some(Ok(ret))
     }
 }
