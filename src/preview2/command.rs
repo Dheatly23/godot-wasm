@@ -150,7 +150,7 @@ impl HasEpochTimeout for StoreData {
 
     #[cfg(feature = "wasi")]
     fn get_wasi_ctx(&mut self) -> Option<&mut WasiCtx> {
-        Some(self.wasi_ctx)
+        Some(&mut self.wasi_ctx)
     }
 }
 

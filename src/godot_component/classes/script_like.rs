@@ -2,6 +2,8 @@ use anyhow::Result as AnyResult;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+#[cfg(feature = "wasi")]
+use wasi_isolated_fs::context::WasiContext as WasiCtx;
 use wasmtime::component::{Linker, Resource as WasmResource};
 use wasmtime::Store;
 
