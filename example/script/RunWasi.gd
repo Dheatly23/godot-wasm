@@ -122,7 +122,7 @@ func __list_tree_item(path: String, tree: TreeItem = null):
 		return
 
 	for i in items:
-		var p := "%s/%s" % [path, i]
+		var p := path.path_join(i)
 		var t := file_tree.create_item(tree)
 		t.set_cell_mode(0, TreeItem.CELL_MODE_STRING)
 		t.set_text(0, i)
@@ -132,9 +132,9 @@ func __list_tree_item(path: String, tree: TreeItem = null):
 func __refresh_files():
 	file_tree.clear()
 	var root := file_tree.create_item()
-	root.set_text(0, ".")
-	root.set_metadata(0, ".")
-	__list_tree_item(".", root)
+	root.set_text(0, "/")
+	root.set_metadata(0, "/")
+	__list_tree_item("/", root)
 
 func __open_file_context(mouse_position: Vector2, mouse_button_index: int):
 	if mouse_button_index != MOUSE_BUTTON_RIGHT:
