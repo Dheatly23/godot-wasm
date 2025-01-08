@@ -79,7 +79,7 @@ features = [
 ]
 
 [features]
-default = ["epoch-timeout", "memory-limiter", "wasi", "object-registry"]
+default = ["epoch-timeout", "memory-limiter", "wasi", "object-registry", "wasi-preview2", "godot-component"]
 memory-limiter = []
 epoch-timeout = []
 object-registry-compat = ["dep:slab"]
