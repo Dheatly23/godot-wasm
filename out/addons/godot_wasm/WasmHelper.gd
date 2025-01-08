@@ -38,6 +38,9 @@ static func load_wasm_file(
 	imports: Dictionary = {}
 ) -> WasmModule:
 	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		printerr("Error opening file: %s" % error_string(FileAccess.get_open_error()))
+		return null
 	var buf = file.get_buffer(file.get_length())
 	file.close()
 	return load_wasm(buf, imports)
