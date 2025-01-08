@@ -48,6 +48,14 @@ fn from_unix_time(time: i64) -> Option<SystemTime> {
 
 #[derive(GodotClass)]
 #[class(base=RefCounted, init, tool)]
+/// Class for holding WASI context.
+///
+/// Provides more config option for WASI, and handles isolated, in-memory filesystem.
+/// One context can be shared with multiple `WasmInstance`.
+/// Useful to aggregate stdout/stderr.
+///
+/// 📌 Use `initialize()` to properly initialize object.
+/// **Uninitialized object should not be used.**
 pub struct WasiContext {
     base: Base<RefCounted>,
     data: OnceCell<Mutex<WasiContextInner>>,
@@ -171,11 +179,23 @@ impl WasiContext {
 
 #[godot_api]
 impl WasiContext {
+    /// Emitted whenever WASI stdout is written. Only usable with WASI.
     #[signal]
     fn stdout_emit(message: Variant);
+    /// Emitted whenever WASI stderr is written. Only usable with WASI.
     #[signal]
     fn stderr_emit(message: Variant);
 
+    /// Initialize and instantiates context.
+    ///
+    /// **⚠ MUST BE CALLED FOR THE FIRST TIME AND ONLY ONCE.**
+    ///
+    /// Returns itself if succeed, `null` otherwise.
+    ///
+    /// Arguments:
+    /// - `config` : Configuration option. Is a dictionary with the following key/value:
+    ///   - `memfs.max_size` : Maximum number of bytes allowed for in-memory filesystem. Defaults to uncapped.
+    ///   - `memfs.max_node` : Maximum number of file objects allowed for in-memory filesystem. Defaults to uncapped.
     #[func]
     fn initialize(&self, config: Variant) -> Option<Gd<WasiContext>> {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
@@ -238,6 +258,7 @@ impl WasiContext {
         });
     }
 
+    /// Sets context-wide environment variable.
     #[func]
     fn add_env_variable(&self, key: GString, value: GString) {
         self.wrap_data(move |this| {
@@ -246,6 +267,7 @@ impl WasiContext {
         });
     }
 
+    /// Gets context-wide environment variable.
     #[func]
     fn get_env_variable(&self, key: GString) -> Variant {
         option_to_variant(
@@ -254,6 +276,7 @@ impl WasiContext {
         )
     }
 
+    /// Unsets context-wide environment variable.
     #[func]
     fn delete_env_variable(&self, key: GString) -> Variant {
         option_to_variant(
@@ -262,6 +285,11 @@ impl WasiContext {
         )
     }
 
+    /// Mounts host directory into guest.
+    ///
+    /// Arguments:
+    /// - `host_path` : Path to host directory. Does not accept Godot-specific paths (eg. `res://`).
+    /// - `guest_path` : Absolute path in guest where it will be mounted. Path is unix-style (no drive letter).
     #[func]
     fn mount_physical_dir(&self, host_path: GString, guest_path: Variant) {
         self.wrap_data(move |this| {
@@ -274,6 +302,7 @@ impl WasiContext {
         });
     }
 
+    /// Gets all mounted paths.
     #[func]
     fn get_mounts(&self) -> Variant {
         option_to_variant(self.wrap_data(|this| {
@@ -285,6 +314,10 @@ impl WasiContext {
         }))
     }
 
+    /// Unmounts host directory.
+    ///
+    /// Arguments:
+    /// - `guest_path` : Absolute path in guest. Must be exact.
     #[func]
     fn unmount_physical_dir(&mut self, guest_path: GString) -> Variant {
         option_to_variant(self.wrap_data(|this| {
@@ -295,6 +328,11 @@ impl WasiContext {
         }))
     }
 
+    /// Returns `true` if file is exists.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to file.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_is_exist(&self, path: GString, follow_symlink: Variant) -> Variant {
         option_to_variant(self.wrap_data(move |this| {
@@ -323,6 +361,14 @@ impl WasiContext {
         }))
     }
 
+    /// Create a new directory.
+    ///
+    /// Returns `true` if success.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to where it will create.
+    /// - `name` : Name of new directory.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_make_dir(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         self.wrap_data(move |this| {
@@ -347,6 +393,14 @@ impl WasiContext {
         .unwrap_or_default()
     }
 
+    /// Create a new empty file.
+    ///
+    /// Returns `true` if success.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to where it will create.
+    /// - `name` : Name of new file.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_make_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         self.wrap_data(move |this| {
@@ -371,6 +425,15 @@ impl WasiContext {
         .unwrap_or_default()
     }
 
+    /// Create a new symbolic link.
+    ///
+    /// Returns `true` if success.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to where it will create.
+    /// - `name` : Name of new symbolic link.
+    /// - `link` : Target of the symbolic link.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_make_link(
         &self,
@@ -401,6 +464,14 @@ impl WasiContext {
         .unwrap_or_default()
     }
 
+    /// Delete a file/directory/symlink.
+    ///
+    /// Returns `true` if success.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to where it will delete.
+    /// - `name` : Name of the target file.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_delete_file(&self, path: GString, name: GString, follow_symlink: Variant) -> bool {
         self.wrap_data(move |this| {
@@ -420,6 +491,11 @@ impl WasiContext {
         .unwrap_or_default()
     }
 
+    /// List all files in a directory.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to directory.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_dir_list(&self, path: GString, follow_symlink: Variant) -> Variant {
         option_to_variant(self.wrap_data(move |this| {
@@ -440,6 +516,11 @@ impl WasiContext {
         }))
     }
 
+    /// Gets file statistics.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to file.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_stat(&self, path: GString, follow_symlink: Variant) -> Variant {
         option_to_variant(self.wrap_data(move |this| {
@@ -474,6 +555,14 @@ impl WasiContext {
         }))
     }
 
+    /// Sets ctime/mtime/atime of file.
+    ///
+    /// Returns `true` if success.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to target file.
+    /// - `time` : A dictionary with key of ctime/mtime/atime and value of seconds since unix epoch.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_set_time(&self, path: GString, time: Dictionary, follow_symlink: Variant) -> bool {
         self.wrap_data(move |this| {
@@ -511,6 +600,11 @@ impl WasiContext {
         .is_some()
     }
 
+    /// Gets symbolic link target path.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_link_target(&self, path: GString, follow_symlink: Variant) -> Variant {
         option_to_variant(self.wrap_data(move |this| {
@@ -527,6 +621,13 @@ impl WasiContext {
         }))
     }
 
+    /// Reads content of file.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to file.
+    /// - `length` : Number of bytes to read.
+    /// - `offset` : Offset from start of file.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_read(
         &self,
@@ -567,6 +668,16 @@ impl WasiContext {
         }))
     }
 
+    /// Writes content into file.
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to file.
+    /// - `data` : Data to write. Can be of the following:
+    ///   - `PackedByteArray` : Binary data to write.
+    ///   - `String` : Text data to write (in utf-8).
+    ///   - `Packed*Array` : Formatted data to write.
+    /// - `offset` : Offset from start of file.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_write(
         &self,
