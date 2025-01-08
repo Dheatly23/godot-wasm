@@ -1,5 +1,6 @@
 use anyhow::Error;
 use cfg_if::cfg_if;
+#[cfg(feature = "godot-component")]
 use either::{Either, Left, Right};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
