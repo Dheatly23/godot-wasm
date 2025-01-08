@@ -674,7 +674,8 @@ impl WasiContext {
     /// - `path` : Absolute path to file.
     /// - `data` : Data to write. Can be of the following:
     ///   - `PackedByteArray` : Binary data to write.
-    ///   - `String` : Text data to write (in utf-8).
+    ///   - `String` / `StringName` / `NodePath` : Text data to write (in utf-8).
+    ///   - `PackedStringArray` : All items as utf-8 string, concatenated.
     ///   - `Packed*Array` : Formatted data to write.
     /// - `offset` : Offset from start of file.
     /// - `follow_symlink` : If `true`, follow symbolic links.
@@ -713,7 +714,7 @@ impl WasiContext {
         }
 
         self.wrap_data(move |this| {
-            let off = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
+            let mut off = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
 
             let f = site_context!(
                 CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
@@ -733,6 +734,17 @@ impl WasiContext {
             variant_dispatch!{data {
                 PACKED_BYTE_ARRAY => site_context!(n.write(data.as_slice(), off))?,
                 STRING => site_context!(n.write(data.to_string().as_bytes(), off))?,
+                STRING_NAME => site_context!(n.write(data.to_string().as_bytes(), off))?,
+                NODE_PATH => site_context!(n.write(data.to_string().as_bytes(), off))?,
+                PACKED_STRING_ARRAY => {
+                    let mut temp = String::new();
+                    for s in data.as_slice() {
+                        temp.clear();
+                        temp.extend(s.chars());
+                        site_context!(n.write(temp.as_bytes(), off))?;
+                        off += temp.len();
+                    }
+                },
                 PACKED_INT32_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), |v, s| *s = v.to_le_bytes()))?,
                 PACKED_INT64_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), |v, s| *s = v.to_le_bytes()))?,
                 PACKED_FLOAT32_ARRAY => site_context!(write_it(&mut n, off, data.as_slice(), |v, s| *s = v.to_le_bytes()))?,
