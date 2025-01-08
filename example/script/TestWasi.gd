@@ -104,23 +104,34 @@ func __run_test() -> void:
 	for i in range(item_list.item_count):
 		items.push_back(item_list.get_item_text(i))
 	items.sort()
-	task_id = WorkerThreadPool.add_task(__test.bind(items), true)
+	var preview2: CheckBox = $Center/Panel/VBox/HBox/VBox2/Preview2
+	task_id = WorkerThreadPool.add_task(__test.bind(items, preview2.button_pressed), true)
 
-func __test(arr: Array[String]) -> void:
+func __test(arr: Array[String], preview2: bool) -> void:
 	for k in arr:
 		print("Running module: %s" % k)
 
-		var inst := WasmInstance.new().initialize(modules[k], {}, {
+		var m: WasmModule = modules[k]
+		var config := {
 			"epoch.enable": true,
 			"epoch.timeout": 1.0,
 			"wasi.enable": true,
 			"wasi.context": wasi_ctx,
 			"wasi.stdout": "context",
 			"wasi.stderr": "context",
-		})
-		if inst == null:
-			continue
+		}
 
-		inst.call_wasm(&"_start", [])
+		if preview2:
+			var inst := WasiCommand.new().initialize(m, config)
+			if inst == null:
+				continue
+
+			inst.run()
+		else:
+			var inst := WasmInstance.new().initialize(m, {}, config)
+			if inst == null:
+				continue
+
+			inst.call_wasm(&"_start", [])
 
 	__refresh_files.call_deferred()

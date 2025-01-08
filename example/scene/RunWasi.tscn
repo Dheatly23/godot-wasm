@@ -108,6 +108,12 @@ layout_mode = 2
 icon = ExtResource("4")
 expand_icon = true
 
+[node name="UseP2" type="Button" parent="Center/Panel/Margin/VBox/HBox"]
+custom_minimum_size = Vector2(15, 15)
+layout_mode = 2
+tooltip_text = "Use WASI Preview 2"
+toggle_mode = true
+
 [node name="Execute" type="Button" parent="Center/Panel/Margin/VBox"]
 layout_mode = 2
 text = "Execute"

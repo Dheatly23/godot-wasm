@@ -64,6 +64,10 @@ custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
 size_flags_vertical = 3
 
+[node name="Preview2" type="CheckBox" parent="Center/Panel/VBox/HBox/VBox2"]
+layout_mode = 2
+text = "Preview 2"
+
 [node name="RunTest" type="Button" parent="Center/Panel/VBox"]
 layout_mode = 2
 disabled = true

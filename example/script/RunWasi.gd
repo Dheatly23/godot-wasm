@@ -25,6 +25,8 @@ signal message_emitted(msg)
 
 @onready var exec_file_box := $Center/Panel/Margin/VBox/HBox/ExecFile
 
+@onready var use_preview2: Button = $Center/Panel/Margin/VBox/HBox/UseP2
+
 var select_file_cmd := 0
 var create_file := false
 var edited_arg_ix := 0
@@ -365,19 +367,34 @@ func __execute():
 	for i in range(0, arg_list.get_item_count()):
 		args.append(arg_list.get_item_text(i))
 
-	var instance := WasmInstance.new()
-	instance.error_happened.connect(__emit_log)
-	instance = instance.initialize(
-		wasm_module,
-		{},
-		{
-			"wasi.enable": true,
-			"wasi.context": wasi_ctx,
-			"wasi.args": args,
-		}
-	)
-	if instance == null:
-		return
+	var config := {
+		"wasi.enable": true,
+		"wasi.context": wasi_ctx,
+		"wasi.args": args,
+	}
 
-	instance.call_wasm(&"_start", [])
+	if use_preview2.button_pressed:
+		var instance := WasiCommand.new()
+		instance.error_happened.connect(__emit_log)
+		instance = instance.initialize(
+			wasm_module,
+			config,
+		)
+		if instance == null:
+			return
+
+		instance.run()
+	else:
+		var instance := WasmInstance.new()
+		instance.error_happened.connect(__emit_log)
+		instance = instance.initialize(
+			wasm_module,
+			{},
+			config,
+		)
+		if instance == null:
+			return
+
+		instance.call_wasm(&"_start", [])
+
 	__refresh_files()
