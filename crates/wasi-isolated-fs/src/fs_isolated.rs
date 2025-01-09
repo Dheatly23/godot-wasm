@@ -476,7 +476,7 @@ impl Link {
                         }
                     }
 
-                    *len += if seg.is_empty() { 2 } else { 3 };
+                    *len += if seg.is_empty() { 1 } else { 3 };
                     seg.push(str_.len());
                     *str_ += ".";
                 }
@@ -582,14 +582,13 @@ impl Link {
         }
     }
 
-    pub fn get(&self) -> String {
-        let mut ret = String::with_capacity(self.len);
+    fn get_inner(s: &str, seg: &[usize], len: usize) -> String {
+        let mut ret = String::with_capacity(len);
 
-        for ix in 0..self.segments.len() {
-            let i = self.segments[ix];
-            let s = match self.segments.get(ix + 1) {
-                Some(&j) => &self.path[i..j],
-                None => &self.path[i..],
+        for (ix, &i) in seg.iter().enumerate() {
+            let s = match seg.get(ix + 1) {
+                Some(&j) => &s[i..j],
+                None => &s[i..],
             };
 
             match s {
@@ -598,7 +597,8 @@ impl Link {
                     ret += "/";
                 }
                 "." => ret += if ret.is_empty() { ".." } else { "/.." },
-                s if ret.is_empty() => ret += s,
+                s if ret.is_empty() => ret.extend(["./", s]),
+                s if ret.ends_with("/") => ret += s,
                 s => ret.extend(["/", s]),
             }
         }
@@ -607,6 +607,10 @@ impl Link {
         }
 
         ret
+    }
+
+    pub fn get(&self) -> String {
+        Self::get_inner(&self.path, &self.segments, self.len)
     }
 
     pub fn set(&mut self, path: &Utf8Path) {
@@ -1507,3 +1511,71 @@ impl Iterator for DirEntryAccessor {
 }
 
 pub type Pollable = crate::NullPollable;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_link_inner(s: &str) {
+        let mut dst = String::new();
+        let mut seg = LinkSegmentType::new();
+        let mut len = 1;
+        Link::gen_link(&mut dst, &mut seg, &mut len, s.into());
+
+        println!("ori: {s}");
+        println!("str: {dst}");
+        println!("seg: {:?}", &seg[..]);
+        println!("len: {len}");
+
+        let rec = Link::get_inner(&dst, &seg, len);
+        println!("rec: {rec}");
+        assert_eq!(len, rec.len());
+    }
+
+    #[test]
+    fn test_link_simple() {
+        test_link_inner("a");
+    }
+
+    #[test]
+    fn test_link_2level() {
+        test_link_inner("a/b");
+    }
+
+    #[test]
+    fn test_link_with_curdir() {
+        test_link_inner("./a/./b");
+    }
+
+    #[test]
+    fn test_link_parent() {
+        test_link_inner("..");
+    }
+
+    #[test]
+    fn test_link_with_parent() {
+        test_link_inner("../a/b");
+    }
+
+    #[test]
+    fn test_link_dir_parent() {
+        test_link_inner("a/../b");
+        test_link_inner("a/b/../c");
+    }
+
+    #[test]
+    fn test_link_parent_multi() {
+        test_link_inner("../../..");
+        test_link_inner("../../a/b/../c");
+    }
+
+    #[test]
+    fn test_link_root() {
+        test_link_inner("/");
+        test_link_inner("/a/b");
+        test_link_inner("/./a/./b");
+        test_link_inner("/..");
+        test_link_inner("/../a/b");
+        test_link_inner("/../a/b/../../../c");
+    }
+}
