@@ -1283,7 +1283,12 @@ impl CapWrapper {
         name: impl Into<Arc<str>> + AsRef<str>,
         path: &Utf8Path,
     ) -> Result<Self, errors::StreamError> {
-        if path.as_str().is_empty() || name.as_ref().contains(ILLEGAL_CHARS) {
+        if path.as_str().is_empty()
+            || path
+                .components()
+                .any(|v| matches!(v, Utf8Component::RootDir | Utf8Component::Prefix(_)))
+            || name.as_ref().contains(ILLEGAL_CHARS)
+        {
             return Err(ErrorKind::InvalidInput.into());
         }
         self.access.write_or_err()?;
