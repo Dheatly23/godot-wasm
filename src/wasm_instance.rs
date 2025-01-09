@@ -1,5 +1,6 @@
 use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
+use std::io::Cursor;
 use std::{ffi, fmt, mem, ptr};
 
 use anyhow::{bail, Result as AnyResult};
@@ -1368,14 +1369,22 @@ impl WasmInstance {
 
     /// Reads a structured data.
     #[func]
-    fn read_struct(&self, format: GString, p: i64) -> Variant {
-        option_to_variant(self.get_memory(|data| read_struct(data, p as _, format.chars())))
+    fn read_struct(&self, format: GString, p: u64) -> Variant {
+        option_to_variant(self.get_memory(|data| {
+            let mut f = Cursor::new(data);
+            f.set_position(p);
+            read_struct(f, format.chars())
+        }))
     }
 
     /// Writes a structured data.
     #[func]
-    fn write_struct(&self, format: GString, p: i64, arr: VariantArray) -> i64 {
-        self.get_memory(|data| write_struct(data, p as _, format.chars(), arr))
-            .unwrap_or_default() as _
+    fn write_struct(&self, format: GString, p: u64, arr: VariantArray) -> u64 {
+        self.get_memory(|data| {
+            let mut f = Cursor::new(data);
+            f.set_position(p);
+            write_struct(f, format.chars(), arr)
+        })
+        .unwrap_or_default() as _
     }
 }

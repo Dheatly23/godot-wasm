@@ -1,7 +1,8 @@
 pub mod stdio;
 
 use std::collections::HashMap;
-use std::io::{Error as IoError, ErrorKind};
+use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Seek, SeekFrom, Write};
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -20,6 +21,7 @@ use crate::godot_util::{
     from_var_any, option_to_variant, variant_to_option, PhantomProperty, SendSyncWrapper,
     StructPacking,
 };
+use crate::rw_struct::{read_struct, write_struct};
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::wasm_util::{FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST};
 use crate::{bail_with_site, site_context, variant_dispatch};
@@ -692,6 +694,7 @@ impl WasiContext {
     ///   - `PackedStringArray` : All items as utf-8 string, concatenated.
     ///   - `Packed*Array` : Formatted data to write.
     /// - `offset` : Offset from start of file.
+    /// - `truncate` : If `true`, truncate file before writing.
     /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
     fn file_write(
@@ -771,5 +774,132 @@ impl WasiContext {
 
             Ok(())
         }).is_some()
+    }
+
+    /// Reads structured data from file.
+    ///
+    /// Similiar to `WasmInstance.read_struct`
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to file.
+    /// - `format` : String defining the structure format.
+    /// - `offset` : Offset from start of file.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
+    #[func]
+    fn file_read_struct(
+        &self,
+        path: GString,
+        format: GString,
+        offset: Variant,
+        follow_symlink: Variant,
+    ) -> Variant {
+        option_to_variant(self.wrap_data(|this| {
+            let cursor = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
+
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let file = site_context!(f.node().try_file())?;
+
+            read_struct(FileWrapper { file, cursor }, format.chars())
+        }))
+    }
+
+    /// Writes structured data to file.
+    ///
+    /// Similiar to `WasmInstance.write_struct`
+    ///
+    /// Arguments:
+    /// - `path` : Absolute path to file.
+    /// - `format` : String defining the structure format.
+    /// - `offset` : Offset from start of file.
+    /// - `arr` : Structured data array.
+    /// - `truncate` : If `true`, truncate file before writing.
+    /// - `follow_symlink` : If `true`, follow symbolic links.
+    #[func]
+    fn file_write_struct(
+        &self,
+        path: GString,
+        format: GString,
+        offset: Variant,
+        arr: VariantArray,
+        truncate: Variant,
+        follow_symlink: Variant,
+    ) -> Variant {
+        option_to_variant(self.wrap_data(|this| {
+            let cursor = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
+
+            let f = site_context!(
+                CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
+                    &this.memfs_controller,
+                    &Utf8PathBuf::from(path.to_string()),
+                    site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
+                    None,
+                    AccessMode::RW,
+                )
+            )?;
+            let mut file = site_context!(f.node().try_file())?;
+
+            if variant_to_option::<bool>(truncate)?.unwrap_or(false) {
+                site_context!(file.resize(0))?;
+            }
+
+            write_struct(FileWrapper { file, cursor }, format.chars(), arr).map(|v| v as u64)
+        }))
+    }
+}
+
+struct FileWrapper<T> {
+    file: T,
+    cursor: usize,
+}
+
+impl<T: DerefMut<Target = File>> Read for FileWrapper<T> {
+    fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
+        let (s, l) = self.file.read(buf.len(), self.cursor);
+        buf[..s.len()].copy_from_slice(s);
+        buf[s.len()..].fill(0);
+        Ok(l)
+    }
+}
+
+impl<T: DerefMut<Target = File>> Write for FileWrapper<T> {
+    fn write_all(&mut self, buf: &[u8]) -> IoResult<()> {
+        self.file.write(buf, self.cursor).map_err(IoError::other)?;
+        self.cursor += buf.len();
+        Ok(())
+    }
+
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<T: DerefMut<Target = File>> Seek for FileWrapper<T> {
+    fn seek(&mut self, pos: SeekFrom) -> IoResult<u64> {
+        let (p, o) = match pos {
+            SeekFrom::Start(v) => (v, 0),
+            SeekFrom::Current(v) => (self.cursor as u64, v),
+            SeekFrom::End(v) => (self.file.len() as u64, v),
+        };
+        let Some(c) = p
+            .checked_add_signed(o)
+            .and_then(|c| usize::try_from(c).ok())
+        else {
+            return Err(IoError::from(ErrorKind::InvalidInput));
+        };
+        self.cursor = c;
+        Ok(self.cursor as _)
     }
 }
