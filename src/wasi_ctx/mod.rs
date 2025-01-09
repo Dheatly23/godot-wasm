@@ -1,12 +1,12 @@
 pub mod stdio;
 
 use std::collections::HashMap;
-use std::io::ErrorKind;
+use std::io::{Error as IoError, ErrorKind};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::Result as AnyResult;
-use camino::{Utf8Path, Utf8PathBuf};
+use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
@@ -23,6 +23,8 @@ use crate::godot_util::{
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::wasm_util::{FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST};
 use crate::{bail_with_site, site_context, variant_dispatch};
+
+static ILLEGAL_CHARS: &[char] = &['\\', '/', ':', '*', '?', '\"', '\'', '<', '>', '|'];
 
 fn to_unix_time(time: SystemTime) -> i128 {
     match time.duration_since(SystemTime::UNIX_EPOCH) {
@@ -291,13 +293,19 @@ impl WasiContext {
     /// - `host_path` : Path to host directory. Does not accept Godot-specific paths (eg. `res://`).
     /// - `guest_path` : Absolute path in guest where it will be mounted. Path is unix-style (no drive letter).
     #[func]
-    fn mount_physical_dir(&self, host_path: GString, guest_path: Variant) {
+    fn mount_physical_dir(&self, host_path: GString, guest_path: GString) {
         self.wrap_data(move |this| {
             let host_path = host_path.to_string();
-            let guest_path =
-                site_context!(variant_to_option(guest_path))?.unwrap_or_else(|| host_path.clone());
-            this.physical_mount
-                .insert(guest_path.into(), host_path.into());
+            let guest_path = Utf8PathBuf::from(guest_path.to_string());
+
+            let mut it = guest_path.components();
+            if !matches!(it.next(), Some(Utf8Component::RootDir))
+                || it.any(|v| !matches!(v, Utf8Component::Normal(s) if !s.contains(ILLEGAL_CHARS)))
+            {
+                bail_with_site!("Guest path is not absolute");
+            }
+
+            this.physical_mount.insert(guest_path, host_path.into());
             Ok(())
         });
     }
@@ -608,16 +616,22 @@ impl WasiContext {
     #[func]
     fn file_link_target(&self, path: GString, follow_symlink: Variant) -> Variant {
         option_to_variant(self.wrap_data(move |this| {
+            let p = Utf8PathBuf::from(path.to_string());
+            let parent = p.parent().unwrap_or(&p);
+            let name = site_context!(p
+                .file_name()
+                .ok_or_else(|| IoError::from(ErrorKind::InvalidInput)))?;
+
             let f = site_context!(
                 CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
                     &this.memfs_controller,
-                    &Utf8PathBuf::from(path.to_string()),
+                    parent,
                     site_context!(variant_to_option(follow_symlink))?.unwrap_or(false),
                     None,
                     AccessMode::RW,
                 )
             )?;
-            site_context!(f.read_link())
+            site_context!(f.read_link_at(name))
         }))
     }
 

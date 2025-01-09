@@ -1371,6 +1371,20 @@ impl CapWrapper {
         v.stamp.access();
         Ok(v.get())
     }
+
+    pub fn read_link_at(&self, name: impl AsRef<str>) -> Result<String, errors::StreamError> {
+        self.access.read_or_err()?;
+
+        let v = self
+            .node
+            .dir()
+            .ok_or(ErrorKind::NotADirectory)?
+            .get(name)
+            .ok_or(ErrorKind::NotFound)?;
+        let mut v = v.link().ok_or(ErrorKind::InvalidInput)?;
+        v.stamp.access();
+        Ok(v.get())
+    }
 }
 
 pub struct FileAccessor {

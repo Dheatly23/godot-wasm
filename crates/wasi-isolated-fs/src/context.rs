@@ -169,7 +169,7 @@ fn preopen_dir_host_fs(path: Utf8PathBuf) -> AnyResult<Arc<Descriptor>> {
 fn assert_absolute_path(path: Utf8PathBuf) -> AnyResult<Utf8PathBuf> {
     let mut it = path.components();
     if !matches!(it.next(), Some(Utf8Component::RootDir))
-        || it.any(|v| !matches!(v, Utf8Component::Normal(s) if s.contains(ILLEGAL_CHARS)))
+        || it.any(|v| !matches!(v, Utf8Component::Normal(s) if !s.contains(ILLEGAL_CHARS)))
     {
         Err(errors::InvalidPathError(path.into()).into())
     } else {
