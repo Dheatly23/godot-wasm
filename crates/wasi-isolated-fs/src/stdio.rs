@@ -146,8 +146,9 @@ impl StdinInner {
         while !p.is_null() {
             // SAFETY: Signal is locked, so all nodes are held.
             unsafe {
+                let n = *(*p).next.get();
                 (*p).waited();
-                p = *(*p).next.get();
+                p = n;
             }
         }
     }
