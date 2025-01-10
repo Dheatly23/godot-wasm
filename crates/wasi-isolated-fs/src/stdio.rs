@@ -730,8 +730,10 @@ pub type NullPollable = crate::NullPollable;
 mod tests {
     use super::*;
 
+    use std::collections::BTreeSet;
+
     use anyhow::Result as AnyResult;
-    use proptest::collection::{vec, SizeRange};
+    use proptest::collection::{btree_set, vec, SizeRange};
     use proptest::prelude::*;
 
     #[derive(Debug, Clone)]
@@ -803,7 +805,7 @@ mod tests {
 
     #[test]
     fn test_line_buf_rw() {
-        fn f(s: String, seg: Vec<usize>) {
+        fn f(s: String, seg: BTreeSet<usize>) {
             let mut buf = LineBuffer::default();
 
             let mut p = 0;
@@ -814,22 +816,19 @@ mod tests {
             };
 
             let mut i = 0;
-            for mut n in seg {
-                let v = &s.as_bytes()[i..];
-                n = n.min(v.len());
-                buf.write(&mut f, &v[..n]).unwrap();
-                i += n;
-                if i == s.len() {
-                    break;
-                }
+            for e in seg {
+                let v = &s.as_bytes()[i..e];
+                buf.write(&mut f, v).unwrap();
+                i = e;
             }
 
-            if i == s.len() {
-                buf.flush(f).unwrap();
-                assert_eq!(i, p);
+            if i < s.len() {
+                buf.write(&mut f, &s.as_bytes()[i..]).unwrap();
             }
+            buf.flush(f).unwrap();
+            assert_eq!(p, s.len());
         }
 
-        proptest!(|(s in "([^\n]{0,64}\n?){0,16}", seg in vec(0..512usize, 0..16))| f(s, seg));
+        proptest!(|((seg, s) in "([^\n]{0,64}\n?){0,16}".prop_flat_map(|s| (btree_set(0..=s.len(), 0..16), Just(s))))| f(s, seg));
     }
 }
