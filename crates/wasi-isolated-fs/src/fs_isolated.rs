@@ -346,10 +346,11 @@ impl File {
             self.size_chunks = ec;
         }
 
-        for _ in self.size >> MAX_SHIFT..size >> MAX_SHIFT {
+        for _ in (self.size + MASK) >> MAX_SHIFT..(size + MASK) >> MAX_SHIFT {
             self.data.push(FileChunk::from_buf(Default::default()));
         }
         self.size = size;
+        debug_assert_eq!(self.data.len(), (size + MASK) >> MAX_SHIFT);
 
         Ok(())
     }
@@ -368,6 +369,14 @@ impl File {
         }
         self.size = size;
         self.data.truncate(new_chunks >> MAX_SHIFT);
+        let i = self.size - self.data.len().saturating_sub(1) * MAX_SECTOR;
+        if let Some(v) = self.data.last_mut() {
+            if i < v.len() {
+                v[i..].fill(0);
+            }
+        }
+
+        debug_assert_eq!(self.data.len(), (size + MASK) >> MAX_SHIFT);
     }
 
     /// Clamped chunk size.
@@ -1565,16 +1574,19 @@ mod tests {
     fn test_file_rw() {
         let cont = IsolatedFSController::new(MAX_SECTOR * 18, 2).unwrap();
         let f = move |v: Vec<(usize, usize, Vec<u8>)>| {
+            let mut r = Vec::new();
             let mut file = File::new(&cont).unwrap();
 
             for (l, mut o, mut v) in v {
                 v.resize(l, 0);
                 file.write(&v, o).unwrap();
 
-                let mut r = vec![0; v.len()];
+                r.clear();
+                r.resize(v.len(), 0);
                 let mut d = &mut r[..];
                 while !d.is_empty() {
                     let (s, l) = file.read(d.len(), o);
+                    assert!(l > 0);
                     assert!(s.len() <= l);
                     d[..s.len()].copy_from_slice(s);
                     o += l;
@@ -1637,5 +1649,82 @@ mod tests {
         };
 
         proptest!(move |(v in vec((0..MAX_SECTOR * 16, any::<bool>()), 0..16))| f(v));
+    }
+
+    #[test]
+    fn test_file_with_reference() {
+        #[derive(Debug, Clone)]
+        enum Op {
+            Read { len: usize, off: usize },
+            Write { b: u8, len: usize, off: usize },
+            Resize(usize),
+            Truncate(usize),
+        }
+
+        let cont = IsolatedFSController::new(MAX_SECTOR * (64 + 5), 2).unwrap();
+        let f = move |v: Vec<Op>| {
+            let mut dst = Vec::new();
+            let mut file = File::new(&cont).unwrap();
+            let mut rfile = Vec::new();
+
+            for o in v {
+                match o {
+                    Op::Read { len, off } => {
+                        let src = &rfile[off.min(rfile.len())..(len + off).min(rfile.len())];
+
+                        dst.clear();
+                        dst.resize(len, 0);
+                        let mut o = off;
+                        let mut n = 0;
+                        while n < dst.len() {
+                            let (s, l) = file.read(dst.len() - n, o);
+                            if l == 0 {
+                                break;
+                            }
+                            dst[n..n + s.len()].copy_from_slice(s);
+                            n += l;
+                            o += l;
+                        }
+                        dst.truncate(n);
+
+                        assert_eq!(src, dst);
+                    }
+                    Op::Write { b, len, off } => {
+                        if len > 0 {
+                            rfile.resize(rfile.len().max(off + len), 0);
+                            rfile[off..off + len].fill(b);
+                        }
+
+                        dst.clear();
+                        dst.resize(len, b);
+                        file.write(&dst, off).unwrap();
+
+                        assert_eq!(file.len(), rfile.len());
+                    }
+                    Op::Resize(v) => {
+                        rfile.resize(v, 0);
+                        file.resize(v).unwrap();
+
+                        assert_eq!(file.len(), rfile.len());
+                    }
+                    Op::Truncate(v) => {
+                        rfile.truncate(v);
+                        file.truncate(v);
+
+                        assert_eq!(file.len(), rfile.len());
+                    }
+                }
+            }
+        };
+
+        proptest!(move |(v in vec(
+            prop_oneof![
+                (0..MAX_SECTOR * 4, 0..MAX_SECTOR * 64).prop_map(|(len, off)| Op::Read {len, off}),
+                (0..MAX_SECTOR * 4, 0..MAX_SECTOR * 64, any::<u8>()).prop_map(|(len, off, b)| Op::Write {b, len, off}),
+                (0..MAX_SECTOR * 64).prop_map(Op::Resize),
+                (0..MAX_SECTOR * 64).prop_map(Op::Truncate),
+            ],
+            0..32,
+        ))| f(v));
     }
 }
