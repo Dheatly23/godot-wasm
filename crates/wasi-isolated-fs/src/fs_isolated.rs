@@ -9,6 +9,7 @@ use std::time::SystemTime;
 
 use anyhow::{Error, Result as AnyResult};
 use camino::{Utf8Component, Utf8Path};
+use cfg_if::cfg_if;
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 use smallvec::SmallVec;
 
@@ -188,6 +189,20 @@ impl Timestamp {
 
 type FileChunk = SmallVec<[u8; 16]>;
 
+cfg_if! {
+    if #[cfg(test)] {
+        const MAX_SHIFT: u8 = 10;
+        const MIN_SHIFT: u8 = 6;
+    } else {
+        const MAX_SHIFT: u8 = 16;
+        const MIN_SHIFT: u8 = 12;
+    }
+}
+
+const MAX_SECTOR: usize = 1 << MAX_SHIFT;
+const MIN_SECTOR: usize = 1 << MIN_SHIFT;
+const MASK: usize = MAX_SECTOR - 1;
+
 pub struct File {
     limits: Weak<FSLimits>,
     inode: usize,
@@ -254,12 +269,12 @@ impl File {
     pub fn read(&mut self, len: usize, off: usize) -> (&[u8], usize) {
         let ret: (&[_], _) = if len == 0 || off >= self.size {
             (&[], 0)
-        } else if let Some(v) = self.data.get(off >> 16) {
-            let o = off & 65535;
+        } else if let Some(v) = self.data.get(off >> MAX_SHIFT) {
+            let o = off & MASK;
             let e = o
                 .saturating_add(len)
-                .min(self.size - (off & !65535))
-                .min(65536);
+                .min(self.size - (off & !MASK))
+                .min(MAX_SECTOR);
             let l = e - o;
             (
                 v.get(o..).map_or(&[] as &[_], |v| v.get(..l).unwrap_or(v)),
@@ -280,7 +295,7 @@ impl File {
 
         let end = off + buf.len();
         if end > self.size {
-            let ec = (end & !65535) + Self::clamped_size(end & 65535);
+            let ec = (end & !MASK) + Self::clamped_size(end & MASK);
             let v = ec.saturating_sub(self.size_chunks);
             if v > 0 {
                 if !FSLimits::weak_take_size(&self.limits, v) {
@@ -293,22 +308,22 @@ impl File {
         }
 
         self.stamp.modify();
-        let (mut d, mut r) = (off >> 16, off & 65535);
+        let (mut d, mut r) = (off >> MAX_SHIFT, off & MASK);
         while !buf.is_empty() {
             let Some(v) = self.data.get_mut(d) else {
                 self.data.push(FileChunk::from_buf(Default::default()));
                 continue;
             };
 
-            let s = r.saturating_add(buf.len()).min(65536);
+            let s = r.saturating_add(buf.len()).min(MAX_SECTOR);
             if s > v.len() && s > 16 {
                 let s = Self::clamped_size(s);
                 v.reserve_exact(s - v.len());
                 v.resize(s, 0);
             }
 
-            let (a, b) = buf.split_at(s);
-            v[r..s].copy_from_slice(&a[r..]);
+            let (a, b) = buf.split_at(s - r);
+            v[r..s].copy_from_slice(a);
             (buf, d, r) = (b, d + 1, 0);
         }
 
@@ -322,7 +337,7 @@ impl File {
         }
         self.stamp.modify();
 
-        let ec = (size & !65535) + Self::clamped_size(size & 65535);
+        let ec = (size & !MASK) + Self::clamped_size(size & MASK);
         let v = ec.saturating_sub(self.size_chunks);
         if v > 0 {
             if !FSLimits::weak_take_size(&self.limits, v) {
@@ -331,7 +346,7 @@ impl File {
             self.size_chunks = ec;
         }
 
-        for _ in self.size >> 16..size >> 16 {
+        for _ in self.size >> MAX_SHIFT..size >> MAX_SHIFT {
             self.data.push(FileChunk::from_buf(Default::default()));
         }
         self.size = size;
@@ -345,14 +360,14 @@ impl File {
             return;
         }
 
-        let new_chunks = size.saturating_add(65535) & !65535;
+        let new_chunks = size.saturating_add(MASK) & !MASK;
         let v = self.size_chunks.saturating_sub(new_chunks);
         if v > 0 {
             FSLimits::put_size_node(&self.limits, v, 0);
             self.size_chunks = new_chunks;
         }
         self.size = size;
-        self.data.truncate(new_chunks >> 16);
+        self.data.truncate(new_chunks >> MAX_SHIFT);
     }
 
     /// Clamped chunk size.
@@ -360,11 +375,9 @@ impl File {
         match v {
             0 => 0,
             1..=16 => 16,
-            17..=4096 => 4096,
-            4097..=8192 => 8192,
-            8193..=16384 => 16384,
-            16385..=32768 => 32768,
-            32769.. => 65536,
+            ..=MIN_SECTOR => MIN_SECTOR,
+            v @ ..MAX_SECTOR => v.next_power_of_two(),
+            MAX_SECTOR.. => MAX_SECTOR,
         }
     }
 }
@@ -1521,66 +1534,108 @@ pub type Pollable = crate::NullPollable;
 mod tests {
     use super::*;
 
-    fn test_link_inner(s: &str) {
-        let mut dst = String::new();
-        let mut seg = LinkSegmentType::new();
-        let mut len = 1;
-        Link::gen_link(&mut dst, &mut seg, &mut len, s.into());
+    use camino::{Utf8Component, Utf8PathBuf};
+    use proptest::collection::vec;
+    use proptest::prelude::*;
 
-        println!("ori: {s}");
-        println!("str: {dst}");
-        println!("seg: {:?}", &seg[..]);
-        println!("len: {len}");
+    #[test]
+    fn test_link() {
+        fn f(s: String) {
+            let mut dst = String::new();
+            let mut seg = LinkSegmentType::new();
+            let mut len = 1;
+            Link::gen_link(&mut dst, &mut seg, &mut len, &Utf8PathBuf::from(s));
 
-        let rec = Link::get_inner(&dst, &seg, len);
-        println!("rec: {rec}");
-        assert_eq!(len, rec.len());
+            let rec = Link::get_inner(&dst, &seg, len);
+            assert_eq!(len, rec.len());
+
+            let rec = Utf8PathBuf::from(rec);
+            let mut it = rec.components();
+            assert!(matches!(
+                it.next(),
+                Some(Utf8Component::RootDir | Utf8Component::CurDir | Utf8Component::ParentDir)
+            ));
+            assert!(it.all(|v| matches!(v, Utf8Component::ParentDir | Utf8Component::Normal(_))));
+        }
+
+        proptest!(|(s in "/?(\\.\\.?|[a-z0-9]+/){0,9}(\\.\\.?|[a-z0-9]+)")| f(s));
     }
 
     #[test]
-    fn test_link_simple() {
-        test_link_inner("a");
+    fn test_file_rw() {
+        let cont = IsolatedFSController::new(MAX_SECTOR * 18, 2).unwrap();
+        let f = move |v: Vec<(usize, usize, Vec<u8>)>| {
+            let mut file = File::new(&cont).unwrap();
+
+            for (l, mut o, mut v) in v {
+                v.resize(l, 0);
+                file.write(&v, o).unwrap();
+
+                let mut r = vec![0; v.len()];
+                let mut d = &mut r[..];
+                while !d.is_empty() {
+                    let (s, l) = file.read(d.len(), o);
+                    assert!(s.len() <= l);
+                    d[..s.len()].copy_from_slice(s);
+                    o += l;
+                    d = &mut d[l..];
+                }
+
+                assert_eq!(v, r);
+            }
+        };
+
+        proptest!(move |(v in vec(
+            (
+                0..MAX_SECTOR * 2,
+                0..MAX_SECTOR * 16,
+                vec(any::<u8>(), 0..MIN_SECTOR),
+            ),
+            0..16
+        ))| f(v));
     }
 
     #[test]
-    fn test_link_2level() {
-        test_link_inner("a/b");
+    fn test_file_limit() {
+        fn f(limit: usize, len: usize, off: usize) {
+            let cont = IsolatedFSController::new(limit, 2).unwrap();
+            let mut file = File::new(&cont).unwrap();
+
+            let v = vec![0xaa; len];
+            let ret = file.write(&v, off);
+
+            let mut end = len + off;
+            assert_eq!(file.len(), if ret.is_ok() { end } else { 0 });
+            end = (end & !MASK) + File::clamped_size(end & MASK);
+            assert_eq!(end <= limit, ret.is_ok(), "end: {end}");
+        }
+
+        proptest!(|(
+            limit in 0..MAX_SECTOR * 64,
+            len in 0..MAX_SECTOR,
+            off in 0..MAX_SECTOR * 80,
+        )| f(limit, len, off));
     }
 
     #[test]
-    fn test_link_with_curdir() {
-        test_link_inner("./a/./b");
-    }
+    fn test_file_resize_truncate() {
+        let cont = IsolatedFSController::new(MAX_SECTOR * 16, 2).unwrap();
+        let f = move |sizes: Vec<(usize, bool)>| {
+            let mut file = File::new(&cont).unwrap();
 
-    #[test]
-    fn test_link_parent() {
-        test_link_inner("..");
-    }
+            assert_eq!(file.len(), 0);
+            for (s, t) in sizes {
+                if t {
+                    let old = file.len();
+                    file.truncate(s);
+                    assert_eq!(file.len(), old.min(s));
+                } else {
+                    file.resize(s).unwrap();
+                    assert_eq!(file.len(), s);
+                }
+            }
+        };
 
-    #[test]
-    fn test_link_with_parent() {
-        test_link_inner("../a/b");
-    }
-
-    #[test]
-    fn test_link_dir_parent() {
-        test_link_inner("a/../b");
-        test_link_inner("a/b/../c");
-    }
-
-    #[test]
-    fn test_link_parent_multi() {
-        test_link_inner("../../..");
-        test_link_inner("../../a/b/../c");
-    }
-
-    #[test]
-    fn test_link_root() {
-        test_link_inner("/");
-        test_link_inner("/a/b");
-        test_link_inner("/./a/./b");
-        test_link_inner("/..");
-        test_link_inner("/../a/b");
-        test_link_inner("/../a/b/../../../c");
+        proptest!(move |(v in vec((0..MAX_SECTOR * 16, any::<bool>()), 0..16))| f(v));
     }
 }

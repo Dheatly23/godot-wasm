@@ -110,6 +110,8 @@ parking_lot = "^0.12"
 memchr = "^2.7"
 camino = "^1.1"
 
+proptest = "^1"
+
 # Dependencies for example crates
 cfg-if = "^1.0"
 glam = "^0.29"
