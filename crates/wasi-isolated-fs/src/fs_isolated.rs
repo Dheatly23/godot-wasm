@@ -326,6 +326,7 @@ impl File {
             v[r..s].copy_from_slice(a);
             (buf, d, r) = (b, d + 1, 0);
         }
+        debug_assert_eq!(self.data.len(), (self.size + MASK) >> MAX_SHIFT);
 
         Ok(())
     }
