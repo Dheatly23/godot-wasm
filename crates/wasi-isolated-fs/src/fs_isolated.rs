@@ -1605,9 +1605,9 @@ mod tests {
             let ret = file.write(&v, off);
 
             let mut end = len + off;
-            assert_eq!(file.len(), if ret.is_ok() { end } else { 0 });
+            assert_eq!(file.len(), if ret.is_ok() && len > 0 { end } else { 0 });
             end = (end & !MASK) + File::clamped_size(end & MASK);
-            assert_eq!(end <= limit, ret.is_ok(), "end: {end}");
+            assert_eq!(len == 0 || end <= limit, ret.is_ok(), "end: {end}");
         }
 
         proptest!(|(

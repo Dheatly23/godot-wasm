@@ -8,6 +8,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result as AnyResult;
+use cfg_if::cfg_if;
 use memchr::memchr_iter;
 use parking_lot::{Condvar, Mutex};
 use scopeguard::{defer, guard, guard_on_unwind};
@@ -47,6 +48,17 @@ impl UnwindSafe for StdinInner {}
 impl RefUnwindSafe for StdinInner {}
 
 impl StdinInner {
+    fn new() -> Self {
+        StdinInner {
+            closed: false,
+            data: StdinInnerData::from_buf(Default::default()),
+            start: 0,
+            end: 0,
+
+            head: null(),
+        }
+    }
+
     fn len(&self) -> usize {
         (self.end as isize - self.start as isize).wrapping_rem_euclid(self.data.len() as isize)
             as usize
@@ -144,14 +156,7 @@ impl StdinInner {
 impl StdinSignal {
     pub fn new(f: Box<dyn Fn() + Send + Sync>) -> (Arc<Self>, StdinProvider) {
         let ret = Arc::new(Self {
-            inner: Mutex::new(StdinInner {
-                closed: false,
-                data: StdinInnerData::from_buf(Default::default()),
-                start: 0,
-                end: 0,
-
-                head: null(),
-            }),
+            inner: Mutex::new(StdinInner::new()),
             cond: Condvar::new(),
             f,
         });
@@ -290,8 +295,16 @@ impl StdinSignalPollable {
     }
 }
 
+cfg_if! {
+    if #[cfg(test)] {
+        const BUF_LEN: usize = 256;
+    } else {
+        const BUF_LEN: usize = 1024;
+    }
+}
+
 pub struct LineBuffer {
-    buf: Box<[u8; 1024]>,
+    buf: Box<[u8; BUF_LEN]>,
     len: usize,
     s: String,
 }
@@ -302,7 +315,7 @@ const REPLACEMENT: &str = "\u{FFFD}";
 impl Default for LineBuffer {
     fn default() -> Self {
         Self {
-            buf: Box::new([0; 1024]),
+            buf: Box::new([0; BUF_LEN]),
             len: 0,
             s: String::new(),
         }
@@ -554,7 +567,7 @@ pub type StdoutCbBlockFn = Box<dyn Send + Sync + FnMut(&[u8])>;
 pub struct StdoutCbBlockBuffered(Mutex<StdoutCbBlockBufferedInner>);
 
 struct StdoutCbBlockBufferedInner {
-    buf: Box<[u8; 1024]>,
+    buf: Box<[u8; BUF_LEN]>,
     len: usize,
     cb: StdoutCbBlockFn,
 }
@@ -562,7 +575,7 @@ struct StdoutCbBlockBufferedInner {
 impl StdoutCbBlockBuffered {
     pub fn new(cb: StdoutCbBlockFn) -> Self {
         Self(Mutex::new(StdoutCbBlockBufferedInner {
-            buf: Box::new([0; 1024]),
+            buf: Box::new([0; BUF_LEN]),
             len: 0,
             cb,
         }))
@@ -712,3 +725,111 @@ impl StderrBypass {
 }
 
 pub type NullPollable = crate::NullPollable;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use anyhow::Result as AnyResult;
+    use proptest::collection::{vec, SizeRange};
+    use proptest::prelude::*;
+
+    #[derive(Debug, Clone)]
+    enum PushPop {
+        Push(Vec<u8>),
+        Pop(usize),
+    }
+
+    fn push_pop_strategy(
+        n: impl Clone + Strategy<Value = usize> + Into<SizeRange>,
+    ) -> impl Strategy<Value = PushPop> {
+        prop_oneof![
+            n.clone().prop_map(PushPop::Pop),
+            vec(any::<u8>(), n).prop_map(PushPop::Push),
+        ]
+    }
+
+    #[test]
+    fn test_stdin_inner_rw() {
+        fn f(v: Vec<Vec<u8>>) {
+            let mut inner = StdinInner::new();
+
+            for src in v {
+                assert_eq!(inner.len(), 0);
+                inner.push_data(&src);
+                let mut dst = vec![0; src.len()];
+                assert_eq!(inner.len(), src.len());
+                let (a, b) = inner.pop_data(dst.len());
+                dst[..a.len()].copy_from_slice(a);
+                dst[a.len()..].copy_from_slice(b);
+                assert_eq!(src, dst);
+                assert_eq!(inner.len(), 0);
+            }
+        }
+
+        proptest!(|(v in vec(vec(any::<u8>(), 256), 0..16))| f(v));
+    }
+
+    #[test]
+    fn test_stdin_inner_rw_uneq() {
+        fn f(v: Vec<PushPop>) {
+            let mut inner = StdinInner::new();
+            let mut buf = Vec::new();
+
+            for i in v {
+                match i {
+                    PushPop::Push(v) => {
+                        inner.push_data(&v);
+                        buf.extend_from_slice(&v);
+                        assert_eq!(buf.len(), inner.len());
+                    }
+                    PushPop::Pop(mut n) => {
+                        n = n.min(buf.len());
+                        let mut src = buf.split_off(n);
+                        (src, buf) = (buf, src);
+                        let mut dst = vec![0; n];
+                        let (a, b) = inner.pop_data(n);
+                        dst[..a.len()].copy_from_slice(a);
+                        dst[a.len()..].copy_from_slice(b);
+                        assert_eq!(src, dst);
+                        assert_eq!(buf.len(), inner.len());
+                    }
+                }
+            }
+        }
+
+        proptest!(|(v in vec(push_pop_strategy(0..256usize), 0..16))| f(v));
+    }
+
+    #[test]
+    fn test_line_buf_rw() {
+        fn f(s: String, seg: Vec<usize>) {
+            let mut buf = LineBuffer::default();
+
+            let mut p = 0;
+            let mut f = |v: &str| -> AnyResult<()> {
+                assert_eq!(v.as_bytes(), &s.as_bytes()[p..p + v.len()], "p: {p}");
+                p += v.len();
+                Ok(())
+            };
+
+            let mut i = 0;
+            for mut n in seg {
+                let v = &s.as_bytes()[i..];
+                n = n.min(v.len());
+                buf.write(&mut f, &v[..n]).unwrap();
+                i += n;
+                if i == s.len() {
+                    break;
+                }
+            }
+
+            if i == s.len() {
+                buf.flush(f).unwrap();
+                assert_eq!(i, p);
+            }
+        }
+
+        proptest!(|(s in "([^\n]{0,64}\n?){0,16}", seg in vec(0..512usize, 0..16))| f(s, seg));
+    }
+}
