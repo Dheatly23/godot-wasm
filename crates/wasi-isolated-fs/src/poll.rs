@@ -109,7 +109,7 @@ impl PollController {
             };
         }
 
-        if dur.map_or(false, |d| d.is_zero()) {
+        if dur.is_some_and(|d| d.is_zero()) {
             return false;
         }
 
@@ -185,6 +185,6 @@ impl PollController {
         } else {
             park_timeout(dur);
         }
-        self.timeout.map_or(false, |t| t <= Instant::now())
+        self.timeout.is_some_and(|t| t <= Instant::now())
     }
 }

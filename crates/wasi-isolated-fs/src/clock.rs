@@ -62,7 +62,7 @@ impl ClockPollable {
             }
 
             sleep(d.min(MAX_TIMEOUT));
-            if timeout.map_or(false, |t| t <= Instant::now()) {
+            if timeout.is_some_and(|t| t <= Instant::now()) {
                 return Err(IoError::from(ErrorKind::TimedOut).into());
             }
         }

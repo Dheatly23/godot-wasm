@@ -72,7 +72,7 @@ impl wasi::io::poll::Host for WasiContext {
                     if match p {
                         items::Poll::NullPoll(_) => true,
                         items::Poll::StdinPoll(v) => {
-                            controller.as_ref().map_or(false, |c| c.is_waited(&v.0)) || v.is_ready()
+                            controller.as_ref().is_some_and(|c| c.is_waited(&v.0)) || v.is_ready()
                         }
                         items::Poll::ClockPoll(v) => v.is_ready(),
                     } {

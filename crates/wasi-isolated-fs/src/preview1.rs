@@ -24,6 +24,8 @@ use crate::EMPTY_BUF;
 #[derive(Default)]
 pub struct P1Items {
     tree: BTreeMap<u32, P1Item>,
+    buf: [u32; 16],
+    ix: u8,
 }
 
 impl P1Items {
@@ -31,8 +33,17 @@ impl P1Items {
         Self::default()
     }
 
-    fn next_free(&self) -> u32 {
+    fn next_free(&mut self) -> u32 {
         assert!(self.tree.len() < u32::MAX as usize, "file descriptor full");
+
+        while let Some(ix) = self.ix.checked_sub(1) {
+            self.ix = ix;
+            let k = self.buf[ix as usize];
+            if !self.tree.contains_key(&k) {
+                return k;
+            }
+        }
+
         let Some((&(mut k), _)) = self.tree.last_key_value() else {
             return 0;
         };
@@ -59,9 +70,18 @@ impl P1Items {
     }
 
     pub fn unregister(&mut self, fd: Fd) -> Result<P1Item, Error> {
-        self.tree
-            .remove(&fd.into())
-            .ok_or_else(|| Errno::Badf.into())
+        let ix = u32::from(fd);
+        let Some(ret) = self.tree.remove(&ix) else {
+            return Err(Errno::Badf.into());
+        };
+        *if let Some(v) = self.buf.get_mut(self.ix as usize) {
+            self.ix += 1;
+            v
+        } else {
+            self.buf.copy_within(1.., 0);
+            &mut self.buf[self.buf.len() - 1]
+        } = ix;
+        Ok(ret)
     }
 
     pub fn get(&self, fd: Fd) -> Result<&P1Item, Error> {
@@ -2045,7 +2065,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     Poll::Instant(t) => *t <= now,
                     Poll::SystemTime(t) => *t <= now_st,
                     Poll::Signal(v) => {
-                        controller.as_ref().map_or(false, |c| c.is_waited(&v.0)) || v.is_ready()
+                        controller.as_ref().is_some_and(|c| c.is_waited(&v.0)) || v.is_ready()
                     }
                 } {
                     continue;

@@ -385,7 +385,7 @@ impl File {
         match v {
             0 => 0,
             1..=16 => 16,
-            ..=MIN_SECTOR => MIN_SECTOR,
+            17..=MIN_SECTOR => MIN_SECTOR,
             v @ ..MAX_SECTOR => v.next_power_of_two(),
             MAX_SECTOR.. => MAX_SECTOR,
         }
