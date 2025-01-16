@@ -110,3 +110,11 @@ Writes file content.
 Accepts `String` and all `Pool*` data type, except `PoolStringArray`.
 File will be appended with zeros if needed.
 Returns `true` if succeed.
+
+### `null|Array file_read_struct(String path, String format, [int offset, bool follow_symlink])`
+
+Reads file content as structured data. Similar to `WasmInstance.read_struct`.
+
+### `bool file_write_struct(String path, String format, Array arr, [int offset, bool truncate, bool follow_symlink])`
+
+Writes file content as structured data. Similar to `WasmInstance.write_struct`.

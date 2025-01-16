@@ -818,8 +818,8 @@ impl WasiContext {
     /// Arguments:
     /// - `path` : Absolute path to file.
     /// - `format` : String defining the structure format.
-    /// - `offset` : Offset from start of file.
     /// - `arr` : Structured data array.
+    /// - `offset` : Offset from start of file.
     /// - `truncate` : If `true`, truncate file before writing.
     /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
@@ -827,8 +827,8 @@ impl WasiContext {
         &self,
         path: GString,
         format: GString,
-        offset: Variant,
         arr: VariantArray,
+        offset: Variant,
         truncate: Variant,
         follow_symlink: Variant,
     ) -> Variant {
