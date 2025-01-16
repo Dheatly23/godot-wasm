@@ -324,6 +324,7 @@ Window/constants/title_height = 18
 Window/icons/close = SubResource("25")
 Window/icons/close_pressed = SubResource("26")
 Window/styles/embedded_border = SubResource("StyleBoxTexture_pjst5")
+Window/styles/embedded_unfocused_border = SubResource("StyleBoxTexture_pjst5")
 WindowDialog/colors/title_color = Color(1, 1, 1, 1)
 WindowDialog/constants/close_v_ofs = 16
 WindowDialog/constants/title_height = 16
