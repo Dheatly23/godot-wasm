@@ -237,6 +237,9 @@ func __execute():
 	args.append_array(config_dialog.get_args())
 
 	var config := {
+		"epoch.enable": true,
+		"epoch.useAutoreset": false,
+		"epoch.timeout": 1.0,
 		"wasi.enable": true,
 		"wasi.context": wasi_ctx,
 		"wasi.args": args,
