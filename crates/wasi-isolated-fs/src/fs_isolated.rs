@@ -900,16 +900,23 @@ pub enum AccessMode {
     RW = 3,
 }
 
+impl AccessMode {
+    const fn from_int(v: u8) -> Self {
+        match v {
+            0 => Self::NA,
+            1 => Self::R,
+            2 => Self::W,
+            3 => Self::RW,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl BitAnd for AccessMode {
     type Output = Self;
 
     fn bitand(self, rhs: Self) -> Self {
-        match (self, rhs) {
-            (Self::RW, Self::RW) => Self::RW,
-            (Self::R, Self::R | Self::RW) | (Self::RW, Self::R) => Self::R,
-            (Self::W, Self::W | Self::RW) | (Self::RW, Self::W) => Self::W,
-            _ => Self::NA,
-        }
+        Self::from_int(self as u8 & rhs as u8)
     }
 }
 
@@ -917,12 +924,7 @@ impl BitOr for AccessMode {
     type Output = Self;
 
     fn bitor(self, rhs: Self) -> Self {
-        match (self, rhs) {
-            (Self::RW, _) | (_, Self::RW) | (Self::R, Self::W) | (Self::W, Self::R) => Self::RW,
-            (Self::R, _) | (_, Self::R) => Self::R,
-            (Self::W, _) | (_, Self::W) => Self::W,
-            _ => Self::NA,
-        }
+        Self::from_int(self as u8 | rhs as u8)
     }
 }
 
