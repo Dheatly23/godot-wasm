@@ -1807,7 +1807,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         fdflags: Fdflags,
     ) -> Result<Fd, StreamError> {
         let follow_symlink = dirflags.contains(Lookupflags::SYMLINK_FOLLOW);
-        let access = match (
+        let mut access = match (
             fs_rights_base.contains(Rights::FD_READ),
             fs_rights_base.contains(Rights::FD_WRITE),
         ) {
@@ -1832,6 +1832,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 ..
             }) => {
                 let create = if create {
+                    access = access | AccessMode::W;
                     Some(CreateParams {
                         dir: is_dir,
                         exclusive,
@@ -1863,7 +1864,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }) => {
                 let mut opts = cap_std::fs::OpenOptions::new();
                 if create {
-                    access.write_or_err()?;
+                    access = access | AccessMode::W;
                     if exclusive {
                         opts.create_new(true);
                     } else {

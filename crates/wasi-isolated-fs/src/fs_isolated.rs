@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::mem::replace;
-use std::ops::{BitAnd, Deref, DerefMut};
+use std::ops::{BitAnd, BitOr, Deref, DerefMut};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::SystemTime;
@@ -913,6 +913,19 @@ impl BitAnd for AccessMode {
     }
 }
 
+impl BitOr for AccessMode {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (Self::RW, _) | (_, Self::RW) | (Self::R, Self::W) | (Self::W, Self::R) => Self::RW,
+            (Self::R, _) | (_, Self::R) => Self::RW,
+            (Self::W, _) | (_, Self::W) => Self::W,
+            _ => Self::NA,
+        }
+    }
+}
+
 impl AccessMode {
     pub fn is_read(self) -> bool {
         matches!(self, Self::R | Self::RW)
@@ -1199,7 +1212,7 @@ impl CapWrapper {
                 Some(_) if create_exclusive && it.peek().is_none() => Err(ErrorKind::AlreadyExists),
                 Some(v) => Ok(v),
                 None if create && it.peek().is_none() => {
-                    if !access.is_write() {
+                    if !self.access.is_write() {
                         return Err(ErrorKind::PermissionDenied.into());
                     }
 
