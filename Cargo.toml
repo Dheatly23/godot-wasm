@@ -93,7 +93,7 @@ godot-component = [
   "dep:smol_str",
   "component-model",
 ]
-log = [
+tracing = [
   "dep:log4rs",
   "dep:tracing",
   "wasi-isolated-fs/tracing",

@@ -1293,8 +1293,14 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 let l = EMPTY_BUF.len().min(len.try_into().unwrap_or(usize::MAX));
                 Ok(((&EMPTY_BUF[..l]).into(), l as Size))
             }),
-            FdItem::StdinSignal(v) => memio.read(v, |v, len| {
-                let ret = v.read(len.try_into().unwrap_or(usize::MAX))?;
+            FdItem::StdinSignal(v) => memio.read((v, true), |(v, b), len| {
+                let len = usize::try_from(len).unwrap_or(usize::MAX);
+                let ret = if len > 0 && *b {
+                    *b = false;
+                    v.read_block(len, self.timeout)
+                } else {
+                    v.read(len)
+                }?;
                 let l = ret.len() as Size;
                 Ok((ret.into(), l))
             }),

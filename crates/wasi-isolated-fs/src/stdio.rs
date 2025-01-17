@@ -186,6 +186,10 @@ impl StdinSignal {
     }
 
     pub fn read(&self, len: usize) -> IoResult<Vec<u8>> {
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+
         let mut guard = self.inner.lock();
 
         let (a, b) = guard.pop_data(len);
@@ -197,6 +201,10 @@ impl StdinSignal {
     }
 
     pub fn read_block(&self, len: usize, timeout: Option<Instant>) -> IoResult<Vec<u8>> {
+        if len == 0 {
+            return Ok(Vec::new());
+        }
+
         let mut t = Instant::now() + MAX_TIMEOUT;
         if let Some(v) = timeout {
             t = t.min(v);
@@ -223,6 +231,10 @@ impl StdinSignal {
     }
 
     pub fn skip(&self, len: usize) -> IoResult<usize> {
+        if len == 0 {
+            return Ok(0);
+        }
+
         let mut guard = self.inner.lock();
 
         let (a, b) = guard.pop_data(len);
@@ -230,6 +242,10 @@ impl StdinSignal {
     }
 
     pub fn skip_block(&self, len: usize, timeout: Option<Instant>) -> IoResult<usize> {
+        if len == 0 {
+            return Ok(0);
+        }
+
         let mut t = Instant::now() + MAX_TIMEOUT;
         if let Some(v) = timeout {
             t = t.min(v);

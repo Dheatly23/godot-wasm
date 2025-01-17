@@ -152,7 +152,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
             items::IOStream::NullStdio(_) => Vec::new(),
             items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
             items::IOStream::HostFSStream(mut v) => v.read(len)?,
-            items::IOStream::StdinSignal(v) => v.read(len)?,
+            items::IOStream::StdinSignal(v) => v.read_block(len, self.timeout)?,
             items::IOStream::BoxedRead(mut v) => {
                 let mut ret = vec![0; len.min(1024)];
                 let i = v.read(&mut ret)?;
