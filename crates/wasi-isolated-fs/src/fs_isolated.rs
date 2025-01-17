@@ -894,10 +894,10 @@ impl From<(Link, Weak<Node>)> for Node {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum AccessMode {
-    NA,
-    R,
-    W,
-    RW,
+    NA = 0,
+    R = 1,
+    W = 2,
+    RW = 3,
 }
 
 impl BitAnd for AccessMode {
@@ -919,7 +919,7 @@ impl BitOr for AccessMode {
     fn bitor(self, rhs: Self) -> Self {
         match (self, rhs) {
             (Self::RW, _) | (_, Self::RW) | (Self::R, Self::W) | (Self::W, Self::R) => Self::RW,
-            (Self::R, _) | (_, Self::R) => Self::RW,
+            (Self::R, _) | (_, Self::R) => Self::R,
             (Self::W, _) | (_, Self::W) => Self::W,
             _ => Self::NA,
         }
