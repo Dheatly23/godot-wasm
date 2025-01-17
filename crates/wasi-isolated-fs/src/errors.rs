@@ -5,7 +5,9 @@ use std::io::{Error as IoError, ErrorKind};
 use std::num::TryFromIntError;
 
 use anyhow::Error as AnyError;
+use wiggle::GuestError;
 
+use crate::bindings::types::Errno;
 use crate::bindings::wasi::filesystem::types::ErrorCode as FSErrorCode;
 use crate::bindings::wasi::io::streams::StreamError as WasiStreamError;
 use crate::bindings::wasi::sockets::network::ErrorCode as NetErrorCode;
@@ -312,6 +314,22 @@ impl Display for WasiFSError {
 
 impl Error for WasiFSError {}
 
+pub(crate) struct WasiP1Error(Errno);
+
+impl Debug for WasiP1Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for WasiP1Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "WASI error: {:?}", self.0)
+    }
+}
+
+impl Error for WasiP1Error {}
+
 pub(crate) struct WasiNetError(NetErrorCode);
 
 impl Debug for WasiNetError {
@@ -328,12 +346,15 @@ impl Display for WasiNetError {
 
 impl Error for WasiNetError {}
 
+#[derive(Debug)]
 pub struct StreamError(StreamErrorInner);
 
+#[derive(Debug)]
 enum StreamErrorInner {
     Any(AnyError),
     Io(IoError),
     Wasi(FSErrorCode),
+    WasiP1(Errno),
     Closed,
 }
 
@@ -373,12 +394,38 @@ impl From<FSErrorCode> for StreamError {
     }
 }
 
+impl From<Errno> for StreamError {
+    fn from(v: Errno) -> Self {
+        Self(StreamErrorInner::WasiP1(v))
+    }
+}
+
+impl From<GuestError> for StreamError {
+    fn from(err: GuestError) -> Self {
+        match err {
+            GuestError::InvalidFlagValue { .. } | GuestError::InvalidEnumValue { .. } => {
+                FSErrorCode::Invalid.into()
+            }
+            GuestError::PtrOverflow { .. }
+            | GuestError::PtrOutOfBounds { .. }
+            | GuestError::PtrNotAligned { .. }
+            | GuestError::PtrBorrowed { .. }
+            | GuestError::SliceLengthsDiffer { .. }
+            | GuestError::BorrowCheckerOutOfHandles { .. } => AnyError::from(err).into(),
+            GuestError::InvalidUtf8 { .. } => FSErrorCode::IllegalByteSequence.into(),
+            GuestError::TryFromIntError { .. } => FSErrorCode::Overflow.into(),
+            GuestError::InFunc { err, .. } => Self::from(*err),
+        }
+    }
+}
+
 impl From<StreamError> for Result<FSErrorCode, AnyError> {
     fn from(v: StreamError) -> Self {
         Ok(match v.0 {
             StreamErrorInner::Any(v) => return Err(v),
             StreamErrorInner::Closed => return Err(StreamClosedError.into()),
             StreamErrorInner::Wasi(v) => v,
+            StreamErrorInner::WasiP1(v) => return Err(WasiP1Error(v).into()),
             StreamErrorInner::Io(v) => match v.kind() {
                 ErrorKind::Other => return Err(v.into()),
                 ErrorKind::NotFound => FSErrorCode::NoEntry,
@@ -399,12 +446,61 @@ impl From<StreamError> for Result<FSErrorCode, AnyError> {
     }
 }
 
+impl From<StreamError> for Result<Errno, AnyError> {
+    fn from(v: StreamError) -> Self {
+        if let StreamErrorInner::WasiP1(v) = v.0 {
+            return Ok(v);
+        }
+
+        Ok(match <Result<FSErrorCode, AnyError>>::from(v)? {
+            FSErrorCode::Access => Errno::Acces,
+            FSErrorCode::WouldBlock => Errno::Again,
+            FSErrorCode::Already => Errno::Already,
+            FSErrorCode::BadDescriptor => Errno::Badf,
+            FSErrorCode::Busy => Errno::Busy,
+            FSErrorCode::Deadlock => Errno::Deadlk,
+            FSErrorCode::Quota => Errno::Dquot,
+            FSErrorCode::Exist => Errno::Exist,
+            FSErrorCode::FileTooLarge => Errno::Fbig,
+            FSErrorCode::IllegalByteSequence => Errno::Ilseq,
+            FSErrorCode::InProgress => Errno::Inprogress,
+            FSErrorCode::Interrupted => Errno::Intr,
+            FSErrorCode::Invalid => Errno::Inval,
+            FSErrorCode::Io => Errno::Io,
+            FSErrorCode::IsDirectory => Errno::Isdir,
+            FSErrorCode::Loop => Errno::Loop,
+            FSErrorCode::TooManyLinks => Errno::Mlink,
+            FSErrorCode::MessageSize => Errno::Msgsize,
+            FSErrorCode::NameTooLong => Errno::Nametoolong,
+            FSErrorCode::NoDevice => Errno::Nodev,
+            FSErrorCode::NoEntry => Errno::Noent,
+            FSErrorCode::NoLock => Errno::Nolck,
+            FSErrorCode::InsufficientMemory => Errno::Nomem,
+            FSErrorCode::InsufficientSpace => Errno::Nospc,
+            FSErrorCode::Unsupported => Errno::Notsup,
+            FSErrorCode::NotDirectory => Errno::Notdir,
+            FSErrorCode::NotEmpty => Errno::Notempty,
+            FSErrorCode::NotRecoverable => Errno::Notrecoverable,
+            FSErrorCode::NoTty => Errno::Notty,
+            FSErrorCode::NoSuchDevice => Errno::Nxio,
+            FSErrorCode::Overflow => Errno::Overflow,
+            FSErrorCode::NotPermitted => Errno::Perm,
+            FSErrorCode::Pipe => Errno::Pipe,
+            FSErrorCode::ReadOnly => Errno::Rofs,
+            FSErrorCode::InvalidSeek => Errno::Spipe,
+            FSErrorCode::TextFileBusy => Errno::Txtbsy,
+            FSErrorCode::CrossDevice => Errno::Xdev,
+        })
+    }
+}
+
 impl From<StreamError> for Result<WasiStreamError, AnyError> {
     fn from(v: StreamError) -> Self {
         match v.0 {
             StreamErrorInner::Any(v) => Err(v),
             StreamErrorInner::Io(v) => Err(v.into()),
             StreamErrorInner::Wasi(v) => Err(WasiFSError(v).into()),
+            StreamErrorInner::WasiP1(v) => Err(WasiP1Error(v).into()),
             StreamErrorInner::Closed => Ok(WasiStreamError::Closed),
         }
     }
@@ -416,16 +512,8 @@ impl From<StreamError> for AnyError {
             StreamErrorInner::Any(v) => v,
             StreamErrorInner::Io(v) => v.into(),
             StreamErrorInner::Wasi(v) => WasiFSError(v).into(),
+            StreamErrorInner::WasiP1(v) => WasiP1Error(v).into(),
             StreamErrorInner::Closed => StreamClosedError.into(),
-        }
-    }
-}
-
-impl From<StreamError> for crate::bindings::types::Error {
-    fn from(v: StreamError) -> Self {
-        match <Result<FSErrorCode, AnyError>>::from(v) {
-            Ok(v) => crate::bindings::types::Errno::from(v).into(),
-            Err(e) => Self::trap(e),
         }
     }
 }

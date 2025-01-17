@@ -23,12 +23,14 @@ nom = "^7.1"
 either = "^1.0"
 wasmparser = { version = "^0.222", optional = true }
 wat = { version = "~1", optional = true }
+log4rs = { version = "^1", optional = true }
 
 scopeguard = { workspace = true }
 once_cell = { workspace = true }
 anyhow = { workspace = true }
 cfg-if = { workspace = true }
 parking_lot = { workspace = true }
+tracing = { workspace = true, optional = true, features = ["log"] }
 slab = { workspace = true, optional = true }
 camino = { workspace = true, optional = true }
 rbitset = { version = "^0.3", optional = true }
@@ -91,6 +93,11 @@ godot-component = [
   "dep:smol_str",
   "component-model",
 ]
+log = [
+  "dep:log4rs",
+  "dep:tracing",
+  "wasi-isolated-fs/tracing",
+]
 
 [workspace]
 members = [
@@ -111,6 +118,7 @@ memchr = "^2.7"
 camino = "^1.1"
 
 proptest = "^1"
+tracing = "0.1"
 
 # Dependencies for example crates
 cfg-if = "^1.0"

@@ -282,7 +282,7 @@ impl ResourceLimiter for MemoryLimit {
         desired: usize,
         max: Option<usize>,
     ) -> AnyResult<bool> {
-        if max.map_or(false, |max| desired > max) {
+        if max.is_some_and(|max| desired > max) {
             return Ok(false);
         } else if self.max_memory == u64::MAX {
             return Ok(true);
@@ -303,7 +303,7 @@ impl ResourceLimiter for MemoryLimit {
         desired: usize,
         max: Option<usize>,
     ) -> AnyResult<bool> {
-        if max.map_or(false, |max| desired > max) {
+        if max.is_some_and(|max| desired > max) {
             return Ok(false);
         } else if self.max_table_entries == u64::MAX {
             return Ok(true);

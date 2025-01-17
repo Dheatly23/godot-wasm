@@ -9,6 +9,7 @@ use crate::errors;
 
 const MAX_TIMEOUT: Duration = Duration::from_millis(100);
 
+#[derive(Debug)]
 pub struct ClockController {
     epoch: Instant,
 }
@@ -45,6 +46,7 @@ impl ClockController {
     }
 }
 
+#[derive(Debug)]
 pub struct ClockPollable {
     pub(crate) until: Instant,
 }

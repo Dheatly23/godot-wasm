@@ -16,6 +16,7 @@ use crate::fs_isolated::AccessMode;
 #[doc(no_inline)]
 pub use crate::fs_isolated::OpenMode;
 
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum Descriptor {
     Dir(CapDir),
@@ -77,7 +78,7 @@ fn err_sync_handle(e: IoError) -> Result<(), IoError> {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CapWrapper {
     desc: Arc<Descriptor>,
     access: AccessMode,
@@ -236,6 +237,7 @@ impl CapWrapper {
     }
 }
 
+#[derive(Debug)]
 pub struct FileStream {
     file: Arc<Descriptor>,
     mode: OpenMode,
@@ -325,6 +327,7 @@ impl FileStream {
     }
 }
 
+#[derive(Debug)]
 pub struct ReadDir(Mutex<CapReadDir>);
 
 impl Iterator for &'_ ReadDir {

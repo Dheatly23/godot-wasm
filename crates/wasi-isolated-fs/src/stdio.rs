@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::io::{
     stderr, stdout, Error as IoError, ErrorKind, IoSlice, Result as IoResult, Stderr, Stdout, Write,
 };
@@ -23,12 +24,27 @@ pub struct NullStdio {
     _p: (),
 }
 
+impl Debug for NullStdio {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "NullStdio")
+    }
+}
+
 pub struct StdinSignal {
     pub(crate) inner: Mutex<StdinInner>,
     pub(crate) cond: Condvar,
     f: Box<dyn Fn() + Send + Sync>,
 }
 
+impl Debug for StdinSignal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("StdinSignal")
+            .field(&(self as *const _))
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct StdinProvider(Arc<StdinSignal>);
 
 type StdinInnerData = SmallVec<[u8; 32]>;
@@ -272,6 +288,7 @@ impl StdinProvider {
     }
 }
 
+#[derive(Debug)]
 pub struct StdinSignalPollable(pub(crate) Arc<StdinSignal>);
 
 impl StdinSignalPollable {
@@ -320,6 +337,14 @@ impl Default for LineBuffer {
             len: 0,
             s: String::new(),
         }
+    }
+}
+
+impl Debug for LineBuffer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("LineBuffer")
+            .field("len", &self.len)
+            .finish_non_exhaustive()
     }
 }
 
@@ -521,11 +546,20 @@ impl LineBuffer {
 
 pub type StdoutCbLineFn = Box<dyn Send + Sync + FnMut(&str)>;
 
+#[derive(Debug)]
 pub struct StdoutCbLineBuffered(Mutex<StdoutCbLineBufferedInner>);
 
 struct StdoutCbLineBufferedInner {
     buf: LineBuffer,
     cb: StdoutCbLineFn,
+}
+
+impl Debug for StdoutCbLineBufferedInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("StdoutCbLineBufferedInner")
+            .field("buf", &self.buf)
+            .finish_non_exhaustive()
+    }
 }
 
 impl StdoutCbLineBuffered {
@@ -565,12 +599,21 @@ impl StdoutCbLineBufferedInner {
 
 pub type StdoutCbBlockFn = Box<dyn Send + Sync + FnMut(&[u8])>;
 
+#[derive(Debug)]
 pub struct StdoutCbBlockBuffered(Mutex<StdoutCbBlockBufferedInner>);
 
 struct StdoutCbBlockBufferedInner {
     buf: Box<[u8; BUF_LEN]>,
     len: usize,
     cb: StdoutCbBlockFn,
+}
+
+impl Debug for StdoutCbBlockBufferedInner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("StdoutCbBlockBufferedInner")
+            .field("len", &self.len)
+            .finish_non_exhaustive()
+    }
 }
 
 impl StdoutCbBlockBuffered {
@@ -636,6 +679,7 @@ impl StdoutCbBlockBuffered {
     }
 }
 
+#[derive(Debug)]
 struct StdBypassInner<T>(LineBuffer, T);
 
 impl<T: Write> Write for StdBypassInner<T> {
@@ -681,6 +725,7 @@ impl<T: Write> StdBypassInner<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct StdoutBypass(Mutex<StdBypassInner<Stdout>>);
 
 impl Default for StdoutBypass {
@@ -703,6 +748,7 @@ impl StdoutBypass {
     }
 }
 
+#[derive(Debug)]
 pub struct StderrBypass(Mutex<StdBypassInner<Stderr>>);
 
 impl Default for StderrBypass {

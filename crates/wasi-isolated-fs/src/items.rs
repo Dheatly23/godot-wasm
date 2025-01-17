@@ -1,4 +1,5 @@
 use std::borrow::{Borrow, BorrowMut};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::io::Read;
 use std::mem::replace;
 use std::ops::{Deref, DerefMut};
@@ -27,6 +28,17 @@ pub(crate) struct Items {
 enum MaybeItem {
     Item(Item),
     Empty(usize),
+}
+
+impl Debug for Items {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_map()
+            .entries(self.data.iter().enumerate().filter_map(|(i, v)| match v {
+                MaybeItem::Item(v) => Some((i, v)),
+                _ => None,
+            }))
+            .finish()
+    }
 }
 
 macro_rules! item_def {
@@ -172,6 +184,32 @@ item_def! {
         StdinPoll(StdinSignalPollable),
         ClockPoll(Box<ClockPollable>),
     },
+}
+
+impl Debug for Item {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::IsoFSNode(v) => f.debug_tuple("Item::IsoFSNode").field(v).finish(),
+            Self::HostFSDesc(v) => f.debug_tuple("Item::HostFSDesc").field(v).finish(),
+            Self::IsoFSAccess(v) => f.debug_tuple("Item::IsoFSAccess").field(v).finish(),
+            Self::HostFSStream(v) => f.debug_tuple("Item::HostFSStream").field(v).finish(),
+            Self::StdinSignal(v) => f.debug_tuple("Item::StdinSignal").field(v).finish(),
+            Self::StdoutBp(v) => f.debug_tuple("Item::StdoutBp").field(v).finish(),
+            Self::StderrBp(v) => f.debug_tuple("Item::StderrBp").field(v).finish(),
+            Self::StdoutLBuf(v) => f.debug_tuple("Item::StdoutLBuf").field(v).finish(),
+            Self::StdoutBBuf(v) => f.debug_tuple("Item::StdoutBBuf").field(v).finish(),
+            Self::BoxedRead(v) => f
+                .debug_tuple("Item::BoxedRead")
+                .field(&(&**v as *const _))
+                .finish(),
+            Self::NullStdio(v) => f.debug_tuple("Item::NullStdio").field(v).finish(),
+            Self::IsoFSReaddir(v) => f.debug_tuple("Item::IsoFSReaddir").field(v).finish(),
+            Self::HostFSReaddir(v) => f.debug_tuple("Item::HostFSReaddir").field(v).finish(),
+            Self::NullPoll(v) => f.debug_tuple("Item::NullPoll").field(v).finish(),
+            Self::StdinPoll(v) => f.debug_tuple("Item::StdinPoll").field(v).finish(),
+            Self::ClockPoll(v) => f.debug_tuple("Item::ClockPoll").field(v).finish(),
+        }
+    }
 }
 
 impl<'t> MaybeBorrowMut<'t, Item> {
@@ -333,6 +371,12 @@ impl<T> BorrowMut<T> for MaybeBorrowMut<'_, T> {
             Self::Owned(v) => v,
             Self::Borrowed(v) => v,
         }
+    }
+}
+
+impl<T: Debug> Debug for MaybeBorrowMut<'_, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        self.deref().fmt(f)
     }
 }
 

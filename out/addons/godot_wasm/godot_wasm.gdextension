@@ -9,6 +9,8 @@ reloadable = false
 WasmModule = "res://addons/godot_wasm/icons/WasmModule.svg"
 WasmInstance = "res://addons/godot_wasm/icons/WasmInstance.svg"
 WasiContext = "res://addons/godot_wasm/icons/WasiContext.svg"
+WasiCommand = "res://addons/godot_wasm/icons/WasmInstance.svg"
+WasmScriptLike = "res://addons/godot_wasm/icons/WasmInstance.svg"
 
 [libraries]
 
