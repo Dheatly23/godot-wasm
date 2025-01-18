@@ -934,7 +934,19 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
 
                 let symlink =
                     path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW);
+                let mut access = match (
+                    flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
+                    flags.intersects(
+                        wasi::filesystem::types::DescriptorFlags::WRITE
+                            | wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY,
+                    ),
+                ) {
+                    (_, false) => AccessMode::R,
+                    (false, true) => AccessMode::W,
+                    (true, true) => AccessMode::RW,
+                };
                 let create = if open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE) {
+                    access = access | AccessMode::W;
                     Some(CreateParams {
                         dir: open_flags.contains(wasi::filesystem::types::OpenFlags::DIRECTORY),
                         exclusive: open_flags
@@ -942,18 +954,6 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     })
                 } else {
                     None
-                };
-                let access = match (
-                    flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
-                    flags.intersects(
-                        wasi::filesystem::types::DescriptorFlags::WRITE
-                            | wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY,
-                    ),
-                ) {
-                    (false, false) => AccessMode::NA,
-                    (true, false) => AccessMode::R,
-                    (false, true) => AccessMode::W,
-                    (true, true) => AccessMode::RW,
                 };
 
                 let controller = try_iso_fs(&self.iso_fs)?;

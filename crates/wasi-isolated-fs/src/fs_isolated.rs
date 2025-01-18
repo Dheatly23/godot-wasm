@@ -1253,45 +1253,32 @@ impl CapWrapper {
     pub fn read(&self, len: usize, off: usize) -> Result<Vec<u8>, errors::StreamError> {
         self.access.read_or_err()?;
 
-        match &self.node.0 {
-            NodeItem::File(v) => {
-                let mut v = v.lock();
-                let (s, l) = v.read(len, off);
-                let mut ret = vec![0u8; l];
-                ret[..s.len()].copy_from_slice(s);
-                Ok(ret)
-            }
-            NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
-            NodeItem::Link(_) => Err(ErrorKind::InvalidInput.into()),
-        }
+        let mut v = self.node.file().ok_or(ErrorKind::IsADirectory)?;
+        let (s, l) = v.read(len, off);
+        let mut ret = vec![0u8; l];
+        ret[..s.len()].copy_from_slice(s);
+        Ok(ret)
     }
 
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(buf), fields(buf.len = buf.len())))]
     pub fn write(&self, buf: &[u8], off: usize) -> Result<(), errors::StreamError> {
         self.access.write_or_err()?;
 
-        match &self.node.0 {
-            NodeItem::File(v) => {
-                v.lock().write(buf, off)?;
-                Ok(())
-            }
-            NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
-            NodeItem::Link(_) => Err(ErrorKind::InvalidInput.into()),
-        }
+        self.node
+            .file()
+            .ok_or(ErrorKind::IsADirectory)?
+            .write(buf, off)?;
+        Ok(())
     }
 
     #[cfg_attr(feature = "tracing", tracing::instrument)]
     pub fn resize(&self, size: usize) -> Result<(), errors::StreamError> {
-        self.access.write_or_err()?;
-
-        match &self.node.0 {
-            NodeItem::File(v) => {
-                v.lock().resize(size)?;
-                Ok(())
-            }
-            NodeItem::Dir(_) => Err(ErrorKind::IsADirectory.into()),
-            NodeItem::Link(_) => Err(ErrorKind::InvalidInput.into()),
+        let mut v = self.node.file().ok_or(ErrorKind::IsADirectory)?;
+        if v.len() != size {
+            self.access.write_or_err()?;
+            v.resize(size)?;
         }
+        Ok(())
     }
 
     #[cfg_attr(feature = "tracing", tracing::instrument(skip(controller, name), fields(name = ?name.as_ref())))]
