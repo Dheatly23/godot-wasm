@@ -923,34 +923,33 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         open_flags: wasi::filesystem::types::OpenFlags,
         flags: wasi::filesystem::types::DescriptorFlags,
     ) -> Result<Resource<wasi::filesystem::types::Descriptor>, errors::StreamError> {
+        let symlink = path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW);
+        let mut access = match (
+            flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
+            flags.intersects(
+                wasi::filesystem::types::DescriptorFlags::WRITE
+                    | wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY,
+            ),
+        ) {
+            (_, false) => AccessMode::R,
+            (false, true) => AccessMode::W,
+            (true, true) => AccessMode::RW,
+        };
+        let create = open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE);
+        let exclusive = open_flags.contains(wasi::filesystem::types::OpenFlags::EXCLUSIVE);
+        let is_dir = open_flags.contains(wasi::filesystem::types::OpenFlags::DIRECTORY);
+        let is_truncate = open_flags.contains(wasi::filesystem::types::OpenFlags::TRUNCATE);
+        if is_dir && is_truncate {
+            return Err(ErrorKind::InvalidInput.into());
+        }
+
         let ret: Item = match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
-                if open_flags.contains(
-                    wasi::filesystem::types::OpenFlags::DIRECTORY
-                        | wasi::filesystem::types::OpenFlags::TRUNCATE,
-                ) {
-                    return Err(ErrorKind::InvalidInput.into());
-                }
-
-                let symlink =
-                    path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW);
-                let mut access = match (
-                    flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
-                    flags.intersects(
-                        wasi::filesystem::types::DescriptorFlags::WRITE
-                            | wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY,
-                    ),
-                ) {
-                    (_, false) => AccessMode::R,
-                    (false, true) => AccessMode::W,
-                    (true, true) => AccessMode::RW,
-                };
-                let create = if open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE) {
+                let create = if create {
                     access = access | AccessMode::W;
                     Some(CreateParams {
-                        dir: open_flags.contains(wasi::filesystem::types::OpenFlags::DIRECTORY),
-                        exclusive: open_flags
-                            .contains(wasi::filesystem::types::OpenFlags::EXCLUSIVE),
+                        dir: is_dir,
+                        exclusive,
                     })
                 } else {
                     None
@@ -966,63 +965,41 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                         access,
                     )?
                     .follow_symlink(controller)?;
-
-                if flags.contains(wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY)
-                    && !v.node().is_dir()
-                {
-                    return Err(ErrorKind::PermissionDenied.into());
+                if is_dir && !v.node().is_dir() {
+                    return Err(ErrorKind::NotADirectory.into());
                 }
-                if open_flags.contains(wasi::filesystem::types::OpenFlags::TRUNCATE) {
+                if is_truncate {
                     v.resize(0)?;
                 }
 
                 Box::new(v).into()
             }
             items::Desc::HostFSDesc(v) => {
-                if open_flags.contains(
-                    wasi::filesystem::types::OpenFlags::DIRECTORY
-                        | wasi::filesystem::types::OpenFlags::TRUNCATE,
-                ) {
-                    return Err(ErrorKind::InvalidInput.into());
-                }
-
-                let mut access = match (
-                    flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
-                    flags.intersects(
-                        wasi::filesystem::types::DescriptorFlags::WRITE
-                            | wasi::filesystem::types::DescriptorFlags::MUTATE_DIRECTORY,
-                    ),
-                ) {
-                    (false, false) => AccessMode::NA,
-                    (true, false) => AccessMode::R,
-                    (false, true) => AccessMode::W,
-                    (true, true) => AccessMode::RW,
-                } & v.access();
-
+                access = access & v.access();
                 let mut opts = OpenOptions::new();
-                if open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE) {
+                if create {
                     v.access().write_or_err()?;
                     access = access | AccessMode::W;
-                    if open_flags.contains(wasi::filesystem::types::OpenFlags::EXCLUSIVE) {
+                    if exclusive {
                         opts.create_new(true);
                     } else {
                         opts.create(true);
                     }
                 }
+                access.access_or_err()?;
                 match access {
                     AccessMode::NA | AccessMode::R => opts.read(true),
                     AccessMode::W => opts.write(true),
                     AccessMode::RW => opts.read(true).write(true),
                 };
-                if open_flags.contains(wasi::filesystem::types::OpenFlags::TRUNCATE) {
+                if is_truncate {
                     opts.truncate(true);
                 }
-                if path_flags.contains(wasi::filesystem::types::PathFlags::SYMLINK_FOLLOW) {
-                    opts.follow(FollowSymlinks::Yes);
+                opts.follow(if symlink {
+                    FollowSymlinks::Yes
                 } else {
-                    opts.follow(FollowSymlinks::No);
-                }
-                let is_dir = open_flags.contains(wasi::filesystem::types::OpenFlags::DIRECTORY);
+                    FollowSymlinks::No
+                });
                 if is_dir {
                     opts.maybe_dir(true);
                 }

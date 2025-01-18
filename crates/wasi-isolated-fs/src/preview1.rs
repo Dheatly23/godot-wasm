@@ -1851,7 +1851,9 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                         access,
                     )?
                     .follow_symlink(controller)?;
-
+                if is_dir && !v.node().is_dir() {
+                    return Err(Errno::Notdir.into());
+                }
                 if is_truncate {
                     v.resize(0)?;
                 }
