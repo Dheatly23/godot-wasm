@@ -986,7 +986,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     return Err(ErrorKind::InvalidInput.into());
                 }
 
-                let access = match (
+                let mut access = match (
                     flags.contains(wasi::filesystem::types::DescriptorFlags::READ),
                     flags.intersects(
                         wasi::filesystem::types::DescriptorFlags::WRITE
@@ -1001,7 +1001,8 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
 
                 let mut opts = OpenOptions::new();
                 if open_flags.contains(wasi::filesystem::types::OpenFlags::CREATE) {
-                    access.write_or_err()?;
+                    v.access().write_or_err()?;
+                    access = access | AccessMode::W;
                     if open_flags.contains(wasi::filesystem::types::OpenFlags::EXCLUSIVE) {
                         opts.create_new(true);
                     } else {

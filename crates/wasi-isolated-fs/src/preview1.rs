@@ -1864,6 +1864,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }) => {
                 let mut opts = cap_std::fs::OpenOptions::new();
                 if create {
+                    v.access().write_or_err()?;
                     access = access | AccessMode::W;
                     if exclusive {
                         opts.create_new(true);
