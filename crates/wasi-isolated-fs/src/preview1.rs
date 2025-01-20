@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::btree_map::BTreeMap;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::io::ErrorKind;
 use std::mem::transmute;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use fs_set_times::SetTimes;
 use rand::Rng;
 use smallvec::SmallVec;
 use system_interface::fs::FileIoExt;
-use tracing::{debug, debug_span, info, instrument, warn};
+use tracing::{debug, debug_span, info, instrument, warn, Level};
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
 use crate::bindings::types::*;
@@ -72,14 +73,14 @@ impl P1Items {
         }
     }
 
+    #[instrument(level = Level::DEBUG, skip(self), ret)]
     pub fn register(&mut self, item: P1Item) -> Fd {
         let i = self.next_free();
-        let ret = Fd::from(i);
-        debug!(fd = ?ret, ?item, "Register descriptor");
         self.tree.insert(i, item);
-        ret
+        i.into()
     }
 
+    #[instrument(level = Level::DEBUG, skip(self), ret)]
     pub fn unregister(&mut self, fd: Fd) -> Result<P1Item, StreamError> {
         let ix = u32::from(fd);
         let Some(ret) = self.tree.remove(&ix) else {
@@ -93,7 +94,6 @@ impl P1Items {
             self.buf.copy_within(1.., 0);
             &mut self.buf[self.buf.len() - 1]
         } = ix;
-        debug!(?fd, item = ?ret, "Unegister descriptor");
         Ok(ret)
     }
 
@@ -117,6 +117,7 @@ impl P1Items {
         }
     }
 
+    #[instrument(level = Level::DEBUG, skip(self))]
     pub fn rename(&mut self, src: Fd, dst: Fd) -> Result<(), StreamError> {
         let v = self.unregister(src)?;
         debug!(fd = ?dst, item = ?v, "Re-register descriptor");
@@ -362,7 +363,7 @@ impl<'a, 'b> MemIO<'a, 'b, Iovec> {
         Ok(Self { mem, len, iov })
     }
 
-    #[instrument(level = tracing::Level::DEBUG, skip(self, t, f))]
+    #[instrument(level = Level::DEBUG, skip(self, t, f))]
     fn read<T>(
         self,
         mut t: T,
@@ -462,7 +463,7 @@ impl<'a, 'b> MemIO<'a, 'b, Ciovec> {
         Ok(Self { mem, len, iov })
     }
 
-    #[instrument(level = tracing::Level::DEBUG, skip(self, f))]
+    #[instrument(level = Level::DEBUG, skip(self, f))]
     fn write(
         self,
         mut f: impl FnMut(&[u8]) -> Result<Size, StreamError>,
@@ -553,7 +554,7 @@ fn set_time(
     is_now: bool,
 ) -> Result<(), StreamError> {
     *dst = match (is_set, is_now) {
-        (true, true) => return Err(Errno::Inval.into()),
+        (true, true) => return Err(ErrorKind::InvalidInput.into()),
         (true, false) => SystemTime::UNIX_EPOCH + Duration::from_nanos(time),
         (false, true) => *now,
         (false, false) => return Ok(()),
@@ -567,7 +568,7 @@ fn time_cvt(
     is_now: bool,
 ) -> Result<Option<fs_set_times::SystemTimeSpec>, StreamError> {
     match (is_set, is_now) {
-        (true, true) => Err(Errno::Inval.into()),
+        (true, true) => Err(ErrorKind::InvalidInput.into()),
         (true, false) => Ok(Some(fs_set_times::SystemTimeSpec::Absolute(
             SystemTime::UNIX_EPOCH + Duration::from_nanos(time),
         ))),
@@ -691,14 +692,14 @@ where
 }
 
 impl crate::bindings::types::UserErrorConversion for WasiContext {
-    #[instrument(level = tracing::Level::WARN, skip(self))]
+    #[instrument(level = Level::DEBUG, skip(self), err)]
     fn errno_from_stream_error(&mut self, e: StreamError) -> Result<Errno, AnyError> {
         e.into()
     }
 }
 
 impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiContext {
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn args_get(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -719,7 +720,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn args_sizes_get(&mut self, _: &mut GuestMemory<'_>) -> Result<(Size, Size), StreamError> {
         let cnt = Size::try_from(self.args.len())?;
         let len = self
@@ -733,7 +734,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok((cnt, len))
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn environ_get(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -761,7 +762,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn environ_sizes_get(&mut self, _: &mut GuestMemory<'_>) -> Result<(Size, Size), StreamError> {
         let cnt = Size::try_from(self.envs.len())?;
         let len = self
@@ -777,7 +778,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok((cnt, len))
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn clock_res_get(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -789,7 +790,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn clock_time_get(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -803,7 +804,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_advise(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -840,7 +841,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_allocate(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -849,16 +850,16 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         _len: Filesize,
     ) -> Result<(), StreamError> {
         self.p1_items.get_item(fd)?;
-        Err(Errno::Notsup.into())
+        Err(ErrorKind::Unsupported.into())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_close(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), StreamError> {
         self.p1_items.unregister(fd)?;
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_datasync(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), StreamError> {
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -874,7 +875,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_fdstat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Fdstat, StreamError> {
         Ok(match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -1029,7 +1030,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_fdstat_set_flags(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1037,10 +1038,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         _flags: Fdflags,
     ) -> Result<(), StreamError> {
         self.p1_items.get_item(fd)?;
-        Err(Errno::Notsup.into())
+        Err(ErrorKind::Unsupported.into())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_fdstat_set_rights(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1052,7 +1053,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_filestat_get(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1086,7 +1087,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_filestat_set_size(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1107,7 +1108,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_filestat_set_times(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1145,7 +1146,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn fd_pread(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1162,7 +1163,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }) => {
                 v.access().read_or_err()?;
                 let mut off = usize::try_from(offset)?;
-                memio.read(v.node().file().ok_or(Errno::Isdir)?, |v, len| {
+                memio.read(v.node().file().ok_or(ErrorKind::IsADirectory)?, |v, len| {
                     let (s, l) = v.read(len.try_into()?, off);
                     off += l;
                     Ok((s.into(), l as Size))
@@ -1190,7 +1191,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_prestat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Prestat, StreamError> {
         if let FdItem::P1File(P1File {
             preopen: Some(s), ..
@@ -1204,7 +1205,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn fd_prestat_dir_name(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1224,11 +1225,11 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             mem.copy_from_slice(s.as_bytes(), path.as_array(s.len().try_into()?))?;
             Ok(())
         } else {
-            Err(Errno::Notdir.into())
+            Err(ErrorKind::NotADirectory.into())
         }
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn fd_pwrite(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1244,7 +1245,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 ..
             }) => {
                 v.access().write_or_err()?;
-                let mut v = v.node().file().ok_or(Errno::Isdir)?;
+                let mut v = v.node().file().ok_or(ErrorKind::IsADirectory)?;
                 let mut off = usize::try_from(offset)?;
                 memio.write(|s| {
                     v.write(s, off)?;
@@ -1267,7 +1268,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn fd_read(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1283,7 +1284,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 ..
             }) => {
                 v.access().read_or_err()?;
-                let v = v.node().file().ok_or(Errno::Isdir)?;
+                let v = v.node().file().ok_or(ErrorKind::IsADirectory)?;
                 let Some(c) = cursor else { return Ok(0) };
                 let old = *c;
 
@@ -1353,7 +1354,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn fd_readdir(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1506,7 +1507,11 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     v.read_dir()?.map(|v| {
                         let v = v?;
                         let m = v.metadata()?;
-                        let name = v.file_name().into_string().ok().ok_or(Errno::Inval)?;
+                        let name = v
+                            .file_name()
+                            .into_string()
+                            .ok()
+                            .ok_or(ErrorKind::InvalidInput)?;
                         let ft = to_filetype(m.file_type());
                         let inode = crate::fs_host::CapWrapper::meta_hash(m, &self.hasher);
                         Ok((inode.lower ^ inode.upper, ft, name))
@@ -1517,12 +1522,12 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_renumber(&mut self, _: &mut GuestMemory<'_>, fd: Fd, to: Fd) -> Result<(), StreamError> {
         self.p1_items.rename(fd, to)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_seek(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1536,13 +1541,13 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 cursor: Some(c),
                 ..
             }) => {
-                let l = v.node().file().ok_or(Errno::Isdir)?.len() as u64;
+                let l = v.node().file().ok_or(ErrorKind::IsADirectory)?.len() as u64;
                 *c = match whence {
                     Whence::Set => offset.try_into().ok(),
                     Whence::Cur => c.checked_add_signed(offset),
                     Whence::End => l.checked_add_signed(offset),
                 }
-                .ok_or(Errno::Inval)?;
+                .ok_or(ErrorKind::InvalidInput)?;
                 *c as _
             }
             FdItem::P1File(P1File {
@@ -1556,14 +1561,14 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     Whence::Cur => c.checked_add_signed(offset),
                     Whence::End => v.metadata()?.len().checked_add_signed(offset),
                 }
-                .ok_or(Errno::Inval)?;
+                .ok_or(ErrorKind::InvalidInput)?;
                 *c as _
             }
             _ => return Err(Errno::Badf.into()),
         })
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_sync(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), StreamError> {
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -1579,7 +1584,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn fd_tell(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Filesize, StreamError> {
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File { cursor: c, .. }) => Ok(c.unwrap_or(0) as _),
@@ -1587,7 +1592,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn fd_write(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1603,7 +1608,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 ..
             }) => {
                 v.access().write_or_err()?;
-                let mut v = v.node().file().ok_or(Errno::Isdir)?;
+                let mut v = v.node().file().ok_or(ErrorKind::IsADirectory)?;
 
                 if let Some(c) = cursor {
                     let old = *c;
@@ -1686,7 +1691,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_create_directory(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1705,7 +1710,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
 
                 let p = to_utf8_path(path);
                 let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
-                    return Err(Errno::Inval.into());
+                    return Err(ErrorKind::InvalidInput.into());
                 };
                 let controller = try_iso_fs(&self.iso_fs)?;
 
@@ -1721,7 +1726,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_filestat_get(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1762,7 +1767,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_filestat_set_times(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1823,7 +1828,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn path_link(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1835,10 +1840,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<(), StreamError> {
         self.p1_items.get_item(src_fd)?;
         self.p1_items.get_item(dst_fd)?;
-        Err(Errno::Notsup.into())
+        Err(ErrorKind::Unsupported.into())
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_open(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1868,7 +1873,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         info!(%path, follow_symlink, ?access, create, exclusive, is_dir, is_truncate, append, "Arguments");
 
         if is_dir && is_truncate {
-            return Err(Errno::Inval.into());
+            return Err(ErrorKind::InvalidInput.into());
         }
 
         let ret: P1Desc = match self.p1_items.get_item(fd)? {
@@ -1897,7 +1902,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     )?
                     .follow_symlink(controller)?;
                 if is_dir && !v.node().is_dir() {
-                    return Err(Errno::Notdir.into());
+                    return Err(ErrorKind::NotADirectory.into());
                 }
                 if is_truncate {
                     v.resize(0)?;
@@ -1940,7 +1945,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 let v = if v.metadata()?.is_dir() {
                     crate::fs_host::Descriptor::Dir(cap_std::fs::Dir::from_std_file(v.into_std()))
                 } else if is_dir {
-                    return Err(Errno::Notdir.into());
+                    return Err(ErrorKind::NotADirectory.into());
                 } else {
                     crate::fs_host::Descriptor::File(v)
                 };
@@ -1958,7 +1963,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(self.p1_items.register(Box::new(ret).into()))
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_readlink(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1992,7 +1997,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 .read_link(to_path(path))?
                 .into_os_string()
                 .into_string()
-                .map_err(|_| Errno::Inval)?,
+                .map_err(|_| ErrorKind::InvalidInput)?,
             _ => return Err(Errno::Badf.into()),
         };
         info!(target = s, "Link read");
@@ -2003,7 +2008,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(s.len() as _)
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_remove_directory(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2020,7 +2025,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }) => {
                 let p = to_utf8_path(path);
                 let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
-                    return Err(Errno::Inval.into());
+                    return Err(ErrorKind::InvalidInput.into());
                 };
 
                 v.open(try_iso_fs(&self.iso_fs)?, parent, true, None, AccessMode::W)?
@@ -2035,7 +2040,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_rename(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2069,7 +2074,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     dst_path.parent().unwrap_or(&dst_path),
                     dst_path.file_name(),
                 ) else {
-                    return Err(Errno::Inval.into());
+                    return Err(ErrorKind::InvalidInput.into());
                 };
                 let controller = try_iso_fs(&self.iso_fs)?;
 
@@ -2098,7 +2103,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_symlink(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2117,7 +2122,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }) => {
                 let p = to_utf8_path(path);
                 let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
-                    return Err(Errno::Inval.into());
+                    return Err(ErrorKind::InvalidInput.into());
                 };
                 let controller = try_iso_fs(&self.iso_fs)?;
 
@@ -2127,13 +2132,13 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             FdItem::P1File(P1File {
                 desc: P1Desc::HostFS(_),
                 ..
-            }) => return Err(Errno::Notsup.into()),
+            }) => return Err(ErrorKind::Unsupported.into()),
             _ => return Err(Errno::Badf.into()),
         }
         Ok(())
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn path_unlink_file(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2150,7 +2155,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }) => {
                 let p = to_utf8_path(path);
                 let (parent, Some(name)) = (p.parent().unwrap_or(&p), p.file_name()) else {
-                    return Err(Errno::Inval.into());
+                    return Err(ErrorKind::InvalidInput.into());
                 };
 
                 v.open(try_iso_fs(&self.iso_fs)?, parent, true, None, AccessMode::W)?
@@ -2165,7 +2170,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn poll_oneoff(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2174,7 +2179,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         nsubscriptions: Size,
     ) -> Result<Size, StreamError> {
         if nsubscriptions == 0 {
-            return Err(Errno::Inval.into());
+            return Err(ErrorKind::InvalidInput.into());
         }
 
         enum Poll {
@@ -2204,7 +2209,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                             Clockid::Realtime => Poll::SystemTime(
                                 SystemTime::UNIX_EPOCH + Duration::from_nanos(v.timeout),
                             ),
-                            _ => return Err(Errno::Inval.into()),
+                            _ => return Err(ErrorKind::InvalidInput.into()),
                         },
                         SubscriptionU::FdRead(v) => {
                             match self.p1_items.get_item(v.file_descriptor)? {
@@ -2303,22 +2308,22 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(0)
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), ret)]
     fn proc_exit(&mut self, _: &mut GuestMemory<'_>, rval: Exitcode) -> AnyError {
         crate::errors::ProcessExit::new(rval).into()
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn proc_raise(&mut self, _: &mut GuestMemory<'_>, _signal: Signal) -> Result<(), StreamError> {
-        Err(Errno::Notsup.into())
+        Err(ErrorKind::Unsupported.into())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn sched_yield(&mut self, _: &mut GuestMemory<'_>) -> Result<(), StreamError> {
         Ok(())
     }
 
-    #[instrument(skip(self, mem))]
+    #[instrument(skip(self, mem), err(level = Level::WARN))]
     fn random_get(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2351,7 +2356,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn sock_accept(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -2361,7 +2366,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Err(Errno::Notsock.into())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn sock_recv(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -2372,7 +2377,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Err(Errno::Notsock.into())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn sock_send(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -2383,7 +2388,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Err(Errno::Notsock.into())
     }
 
-    #[instrument(skip(self))]
+    #[instrument(skip(self), err(level = Level::WARN))]
     fn sock_shutdown(
         &mut self,
         _: &mut GuestMemory<'_>,

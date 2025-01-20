@@ -346,10 +346,8 @@ impl Display for WasiNetError {
 
 impl Error for WasiNetError {}
 
-#[derive(Debug)]
 pub struct StreamError(StreamErrorInner);
 
-#[derive(Debug)]
 enum StreamErrorInner {
     Any(AnyError),
     Io(IoError),
@@ -361,6 +359,30 @@ enum StreamErrorInner {
 impl StreamError {
     pub const fn closed() -> Self {
         Self(StreamErrorInner::Closed)
+    }
+}
+
+impl Debug for StreamError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match &self.0 {
+            StreamErrorInner::Any(v) => Debug::fmt(v, f),
+            StreamErrorInner::Closed => Debug::fmt(&StreamClosedError, f),
+            StreamErrorInner::Wasi(v) => Debug::fmt(&WasiFSError(*v), f),
+            StreamErrorInner::WasiP1(v) => Debug::fmt(&WasiP1Error(*v), f),
+            StreamErrorInner::Io(v) => Debug::fmt(v, f),
+        }
+    }
+}
+
+impl Display for StreamError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match &self.0 {
+            StreamErrorInner::Any(v) => Display::fmt(v, f),
+            StreamErrorInner::Closed => Display::fmt(&StreamClosedError, f),
+            StreamErrorInner::Wasi(v) => Display::fmt(&WasiFSError(*v), f),
+            StreamErrorInner::WasiP1(v) => Display::fmt(&WasiP1Error(*v), f),
+            StreamErrorInner::Io(v) => Display::fmt(v, f),
+        }
     }
 }
 
@@ -528,14 +550,32 @@ impl StreamError {
     }
 }
 
-#[derive(Debug)]
 pub struct NetworkError(NetworkErrorInner);
 
-#[derive(Debug)]
 enum NetworkErrorInner {
     Any(AnyError),
     Io(IoError),
     Wasi(NetErrorCode),
+}
+
+impl Debug for NetworkError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match &self.0 {
+            NetworkErrorInner::Any(v) => Debug::fmt(v, f),
+            NetworkErrorInner::Io(v) => Debug::fmt(v, f),
+            NetworkErrorInner::Wasi(v) => Debug::fmt(&WasiNetError(*v), f),
+        }
+    }
+}
+
+impl Display for NetworkError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match &self.0 {
+            NetworkErrorInner::Any(v) => Display::fmt(v, f),
+            NetworkErrorInner::Io(v) => Display::fmt(v, f),
+            NetworkErrorInner::Wasi(v) => Display::fmt(&WasiNetError(*v), f),
+        }
+    }
 }
 
 impl From<AnyError> for NetworkError {

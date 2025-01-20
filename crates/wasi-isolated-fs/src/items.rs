@@ -6,6 +6,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
+use tracing::{debug, error, instrument, Level};
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
@@ -42,10 +43,18 @@ impl Debug for Items {
 }
 
 macro_rules! item_def {
-    ($($oi:ident | $oir:ident ($($ot:ty),+ $(,)?) {$($ei:ident ($et:ty)),* $(,)?}),* $(,)?) => {
+    ($($oi:ident | $oir:ident ($($ot:ty),+ $(,)?) {$($ei:ident ($et:ty |$ev:ident| $ee:expr)),* $(,)?}),* $(,)?) => {
         #[non_exhaustive]
         pub enum Item {
             $($($ei($et),)*)*
+        }
+
+        impl Debug for Item {
+            fn fmt(&self, __f: &mut Formatter<'_>) -> FmtResult {
+                match self {
+                    $($(Self::$ei($ev) => { __f.debug_tuple(stringify!(Item::$ei)).field($ee).finish() },)*)*
+                }
+            }
         }
 
         $($(
@@ -124,6 +133,22 @@ macro_rules! item_def {
             }
         }
 
+        impl Debug for $oi<'_> {
+            fn fmt(&self, __f: &mut Formatter<'_>) -> FmtResult {
+                match self {
+                    $(Self::$ei($ev) => { __f.debug_tuple(stringify!($oi::$ei)).field($ee).finish() },)*
+                }
+            }
+        }
+
+        impl Debug for $oir<'_> {
+            fn fmt(&self, __f: &mut Formatter<'_>) -> FmtResult {
+                match self {
+                    $(Self::$ei($ev) => { __f.debug_tuple(stringify!($oir::$ei)).field($ee).finish() },)*
+                }
+            }
+        }
+
         $(
         impl ResItem for Resource<$ot> {
             type ItemOut<'a> = $oi<'a>;
@@ -161,55 +186,29 @@ macro_rules! item_def {
 
 item_def! {
     Desc | DescR(wasi::filesystem::types::Descriptor) {
-        IsoFSNode(Box<CapWrapper>),
-        HostFSDesc(Box<HostCapWrapper>),
+        IsoFSNode(Box<CapWrapper> |v| v),
+        HostFSDesc(Box<HostCapWrapper> |v| v),
     },
     IOStream | IOStreamR(wasi::io::streams::InputStream, wasi::io::streams::OutputStream) {
-        IsoFSAccess(Box<FileAccessor>),
-        HostFSStream(Box<FileStream>),
-        StdinSignal(Arc<StdinSignal>),
-        StdoutBp(Arc<StdoutBypass>),
-        StderrBp(Arc<StderrBypass>),
-        StdoutLBuf(Arc<StdoutCbLineBuffered>),
-        StdoutBBuf(Arc<StdoutCbBlockBuffered>),
-        BoxedRead(Box<dyn Send + Sync + Read>),
-        NullStdio(NullStdio),
+        IsoFSAccess(Box<FileAccessor> |v| v),
+        HostFSStream(Box<FileStream> |v| v),
+        StdinSignal(Arc<StdinSignal> |v| v),
+        StdoutBp(Arc<StdoutBypass> |v| v),
+        StderrBp(Arc<StderrBypass> |v| v),
+        StdoutLBuf(Arc<StdoutCbLineBuffered> |v| v),
+        StdoutBBuf(Arc<StdoutCbBlockBuffered> |v| v),
+        BoxedRead(Box<dyn Send + Sync + Read> |v| &(&**v as *const _)),
+        NullStdio(NullStdio |v| v),
     },
     Readdir | ReaddirR(wasi::filesystem::types::DirectoryEntryStream) {
-        IsoFSReaddir(Box<DirEntryAccessor>),
-        HostFSReaddir(Box<HostReadDir>),
+        IsoFSReaddir(Box<DirEntryAccessor> |v| v),
+        HostFSReaddir(Box<HostReadDir> |v| v),
     },
     Poll | PollR(wasi::io::poll::Pollable) {
-        NullPoll(NullPollable),
-        StdinPoll(StdinSignalPollable),
-        ClockPoll(Box<ClockPollable>),
+        NullPoll(NullPollable |v| v),
+        StdinPoll(StdinSignalPollable |v| v),
+        ClockPoll(Box<ClockPollable> |v| v),
     },
-}
-
-impl Debug for Item {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::IsoFSNode(v) => f.debug_tuple("Item::IsoFSNode").field(v).finish(),
-            Self::HostFSDesc(v) => f.debug_tuple("Item::HostFSDesc").field(v).finish(),
-            Self::IsoFSAccess(v) => f.debug_tuple("Item::IsoFSAccess").field(v).finish(),
-            Self::HostFSStream(v) => f.debug_tuple("Item::HostFSStream").field(v).finish(),
-            Self::StdinSignal(v) => f.debug_tuple("Item::StdinSignal").field(v).finish(),
-            Self::StdoutBp(v) => f.debug_tuple("Item::StdoutBp").field(v).finish(),
-            Self::StderrBp(v) => f.debug_tuple("Item::StderrBp").field(v).finish(),
-            Self::StdoutLBuf(v) => f.debug_tuple("Item::StdoutLBuf").field(v).finish(),
-            Self::StdoutBBuf(v) => f.debug_tuple("Item::StdoutBBuf").field(v).finish(),
-            Self::BoxedRead(v) => f
-                .debug_tuple("Item::BoxedRead")
-                .field(&(&**v as *const _))
-                .finish(),
-            Self::NullStdio(v) => f.debug_tuple("Item::NullStdio").field(v).finish(),
-            Self::IsoFSReaddir(v) => f.debug_tuple("Item::IsoFSReaddir").field(v).finish(),
-            Self::HostFSReaddir(v) => f.debug_tuple("Item::HostFSReaddir").field(v).finish(),
-            Self::NullPoll(v) => f.debug_tuple("Item::NullPoll").field(v).finish(),
-            Self::StdinPoll(v) => f.debug_tuple("Item::StdinPoll").field(v).finish(),
-            Self::ClockPoll(v) => f.debug_tuple("Item::ClockPoll").field(v).finish(),
-        }
-    }
 }
 
 impl<'t> MaybeBorrowMut<'t, Item> {
@@ -253,6 +252,7 @@ impl Items {
         }
     }
 
+    #[instrument(level = Level::TRACE, skip(self), ret)]
     pub(crate) fn remove(&mut self, i: usize) -> Option<Item> {
         let v = self.data.get_mut(i)?;
         match replace(v, MaybeItem::Empty(self.next)) {
@@ -267,6 +267,7 @@ impl Items {
         }
     }
 
+    #[instrument(level = Level::DEBUG, skip(self), ret)]
     pub(crate) fn insert(&mut self, v: Item) -> usize {
         if let Some(t) = self.data.get_mut(self.next) {
             let i = self.next;
@@ -299,9 +300,9 @@ impl Items {
     }
 }
 
-pub(crate) trait ResItem {
-    type ItemOut<'a>;
-    type ItemOutRef<'a>;
+pub(crate) trait ResItem: Debug {
+    type ItemOut<'a>: Debug;
+    type ItemOutRef<'a>: Debug;
 
     fn is_owned(&self) -> bool;
     fn id(&self) -> u32;
@@ -310,9 +311,9 @@ pub(crate) trait ResItem {
     fn from_item_mut(item: &mut Item) -> Option<Self::ItemOut<'_>>;
 }
 
-pub(crate) trait GetItem {
-    type Output<'a>;
-    type OutputRef<'a>;
+pub(crate) trait GetItem: Debug {
+    type Output<'a>: Debug;
+    type OutputRef<'a>: Debug;
 
     fn get_item(self, items: &mut Items) -> AnyResult<Self::Output<'_>>;
     fn get_item_ref<'a>(&self, items: &'a Items) -> AnyResult<Self::OutputRef<'a>>;
@@ -420,6 +421,7 @@ macro_rules! impl_getitem_tuple {
             type Output<'a> = ($($t::ItemOut<'a>,)+);
             type OutputRef<'a> = ($($t::ItemOutRef<'a>,)+);
 
+            #[instrument(level = Level::TRACE, skip(items))]
             #[allow(non_snake_case)]
             fn get_item(self, items: &mut Items) -> AnyResult<Self::Output<'_>> {
                 let mut errval = errors::InvalidResourceIDError::default();
@@ -429,27 +431,38 @@ macro_rules! impl_getitem_tuple {
                 {
                     let arr = [$($t.id()),+];
                     for (ix, &i) in arr.iter().enumerate() {
-                        for &j in &arr[ix + 1..] {
+                        for (ix2, &j) in arr[ix + 1..].iter().enumerate() {
                             if i == j {
+                                error!(id = i, ix1 = ix, ix2, "Found duplicate");
                                 errval.extend([i]);
                             }
                         }
                     }
                     if !errval.is_empty() {
+                        error!(res = ?($($t,)+), err = ?errval, "Found duplicates");
                         return Err(errval.into());
                     }
                 }
 
                 $(
-                // SAFETY: Slab remove does not move other elements.
-                let $t = unsafe {
-                    let ix = usize::try_from($t.id()).ok();
-                    let temp = if $t.is_owned() {
-                        ix.and_then(|i| items.remove(i)).and_then($t::from_item)
-                    } else {
-                        ix.and_then(|i| items.get_mut(i)).and_then(|v| $t::from_item_mut(&mut *(&raw mut *v)))
-                    };
+                let $t = {
+                    let temp = usize::try_from($t.id()).ok().and_then(|ix| {
+                        if $t.is_owned() {
+                            let v = items.remove(ix)?;
+                            debug!(ix, data = ?v, "Borrow mutable resource");
+                            $t::from_item(v)
+                        } else {
+                            let v = items.get_mut(ix)?;
+                            debug!(ix, data = ?v, "Move out resource");
+                            // SAFETY: Slab remove does not move other elements.
+                            #[allow(clippy::deref_addrof)]
+                            unsafe {
+                                $t::from_item_mut(&mut *(&raw mut *v))
+                            }
+                        }
+                    });
                     if temp.is_none() {
+                        error!(ix = $t.id(), "Resource not found");
                         errval.extend([$t.id()]);
                     }
                     temp
@@ -462,6 +475,7 @@ macro_rules! impl_getitem_tuple {
                 }
             }
 
+            #[instrument(level = Level::TRACE, skip(items))]
             #[allow(non_snake_case)]
             fn get_item_ref<'a>(&self, items: &'a Items) -> AnyResult<Self::OutputRef<'a>> {
                 let mut errval = errors::InvalidResourceIDError::default();
@@ -469,7 +483,11 @@ macro_rules! impl_getitem_tuple {
 
                 $(
                 let $t = {
-                    let temp = usize::try_from($t.id()).ok().and_then(|i| items.get(i)).and_then($t::from_item_ref);
+                    let temp = usize::try_from($t.id()).ok().and_then(|ix| {
+                        let v = items.get(ix)?;
+                        debug!(ix, data = ?v, "Borrow resource");
+                        $t::from_item_ref(v)
+                    });
                     if temp.is_none() {
                         errval.extend([$t.id()]);
                     }
@@ -483,6 +501,7 @@ macro_rules! impl_getitem_tuple {
                 }
             }
 
+            #[instrument(level = Level::TRACE, skip(items))]
             #[allow(non_snake_case)]
             fn maybe_unregister(self, items: &mut Items) {
                 let ($($t,)+) = self;
@@ -490,7 +509,8 @@ macro_rules! impl_getitem_tuple {
                 $(
                 if $t.is_owned() {
                     if let Ok(ix) = usize::try_from($t.id()) {
-                        items.remove(ix);
+                        let data = items.remove(ix);
+                        debug!(ix, ?data, "Unregister resource");
                     }
                 }
                 )+
@@ -507,49 +527,51 @@ macro_rules! impl_getitem_tuple {
 impl_getitem_tuple! {
     A, B, C, D,
     E, F, G, H,
-    I, J, K, L,
-    M, N, O, P,
-    Q, R, S, T,
-    U, V, W, X,
-    Y, Z, Aa, Ab,
-    Ac, Ad, Ae, Af
+    I, J, K, L
 }
 
 impl<T: ResItem + 'static> GetItem for Vec<T> {
     type Output<'a> = Vec<T::ItemOut<'a>>;
     type OutputRef<'a> = Vec<T::ItemOutRef<'a>>;
 
+    #[instrument(level = Level::TRACE, skip(items))]
     fn get_item(self, items: &mut Items) -> AnyResult<Self::Output<'_>> {
         let mut errval = errors::InvalidResourceIDError::default();
 
         // Check for duplicates.
         for (ix, i) in self.iter().enumerate() {
-            for j in &self[ix + 1..] {
+            for (ix2, j) in self[ix + 1..].iter().enumerate() {
                 if i.id() == j.id() {
+                    error!(id = i.id(), ix1 = ix, ix2, "Found duplicate");
                     errval.extend([i.id()]);
                 }
             }
         }
         if !errval.is_empty() {
+            error!(res = ?self, err = ?errval, "Found duplicates");
             return Err(errval.into());
         }
 
         let mut ret = Vec::with_capacity(self.len());
         for r in self.into_iter() {
-            let ix = usize::try_from(r.id()).ok();
-            let v = if r.is_owned() {
-                ix.and_then(|i| items.remove(i)).and_then(T::from_item)
-            } else {
-                ix.and_then(|i| items.get_mut(i)).and_then(|v| {
+            let v = usize::try_from(r.id()).ok().and_then(|ix| {
+                if r.is_owned() {
+                    let v = items.remove(ix)?;
+                    debug!(ix, data = ?v, "Borrow mutable resource");
+                    T::from_item(v)
+                } else {
+                    let v = items.get_mut(ix)?;
+                    debug!(ix, data = ?v, "Move out resource");
                     // SAFETY: Slab remove does not move other elements.
                     #[allow(clippy::deref_addrof)]
                     unsafe {
                         T::from_item_mut(&mut *(&raw mut *v))
                     }
-                })
-            };
+                }
+            });
 
             let Some(v) = v else {
+                error!(ix = r.id(), "Resource not found");
                 errval.extend([r.id()]);
                 continue;
             };
@@ -565,16 +587,19 @@ impl<T: ResItem + 'static> GetItem for Vec<T> {
         }
     }
 
+    #[instrument(level = Level::TRACE, skip(items))]
     fn get_item_ref<'a>(&self, items: &'a Items) -> AnyResult<Self::OutputRef<'a>> {
         let mut errval = errors::InvalidResourceIDError::default();
         let mut ret = Vec::with_capacity(self.len());
         for r in self.iter() {
-            let v = usize::try_from(r.id())
-                .ok()
-                .and_then(|i| items.get(i))
-                .and_then(T::from_item_ref);
+            let v = usize::try_from(r.id()).ok().and_then(|ix| {
+                let v = items.get(ix)?;
+                debug!(ix, data = ?v, "Borrow resource");
+                T::from_item_ref(v)
+            });
 
             let Some(v) = v else {
+                error!(ix = r.id(), "Resource not found");
                 errval.extend([r.id()]);
                 continue;
             };
@@ -590,11 +615,13 @@ impl<T: ResItem + 'static> GetItem for Vec<T> {
         }
     }
 
+    #[instrument(level = Level::TRACE, skip(items))]
     fn maybe_unregister(self, items: &mut Items) {
         for r in self.into_iter() {
             if r.is_owned() {
-                if let Ok(i) = usize::try_from(r.id()) {
-                    items.remove(i);
+                if let Ok(ix) = usize::try_from(r.id()) {
+                    let data = items.remove(ix);
+                    debug!(ix, ?data, "Unregister resource");
                 }
             }
         }
