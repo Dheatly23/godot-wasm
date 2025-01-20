@@ -22,7 +22,7 @@ memchr = { workspace = true }
 camino = { workspace = true }
 rand_xoshiro = { workspace = true }
 wiggle = { workspace = true }
-tracing = { workspace = true, optional = true }
+tracing = { workspace = true }
 
 [dependencies.wasmtime]
 workspace = true
@@ -49,8 +49,3 @@ windows-sys = "0.59"
 
 [dev-dependencies]
 proptest = { workspace = true }
-
-[features]
-tracing = [
-  "dep:tracing",
-]

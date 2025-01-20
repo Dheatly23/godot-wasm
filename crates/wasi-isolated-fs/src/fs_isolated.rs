@@ -13,6 +13,7 @@ use camino::{Utf8Component, Utf8Path};
 use cfg_if::cfg_if;
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 use smallvec::SmallVec;
+use tracing::instrument;
 
 use crate::bindings::wasi;
 use crate::errors;
@@ -1018,7 +1019,7 @@ impl CapWrapper {
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     #[inline(always)]
     pub fn new(node: Arc<Node>, access: AccessMode) -> Self {
         Self { node, access }
@@ -1034,14 +1035,14 @@ impl CapWrapper {
         &self.access
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn file_type(
         &self,
     ) -> Result<wasi::filesystem::types::DescriptorType, errors::StreamError> {
         Ok(self.node.file_type())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn file_flags(
         &self,
     ) -> Result<wasi::filesystem::types::DescriptorFlags, errors::StreamError> {
@@ -1058,7 +1059,7 @@ impl CapWrapper {
         Ok(flags)
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn stat(&self) -> Result<wasi::filesystem::types::DescriptorStat, errors::StreamError> {
         let (size, mtime, atime) = match &self.node.0 {
             NodeItem::File(v) => {
@@ -1088,12 +1089,12 @@ impl CapWrapper {
         })
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn is_same(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.node, &other.node)
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(hasher)))]
+    #[instrument(skip(hasher))]
     pub fn metadata_hash<H>(&self, hasher: &H) -> wasi::filesystem::types::MetadataHashValue
     where
         H: BuildHasher,
@@ -1135,7 +1136,7 @@ impl CapWrapper {
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(f)))]
+    #[instrument(skip(f))]
     pub fn set_time<E>(&self, f: impl FnOnce(&mut Timestamp) -> Result<(), E>) -> Result<(), E>
     where
         E: From<errors::StreamError>,
@@ -1147,7 +1148,7 @@ impl CapWrapper {
         f(&mut self.node.stamp())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn open_file(&self, mode: OpenMode) -> Result<FileAccessor, errors::StreamError> {
         if let OpenMode::Read(_) = mode {
             self.access.read_or_err()?
@@ -1166,7 +1167,7 @@ impl CapWrapper {
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(controller)))]
+    #[instrument(skip(controller))]
     pub fn open(
         &self,
         controller: &IsolatedFSController,
@@ -1240,7 +1241,7 @@ impl CapWrapper {
         Ok(Self::new(node, access))
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(controller)))]
+    #[instrument(skip(controller))]
     pub fn follow_symlink(
         mut self,
         controller: &IsolatedFSController,
@@ -1249,7 +1250,7 @@ impl CapWrapper {
         Ok(self)
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn read(&self, len: usize, off: usize) -> Result<Vec<u8>, errors::StreamError> {
         self.access.read_or_err()?;
 
@@ -1260,7 +1261,7 @@ impl CapWrapper {
         Ok(ret)
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(buf), fields(buf.len = buf.len())))]
+    #[instrument(skip(buf), fields(buf.len = buf.len()))]
     pub fn write(&self, buf: &[u8], off: usize) -> Result<(), errors::StreamError> {
         self.access.write_or_err()?;
 
@@ -1271,7 +1272,7 @@ impl CapWrapper {
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn resize(&self, size: usize) -> Result<(), errors::StreamError> {
         let mut v = self.node.file().ok_or(ErrorKind::IsADirectory)?;
         if v.len() != size {
@@ -1281,7 +1282,7 @@ impl CapWrapper {
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(controller, name), fields(name = ?name.as_ref())))]
+    #[instrument(skip(controller, name), fields(name = ?name.as_ref()))]
     pub fn create_dir(
         &self,
         controller: &IsolatedFSController,
@@ -1307,7 +1308,7 @@ impl CapWrapper {
         ))
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(controller, name), fields(name = ?name.as_ref())))]
+    #[instrument(skip(controller, name), fields(name = ?name.as_ref()))]
     pub fn create_file(
         &self,
         controller: &IsolatedFSController,
@@ -1333,7 +1334,7 @@ impl CapWrapper {
         ))
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(controller, name), fields(name = ?name.as_ref())))]
+    #[instrument(skip(controller, name), fields(name = ?name.as_ref()))]
     pub fn create_link(
         &self,
         controller: &IsolatedFSController,
@@ -1365,7 +1366,7 @@ impl CapWrapper {
         ))
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(dst_file), fields(dst_file = ?dst_file.as_ref())))]
+    #[instrument(skip(dst_file), fields(dst_file = ?dst_file.as_ref()))]
     pub fn move_file(
         &self,
         src: &Arc<Node>,
@@ -1400,7 +1401,7 @@ impl CapWrapper {
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn unlink(&self, file: &str, is_dir: bool) -> Result<(), errors::StreamError> {
         self.access.write_or_err()?;
 
@@ -1419,7 +1420,7 @@ impl CapWrapper {
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn read_directory(&self) -> Result<DirEntryAccessor, errors::StreamError> {
         self.access.read_or_err()?;
 
@@ -1433,7 +1434,7 @@ impl CapWrapper {
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument)]
+    #[instrument]
     pub fn read_link(&self) -> Result<String, errors::StreamError> {
         self.access.read_or_err()?;
 
@@ -1442,7 +1443,7 @@ impl CapWrapper {
         Ok(v.get())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(name), fields(name = ?name.as_ref())))]
+    #[instrument(skip(name), fields(name = ?name.as_ref()))]
     pub fn read_link_at(&self, name: impl AsRef<str>) -> Result<String, errors::StreamError> {
         self.access.read_or_err()?;
 
@@ -1479,6 +1480,7 @@ impl FileAccessor {
         &self.file
     }
 
+    #[instrument]
     pub fn read(&mut self, len: usize) -> Result<Vec<u8>, errors::StreamError> {
         if self.closed {
             return Err(errors::StreamError::closed());
@@ -1495,6 +1497,7 @@ impl FileAccessor {
         Ok(ret)
     }
 
+    #[instrument]
     pub fn skip(&mut self, len: usize) -> Result<usize, errors::StreamError> {
         if self.closed {
             return Err(errors::StreamError::closed());
@@ -1509,6 +1512,7 @@ impl FileAccessor {
         Ok(l)
     }
 
+    #[instrument(skip(buf), fields(buf.len = buf.len()))]
     pub fn write(&mut self, buf: &[u8]) -> Result<(), errors::StreamError> {
         if self.closed {
             return Err(errors::StreamError::closed());
@@ -1534,6 +1538,7 @@ impl FileAccessor {
         self.closed = true;
     }
 
+    #[instrument]
     pub fn poll(&self) -> AnyResult<Pollable> {
         Ok(Pollable::new())
     }
@@ -1548,6 +1553,7 @@ pub struct DirEntryAccessor {
 impl Iterator for DirEntryAccessor {
     type Item = Result<(Arc<str>, Arc<Node>), errors::StreamError>;
 
+    #[instrument]
     fn next(&mut self) -> Option<Self::Item> {
         let Some(d) = self.node.as_mut()?.dir() else {
             return Some(Err(ErrorKind::NotADirectory.into()));

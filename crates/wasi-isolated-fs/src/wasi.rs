@@ -12,6 +12,7 @@ use cap_std::fs::{Dir as CapDir, FileType, Metadata, OpenOptions};
 use fs_set_times::{SetTimes, SystemTimeSpec};
 use rand::prelude::*;
 use system_interface::fs::{Advice, FdFlags, FileIoExt, GetSetFdFlags};
+use tracing::instrument;
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
@@ -24,6 +25,7 @@ use crate::stdio::NullStdio;
 use crate::{errors, items, NullPollable, EMPTY_BUF};
 
 impl wasi::io::poll::HostPollable for WasiContext {
+    #[instrument(skip(self))]
     fn ready(&mut self, res: Resource<wasi::io::poll::Pollable>) -> AnyResult<bool> {
         Ok(match self.items.get_item(res)? {
             items::Poll::NullPoll(_) => true,
@@ -32,6 +34,7 @@ impl wasi::io::poll::HostPollable for WasiContext {
         })
     }
 
+    #[instrument(skip(self))]
     fn block(&mut self, res: Resource<wasi::io::poll::Pollable>) -> AnyResult<()> {
         match self.items.get_item(res)? {
             items::Poll::NullPoll(_) => (),
@@ -41,6 +44,7 @@ impl wasi::io::poll::HostPollable for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::io::poll::Pollable>) -> AnyResult<()> {
         self.items.get_item(res)?;
         Ok(())
@@ -48,6 +52,7 @@ impl wasi::io::poll::HostPollable for WasiContext {
 }
 
 impl wasi::io::poll::Host for WasiContext {
+    #[instrument(skip(self))]
     fn poll(&mut self, res: Vec<Resource<wasi::io::poll::Pollable>>) -> AnyResult<Vec<u32>> {
         let polls = self.items.get_item(res)?;
         match &*polls {
@@ -108,11 +113,13 @@ impl wasi::io::poll::Host for WasiContext {
 }
 
 impl wasi::io::error::HostError for WasiContext {
+    #[instrument(skip(self))]
     fn to_debug_string(&mut self, res: Resource<wasi::io::error::Error>) -> AnyResult<String> {
         // No way to construct stream error
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::io::error::Error>) -> AnyResult<()> {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
@@ -121,6 +128,7 @@ impl wasi::io::error::HostError for WasiContext {
 impl wasi::io::error::Host for WasiContext {}
 
 impl wasi::io::streams::HostInputStream for WasiContext {
+    #[instrument(skip(self))]
     fn read(
         &mut self,
         res: Resource<wasi::io::streams::InputStream>,
@@ -142,6 +150,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         })
     }
 
+    #[instrument(skip(self))]
     fn blocking_read(
         &mut self,
         res: Resource<wasi::io::streams::InputStream>,
@@ -163,6 +172,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         })
     }
 
+    #[instrument(skip(self))]
     fn skip(
         &mut self,
         res: Resource<wasi::io::streams::InputStream>,
@@ -179,6 +189,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         })
     }
 
+    #[instrument(skip(self))]
     fn blocking_skip(
         &mut self,
         res: Resource<wasi::io::streams::InputStream>,
@@ -195,6 +206,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         })
     }
 
+    #[instrument(skip(self))]
     fn subscribe(
         &mut self,
         res: Resource<wasi::io::streams::InputStream>,
@@ -210,6 +222,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         self.register(ret)
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::io::streams::InputStream>) -> AnyResult<()> {
         self.items.get_item(res)?;
         Ok(())
@@ -217,6 +230,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
 }
 
 impl wasi::io::streams::HostOutputStream for WasiContext {
+    #[instrument(skip(self))]
     fn check_write(
         &mut self,
         res: Resource<wasi::io::streams::OutputStream>,
@@ -233,6 +247,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         }
     }
 
+    #[instrument(skip(self, data), fields(data.len = data.len()))]
     fn write(
         &mut self,
         res: Resource<wasi::io::streams::OutputStream>,
@@ -251,6 +266,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self, data), fields(data.len = data.len()))]
     fn blocking_write_and_flush(
         &mut self,
         res: Resource<wasi::io::streams::OutputStream>,
@@ -281,6 +297,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn flush(
         &mut self,
         res: Resource<wasi::io::streams::OutputStream>,
@@ -288,6 +305,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         self.blocking_flush(res)
     }
 
+    #[instrument(skip(self))]
     fn blocking_flush(
         &mut self,
         res: Resource<wasi::io::streams::OutputStream>,
@@ -305,6 +323,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn subscribe(
         &mut self,
         res: Resource<wasi::io::streams::OutputStream>,
@@ -322,6 +341,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         self.register(ret)
     }
 
+    #[instrument(skip(self))]
     fn write_zeroes(
         &mut self,
         res: Resource<wasi::io::streams::OutputStream>,
@@ -345,6 +365,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn blocking_write_zeroes_and_flush(
         &mut self,
         res: Resource<wasi::io::streams::OutputStream>,
@@ -379,6 +400,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn splice(
         &mut self,
         output: Resource<wasi::io::streams::OutputStream>,
@@ -441,6 +463,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         Ok(n as u64)
     }
 
+    #[instrument(skip(self))]
     fn blocking_splice(
         &mut self,
         output: Resource<wasi::io::streams::OutputStream>,
@@ -501,6 +524,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         Ok(n as u64)
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::io::streams::OutputStream>) -> AnyResult<()> {
         self.items.get_item(res)?;
         Ok(())
@@ -508,6 +532,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
 }
 
 impl wasi::io::streams::Host for WasiContext {
+    #[instrument(level = tracing::Level::WARN, skip(self))]
     fn convert_stream_error(
         &mut self,
         e: errors::StreamError,
@@ -572,6 +597,7 @@ fn meta_to_stat(m: Metadata) -> wasi::filesystem::types::DescriptorStat {
 }
 
 impl WasiContext {
+    #[instrument(skip(self))]
     fn open_file<T: 'static>(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -586,6 +612,7 @@ impl WasiContext {
 }
 
 impl wasi::filesystem::types::HostDescriptor for WasiContext {
+    #[instrument(skip(self))]
     fn read_via_stream(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -594,6 +621,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         self.open_file(res, OpenMode::Read(off.try_into()?))
     }
 
+    #[instrument(skip(self))]
     fn write_via_stream(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -602,6 +630,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         self.open_file(res, OpenMode::Write(off.try_into()?))
     }
 
+    #[instrument(skip(self))]
     fn append_via_stream(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -609,6 +638,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         self.open_file(res, OpenMode::Append)
     }
 
+    #[instrument(skip(self))]
     fn advise(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -634,6 +664,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn sync_data(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -645,6 +676,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn get_flags(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -682,6 +714,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn get_type(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -695,6 +728,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn set_size(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -707,6 +741,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn set_times(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -732,6 +767,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn read(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -763,6 +799,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         })
     }
 
+    #[instrument(skip(self))]
     fn write(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -778,6 +815,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         })
     }
 
+    #[instrument(skip(self))]
     fn read_directory(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -789,6 +827,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(self.register(ret)?)
     }
 
+    #[instrument(skip(self))]
     fn sync(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -800,6 +839,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn create_directory_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -821,6 +861,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn stat(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -834,6 +875,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn stat_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -863,6 +905,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn set_times_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -900,13 +943,14 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn link_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
-        _: wasi::filesystem::types::PathFlags,
-        _: String,
-        _: Resource<wasi::filesystem::types::Descriptor>,
-        _: String,
+        _flags: wasi::filesystem::types::PathFlags,
+        _old_path: String,
+        _new: Resource<wasi::filesystem::types::Descriptor>,
+        _new_path: String,
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(_) | items::Desc::HostFSDesc(_) => {
@@ -915,6 +959,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn open_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -1018,6 +1063,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(self.register(ret)?)
     }
 
+    #[instrument(skip(self))]
     fn readlink_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -1043,6 +1089,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn remove_directory_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -1063,6 +1110,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn rename_at(
         &mut self,
         src: Resource<wasi::filesystem::types::Descriptor>,
@@ -1101,6 +1149,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn symlink_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -1124,6 +1173,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn unlink_file_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -1144,6 +1194,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(())
     }
 
+    #[instrument(skip(self))]
     fn is_same_object(
         &mut self,
         a: Resource<wasi::filesystem::types::Descriptor>,
@@ -1170,6 +1221,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         Ok(ret)
     }
 
+    #[instrument(skip(self))]
     fn metadata_hash(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -1180,6 +1232,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn metadata_hash_at(
         &mut self,
         res: Resource<wasi::filesystem::types::Descriptor>,
@@ -1204,6 +1257,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::filesystem::types::Descriptor>) -> AnyResult<()> {
         self.items.get_item(res)?;
         Ok(())
@@ -1211,6 +1265,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
 }
 
 impl wasi::filesystem::types::HostDirectoryEntryStream for WasiContext {
+    #[instrument(skip(self))]
     fn read_directory_entry(
         &mut self,
         res: Resource<wasi::filesystem::types::DirectoryEntryStream>,
@@ -1235,6 +1290,7 @@ impl wasi::filesystem::types::HostDirectoryEntryStream for WasiContext {
         .transpose()
     }
 
+    #[instrument(skip(self))]
     fn drop(
         &mut self,
         res: Resource<wasi::filesystem::types::DirectoryEntryStream>,
@@ -1245,6 +1301,7 @@ impl wasi::filesystem::types::HostDirectoryEntryStream for WasiContext {
 }
 
 impl wasi::filesystem::types::Host for WasiContext {
+    #[instrument(level = tracing::Level::WARN, skip(self))]
     fn filesystem_error_code(
         &mut self,
         res: Resource<wasi::filesystem::types::Error>,
@@ -1253,6 +1310,7 @@ impl wasi::filesystem::types::Host for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(level = tracing::Level::WARN, skip(self))]
     fn convert_error_code(
         &mut self,
         e: errors::StreamError,
@@ -1262,6 +1320,7 @@ impl wasi::filesystem::types::Host for WasiContext {
 }
 
 impl wasi::filesystem::preopens::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_directories(
         &mut self,
     ) -> AnyResult<Vec<(Resource<wasi::filesystem::preopens::Descriptor>, String)>> {
@@ -1282,14 +1341,17 @@ impl wasi::filesystem::preopens::Host for WasiContext {
 }
 
 impl wasi::clocks::monotonic_clock::Host for WasiContext {
+    #[instrument(skip(self))]
     fn now(&mut self) -> AnyResult<wasi::clocks::monotonic_clock::Instant> {
         Ok(self.clock.now())
     }
 
+    #[instrument(skip(self))]
     fn resolution(&mut self) -> AnyResult<wasi::clocks::monotonic_clock::Duration> {
         Ok(1000)
     }
 
+    #[instrument(skip(self))]
     fn subscribe_instant(
         &mut self,
         when: wasi::clocks::monotonic_clock::Instant,
@@ -1298,6 +1360,7 @@ impl wasi::clocks::monotonic_clock::Host for WasiContext {
         self.register(ret)
     }
 
+    #[instrument(skip(self))]
     fn subscribe_duration(
         &mut self,
         when: wasi::clocks::monotonic_clock::Duration,
@@ -1308,6 +1371,7 @@ impl wasi::clocks::monotonic_clock::Host for WasiContext {
 }
 
 impl wasi::clocks::wall_clock::Host for WasiContext {
+    #[instrument(skip(self))]
     fn now(&mut self) -> AnyResult<wasi::clocks::wall_clock::Datetime> {
         let t = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
@@ -1318,6 +1382,7 @@ impl wasi::clocks::wall_clock::Host for WasiContext {
         })
     }
 
+    #[instrument(skip(self))]
     fn resolution(&mut self) -> AnyResult<wasi::clocks::wall_clock::Datetime> {
         Ok(wasi::clocks::wall_clock::Datetime {
             seconds: 0,
@@ -1327,6 +1392,7 @@ impl wasi::clocks::wall_clock::Host for WasiContext {
 }
 
 impl wasi::clocks::timezone::Host for WasiContext {
+    #[instrument(skip(self))]
     fn display(
         &mut self,
         time: wasi::clocks::timezone::Datetime,
@@ -1334,42 +1400,49 @@ impl wasi::clocks::timezone::Host for WasiContext {
         self.clock_tz.display(time)
     }
 
+    #[instrument(skip(self))]
     fn utc_offset(&mut self, time: wasi::clocks::timezone::Datetime) -> AnyResult<i32> {
         self.clock_tz.utc_offset(time)
     }
 }
 
 impl wasi::random::insecure::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_insecure_random_bytes(&mut self, len: u64) -> AnyResult<Vec<u8>> {
         let mut ret = vec![0u8; len.try_into()?];
         self.insecure_rng.fill(&mut ret[..]);
         Ok(ret)
     }
 
+    #[instrument(skip(self))]
     fn get_insecure_random_u64(&mut self) -> AnyResult<u64> {
         Ok(self.insecure_rng.gen())
     }
 }
 
 impl wasi::random::insecure_seed::Host for WasiContext {
+    #[instrument(skip(self))]
     fn insecure_seed(&mut self) -> AnyResult<(u64, u64)> {
         Ok(self.insecure_rng.gen())
     }
 }
 
 impl wasi::random::random::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_random_bytes(&mut self, len: u64) -> AnyResult<Vec<u8>> {
         let mut ret = vec![0u8; len.try_into()?];
         self.secure_rng.fill(&mut ret[..]);
         Ok(ret)
     }
 
+    #[instrument(skip(self))]
     fn get_random_u64(&mut self) -> AnyResult<u64> {
         Ok(self.secure_rng.gen())
     }
 }
 
 impl wasi::sockets::network::HostNetwork for WasiContext {
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::sockets::network::Network>) -> AnyResult<()> {
         // No way to construct network connection
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
@@ -1377,6 +1450,7 @@ impl wasi::sockets::network::HostNetwork for WasiContext {
 }
 
 impl wasi::sockets::network::Host for WasiContext {
+    #[instrument(level = tracing::Level::WARN, skip(self))]
     fn network_error_code(
         &mut self,
         res: Resource<wasi::sockets::network::Error>,
@@ -1385,6 +1459,7 @@ impl wasi::sockets::network::Host for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(level = tracing::Level::WARN, skip(self))]
     fn convert_error_code(
         &mut self,
         e: errors::NetworkError,
@@ -1394,12 +1469,14 @@ impl wasi::sockets::network::Host for WasiContext {
 }
 
 impl wasi::sockets::instance_network::Host for WasiContext {
+    #[instrument(skip(self))]
     fn instance_network(&mut self) -> AnyResult<Resource<wasi::sockets::network::Network>> {
         Err(errors::NetworkUnsupportedError.into())
     }
 }
 
 impl wasi::sockets::ip_name_lookup::HostResolveAddressStream for WasiContext {
+    #[instrument(skip(self))]
     fn resolve_next_address(
         &mut self,
         res: Resource<wasi::sockets::ip_name_lookup::ResolveAddressStream>,
@@ -1408,6 +1485,7 @@ impl wasi::sockets::ip_name_lookup::HostResolveAddressStream for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn subscribe(
         &mut self,
         res: Resource<wasi::sockets::ip_name_lookup::ResolveAddressStream>,
@@ -1415,6 +1493,7 @@ impl wasi::sockets::ip_name_lookup::HostResolveAddressStream for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn drop(
         &mut self,
         res: Resource<wasi::sockets::ip_name_lookup::ResolveAddressStream>,
@@ -1424,10 +1503,11 @@ impl wasi::sockets::ip_name_lookup::HostResolveAddressStream for WasiContext {
 }
 
 impl wasi::sockets::ip_name_lookup::Host for WasiContext {
+    #[instrument(skip(self))]
     fn resolve_addresses(
         &mut self,
         res: Resource<wasi::sockets::network::Network>,
-        _: String,
+        _name: String,
     ) -> Result<Resource<wasi::sockets::ip_name_lookup::ResolveAddressStream>, errors::NetworkError>
     {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
@@ -1435,11 +1515,12 @@ impl wasi::sockets::ip_name_lookup::Host for WasiContext {
 }
 
 impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
+    #[instrument(skip(self))]
     fn start_bind(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
         network: Resource<wasi::sockets::network::Network>,
-        _: wasi::sockets::network::IpSocketAddress,
+        _local_address: wasi::sockets::network::IpSocketAddress,
     ) -> Result<(), errors::NetworkError> {
         // No way to construct TCP socket
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([
@@ -1449,6 +1530,7 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         .into())
     }
 
+    #[instrument(skip(self))]
     fn finish_bind(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1456,15 +1538,17 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn start_connect(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: Resource<wasi::sockets::network::Network>,
-        _: wasi::sockets::network::IpSocketAddress,
+        _network: Resource<wasi::sockets::network::Network>,
+        _remote_address: wasi::sockets::network::IpSocketAddress,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn finish_connect(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1478,6 +1562,7 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn start_listen(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1485,6 +1570,7 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn finish_listen(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1492,6 +1578,8 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
+    #[allow(clippy::type_complexity)]
     fn accept(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1506,6 +1594,7 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn local_address(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1513,6 +1602,7 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn remote_address(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1520,10 +1610,12 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn is_listening(&mut self, res: Resource<wasi::sockets::tcp::TcpSocket>) -> AnyResult<bool> {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn address_family(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1531,14 +1623,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn set_listen_backlog_size(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: u64,
+        _value: u64,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn keep_alive_enabled(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1546,14 +1640,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_keep_alive_enabled(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: bool,
+        _value: bool,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn keep_alive_idle_time(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1561,14 +1657,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_keep_alive_idle_time(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: wasi::clocks::monotonic_clock::Duration,
+        _value: wasi::clocks::monotonic_clock::Duration,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn keep_alive_interval(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1576,14 +1674,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_keep_alive_interval(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: wasi::clocks::monotonic_clock::Duration,
+        _value: wasi::clocks::monotonic_clock::Duration,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn keep_alive_count(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1591,14 +1691,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_keep_alive_count(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: u32,
+        _value: u32,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn hop_limit(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1606,14 +1708,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_hop_limit(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: u8,
+        _value: u8,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn receive_buffer_size(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1621,14 +1725,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_receive_buffer_size(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: u64,
+        _value: u64,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn send_buffer_size(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1636,14 +1742,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_send_buffer_size(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: u64,
+        _value: u64,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn subscribe(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
@@ -1651,14 +1759,16 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn shutdown(
         &mut self,
         res: Resource<wasi::sockets::tcp::TcpSocket>,
-        _: wasi::sockets::tcp::ShutdownType,
+        _shutdown_type: wasi::sockets::tcp::ShutdownType,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::sockets::tcp::TcpSocket>) -> AnyResult<()> {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
@@ -1667,11 +1777,12 @@ impl wasi::sockets::tcp::HostTcpSocket for WasiContext {
 impl wasi::sockets::tcp::Host for WasiContext {}
 
 impl wasi::sockets::udp::HostUdpSocket for WasiContext {
+    #[instrument(skip(self))]
     fn start_bind(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
         network: Resource<wasi::sockets::network::Network>,
-        _: wasi::sockets::network::IpSocketAddress,
+        _local_address: wasi::sockets::network::IpSocketAddress,
     ) -> Result<(), errors::NetworkError> {
         // No way to construct UDP socket
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([
@@ -1681,6 +1792,7 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         .into())
     }
 
+    #[instrument(skip(self))]
     fn finish_bind(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
@@ -1688,10 +1800,11 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn stream(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
-        _: Option<wasi::sockets::network::IpSocketAddress>,
+        _remote_address: Option<wasi::sockets::network::IpSocketAddress>,
     ) -> Result<
         (
             Resource<wasi::sockets::udp::IncomingDatagramStream>,
@@ -1702,6 +1815,7 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn local_address(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
@@ -1709,6 +1823,7 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn remote_address(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
@@ -1716,6 +1831,7 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn address_family(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
@@ -1723,6 +1839,7 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn unicast_hop_limit(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
@@ -1730,14 +1847,16 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_unicast_hop_limit(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
-        _: u8,
+        _value: u8,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn receive_buffer_size(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
@@ -1745,14 +1864,16 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_receive_buffer_size(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
-        _: u64,
+        _value: u64,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn send_buffer_size(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
@@ -1760,14 +1881,16 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn set_send_buffer_size(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
-        _: u64,
+        _value: u64,
     ) -> Result<(), errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn subscribe(
         &mut self,
         res: Resource<wasi::sockets::udp::UdpSocket>,
@@ -1775,21 +1898,24 @@ impl wasi::sockets::udp::HostUdpSocket for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::sockets::udp::UdpSocket>) -> AnyResult<()> {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 }
 
 impl wasi::sockets::udp::HostIncomingDatagramStream for WasiContext {
+    #[instrument(skip(self))]
     fn receive(
         &mut self,
         res: Resource<wasi::sockets::udp::IncomingDatagramStream>,
-        _: u64,
+        _max_results: u64,
     ) -> Result<Vec<wasi::sockets::udp::IncomingDatagram>, errors::NetworkError> {
         // No way to construct incoming datagram stream
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn subscribe(
         &mut self,
         res: Resource<wasi::sockets::udp::IncomingDatagramStream>,
@@ -1797,12 +1923,14 @@ impl wasi::sockets::udp::HostIncomingDatagramStream for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::sockets::udp::IncomingDatagramStream>) -> AnyResult<()> {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 }
 
 impl wasi::sockets::udp::HostOutgoingDatagramStream for WasiContext {
+    #[instrument(skip(self))]
     fn check_send(
         &mut self,
         res: Resource<wasi::sockets::udp::OutgoingDatagramStream>,
@@ -1811,14 +1939,16 @@ impl wasi::sockets::udp::HostOutgoingDatagramStream for WasiContext {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn send(
         &mut self,
         res: Resource<wasi::sockets::udp::OutgoingDatagramStream>,
-        _: Vec<wasi::sockets::udp::OutgoingDatagram>,
+        _datagrams: Vec<wasi::sockets::udp::OutgoingDatagram>,
     ) -> Result<u64, errors::NetworkError> {
         Err(AnyError::from(errors::InvalidResourceIDError::from_iter([res.rep()])).into())
     }
 
+    #[instrument(skip(self))]
     fn subscribe(
         &mut self,
         res: Resource<wasi::sockets::udp::OutgoingDatagramStream>,
@@ -1826,6 +1956,7 @@ impl wasi::sockets::udp::HostOutgoingDatagramStream for WasiContext {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
 
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::sockets::udp::OutgoingDatagramStream>) -> AnyResult<()> {
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
     }
@@ -1834,24 +1965,27 @@ impl wasi::sockets::udp::HostOutgoingDatagramStream for WasiContext {
 impl wasi::sockets::udp::Host for WasiContext {}
 
 impl wasi::sockets::tcp_create_socket::Host for WasiContext {
+    #[instrument(skip(self))]
     fn create_tcp_socket(
         &mut self,
-        _: wasi::sockets::network::IpAddressFamily,
+        _address_family: wasi::sockets::network::IpAddressFamily,
     ) -> Result<Resource<wasi::sockets::tcp::TcpSocket>, errors::NetworkError> {
         Err(AnyError::from(errors::NetworkUnsupportedError).into())
     }
 }
 
 impl wasi::sockets::udp_create_socket::Host for WasiContext {
+    #[instrument(skip(self))]
     fn create_udp_socket(
         &mut self,
-        _: wasi::sockets::network::IpAddressFamily,
+        _address_family: wasi::sockets::network::IpAddressFamily,
     ) -> Result<Resource<wasi::sockets::udp::UdpSocket>, errors::NetworkError> {
         Err(AnyError::from(errors::NetworkUnsupportedError).into())
     }
 }
 
 impl wasi::cli::stdin::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_stdin(&mut self) -> AnyResult<Resource<wasi::io::streams::InputStream>> {
         let ret: Item = match &mut self.stdin {
             None => NullStdio::default().into(),
@@ -1863,6 +1997,7 @@ impl wasi::cli::stdin::Host for WasiContext {
 }
 
 impl wasi::cli::stdout::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_stdout(&mut self) -> AnyResult<Resource<wasi::io::streams::OutputStream>> {
         let ret: Item = match &mut self.stdout {
             None => NullStdio::default().into(),
@@ -1875,6 +2010,7 @@ impl wasi::cli::stdout::Host for WasiContext {
 }
 
 impl wasi::cli::stderr::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_stderr(&mut self) -> AnyResult<Resource<wasi::io::streams::OutputStream>> {
         let ret: Item = match &mut self.stderr {
             None => NullStdio::default().into(),
@@ -1887,6 +2023,7 @@ impl wasi::cli::stderr::Host for WasiContext {
 }
 
 impl wasi::cli::terminal_input::HostTerminalInput for WasiContext {
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::cli::terminal_input::TerminalInput>) -> AnyResult<()> {
         // No way to construct terminal input
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
@@ -1896,6 +2033,7 @@ impl wasi::cli::terminal_input::HostTerminalInput for WasiContext {
 impl wasi::cli::terminal_input::Host for WasiContext {}
 
 impl wasi::cli::terminal_output::HostTerminalOutput for WasiContext {
+    #[instrument(skip(self))]
     fn drop(&mut self, res: Resource<wasi::cli::terminal_output::TerminalOutput>) -> AnyResult<()> {
         // No way to construct terminal output
         Err(errors::InvalidResourceIDError::from_iter([res.rep()]).into())
@@ -1905,6 +2043,7 @@ impl wasi::cli::terminal_output::HostTerminalOutput for WasiContext {
 impl wasi::cli::terminal_output::Host for WasiContext {}
 
 impl wasi::cli::terminal_stdin::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_terminal_stdin(
         &mut self,
     ) -> AnyResult<Option<Resource<wasi::cli::terminal_input::TerminalInput>>> {
@@ -1913,6 +2052,7 @@ impl wasi::cli::terminal_stdin::Host for WasiContext {
 }
 
 impl wasi::cli::terminal_stdout::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_terminal_stdout(
         &mut self,
     ) -> AnyResult<Option<Resource<wasi::cli::terminal_output::TerminalOutput>>> {
@@ -1921,6 +2061,7 @@ impl wasi::cli::terminal_stdout::Host for WasiContext {
 }
 
 impl wasi::cli::terminal_stderr::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_terminal_stderr(
         &mut self,
     ) -> AnyResult<Option<Resource<wasi::cli::terminal_output::TerminalOutput>>> {
@@ -1929,20 +2070,24 @@ impl wasi::cli::terminal_stderr::Host for WasiContext {
 }
 
 impl wasi::cli::environment::Host for WasiContext {
+    #[instrument(skip(self))]
     fn get_environment(&mut self) -> AnyResult<Vec<(String, String)>> {
         Ok(self.envs.clone())
     }
 
+    #[instrument(skip(self))]
     fn get_arguments(&mut self) -> AnyResult<Vec<String>> {
         Ok(self.args.clone())
     }
 
+    #[instrument(skip(self))]
     fn initial_cwd(&mut self) -> AnyResult<Option<String>> {
         Ok(Some(self.cwd.as_path().to_string()))
     }
 }
 
 impl wasi::cli::exit::Host for WasiContext {
+    #[instrument(skip(self))]
     fn exit(&mut self, status: Result<(), ()>) -> AnyResult<()> {
         match status {
             Ok(_) => Err(errors::ProcessExit::default().into()),
@@ -1950,6 +2095,7 @@ impl wasi::cli::exit::Host for WasiContext {
         }
     }
 
+    #[instrument(skip(self))]
     fn exit_with_code(&mut self, code: u8) -> AnyResult<()> {
         Err(errors::ProcessExit::new(code.into()).into())
     }

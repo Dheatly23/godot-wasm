@@ -15,13 +15,13 @@ mod wasm_instance;
 mod wasm_objregistry;
 mod wasm_util;
 
-#[cfg(feature = "tracing")]
+#[cfg(feature = "log")]
 use std::env::var_os;
-#[cfg(feature = "tracing")]
+#[cfg(feature = "log")]
 use std::path::PathBuf;
 
 use godot::prelude::*;
-#[cfg(feature = "tracing")]
+#[cfg(feature = "log")]
 use log4rs::init_file;
 
 // This is just a type tag without any functionality
@@ -35,7 +35,7 @@ unsafe impl ExtensionLibrary for GodotWasm {
 
     fn on_level_init(level: InitLevel) {
         if level == InitLevel::Servers {
-            #[cfg(feature = "tracing")]
+            #[cfg(feature = "log")]
             if let Some(v) = var_os("GODOT_WASM_LOG_CONFIG_FILE") {
                 init_file(PathBuf::from(v), Default::default()).unwrap();
             }

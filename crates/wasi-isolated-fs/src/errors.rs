@@ -528,8 +528,10 @@ impl StreamError {
     }
 }
 
+#[derive(Debug)]
 pub struct NetworkError(NetworkErrorInner);
 
+#[derive(Debug)]
 enum NetworkErrorInner {
     Any(AnyError),
     Io(IoError),

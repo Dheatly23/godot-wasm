@@ -14,6 +14,7 @@ use fs_set_times::SetTimes;
 use rand::Rng;
 use smallvec::SmallVec;
 use system_interface::fs::FileIoExt;
+use tracing::{debug, debug_span, info, instrument, warn};
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
 use crate::bindings::types::*;
@@ -21,7 +22,7 @@ use crate::context::{try_iso_fs, WasiContext};
 use crate::errors::StreamError;
 use crate::fs_host::Descriptor;
 use crate::fs_isolated::{AccessMode, CreateParams, NodeItem};
-use crate::EMPTY_BUF;
+use crate::{print_byte_array, EMPTY_BUF};
 
 #[derive(Default)]
 pub struct P1Items {
@@ -73,13 +74,16 @@ impl P1Items {
 
     pub fn register(&mut self, item: P1Item) -> Fd {
         let i = self.next_free();
+        let ret = Fd::from(i);
+        debug!(fd = ?ret, ?item, "Register descriptor");
         self.tree.insert(i, item);
-        i.into()
+        ret
     }
 
     pub fn unregister(&mut self, fd: Fd) -> Result<P1Item, StreamError> {
         let ix = u32::from(fd);
         let Some(ret) = self.tree.remove(&ix) else {
+            warn!(?fd, "Unregister nonexistent descriptor");
             return Err(Errno::Badf.into());
         };
         *if let Some(v) = self.buf.get_mut(self.ix as usize) {
@@ -89,21 +93,33 @@ impl P1Items {
             self.buf.copy_within(1.., 0);
             &mut self.buf[self.buf.len() - 1]
         } = ix;
+        debug!(?fd, item = ?ret, "Unegister descriptor");
         Ok(ret)
     }
 
     pub fn get(&self, fd: Fd) -> Result<&P1Item, StreamError> {
-        self.tree.get(&fd.into()).ok_or_else(|| Errno::Badf.into())
+        if let Some(item) = self.tree.get(&fd.into()) {
+            debug!(?fd, ?item, "Get descriptor");
+            Ok(item)
+        } else {
+            warn!(?fd, "Get nonexistent descriptor");
+            Err(Errno::Badf.into())
+        }
     }
 
     pub fn get_mut(&mut self, fd: Fd) -> Result<&mut P1Item, StreamError> {
-        self.tree
-            .get_mut(&fd.into())
-            .ok_or_else(|| Errno::Badf.into())
+        if let Some(item) = self.tree.get_mut(&fd.into()) {
+            debug!(?fd, ?item, "Get descriptor");
+            Ok(item)
+        } else {
+            warn!(?fd, "Get nonexistent descriptor");
+            Err(Errno::Badf.into())
+        }
     }
 
     pub fn rename(&mut self, src: Fd, dst: Fd) -> Result<(), StreamError> {
         let v = self.unregister(src)?;
+        debug!(fd = ?dst, item = ?v, "Re-register descriptor");
         self.tree.insert(dst.into(), v);
         Ok(())
     }
@@ -346,6 +362,7 @@ impl<'a, 'b> MemIO<'a, 'b, Iovec> {
         Ok(Self { mem, len, iov })
     }
 
+    #[instrument(level = tracing::Level::DEBUG, skip(self, t, f))]
     fn read<T>(
         self,
         mut t: T,
@@ -353,10 +370,11 @@ impl<'a, 'b> MemIO<'a, 'b, Iovec> {
     ) -> Result<Size, StreamError> {
         let Self { mem, mut len, iov } = self;
         if len == 0 {
+            info!("Nothing to read");
             return Ok(0);
         }
 
-        let mut iov = iov.into_iter();
+        let mut iov = iov.into_iter().inspect(|iov| debug!(?iov, "Iovec"));
         let mut n = 0;
         let Iovec {
             buf: mut p,
@@ -365,7 +383,11 @@ impl<'a, 'b> MemIO<'a, 'b, Iovec> {
             .next()
             .expect("IovecArray ran out before reading complete");
         while len > 0 {
-            let (s, mut l) = f(&mut t, len)?;
+            let (s, mut l) = {
+                let _s = debug_span!("Reading from file").entered();
+                f(&mut t, len)?
+            };
+            debug!(length = l, "Read from file");
             if l == 0 {
                 // EOF
                 break;
@@ -420,6 +442,7 @@ impl<'a, 'b> MemIO<'a, 'b, Iovec> {
             }
         }
 
+        info!(n, "Total read");
         Ok(n)
     }
 }
@@ -439,16 +462,23 @@ impl<'a, 'b> MemIO<'a, 'b, Ciovec> {
         Ok(Self { mem, len, iov })
     }
 
+    #[instrument(level = tracing::Level::DEBUG, skip(self, f))]
     fn write(
         self,
         mut f: impl FnMut(&[u8]) -> Result<Size, StreamError>,
     ) -> Result<Size, StreamError> {
         let Self { mem, iov, len } = self;
         if len == 0 {
+            info!("Nothing to write");
             return Ok(0);
         }
 
-        let Some(Ciovec { buf, buf_len }) = iov.into_iter().find(|v| v.buf_len > 0) else {
+        let Some(Ciovec { buf, buf_len }) = iov
+            .into_iter()
+            .inspect(|iov| debug!(?iov, "Ciovec"))
+            .find(|v| v.buf_len > 0)
+        else {
+            info!("Nothing to write");
             return Ok(0);
         };
 
@@ -463,14 +493,20 @@ impl<'a, 'b> MemIO<'a, 'b, Ciovec> {
                 .and_then(|v| v.get(..l))
                 .map(|v| unsafe { transmute::<&[UnsafeCell<u8>], &[u8]>(v) }),
         };
-        match src {
-            Some(src) => f(src),
-            None => Err(GuestError::PtrOutOfBounds(Region {
+        let Some(src) = src else {
+            return Err(GuestError::PtrOutOfBounds(Region {
                 start: buf,
                 len: buf_len,
             })
-            .into()),
-        }
+            .into());
+        };
+
+        let ret = {
+            let _s = debug_span!("Writing into file").entered();
+            f(src)?
+        };
+        debug!(length = ret, "Written into file");
+        Ok(ret)
     }
 }
 
@@ -655,14 +691,14 @@ where
 }
 
 impl crate::bindings::types::UserErrorConversion for WasiContext {
-    #[cfg_attr(feature = "tracing", tracing::instrument(level = tracing::Level::WARN, skip(self)))]
+    #[instrument(level = tracing::Level::WARN, skip(self))]
     fn errno_from_stream_error(&mut self, e: StreamError) -> Result<Errno, AnyError> {
         e.into()
     }
 }
 
 impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiContext {
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn args_get(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -683,7 +719,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn args_sizes_get(&mut self, _: &mut GuestMemory<'_>) -> Result<(Size, Size), StreamError> {
         let cnt = Size::try_from(self.args.len())?;
         let len = self
@@ -693,10 +729,11 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 a.checked_add(s.len().try_into().ok()?)?.checked_add(1)
             })
             .ok_or(Errno::Overflow)?;
+        info!(count = ?cnt, total_length = ?len, "Argument sizes");
         Ok((cnt, len))
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn environ_get(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -724,7 +761,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn environ_sizes_get(&mut self, _: &mut GuestMemory<'_>) -> Result<(Size, Size), StreamError> {
         let cnt = Size::try_from(self.envs.len())?;
         let len = self
@@ -736,10 +773,11 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     .checked_add(2)
             })
             .ok_or(Errno::Overflow)?;
+        info!(count = ?cnt, total_length = ?len, "Environment sizes");
         Ok((cnt, len))
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn clock_res_get(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -751,7 +789,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn clock_time_get(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -765,7 +803,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_advise(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -802,7 +840,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_allocate(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -814,13 +852,13 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Err(Errno::Notsup.into())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_close(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), StreamError> {
         self.p1_items.unregister(fd)?;
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_datasync(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), StreamError> {
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -836,7 +874,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_fdstat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Fdstat, StreamError> {
         Ok(match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -991,7 +1029,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         })
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_fdstat_set_flags(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1002,7 +1040,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Err(Errno::Notsup.into())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_fdstat_set_rights(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1014,7 +1052,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_filestat_get(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1048,7 +1086,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_filestat_set_size(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1069,7 +1107,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_filestat_set_times(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1107,7 +1145,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn fd_pread(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1152,7 +1190,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_prestat_get(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Prestat, StreamError> {
         if let FdItem::P1File(P1File {
             preopen: Some(s), ..
@@ -1166,7 +1204,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn fd_prestat_dir_name(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1178,6 +1216,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             preopen: Some(s), ..
         }) = self.p1_items.get_item(fd)?
         {
+            info!(name = s, "Preopen name");
             if s.len() > usize::try_from(path_len)? {
                 return Err(Errno::Nametoolong.into());
             }
@@ -1189,7 +1228,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn fd_pwrite(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1228,7 +1267,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn fd_read(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1314,7 +1353,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn fd_readdir(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1323,7 +1362,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         buf_len: Size,
         cookie: Dircookie,
     ) -> Result<Size, StreamError> {
-        fn write_dirent(buf: &mut [u8], d: Dirent) {
+        #[instrument(skip(buf, name), fields(name = %print_byte_array(name)))]
+        fn write_dirent(buf: &mut [u8], d: Dirent, name: &[u8]) {
             *buf[Dirent::offset_of_d_next() as usize..]
                 .split_first_chunk_mut()
                 .unwrap()
@@ -1337,6 +1377,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 .unwrap()
                 .0 = d.d_namlen.to_le_bytes();
             buf[Dirent::offset_of_d_type() as usize] = d.d_type.into();
+            buf[Dirent::guest_size() as usize..].copy_from_slice(name);
         }
 
         fn f<S: AsRef<str>>(
@@ -1383,8 +1424,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                         d_namlen: 1,
                         d_type: Filetype::Directory,
                     },
+                    b".",
                 );
-                b[entry_size] = b'.';
                 (i, buf) = (i + b.len(), r);
             }
 
@@ -1400,8 +1441,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                         d_namlen: 2,
                         d_type: Filetype::Directory,
                     },
+                    b"..",
                 );
-                b[entry_size..entry_size + 2].copy_from_slice(b"..");
                 (i, buf) = (i + b.len(), r);
             }
 
@@ -1428,8 +1469,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                         d_namlen: nl as _,
                         d_type: ft,
                     },
+                    name,
                 );
-                b[entry_size..].copy_from_slice(name);
                 (i, buf) = (i + b.len(), r);
             }
 
@@ -1476,12 +1517,12 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_renumber(&mut self, _: &mut GuestMemory<'_>, fd: Fd, to: Fd) -> Result<(), StreamError> {
         self.p1_items.rename(fd, to)
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_seek(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1522,7 +1563,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         })
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_sync(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<(), StreamError> {
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -1538,7 +1579,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn fd_tell(&mut self, _: &mut GuestMemory<'_>, fd: Fd) -> Result<Filesize, StreamError> {
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File { cursor: c, .. }) => Ok(c.unwrap_or(0) as _),
@@ -1546,7 +1587,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn fd_write(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1645,7 +1686,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_create_directory(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1653,6 +1694,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         path: GuestPtr<str>,
     ) -> Result<(), StreamError> {
         let path = mem.as_cow_str(path)?;
+        info!(%path, "Arguments");
 
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -1679,7 +1721,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_filestat_get(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1689,6 +1731,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<Filestat, StreamError> {
         let follow_symlink = flags.contains(Lookupflags::SYMLINK_FOLLOW);
         let path = mem.as_cow_str(path)?;
+        info!(%path, follow_symlink, "Arguments");
 
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -1719,7 +1762,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_filestat_set_times(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1732,6 +1775,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<(), StreamError> {
         let follow_symlink = flags.contains(Lookupflags::SYMLINK_FOLLOW);
         let path = mem.as_cow_str(path)?;
+        info!(%path, follow_symlink, "Arguments");
 
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -1779,7 +1823,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn path_link(
         &mut self,
         _: &mut GuestMemory<'_>,
@@ -1794,7 +1838,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Err(Errno::Notsup.into())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_open(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1821,6 +1865,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         let is_truncate = oflags.contains(Oflags::TRUNC);
         let append = fdflags.contains(Fdflags::APPEND);
         let path = mem.as_cow_str(path)?;
+        info!(%path, follow_symlink, ?access, create, exclusive, is_dir, is_truncate, append, "Arguments");
 
         if is_dir && is_truncate {
             return Err(Errno::Inval.into());
@@ -1913,7 +1958,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(self.p1_items.register(Box::new(ret).into()))
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_readlink(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1923,8 +1968,9 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         buf_len: Size,
     ) -> Result<Size, StreamError> {
         let path = mem.as_cow_str(path)?;
+        info!(%path, "Arguments");
 
-        let mut s = match self.p1_items.get_item(fd)? {
+        let s = match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
                 desc: P1Desc::IsoFS(v),
                 ..
@@ -1948,15 +1994,16 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 .into_string()
                 .map_err(|_| Errno::Inval)?,
             _ => return Err(Errno::Badf.into()),
-        }
-        .into_bytes();
+        };
+        info!(target = s, "Link read");
+        let mut s = s.into_bytes();
 
         s.truncate(buf_len.try_into().unwrap_or(usize::MAX));
         mem.copy_from_slice(&s, buf.as_array(buf_len))?;
         Ok(s.len() as _)
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_remove_directory(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1964,6 +2011,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         path: GuestPtr<str>,
     ) -> Result<(), StreamError> {
         let path = mem.as_cow_str(path)?;
+        info!(%path, "Arguments");
 
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -1987,7 +2035,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_rename(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -1998,6 +2046,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<(), StreamError> {
         let src_path = mem.as_cow_str(old_path)?;
         let dst_path = mem.as_cow_str(new_path)?;
+        info!(%src_path, %dst_path, "Arguments");
 
         match (
             self.p1_items.get_item_ref(fd)?,
@@ -2049,7 +2098,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_symlink(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2059,6 +2108,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<(), StreamError> {
         let path = mem.as_cow_str(old_path)?;
         let target = mem.as_cow_str(new_path)?;
+        info!(%path, %target, "Arguments");
 
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -2083,7 +2133,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn path_unlink_file(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2091,6 +2141,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         path: GuestPtr<str>,
     ) -> Result<(), StreamError> {
         let path = mem.as_cow_str(path)?;
+        info!(%path, "Arguments");
 
         match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -2114,7 +2165,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn poll_oneoff(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2252,22 +2303,22 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         Ok(0)
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn proc_exit(&mut self, _: &mut GuestMemory<'_>, rval: Exitcode) -> AnyError {
         crate::errors::ProcessExit::new(rval).into()
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
-    fn proc_raise(&mut self, _: &mut GuestMemory<'_>, _: Signal) -> Result<(), StreamError> {
+    #[instrument(skip(self))]
+    fn proc_raise(&mut self, _: &mut GuestMemory<'_>, _signal: Signal) -> Result<(), StreamError> {
         Err(Errno::Notsup.into())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn sched_yield(&mut self, _: &mut GuestMemory<'_>) -> Result<(), StreamError> {
         Ok(())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self, mem)))]
+    #[instrument(skip(self, mem))]
     fn random_get(
         &mut self,
         mem: &mut GuestMemory<'_>,
@@ -2300,44 +2351,44 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         }
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn sock_accept(
         &mut self,
         _: &mut GuestMemory<'_>,
-        _: Fd,
-        _: Fdflags,
+        _fd: Fd,
+        _flags: Fdflags,
     ) -> Result<Fd, StreamError> {
         Err(Errno::Notsock.into())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn sock_recv(
         &mut self,
         _: &mut GuestMemory<'_>,
-        _: Fd,
-        _: IovecArray,
-        _: Riflags,
+        _fd: Fd,
+        _iov: IovecArray,
+        _flags: Riflags,
     ) -> Result<(Size, Roflags), StreamError> {
         Err(Errno::Notsock.into())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn sock_send(
         &mut self,
         _: &mut GuestMemory<'_>,
-        _: Fd,
-        _: CiovecArray,
-        _: Siflags,
+        _fd: Fd,
+        _iov: CiovecArray,
+        _flags: Siflags,
     ) -> Result<Size, StreamError> {
         Err(Errno::Notsock.into())
     }
 
-    #[cfg_attr(feature = "tracing", tracing::instrument(skip(self)))]
+    #[instrument(skip(self))]
     fn sock_shutdown(
         &mut self,
         _: &mut GuestMemory<'_>,
-        _: Fd,
-        _: Sdflags,
+        _fd: Fd,
+        _flags: Sdflags,
     ) -> Result<(), StreamError> {
         Err(Errno::Notsock.into())
     }

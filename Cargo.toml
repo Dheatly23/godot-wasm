@@ -30,7 +30,7 @@ once_cell = { workspace = true }
 anyhow = { workspace = true }
 cfg-if = { workspace = true }
 parking_lot = { workspace = true }
-tracing = { workspace = true, optional = true, features = ["log"] }
+tracing = { workspace = true }
 slab = { workspace = true, optional = true }
 camino = { workspace = true, optional = true }
 rbitset = { version = "^0.3", optional = true }
@@ -93,10 +93,9 @@ godot-component = [
   "dep:smol_str",
   "component-model",
 ]
-tracing = [
+log = [
   "dep:log4rs",
-  "dep:tracing",
-  "wasi-isolated-fs/tracing",
+  "tracing/log",
 ]
 
 [workspace]
