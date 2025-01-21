@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::{Debug, Display, Error as FmtError, Formatter};
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::path::PathBuf;
 #[cfg(feature = "epoch-timeout")]
 use std::{thread, time};
@@ -11,6 +11,7 @@ use godot::classes::FileAccess;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
+use tracing::{debug, debug_span, error, info, info_span, instrument, Level};
 #[cfg(feature = "component-model")]
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
@@ -20,7 +21,7 @@ use crate::wasm_instance::WasmInstance;
 use crate::wasm_util::from_signature;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
-use crate::{bail_with_site, site_context, variant_dispatch};
+use crate::{bail_with_site, display_option, site_context, variant_dispatch};
 
 cfg_if! {
     if #[cfg(feature = "epoch-timeout")] {
@@ -32,16 +33,26 @@ cfg_if! {
 
 static ENGINE: RwLock<Option<EngineData>> = RwLock::new(None);
 
+#[instrument(level = Level::TRACE, err)]
 pub fn get_engine() -> Result<Engine, EngineUninitError> {
     cfg_if! {
         if #[cfg(feature = "epoch-timeout")] {
-            ENGINE.read().as_ref().map(|(e, _)| e.clone()).ok_or(EngineUninitError)
+            let ret = match ENGINE.try_read().as_deref() {
+                Some(Some((e, _))) => Some(e.clone()),
+                _ => None,
+            };
         } else {
-            ENGINE.read().clone().ok_or(EngineUninitError)
+            let ret = ENGINE.try_read().as_deref() {
+                Some(Some(e)) => Some(e.clone()),
+                _ => None,
+            };
         }
     }
+
+    ret.ok_or(EngineUninitError)
 }
 
+#[instrument]
 pub fn init_engine() {
     let mut guard = ENGINE.write();
     if guard.is_none() {
@@ -73,7 +84,14 @@ pub fn init_engine() {
             .wasm_component_model_more_flags(true)
             .wasm_component_model_multiple_returns(true);
 
-        let e = Engine::new(&config).unwrap();
+        info!(?config, "Engine configuration");
+        let e = match Engine::new(&config) {
+            Ok(v) => v,
+            Err(e) => {
+                error!(err = %e, "Failed to construct engine");
+                panic!("Failed to construct engine: {e}");
+            }
+        };
         cfg_if! {
             if #[cfg(feature = "epoch-timeout")] {
                 *guard = Some((e, None));
@@ -84,11 +102,13 @@ pub fn init_engine() {
     }
 }
 
+#[instrument]
 pub fn deinit_engine() {
     eprintln!("Deinitializing godot-wasm engine");
     cfg_if! {
         if #[cfg(feature = "epoch-timeout")] {
             if let Some((engine, Some(handle))) = ENGINE.write().take() {
+                let _s = info_span!("deinit_engine.epoch").entered();
                 // Make sure epoch will time out.
                 for _ in 0..100 {
                     engine.increment_epoch();
@@ -103,11 +123,14 @@ pub fn deinit_engine() {
 }
 
 #[cfg(feature = "epoch-timeout")]
-pub fn start_epoch() -> Result<(), EngineUninitError> {
+pub fn start_epoch() -> AnyResult<()> {
     let mut guard = ENGINE.write();
     let (_, handle) = guard.as_mut().ok_or(EngineUninitError)?;
     if handle.is_none() {
-        *handle = Some(thread::spawn(|| {
+        let _s = info_span!("start_epoch.thread").entered();
+        let builder = thread::Builder::new().name("epoch-aux".to_string());
+        *handle = Some(builder.spawn(|| {
+            let _s = info_span!("epoch").entered();
             let mut timeout = time::Instant::now();
             loop {
                 thread::sleep(
@@ -125,7 +148,7 @@ pub fn start_epoch() -> Result<(), EngineUninitError> {
                     timeout += EPOCH_INTERVAL;
                 }
             }
-        }));
+        })?);
     }
     Ok(())
 }
@@ -133,14 +156,14 @@ pub fn start_epoch() -> Result<(), EngineUninitError> {
 pub struct EngineUninitError;
 
 impl Debug for EngineUninitError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         write!(f, "engine is not yet initialized")
     }
 }
 
 impl Display for EngineUninitError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), FmtError> {
-        <Self as Debug>::fmt(self, f)
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Debug::fmt(self, f)
     }
 }
 
@@ -189,6 +212,12 @@ pub struct WasmModule {
     _bytes_data: OnceCell<PackedByteArray>,
 }
 
+impl Debug for WasmModule {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("WasmModule").field(&self.base).finish()
+    }
+}
+
 pub struct ModuleData {
     name: GString,
     pub module: ModuleType,
@@ -200,6 +229,16 @@ pub enum ModuleType {
     Core(Module),
     #[cfg(feature = "component-model")]
     Component(Component),
+}
+
+impl Debug for ModuleType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::Core(v) => f.debug_tuple("Core").field(v).finish(),
+            #[cfg(feature = "component-model")]
+            Self::Component(_) => f.debug_tuple("Component").finish_non_exhaustive(),
+        }
+    }
 }
 
 impl ModuleType {
@@ -253,6 +292,7 @@ impl WasmModule {
         }
     }
 
+    #[instrument(skip(bytes), fields(bytes.len = bytes.len()), ret)]
     fn load_module(bytes: &[u8]) -> AnyResult<ModuleType> {
         cfg_if! {
             if #[cfg(feature = "component-model")] {
@@ -274,6 +314,7 @@ impl WasmModule {
         }
     }
 
+    #[instrument(skip(imports), fields(imports = %display_option(&imports)), ret)]
     fn process_deps_map(
         module: &ModuleType,
         imports: Option<Dictionary>,
@@ -314,6 +355,7 @@ impl WasmModule {
         .map_or_else(GString::new, GString::from)
     }
 
+    #[instrument(skip(self, data, imports), ret(level = Level::DEBUG))]
     fn _initialize(&self, data: Variant, imports: Option<Dictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let module = variant_dispatch!(data {
@@ -346,6 +388,7 @@ impl WasmModule {
         }
     }
 
+    #[instrument(skip(self, data, imports), fields(data.len = data.len()), ret(level = Level::DEBUG))]
     fn _deserialize(&self, data: PackedByteArray, imports: Option<Dictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let engine = site_context!(get_engine())?;
@@ -380,6 +423,7 @@ impl WasmModule {
         }
     }
 
+    #[instrument(skip(self, imports), ret(level = Level::DEBUG))]
     fn _deserialize_file(&self, path: String, imports: Option<Dictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let engine = site_context!(get_engine())?;
@@ -440,6 +484,7 @@ impl WasmModule {
     ///   pass
     /// ```
     #[func]
+    #[instrument(level = Level::DEBUG, skip(data, imports))]
     fn initialize(&self, data: Variant, imports: Dictionary) -> Option<Gd<WasmModule>> {
         if self._initialize(data, Some(imports)) {
             Some(self.to_gd())
@@ -450,12 +495,14 @@ impl WasmModule {
 
     /// Gets the module name, if exists.
     #[func]
+    #[instrument(ret)]
     fn get_name(&self) -> GString {
         self.unwrap_data(|m| Ok(m.name.clone())).unwrap_or_default()
     }
 
     /// Returns `true` if module is a core module.
     #[func]
+    #[instrument(ret)]
     fn get_is_core_module(&self) -> bool {
         self.unwrap_data(|m| Ok(matches!(m.module, ModuleType::Core(_))))
             .unwrap_or_default()
@@ -463,6 +510,7 @@ impl WasmModule {
 
     /// Returns `true` if module is a component.
     #[func]
+    #[instrument(ret)]
     fn get_is_component(&self) -> bool {
         cfg_if! {
             if #[cfg(feature = "wasi-preview2")] {
@@ -475,6 +523,7 @@ impl WasmModule {
 
     /// Gets all the module it imported.
     #[func]
+    #[instrument]
     fn get_imported_modules(&self) -> VariantArray {
         self.unwrap_data(|m| {
             Ok(VariantArray::from_iter(
@@ -488,6 +537,7 @@ impl WasmModule {
     ///
     /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
+    #[instrument(level = Level::DEBUG, skip(data, imports))]
     fn deserialize(&self, data: PackedByteArray, imports: Dictionary) -> Option<Gd<WasmModule>> {
         if self._deserialize(data, Some(imports)) {
             Some(self.to_gd())
@@ -500,6 +550,7 @@ impl WasmModule {
     ///
     /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
+    #[instrument(level = Level::DEBUG, skip(imports))]
     fn deserialize_file(&self, path: GString, imports: Dictionary) -> Option<Gd<WasmModule>> {
         if self._deserialize_file(path.to_string(), Some(imports)) {
             Some(self.to_gd())
@@ -512,6 +563,7 @@ impl WasmModule {
     ///
     /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
+    #[instrument(level = Level::DEBUG, skip(data))]
     fn deserialize_bytes(&self, data: PackedByteArray) {
         if self._deserialize(data.clone(), None) {
             let _ = self._bytes_data.set(data);
@@ -524,13 +576,19 @@ impl WasmModule {
     /// But the data can only be deserialized with the same godot-wasm binary.
     /// Whenever you upgrade module, make sure to reimport all `WasmModule`.
     #[func]
+    #[instrument]
     fn serialize(&self) -> PackedByteArray {
         self._bytes_data
             .get_or_try_init(|| {
-                self.unwrap_data(|m| match &m.module {
-                    ModuleType::Core(m) => m.serialize(),
-                    #[cfg(feature = "component-model")]
-                    ModuleType::Component(m) => m.serialize(),
+                self.unwrap_data(|m| {
+                    let _s = debug_span!("serialize.inner").entered();
+                    let r = match &m.module {
+                        ModuleType::Core(m) => m.serialize(),
+                        #[cfg(feature = "component-model")]
+                        ModuleType::Component(m) => m.serialize(),
+                    }?;
+                    info!(len = r.len(), "Serialization success");
+                    Ok(r)
                 })
                 .map(PackedByteArray::from)
                 .ok_or(())
@@ -546,21 +604,26 @@ impl WasmModule {
     /// - `params` : Array of parameter types.
     /// - `results` : Array of result types.
     #[func]
+    #[instrument]
     fn get_exports(&self) -> Dictionary {
         self.unwrap_data(|m| {
+            let _s = debug_span!("get_exports.inner").entered();
             let mut ret = Dictionary::new();
             let params_str = StringName::from(c"params");
             let results_str = StringName::from(c"results");
             for i in site_context!(m.module.get_core())?.exports() {
-                if let ExternType::Func(f) = i.ty() {
-                    let (p, r) = from_signature(&f);
-                    ret.set(
-                        i.name(),
-                        [(params_str.clone(), p), (results_str.clone(), r)]
-                            .into_iter()
-                            .collect::<Dictionary>(),
-                    );
-                }
+                let ExternType::Func(f) = i.ty() else {
+                    continue;
+                };
+                debug!(name = i.name(), "type" = %f, "Exported function");
+
+                let (p, r) = from_signature(&f);
+                ret.set(
+                    i.name(),
+                    [(params_str.clone(), p), (results_str.clone(), r)]
+                        .into_iter()
+                        .collect::<Dictionary>(),
+                );
             }
             Ok(ret)
         })
@@ -574,8 +637,10 @@ impl WasmModule {
     /// - `params` : Array of parameter types.
     /// - `results` : Array of result types.
     #[func]
+    #[instrument]
     fn get_host_imports(&self) -> Dictionary {
         self.unwrap_data(|m| {
+            let _s = debug_span!("get_host_imports.inner").entered();
             let mut ret = Dictionary::new();
             let params_str = StringName::from(c"params");
             let results_str = StringName::from(c"results");
@@ -587,7 +652,10 @@ impl WasmModule {
 
                 if let Some(m) = m.imports.get(i.module()) {
                     match &m.bind().get_data()?.module {
-                        ModuleType::Core(m) if m.get_export(i.name()).is_some() => continue,
+                        ModuleType::Core(v) if v.get_export(i.name()).is_some() => {
+                            debug!(module = ?m, name = i.name(), "type" = %f, "Imported function bound to another module");
+                            continue;
+                        }
                         #[cfg(feature = "component-model")]
                         ModuleType::Component(_) => {
                             bail_with_site!("Import {} is a component", i.module())
@@ -596,6 +664,7 @@ impl WasmModule {
                     }
                 }
 
+                debug!(name = i.name(), "type" = %f, "Imported function");
                 let (p, r) = from_signature(&f);
                 let mut v = match ret.get(i.module()) {
                     Some(v) => Dictionary::from_variant(&v),
@@ -620,6 +689,7 @@ impl WasmModule {
 
     /// Returns `true` if exported function extsts.
     #[func]
+    #[instrument(ret)]
     fn has_function(&self, name: StringName) -> bool {
         self.unwrap_data(|m| {
             Ok(matches!(
@@ -632,13 +702,16 @@ impl WasmModule {
 
     /// Gets the signature of exported function.
     #[func]
+    #[instrument]
     fn get_signature(&self, name: StringName) -> Dictionary {
         self.unwrap_data(|m| {
+            let _s = debug_span!("get_signature.inner").entered();
             let Some(ExternType::Func(f)) =
                 site_context!(m.module.get_core())?.get_export(&name.to_string())
             else {
                 bail_with_site!("No function named {}", name);
             };
+            debug!(signature = %f);
 
             let (p, r) = from_signature(&f);
             Ok([
@@ -655,8 +728,10 @@ impl WasmModule {
     ///
     /// You can use this for minimal checks against resource exhaustion.
     #[func]
+    #[instrument(ret)]
     fn get_resources_required(&self) -> Variant {
         self.unwrap_data(|m| {
+            let _s = debug_span!("get_resources_required.inner").entered();
             let v = match &m.module {
                 ModuleType::Core(m) => Some(m.resources_required()),
                 #[cfg(feature = "component-model")]
@@ -695,35 +770,42 @@ impl WasmModule {
     ///
     /// You can use this for minimal checks against resource exhaustion.
     #[func]
+    #[instrument(ret)]
     fn get_total_resources_required(&self) -> Variant {
-        fn f(module: &ModuleData) -> Option<ResourcesRequired> {
+        #[instrument(level = Level::DEBUG, skip(module), fields(?module.module))]
+        fn get_res_module(module: &ModuleData) -> Option<ResourcesRequired> {
             match &module.module {
                 ModuleType::Core(m) => Some(m.resources_required()),
                 #[cfg(feature = "component-model")]
                 ModuleType::Component(m) => m.resources_required(),
             }
             .into_iter()
-            .chain(
-                module
-                    .imports
-                    .values()
-                    .flat_map(|m| m.bind().unwrap_data(|m| Ok(f(m))).flatten()),
-            )
+            .chain(module.imports.values().filter_map(|m| {
+                debug!(module = ?m, "Recurse into module");
+                m.bind().unwrap_data(|m| Ok(get_res_module(m))).flatten()
+            }))
             .reduce(|a, b| ResourcesRequired {
                 num_memories: a.num_memories + b.num_memories,
                 num_tables: a.num_tables + b.num_tables,
                 max_initial_memory_size: a.max_initial_memory_size.max(b.max_initial_memory_size),
                 max_initial_table_size: a.max_initial_table_size.max(b.max_initial_table_size),
             })
+            .inspect(|ret| {
+                debug!(
+                    ret.num_memories,
+                    ret.num_tables, ret.max_initial_memory_size, ret.max_initial_table_size
+                )
+            })
         }
 
         self.unwrap_data(|m| {
+            let _s = debug_span!("get_total_resources_required.inner").entered();
             let Some(ResourcesRequired {
                 num_memories,
                 max_initial_memory_size,
                 num_tables,
                 max_initial_table_size,
-            }) = f(m)
+            }) = get_res_module(m)
             else {
                 return Ok(Variant::nil());
             };

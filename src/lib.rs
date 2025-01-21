@@ -17,6 +17,7 @@ mod wasm_util;
 
 #[cfg(feature = "log")]
 use std::env::var_os;
+use std::fmt::{Display, Formatter, Result as FmtResult};
 #[cfg(feature = "log")]
 use std::path::PathBuf;
 
@@ -48,4 +49,19 @@ unsafe impl ExtensionLibrary for GodotWasm {
             wasm_engine::deinit_engine();
         }
     }
+}
+
+fn display_option<T: Display>(v: &Option<T>) -> impl '_ + Display {
+    struct Wrapper<'a, T: Display>(&'a Option<T>);
+
+    impl<T: Display> Display for Wrapper<'_, T> {
+        fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+            match self.0 {
+                None => write!(f, "None"),
+                Some(v) => write!(f, "Some({v})"),
+            }
+        }
+    }
+
+    Wrapper(v)
 }

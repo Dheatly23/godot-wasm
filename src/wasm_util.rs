@@ -71,7 +71,7 @@ macro_rules! bail_with_site {
         /*
         return Err(anyhow::anyhow!($($t)*).context(gdnative::log::godot_site!()))
         */
-        return Err(anyhow::anyhow!($($t)*))
+        return Err(anyhow::anyhow!($($t)*)).inspect_err(|err| tracing::error!(%err, "Error happened"))
     };
 }
 
@@ -83,7 +83,10 @@ macro_rules! site_context {
             $crate::wasm_util::add_site(anyhow::Error::from(e), gdnative::log::godot_site!())
         })
         */
-        $e.map_err(anyhow::Error::from)
+        $e.map_err(|err| {
+            tracing::error!(%err, "Error happened");
+            anyhow::Error::from(err)
+        })
     };
 }
 
