@@ -1,9 +1,10 @@
-[gd_scene load_steps=6 format=3 uid="uid://dq6gab2nu3kvo"]
+[gd_scene load_steps=7 format=3 uid="uid://dq6gab2nu3kvo"]
 
 [ext_resource type="Theme" uid="uid://cia5aaiffmela" path="res://theme/default.tres" id="1"]
 [ext_resource type="Texture2D" uid="uid://bake8e7jtbpja" path="res://img/Icons.png" id="2"]
 [ext_resource type="Script" path="res://script/RunWasi.gd" id="3"]
 [ext_resource type="Texture2D" uid="uid://gmokf31hyerq" path="res://img/Setting.png" id="4"]
+[ext_resource type="PackedScene" uid="uid://bsda8lsvhgmsf" path="res://scene/ConfigDialog.tscn" id="5_u571d"]
 
 [sub_resource type="AtlasTexture" id="1"]
 atlas = ExtResource("2")
@@ -108,6 +109,12 @@ layout_mode = 2
 icon = ExtResource("4")
 expand_icon = true
 
+[node name="UseP2" type="Button" parent="Center/Panel/Margin/VBox/HBox"]
+custom_minimum_size = Vector2(15, 15)
+layout_mode = 2
+tooltip_text = "Use WASI Preview 2"
+toggle_mode = true
+
 [node name="Execute" type="Button" parent="Center/Panel/Margin/VBox"]
 layout_mode = 2
 text = "Execute"
@@ -124,8 +131,9 @@ color = Color(0, 0, 0, 0.752941)
 
 [node name="ExecFileDialog" type="FileDialog" parent="."]
 canvas_item_default_texture_filter = 0
+title = "Select WASM File"
 position = Vector2i(0, 36)
-size = Vector2i(326, 157)
+size = Vector2i(326, 175)
 ok_button_text = "Open"
 mode_overrides_title = false
 file_mode = 0
@@ -147,200 +155,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 0
 
-[node name="ArgEnvDialog" type="Window" parent="."]
-canvas_item_default_texture_filter = 0
-title = "Arguments & Environment Variables"
-position = Vector2i(0, 18)
-size = Vector2i(300, 200)
-visible = false
-transient = true
-exclusive = true
-
-[node name="Panel" type="PanelContainer" parent="ArgEnvDialog"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Margin" type="MarginContainer" parent="ArgEnvDialog/Panel"]
-layout_mode = 2
-theme_override_constants/margin_left = 2
-theme_override_constants/margin_top = 2
-theme_override_constants/margin_right = 2
-theme_override_constants/margin_bottom = 2
-
-[node name="Tabs" type="TabContainer" parent="ArgEnvDialog/Panel/Margin"]
-layout_mode = 2
-
-[node name="Arguments" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Args" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments"]
-layout_mode = 2
-size_flags_vertical = 3
-allow_reselect = true
-
-[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments"]
-layout_mode = 2
-
-[node name="Add" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments/HBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-text = "Add"
-
-[node name="Remove" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Arguments/HBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-text = "Remove"
-
-[node name="Environment Variables" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs"]
-visible = false
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="Envs" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables"]
-layout_mode = 2
-size_flags_vertical = 3
-allow_reselect = true
-
-[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables"]
-layout_mode = 2
-
-[node name="Add" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/HBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-text = "Add"
-
-[node name="Remove" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/HBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-text = "Remove"
-
-[node name="Mounts" type="VBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs"]
-visible = false
-layout_mode = 2
-
-[node name="Mounts" type="ItemList" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="HBox" type="HBoxContainer" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts"]
-layout_mode = 2
-
-[node name="Add" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts/HBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Add"
-
-[node name="Remove" type="Button" parent="ArgEnvDialog/Panel/Margin/Tabs/Mounts/HBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "Remove"
-
-[node name="Overlay2" type="ColorRect" parent="ArgEnvDialog"]
-visible = false
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-color = Color(0, 0, 0, 0.752941)
-
-[node name="ArgDialog" type="ConfirmationDialog" parent="ArgEnvDialog"]
-canvas_item_default_texture_filter = 0
-
-[node name="ArgTxt" type="TextEdit" parent="ArgEnvDialog/ArgDialog"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-highlight_current_line = true
-
-[node name="EnvDialog" type="ConfirmationDialog" parent="ArgEnvDialog"]
-canvas_item_default_texture_filter = 0
-
-[node name="Grid" type="GridContainer" parent="ArgEnvDialog/EnvDialog"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 3.0
-offset_top = 3.0
-offset_right = -3.0
-offset_bottom = -28.0
-columns = 2
-
-[node name="KeyLbl" type="Label" parent="ArgEnvDialog/EnvDialog/Grid"]
-layout_mode = 2
-text = "Key :"
-
-[node name="KeyTxt" type="LineEdit" parent="ArgEnvDialog/EnvDialog/Grid"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="ValLbl" type="Label" parent="ArgEnvDialog/EnvDialog/Grid"]
-layout_mode = 2
-size_flags_vertical = 0
-text = "Value :"
-
-[node name="ValTxt" type="TextEdit" parent="ArgEnvDialog/EnvDialog/Grid"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 3
-highlight_current_line = true
-
-[node name="MountDialog" type="ConfirmationDialog" parent="ArgEnvDialog"]
-canvas_item_default_texture_filter = 0
-
-[node name="Grid" type="GridContainer" parent="ArgEnvDialog/MountDialog"]
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = 3.0
-offset_top = 3.0
-offset_right = -3.0
-offset_bottom = -28.0
-grow_horizontal = 2
-grow_vertical = 2
-columns = 3
-
-[node name="HostLbl" type="Label" parent="ArgEnvDialog/MountDialog/Grid"]
-layout_mode = 2
-text = "Host :"
-
-[node name="HostTxt" type="LineEdit" parent="ArgEnvDialog/MountDialog/Grid"]
-layout_mode = 2
-size_flags_horizontal = 3
-placeholder_text = "Host Absolute Path"
-
-[node name="FileBtn" type="Button" parent="ArgEnvDialog/MountDialog/Grid"]
-custom_minimum_size = Vector2(15, 15)
-layout_mode = 2
-icon = SubResource("1")
-expand_icon = true
-
-[node name="GuestLbl" type="Label" parent="ArgEnvDialog/MountDialog/Grid"]
-layout_mode = 2
-text = "Guest :"
-
-[node name="GuestTxt" type="LineEdit" parent="ArgEnvDialog/MountDialog/Grid"]
-layout_mode = 2
-size_flags_horizontal = 3
-placeholder_text = "Guest Absolute Path"
-
-[node name="MountFileDialog" type="FileDialog" parent="ArgEnvDialog/MountDialog"]
-canvas_item_default_texture_filter = 0
-title = "Open a Directory"
-ok_button_text = "Select Current Folder"
-mode_overrides_title = false
-file_mode = 2
-access = 2
+[node name="ConfigDialog" parent="." instance=ExtResource("5_u571d")]
 
 [connection signal="pressed" from="Center/Panel/Margin/VBox/FileEdit/VBox/HBoxContainer/SaveButon" to="." method="__save_file"]
 [connection signal="item_activated" from="Center/Panel/Margin/VBox/FileEdit/VBox2/FileTree" to="." method="__open_file"]
@@ -355,36 +170,12 @@ access = 2
 [connection signal="close_requested" from="ExecFileDialog" to="Overlay" method="hide"]
 [connection signal="confirmed" from="ExecFileDialog" to="Overlay" method="hide"]
 [connection signal="file_selected" from="ExecFileDialog" to="." method="__select_exec_file"]
+[connection signal="file_selected" from="ExecFileDialog" to="Overlay" method="hide" unbinds=1]
 [connection signal="about_to_popup" from="FileNameDialog" to="Overlay" method="show"]
 [connection signal="canceled" from="FileNameDialog" to="Overlay" method="hide"]
 [connection signal="close_requested" from="FileNameDialog" to="Overlay" method="hide"]
 [connection signal="confirmed" from="FileNameDialog" to="." method="__create_file"]
 [connection signal="confirmed" from="FileNameDialog" to="Overlay" method="hide"]
-[connection signal="about_to_popup" from="ArgEnvDialog" to="Overlay" method="show"]
-[connection signal="close_requested" from="ArgEnvDialog" to="Overlay" method="hide"]
-[connection signal="close_requested" from="ArgEnvDialog" to="ArgEnvDialog" method="hide"]
-[connection signal="item_activated" from="ArgEnvDialog/Panel/Margin/Tabs/Arguments/Args" to="." method="__edit_argument"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Arguments/HBox/Add" to="." method="__add_argument"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Arguments/HBox/Remove" to="." method="__delete_argument"]
-[connection signal="item_activated" from="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/Envs" to="." method="__edit_environment"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/HBox/Add" to="." method="__add_environment"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Environment Variables/HBox/Remove" to="." method="__delete_environment"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Mounts/HBox/Add" to="." method="__add_mount"]
-[connection signal="pressed" from="ArgEnvDialog/Panel/Margin/Tabs/Mounts/HBox/Remove" to="." method="__delete_mount"]
-[connection signal="about_to_popup" from="ArgEnvDialog/ArgDialog" to="ArgEnvDialog/Overlay2" method="show"]
-[connection signal="canceled" from="ArgEnvDialog/ArgDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="close_requested" from="ArgEnvDialog/ArgDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="confirmed" from="ArgEnvDialog/ArgDialog" to="." method="__edited_argument"]
-[connection signal="confirmed" from="ArgEnvDialog/ArgDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="about_to_popup" from="ArgEnvDialog/EnvDialog" to="ArgEnvDialog/Overlay2" method="show"]
-[connection signal="canceled" from="ArgEnvDialog/EnvDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="close_requested" from="ArgEnvDialog/EnvDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="confirmed" from="ArgEnvDialog/EnvDialog" to="." method="__edited_environment"]
-[connection signal="confirmed" from="ArgEnvDialog/EnvDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="about_to_popup" from="ArgEnvDialog/MountDialog" to="ArgEnvDialog/Overlay2" method="show"]
-[connection signal="canceled" from="ArgEnvDialog/MountDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="close_requested" from="ArgEnvDialog/MountDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="confirmed" from="ArgEnvDialog/MountDialog" to="." method="__added_mount"]
-[connection signal="confirmed" from="ArgEnvDialog/MountDialog" to="ArgEnvDialog/Overlay2" method="hide"]
-[connection signal="pressed" from="ArgEnvDialog/MountDialog/Grid/FileBtn" to="." method="__open_mount_file"]
-[connection signal="dir_selected" from="ArgEnvDialog/MountDialog/MountFileDialog" to="." method="__select_mount_file"]
+[connection signal="about_to_popup" from="ConfigDialog" to="Overlay" method="show"]
+[connection signal="close_requested" from="ConfigDialog" to="Overlay" method="hide"]
+[connection signal="close_requested" from="ConfigDialog" to="ConfigDialog" method="hide"]

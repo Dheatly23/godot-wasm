@@ -1,9 +1,6 @@
-#[cfg(feature = "wasi")]
-use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::hash::{Hash, Hasher};
-#[cfg(feature = "wasi")]
-use std::sync::Arc;
+use std::io::Cursor;
 use std::{ffi, fmt, mem, ptr};
 
 use anyhow::{bail, Result as AnyResult};
@@ -13,10 +10,14 @@ use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
+#[cfg(feature = "wasi")]
+use wasi_isolated_fs::bindings::wasi_snapshot_preview1::add_to_linker;
+#[cfg(feature = "wasi")]
+use wasi_isolated_fs::context::WasiContext as WasiCtx;
+#[cfg(feature = "wasi")]
+use wasi_isolated_fs::stdio::StdinProvider;
 #[cfg(feature = "component-model")]
 use wasmtime::component::Instance as InstanceComp;
-#[cfg(feature = "wasi")]
-use wasmtime::component::ResourceTable;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
@@ -25,10 +26,6 @@ use wasmtime::{
     AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, SharedMemory, Store,
     StoreContextMut,
 };
-#[cfg(feature = "wasi")]
-use wasmtime_wasi::preview1::{add_to_linker_sync, WasiP1Ctx};
-#[cfg(feature = "wasi")]
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::godot_util::{
     option_to_variant, variant_to_option, PackedArrayLike, PhantomProperty, SendSyncWrapper,
@@ -36,10 +33,7 @@ use crate::godot_util::{
 };
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
-use crate::wasi_ctx::stdio::{
-    BlockWritePipe, ByteBufferReadPipe, InnerStdin, LineWritePipe, OuterStdin, StreamWrapper,
-    UnbufferedWritePipe,
-};
+use crate::wasi_ctx::stdio::PackedByteArrayReader;
 #[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
 use crate::wasm_config::Config;
@@ -52,11 +46,15 @@ use crate::wasm_engine::{get_engine, ModuleData, ModuleType, WasmModule};
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_util::reset_epoch;
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
-use crate::wasm_util::{config_store_common, raw_call, HostModuleCache, MEMORY_EXPORT};
+use crate::wasm_util::{
+    config_store_common, raw_call, HasEpochTimeout, HostModuleCache, MEMORY_EXPORT,
+};
 use crate::{bail_with_site, site_context, variant_dispatch};
 
 enum MemoryType {
@@ -140,7 +138,7 @@ pub struct InstanceData<T> {
     pub module: Gd<WasmModule>,
 
     #[cfg(feature = "wasi")]
-    pub wasi_stdin: Option<Arc<InnerStdin<dyn Any + Send + Sync>>>,
+    pub wasi_stdin: Option<StdinProvider>,
 }
 
 #[allow(dead_code)]
@@ -207,7 +205,7 @@ pub struct StoreData {
     pub use_extern: bool,
 
     #[cfg(feature = "wasi")]
-    pub wasi_ctx: MaybeWasi,
+    pub wasi_ctx: Option<WasiCtx>,
 }
 
 impl AsRef<Self> for StoreData {
@@ -234,35 +232,15 @@ impl AsMut<InnerLock> for StoreData {
     }
 }
 
-#[allow(dead_code, clippy::large_enum_variant)]
-#[derive(Default)]
-pub enum MaybeWasi {
-    #[default]
-    NoCtx,
-    #[cfg(feature = "wasi")]
-    Preview1(WasiP1Ctx),
-    #[cfg(feature = "wasi-preview2")]
-    Preview2(WasiCtx, ResourceTable),
-}
-
-#[cfg(feature = "wasi")]
-impl WasiView for StoreData {
-    fn table(&mut self) -> &mut ResourceTable {
-        match &mut self.wasi_ctx {
-            MaybeWasi::Preview1(v) => v.table(),
-            #[cfg(feature = "wasi-preview2")]
-            MaybeWasi::Preview2(_, tbl) => tbl,
-            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
-        }
+impl HasEpochTimeout for StoreData {
+    #[cfg(feature = "epoch-timeout")]
+    fn get_epoch_timeout(&self) -> u64 {
+        self.epoch_timeout
     }
 
-    fn ctx(&mut self) -> &mut WasiCtx {
-        match &mut self.wasi_ctx {
-            MaybeWasi::Preview1(v) => v.ctx(),
-            #[cfg(feature = "wasi-preview2")]
-            MaybeWasi::Preview2(ctx, _) => ctx,
-            _ => panic!("Requested WASI Preview 2 interface while none set, this is a bug"),
-        }
+    #[cfg(feature = "wasi")]
+    fn get_wasi_ctx(&mut self) -> Option<&mut WasiCtx> {
+        self.wasi_ctx.as_mut()
     }
 }
 
@@ -304,7 +282,7 @@ impl ResourceLimiter for MemoryLimit {
         desired: usize,
         max: Option<usize>,
     ) -> AnyResult<bool> {
-        if max.map_or(false, |max| desired > max) {
+        if max.is_some_and(|max| desired > max) {
             return Ok(false);
         } else if self.max_memory == u64::MAX {
             return Ok(true);
@@ -325,7 +303,7 @@ impl ResourceLimiter for MemoryLimit {
         desired: usize,
         max: Option<usize>,
     ) -> AnyResult<bool> {
-        if max.map_or(false, |max| desired > max) {
+        if max.is_some_and(|max| desired > max) {
             return Ok(false);
         } else if self.max_table_entries == u64::MAX {
             return Ok(true);
@@ -357,7 +335,7 @@ struct InstanceArgs<'a, T> {
 
 impl<T> InstanceData<T>
 where
-    T: Send + AsRef<StoreData> + AsMut<StoreData>,
+    T: Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     pub fn instantiate<C: GodotClass>(
         obj: &Gd<C>,
@@ -375,59 +353,58 @@ where
         let mut wasi_linker = None;
         #[cfg(feature = "wasi")]
         if config.with_wasi {
-            let mut builder = WasiCtxBuilder::new();
+            let mut builder = WasiCtx::builder();
 
             let StoreData { wasi_ctx, .. } = store.data_mut().as_mut();
 
             if config.wasi_stdin == PipeBindingType::Instance {
                 if let Some(data) = config.wasi_stdin_data.clone() {
-                    builder.stdin(StreamWrapper::from(ByteBufferReadPipe::new(data)));
+                    let data = SendSyncWrapper::new(data);
+                    builder.stdin_read_builder(Box::new(move || {
+                        Ok(Box::new(PackedByteArrayReader::from((*data).clone())))
+                    }))
                 } else {
                     let signal =
                         SendSyncWrapper::new(Signal::from_object_signal(obj, c"stdin_request"));
-                    let (outer, inner) = OuterStdin::new(move || signal.emit(&[]));
-                    builder.stdin(outer);
-                    wasi_stdin = Some(inner as _);
-                }
+                    builder.stdin_signal(Box::new(move || signal.emit(&[])))
+                }?;
             }
             if config.wasi_stdout == PipeBindingType::Instance {
                 let signal = Signal::from_object_signal(obj, c"stdout_emit");
                 match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered => {
-                        builder.stdout(UnbufferedWritePipe::new(WasiContext::emit_binary(signal)))
+                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
+                        builder.stdout_block_buffer(Box::new(WasiContext::emit_binary(signal)))
                     }
-                    PipeBufferType::LineBuffer => builder.stdout(StreamWrapper::from(
-                        LineWritePipe::new(WasiContext::emit_string(signal)),
-                    )),
-                    PipeBufferType::BlockBuffer => builder.stdout(StreamWrapper::from(
-                        BlockWritePipe::new(WasiContext::emit_string(signal)),
-                    )),
-                };
+                    PipeBufferType::LineBuffer => {
+                        builder.stdout_line_buffer(Box::new(WasiContext::emit_string(signal)))
+                    }
+                }?;
             }
             if config.wasi_stderr == PipeBindingType::Instance {
                 let signal = Signal::from_object_signal(obj, c"stderr_emit");
                 match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered => {
-                        builder.stderr(UnbufferedWritePipe::new(WasiContext::emit_binary(signal)))
+                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
+                        builder.stderr_block_buffer(Box::new(WasiContext::emit_binary(signal)))
                     }
-                    PipeBufferType::LineBuffer => builder.stderr(StreamWrapper::from(
-                        LineWritePipe::new(WasiContext::emit_string(signal)),
-                    )),
-                    PipeBufferType::BlockBuffer => builder.stderr(StreamWrapper::from(
-                        BlockWritePipe::new(WasiContext::emit_string(signal)),
-                    )),
-                };
+                    PipeBufferType::LineBuffer => {
+                        builder.stderr_line_buffer(Box::new(WasiContext::emit_string(signal)))
+                    }
+                }?;
             }
 
             match &config.wasi_context {
-                Some(ctx) => WasiContext::build_ctx(ctx.clone(), &mut builder, config),
+                Some(ctx) => WasiContext::build_ctx(ctx, &mut builder, config),
                 None => WasiContext::init_ctx_no_context(&mut builder, config),
             }?;
-            *wasi_ctx = MaybeWasi::Preview1(builder.build_p1());
+            let ctx = builder.build()?;
+            wasi_stdin = ctx.stdin_provider().map(|v| v.dup());
+            *wasi_ctx = Some(ctx);
             let mut r = <Linker<T>>::new(store.engine());
-            add_to_linker_sync(&mut r, |data| match &mut data.as_mut().wasi_ctx {
-                MaybeWasi::Preview1(v) => v,
-                _ => panic!("WASI Preview 1 context required, but none supplied"),
+            add_to_linker(&mut r, |data| {
+                data.as_mut()
+                    .wasi_ctx
+                    .as_mut()
+                    .expect("WASI context required, but none supplied")
             })?;
             wasi_linker = Some(r);
         }
@@ -467,7 +444,7 @@ where
 
 impl<T> InstanceArgs<'_, T>
 where
-    T: Send + AsRef<StoreData> + AsMut<StoreData>,
+    T: Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     fn instantiate_wasm(&mut self, module: &ModuleData) -> AnyResult<InstanceWasm> {
         #[allow(irrefutable_let_patterns)]
@@ -805,9 +782,7 @@ impl RustCallable for WasmCallable {
         let r = self.this.bind().unwrap_data(|m| {
             m.acquire_store(|_, #[allow(unused_mut)] mut store| {
                 #[cfg(feature = "epoch-timeout")]
-                if let v @ 1.. = store.data().epoch_timeout {
-                    store.set_epoch_deadline(v);
-                }
+                reset_epoch(&mut store);
 
                 // SAFETY: Function pointer is valid.
                 unsafe {
@@ -910,9 +885,7 @@ impl WasmInstance {
                 let ty = f.ty(&store);
 
                 #[cfg(feature = "epoch-timeout")]
-                if let v @ 1.. = store.data().epoch_timeout {
-                    store.set_epoch_deadline(v);
-                }
+                reset_epoch(&mut store);
 
                 unsafe { raw_call(store, &f, &ty, args.iter_shared()) }
             })
@@ -984,10 +957,8 @@ impl WasmInstance {
         cfg_if! {
             if #[cfg(feature = "epoch-timeout")] {
                 self.unwrap_data(|m| {
-                    m.acquire_store(|_, mut store| {
-                        if let v @ 1.. = store.data().epoch_timeout {
-                            store.set_epoch_deadline(v);
-                        }
+                    m.acquire_store(|_, store| {
+                        reset_epoch(store);
                         Ok(())
                     })
                 });
@@ -1126,7 +1097,7 @@ impl WasmInstance {
             if #[cfg(feature = "wasi")] {
                 self.unwrap_data(|m| {
                     if let Some(stdin) = &m.wasi_stdin {
-                        stdin.add_line(_line)?;
+                        stdin.write(_line.to_string().as_bytes());
                     }
                     Ok(())
                 });
@@ -1143,7 +1114,7 @@ impl WasmInstance {
             if #[cfg(feature = "wasi")] {
                 self.unwrap_data(|m| {
                     if let Some(stdin) = &m.wasi_stdin {
-                        stdin.close_pipe();
+                        stdin.close();
                     }
                     Ok(())
                 });
@@ -1398,14 +1369,22 @@ impl WasmInstance {
 
     /// Reads a structured data.
     #[func]
-    fn read_struct(&self, format: GString, p: i64) -> Variant {
-        option_to_variant(self.get_memory(|data| read_struct(data, p as _, format.chars())))
+    fn read_struct(&self, format: GString, p: u64) -> Variant {
+        option_to_variant(self.get_memory(|data| {
+            let mut f = Cursor::new(data);
+            f.set_position(p);
+            read_struct(f, format.chars())
+        }))
     }
 
     /// Writes a structured data.
     #[func]
-    fn write_struct(&self, format: GString, p: i64, arr: VariantArray) -> i64 {
-        self.get_memory(|data| write_struct(data, p as _, format.chars(), arr))
-            .unwrap_or_default() as _
+    fn write_struct(&self, format: GString, p: u64, arr: VariantArray) -> u64 {
+        self.get_memory(|data| {
+            let mut f = Cursor::new(data);
+            f.set_position(p);
+            write_struct(f, format.chars(), arr)
+        })
+        .unwrap_or_default() as _
     }
 }

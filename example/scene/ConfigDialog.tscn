@@ -1,0 +1,170 @@
+[gd_scene load_steps=3 format=3 uid="uid://bsda8lsvhgmsf"]
+
+[ext_resource type="Theme" uid="uid://cia5aaiffmela" path="res://theme/default.tres" id="1_12ynb"]
+[ext_resource type="Script" path="res://script/ConfigDialog.gd" id="2_1xbwi"]
+
+[node name="ConfigDialog" type="Window"]
+canvas_item_default_texture_filter = 0
+title = "Configuration"
+position = Vector2i(0, 18)
+size = Vector2i(200, 200)
+visible = false
+wrap_controls = true
+transient = true
+popup_window = true
+theme = ExtResource("1_12ynb")
+script = ExtResource("2_1xbwi")
+
+[node name="Panel" type="PanelContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Margin" type="MarginContainer" parent="Panel"]
+layout_mode = 2
+theme_override_constants/margin_left = 2
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 2
+theme_override_constants/margin_bottom = 2
+
+[node name="Tabs" type="TabContainer" parent="Panel/Margin"]
+layout_mode = 2
+current_tab = 0
+
+[node name="Arguments" type="VBoxContainer" parent="Panel/Margin/Tabs"]
+layout_mode = 2
+metadata/_tab_index = 0
+
+[node name="List" type="Tree" parent="Panel/Margin/Tabs/Arguments"]
+layout_mode = 2
+size_flags_vertical = 3
+allow_reselect = true
+allow_rmb_select = true
+hide_folding = true
+hide_root = true
+select_mode = 1
+
+[node name="Popup" type="PopupMenu" parent="Panel/Margin/Tabs/Arguments"]
+canvas_item_default_texture_filter = 0
+item_count = 2
+item_0/text = "Insert"
+item_1/text = "Delete"
+item_1/id = 1
+
+[node name="Environment" type="VBoxContainer" parent="Panel/Margin/Tabs"]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 1
+
+[node name="List" type="Tree" parent="Panel/Margin/Tabs/Environment"]
+layout_mode = 2
+size_flags_vertical = 3
+columns = 2
+column_titles_visible = true
+allow_reselect = true
+allow_rmb_select = true
+hide_folding = true
+hide_root = true
+select_mode = 1
+
+[node name="Popup" type="PopupMenu" parent="Panel/Margin/Tabs/Environment"]
+canvas_item_default_texture_filter = 0
+item_count = 2
+item_0/text = "Add"
+item_1/text = "Delete"
+item_1/id = 1
+
+[node name="Mount" type="VBoxContainer" parent="Panel/Margin/Tabs"]
+visible = false
+layout_mode = 2
+metadata/_tab_index = 2
+
+[node name="List" type="Tree" parent="Panel/Margin/Tabs/Mount"]
+layout_mode = 2
+size_flags_vertical = 3
+columns = 2
+column_titles_visible = true
+allow_reselect = true
+allow_rmb_select = true
+hide_folding = true
+hide_root = true
+select_mode = 1
+
+[node name="Popup" type="PopupMenu" parent="Panel/Margin/Tabs/Mount"]
+canvas_item_default_texture_filter = 0
+item_count = 2
+item_0/text = "Add"
+item_1/text = "Delete"
+item_1/id = 1
+
+[node name="Overlay" type="ColorRect" parent="."]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 0.752941)
+
+[node name="DataDialog" type="ConfirmationDialog" parent="."]
+canvas_item_default_texture_filter = 0
+title = ""
+popup_window = true
+
+[node name="Margin" type="MarginContainer" parent="DataDialog"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 3.0
+offset_top = 3.0
+offset_right = -3.0
+offset_bottom = -28.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 2
+theme_override_constants/margin_top = 2
+theme_override_constants/margin_right = 2
+
+[node name="Text" type="TextEdit" parent="DataDialog/Margin"]
+layout_mode = 2
+placeholder_text = "Value"
+
+[node name="Grid" type="GridContainer" parent="DataDialog/Margin"]
+visible = false
+layout_mode = 2
+columns = 2
+
+[node name="GuestLbl" type="Label" parent="DataDialog/Margin/Grid"]
+layout_mode = 2
+text = "Guest:"
+
+[node name="GuestTxt" type="LineEdit" parent="DataDialog/Margin/Grid"]
+layout_mode = 2
+placeholder_text = "Path"
+
+[node name="HostLbl" type="Label" parent="DataDialog/Margin/Grid"]
+layout_mode = 2
+text = "Host:"
+
+[node name="HostTxt" type="LineEdit" parent="DataDialog/Margin/Grid"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Path"
+
+[connection signal="empty_clicked" from="Panel/Margin/Tabs/Arguments/List" to="." method="__arg_clicked" binds= [true]]
+[connection signal="item_mouse_selected" from="Panel/Margin/Tabs/Arguments/List" to="." method="__arg_clicked" binds= [false]]
+[connection signal="index_pressed" from="Panel/Margin/Tabs/Arguments/Popup" to="." method="__arg_popup_selected"]
+[connection signal="empty_clicked" from="Panel/Margin/Tabs/Environment/List" to="." method="__env_clicked" binds= [true]]
+[connection signal="item_mouse_selected" from="Panel/Margin/Tabs/Environment/List" to="." method="__env_clicked" binds= [false]]
+[connection signal="index_pressed" from="Panel/Margin/Tabs/Environment/Popup" to="." method="__env_popup_selected"]
+[connection signal="empty_clicked" from="Panel/Margin/Tabs/Mount/List" to="." method="__mount_clicked" binds= [true]]
+[connection signal="item_edited" from="Panel/Margin/Tabs/Mount/List" to="." method="__mount_edit_item"]
+[connection signal="item_mouse_selected" from="Panel/Margin/Tabs/Mount/List" to="." method="__mount_clicked" binds= [false]]
+[connection signal="index_pressed" from="Panel/Margin/Tabs/Mount/Popup" to="." method="__mount_popup_selected"]
+[connection signal="about_to_popup" from="DataDialog" to="Overlay" method="show"]
+[connection signal="canceled" from="DataDialog" to="Overlay" method="hide"]
+[connection signal="close_requested" from="DataDialog" to="Overlay" method="hide"]
+[connection signal="confirmed" from="DataDialog" to="." method="__data_ok"]
+[connection signal="confirmed" from="DataDialog" to="Overlay" method="hide"]

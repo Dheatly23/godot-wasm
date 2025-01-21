@@ -5,7 +5,7 @@ signal message_emitted(msg: String)
 
 @export var wasm_file: WasmModule
 
-@onready var wasi_ctx: WasiContext = WasiContext.new()
+@onready var wasi_ctx: WasiContext = WasiContext.new().initialize(null)
 @onready var crypto := Crypto.new()
 
 @onready var _tex := ImageTexture.new()

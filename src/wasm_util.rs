@@ -10,6 +10,8 @@ use anyhow::{Error, Result as AnyResult};
 use cfg_if::cfg_if;
 use godot::classes::WeakRef;
 use godot::prelude::*;
+#[cfg(feature = "wasi")]
+use wasi_isolated_fs::context::WasiContext as WasiCtx;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{
@@ -39,7 +41,6 @@ pub const EPOCH_DEADLINE: u64 = 5u64.saturating_mul(EPOCH_MULTIPLIER);
 #[cfg(feature = "epoch-timeout")]
 pub const EPOCH_INTERVAL: time::Duration = time::Duration::from_millis(1000 / EPOCH_MULTIPLIER);
 
-/*
 #[cfg(feature = "wasi")]
 pub const FILE_NOTEXIST: u32 = 0;
 #[cfg(feature = "wasi")]
@@ -48,7 +49,6 @@ pub const FILE_FILE: u32 = 1;
 pub const FILE_DIR: u32 = 2;
 #[cfg(feature = "wasi")]
 pub const FILE_LINK: u32 = 3;
-*/
 
 pub const TYPE_I32: i64 = 1;
 pub const TYPE_I64: i64 = 2;
@@ -394,7 +394,7 @@ fn wrap_godot_method<T>(
     callable: CallableEnum,
 ) -> Func
 where
-    T: AsRef<StoreData> + AsMut<StoreData>,
+    T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     let callable = SendSyncWrapper::new(callable);
     let ty_cloned = ty.clone();
@@ -439,13 +439,8 @@ where
         }
 
         #[cfg(feature = "epoch-timeout")]
-        if let StoreData {
-            epoch_autoreset: true,
-            epoch_timeout: v @ 1..,
-            ..
-        } = *ctx.data().as_ref()
-        {
-            ctx.as_context_mut().set_epoch_deadline(v);
+        if ctx.data().as_ref().epoch_autoreset {
+            reset_epoch(ctx);
         }
 
         Ok(())
@@ -490,7 +485,7 @@ pub struct HostModuleCache<T> {
     host: Dictionary,
 }
 
-impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
+impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T> {
     pub fn new(host: Dictionary) -> AnyResult<Self> {
         Ok(Self {
             cache: Linker::new(&site_context!(get_engine())?),
@@ -533,20 +528,23 @@ impl<T: AsRef<StoreData> + AsMut<StoreData>> HostModuleCache<T> {
 }
 
 #[cfg(feature = "epoch-timeout")]
-pub fn config_store_epoch<T>(store: &mut Store<T>, config: &Config) -> AnyResult<()> {
+pub fn config_store_epoch<T: HasEpochTimeout>(
+    store: &mut Store<T>,
+    config: &Config,
+) -> AnyResult<()> {
     if config.with_epoch {
         store.epoch_deadline_trap();
         site_context!(start_epoch())?;
     } else {
         store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
     }
-    store.set_epoch_deadline(config.epoch_timeout);
+    reset_epoch(store);
     Ok(())
 }
 
 pub fn config_store_common<T>(_store: &mut Store<T>, _config: &Config) -> AnyResult<()>
 where
-    T: AsRef<StoreData> + AsMut<StoreData>,
+    T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     #[cfg(feature = "epoch-timeout")]
     {
@@ -567,4 +565,31 @@ where
     }
 
     Ok(())
+}
+
+pub trait HasEpochTimeout {
+    #[cfg(feature = "epoch-timeout")]
+    fn get_epoch_timeout(&self) -> u64;
+    #[cfg(feature = "wasi")]
+    fn get_wasi_ctx(&mut self) -> Option<&mut WasiCtx>;
+}
+
+#[cfg(feature = "epoch-timeout")]
+pub fn reset_epoch<C>(mut ctx: C)
+where
+    C: AsContextMut,
+    C::Data: HasEpochTimeout,
+{
+    let mut ctx = ctx.as_context_mut();
+    let v = ctx.data_mut();
+    let t @ 1.. = v.get_epoch_timeout() else {
+        return;
+    };
+
+    #[cfg(feature = "wasi")]
+    if let Some(ctx) = v.get_wasi_ctx() {
+        ctx.set_timeout(time::Instant::now() + EPOCH_INTERVAL * t as u32);
+    }
+
+    ctx.set_epoch_deadline(t);
 }

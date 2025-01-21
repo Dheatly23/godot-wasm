@@ -1,0 +1,51 @@
+[package]
+name = "wasi-isolated-fs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Dheatly23 <71598333+Dheatly23@users.noreply.github.com>"]
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+cap-std = "^3.4"
+cap-fs-ext = "^3.4"
+fs-set-times = "^0.20"
+system-interface = { version = "^0.27", features = ["cap_std_impls"] }
+
+scopeguard = { workspace = true }
+anyhow = { workspace = true }
+cfg-if = { workspace = true }
+parking_lot = { workspace = true }
+slab = { workspace = true }
+bytes = { workspace = true }
+memchr = { workspace = true }
+camino = { workspace = true }
+rand_xoshiro = { workspace = true }
+wiggle = { workspace = true }
+tracing = { workspace = true }
+
+[dependencies.wasmtime]
+workspace = true
+features = [
+  "runtime",
+  "component-model",
+]
+
+[dependencies.smallvec]
+version = "~1"
+features = [
+  "union",
+  "const_generics",
+  "const_new",
+  "write",
+]
+
+[dependencies.rand]
+workspace = true
+default-features = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = "0.59"
+
+[dev-dependencies]
+proptest = { workspace = true }

@@ -1,5 +1,6 @@
 /target
 /export
 /Test WASM
+/wasm
 /out/addons/godot_wasm/bin/*
 !.gitkeep

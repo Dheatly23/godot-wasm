@@ -1,9 +1,10 @@
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult, Write as _};
+use std::io::{Error as IoError, ErrorKind as IoErrorKind, Read, Seek, Write};
 use std::ops::RangeFrom;
 use std::slice::SliceIndex;
 
-use anyhow::Result as AnyResult;
+use anyhow::{Error as AnyError, Result as AnyResult};
 use godot::prelude::*;
 use nom::character::complete::{anychar, satisfy, u32 as u32_};
 use nom::combinator::{map, opt};
@@ -434,27 +435,33 @@ impl<I> ContextError<I> for SingleError<I> {
     }
 }
 
-pub fn read_struct(data: &[u8], p: usize, format: &[char]) -> AnyResult<VariantArray> {
+fn io_to_any(err: IoError) -> AnyError {
+    if !matches!(err.kind(), IoErrorKind::Other) {
+        err.into()
+    } else if let Some(e) = err.into_inner() {
+        AnyError::from_boxed(e)
+    } else {
+        IoError::from(IoErrorKind::Other).into()
+    }
+}
+
+pub fn read_struct(data: impl Read + Seek, format: &[char]) -> AnyResult<VariantArray> {
     fn f<const N: usize, T: ToGodot>(
-        (data, p, a): &mut (&[u8], usize, VariantArray),
+        (data, a): &mut (impl Read, VariantArray),
         n: usize,
         f: impl Fn(&[u8; N]) -> T,
     ) -> AnyResult<()> {
+        let mut temp = [0; N];
         for _ in 0..n {
-            let s = *p;
-            let e = s + N;
-            let Some(data) = data.get(s..e) else {
-                bail_with_site!("Index out of range ({s}..{e})")
-            };
-            a.push(&f(data.try_into().unwrap()).to_variant());
-            *p += N;
+            site_context!(data.read_exact(&mut temp).map_err(io_to_any))?;
+            a.push(&f(&temp).to_variant());
         }
 
         Ok(())
     }
 
     let mut format = CharSlice(format);
-    let mut r = (data, p, Array::new());
+    let mut r = (data, Array::new());
     let mut p_ = pair(opt(u32_), parse_datatype);
     while !format.0.is_empty() {
         let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::into_owned))?;
@@ -462,10 +469,7 @@ pub fn read_struct(data: &[u8], p: usize, format: &[char]) -> AnyResult<VariantA
         let n = n.unwrap_or(1) as usize;
 
         match t {
-            DataType::Padding => {
-                r.1 += n;
-                Ok(())
-            }
+            DataType::Padding => site_context!(r.0.seek_relative(n as _).map_err(io_to_any)),
             DataType::SignedByte => f::<1, _>(&mut r, n, |v| v[0] as i8 as i64),
             DataType::UnsignedByte => f::<1, _>(&mut r, n, |v| v[0] as i64),
             DataType::SignedShort => f::<2, _>(&mut r, n, |v| i16::from_le_bytes(*v) as i64),
@@ -578,20 +582,20 @@ pub fn read_struct(data: &[u8], p: usize, format: &[char]) -> AnyResult<VariantA
         }?;
     }
 
-    Ok(r.2)
+    Ok(r.1)
 }
 
 pub fn write_struct(
-    data: &mut [u8],
-    p: usize,
+    data: impl Write + Seek,
     format: &[char],
     arr: VariantArray,
 ) -> AnyResult<usize> {
     fn f<const N: usize, T: FromGodot>(
-        (data, p, a): &mut (&mut [u8], usize, impl Iterator<Item = Variant>),
+        (data, total, a): &mut (impl Write, usize, impl Iterator<Item = Variant>),
         n: usize,
         f: impl Fn(&T, &mut [u8; N]),
     ) -> AnyResult<()> {
+        let mut temp = [0; N];
         for _ in 0..n {
             let Some(v) = a
                 .next()
@@ -600,20 +604,16 @@ pub fn write_struct(
             else {
                 bail_with_site!("Input array too small")
             };
-            let s = *p;
-            let e = s + N;
-            let Some(data) = data.get_mut(s..e) else {
-                bail_with_site!("Index out of range ({s}..{e})")
-            };
-            f(&v, data.try_into().unwrap());
-            *p += N;
+            f(&v, &mut temp);
+            site_context!(data.write_all(&temp).map_err(io_to_any))?;
+            *total += N;
         }
 
         Ok(())
     }
 
     let mut format = CharSlice(format);
-    let mut r = (data, p, arr.iter_shared());
+    let mut r = (data, 0, arr.iter_shared());
     let mut p_ = pair(opt(u32_), parse_datatype);
     while !format.0.is_empty() {
         let (i, (n, t)) = p_(format).map_err(|e| e.map(SingleError::into_owned))?;
@@ -623,7 +623,7 @@ pub fn write_struct(
         match t {
             DataType::Padding => {
                 r.1 += n;
-                Ok(())
+                site_context!(r.0.seek_relative(n as _).map_err(io_to_any))
             }
             DataType::SignedByte => f::<1, i64>(&mut r, n, |d, s| s[0] = *d as i8 as u8),
             DataType::UnsignedByte => f::<1, i64>(&mut r, n, |d, s| s[0] = *d as u8),
@@ -740,5 +740,5 @@ pub fn write_struct(
         }?;
     }
 
-    Ok(r.1 - p)
+    Ok(r.1)
 }
