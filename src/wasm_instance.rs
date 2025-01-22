@@ -11,7 +11,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
-use tracing::{debug, debug_span, error, info, info_span, instrument, warn, Level};
+use tracing::{debug, debug_span, error, info, instrument, warn, Level};
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::bindings::wasi_snapshot_preview1::add_to_linker;
 #[cfg(feature = "wasi")]
@@ -467,6 +467,7 @@ where
         let imports = module_
             .imports()
             .map(|i| {
+                let _s = debug_span!("instantiate_wasm.import", import = ?i).entered();
                 if let Some(v) = &mut self.host {
                     if let Some(v) = v.get_extern(&mut self.store, i.module(), i.name())? {
                         return Ok(v);
@@ -504,7 +505,7 @@ where
                 }
 
                 if let Some(o) = module.imports.get(i.module()) {
-                    let _s = info_span!("instantiate_wasm.recursive", ?o).entered();
+                    let _s = debug_span!("instantiate_wasm.import.recursive", ?o).entered();
                     let id = o.instance_id();
                     let mut v = match self.insts.entry(id) {
                         Entry::Vacant(v) => v.insert(None),
@@ -513,7 +514,7 @@ where
                             v => v,
                         },
                     };
-                    let _s = debug_span!("instantiate_wasm.recursive.inner");
+                    let _s = debug_span!("instantiate_wasm.import.recursive.inner");
                     let t = loop {
                         let _s = _s.enter();
                         if let Some(v) = v {
