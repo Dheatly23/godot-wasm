@@ -1,4 +1,5 @@
 use std::collections::hash_map::{Entry, HashMap};
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::hash::{Hash, Hasher};
 use std::io::Cursor;
 use std::{ffi, fmt, mem, ptr};
@@ -10,6 +11,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
+use tracing::{debug, debug_span, error, info, info_span, instrument, warn, Level};
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::bindings::wasi_snapshot_preview1::add_to_linker;
 #[cfg(feature = "wasi")]
@@ -130,6 +132,12 @@ pub struct WasmInstance {
     #[var(get = get_module)]
     #[allow(dead_code)]
     module: PhantomProperty<Option<Gd<WasmModule>>>,
+}
+
+impl Debug for WasmInstance {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("WasmInstance").field(&self.base).finish()
+    }
 }
 
 pub struct InstanceData<T> {
@@ -337,6 +345,7 @@ impl<T> InstanceData<T>
 where
     T: Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
+    #[instrument(level = Level::DEBUG, skip_all, fields(?obj, ?module))]
     pub fn instantiate<C: GodotClass>(
         obj: &Gd<C>,
         mut store: Store<T>,
@@ -353,6 +362,7 @@ where
         let mut wasi_linker = None;
         #[cfg(feature = "wasi")]
         if config.with_wasi {
+            let _s = debug_span!("instantiate.wasi").entered();
             let mut builder = WasiCtx::builder();
 
             let StoreData { wasi_ctx, .. } = store.data_mut().as_mut();
@@ -446,6 +456,7 @@ impl<T> InstanceArgs<'_, T>
 where
     T: Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
+    #[instrument(skip_all, fields(?module.module))]
     fn instantiate_wasm(&mut self, module: &ModuleData) -> AnyResult<InstanceWasm> {
         #[allow(irrefutable_let_patterns)]
         let ModuleType::Core(module_) = &module.module
@@ -493,6 +504,7 @@ where
                 }
 
                 if let Some(o) = module.imports.get(i.module()) {
+                    let _s = info_span!("instantiate_wasm.recursive", ?o).entered();
                     let id = o.instance_id();
                     let mut v = match self.insts.entry(id) {
                         Entry::Vacant(v) => v.insert(None),
@@ -501,7 +513,9 @@ where
                             v => v,
                         },
                     };
+                    let _s = debug_span!("instantiate_wasm.recursive.inner");
                     let t = loop {
+                        let _s = _s.enter();
                         if let Some(v) = v {
                             break v;
                         }
@@ -526,6 +540,7 @@ impl<T> InstanceData<T>
 where
     T: AsRef<InnerLock> + AsMut<InnerLock>,
 {
+    #[instrument(skip_all)]
     pub fn acquire_store<F, R>(&self, f: F) -> R
     where
         for<'a> F: FnOnce(&Self, StoreContextMut<'a, T>) -> R,
@@ -536,8 +551,9 @@ where
         // SAFETY: Context should be destroyed after function call
         unsafe {
             let p = &mut guard_.data_mut().as_mut().mutex_raw;
+            debug!(old_handle = ?*p);
             let v = mem::replace(p, self.store.raw() as *const _);
-            _scope = guard(p as *mut _, move |p| {
+            _scope = guard((p as *mut _, v), |(p, v)| {
                 *p = v;
             });
         }
@@ -547,6 +563,7 @@ where
 }
 
 impl InnerLock {
+    #[instrument(skip_all)]
     pub fn release_store<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce() -> R,
@@ -555,9 +572,15 @@ impl InnerLock {
         if !self.mutex_raw.is_null() {
             // SAFETY: Pointer is valid and locked mutex
             unsafe {
-                _guard = guard(&*self.mutex_raw, |v| v.lock());
+                _guard = guard(&*self.mutex_raw, |v| {
+                    v.lock();
+                    debug!(handle = ?(v as *const RawMutex), "Locked store");
+                });
                 _guard.unlock();
+                debug!(handle = ?(*_guard as *const RawMutex), "Unlocked store");
             }
+        } else {
+            warn!("Trying to release lock without locking first. This might be a bug.");
         }
 
         f()
@@ -591,6 +614,7 @@ impl StoreData {
 }
 
 impl WasmInstance {
+    #[instrument(level = Level::ERROR)]
     fn emit_error_wrapper(&self, msg: String) {
         self.to_gd().emit_signal(
             &StringName::from(c"error_happened"),
@@ -598,6 +622,7 @@ impl WasmInstance {
         );
     }
 
+    #[instrument(level = Level::TRACE)]
     pub fn get_data(&self) -> AnyResult<&InstanceData<StoreData>> {
         if let Some(data) = self.data.get() {
             Ok(data)
@@ -606,6 +631,7 @@ impl WasmInstance {
         }
     }
 
+    #[instrument(level = Level::DEBUG, skip(f))]
     pub fn unwrap_data<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&InstanceData<StoreData>) -> AnyResult<R>,
@@ -629,6 +655,7 @@ impl WasmInstance {
         }
     }
 
+    #[instrument(level = Level::DEBUG, skip_all, fields(?self, ?module))]
     pub fn initialize_(
         &self,
         module: Gd<WasmModule>,
@@ -679,25 +706,39 @@ impl WasmInstance {
         }
     }
 
-    fn get_memory<F, R>(&self, f: F) -> Option<R>
+    #[instrument(level = Level::TRACE, skip(f))]
+    pub fn acquire_store<F, R>(&self, f: F) -> Option<R>
     where
-        for<'a> F: FnOnce(&'a mut [u8]) -> AnyResult<R>,
+        F: FnOnce(StoreContextMut<'_, StoreData>) -> AnyResult<R>,
     {
-        self.unwrap_data(|m| {
-            m.acquire_store(|_, store| {
-                f(match &self.memory {
-                    Some(MemoryType::Memory(mem)) => mem.data_mut(store),
-                    // SAFETY: Externalize concurrent access to user
-                    #[allow(mutable_transmutes)]
-                    Some(MemoryType::SharedMemory(mem)) => unsafe {
-                        mem::transmute::<&[_], &mut [u8]>(mem.data())
-                    },
-                    None => bail_with_site!("No memory exported"),
-                })
+        self.unwrap_data(move |m| {
+            m.acquire_store(move |_, s| {
+                let _s = debug_span!("acquire_store.inner", ?self).entered();
+                f(s)
             })
         })
     }
 
+    #[instrument(level = Level::TRACE, skip(f))]
+    fn get_memory<F, R>(&self, f: F) -> Option<R>
+    where
+        for<'a> F: FnOnce(&'a mut [u8]) -> AnyResult<R>,
+    {
+        self.acquire_store(move |store| {
+            let _s = debug_span!("get_memory.inner", ?self).entered();
+            f(match &self.memory {
+                Some(MemoryType::Memory(mem)) => mem.data_mut(store),
+                // SAFETY: Externalize concurrent access to user
+                #[allow(mutable_transmutes)]
+                Some(MemoryType::SharedMemory(mem)) => unsafe {
+                    mem::transmute::<&[_], &mut [u8]>(mem.data())
+                },
+                None => bail_with_site!("No memory exported"),
+            })
+        })
+    }
+
+    #[instrument(level = Level::DEBUG, skip(f))]
     fn read_memory<F, R>(&self, i: usize, n: usize, f: F) -> Option<R>
     where
         F: FnOnce(&[u8]) -> AnyResult<R>,
@@ -708,6 +749,7 @@ impl WasmInstance {
         })
     }
 
+    #[instrument(level = Level::DEBUG, skip(f))]
     fn write_memory<F, R>(&self, i: usize, n: usize, f: F) -> Option<R>
     where
         for<'a> F: FnOnce(&'a mut [u8]) -> AnyResult<R>,
@@ -778,19 +820,24 @@ impl fmt::Display for WasmCallable {
 }
 
 impl RustCallable for WasmCallable {
+    #[instrument(skip(args), fields(args.len = args.len()))]
     fn invoke(&mut self, args: &[&Variant]) -> Result<Variant, ()> {
-        let r = self.this.bind().unwrap_data(|m| {
-            m.acquire_store(|_, #[allow(unused_mut)] mut store| {
+        let r = self
+            .this
+            .bind()
+            .acquire_store(|#[allow(unused_mut)] mut store| {
+                let _s = debug_span!("invoke.inner").entered();
                 #[cfg(feature = "epoch-timeout")]
                 reset_epoch(&mut store);
 
                 // SAFETY: Function pointer is valid.
-                unsafe {
+                let ret = unsafe {
                     let f = Func::from_raw(&mut store, self.ptr as *mut ffi::c_void).unwrap();
-                    raw_call(store, &f, &self.ty, args.iter().copied())
-                }
-            })
-        });
+                    raw_call(store, &f, &self.ty, args.iter().copied())?
+                };
+                info!(ret.len = ret.len());
+                Ok(ret)
+            });
         match r {
             Some(v) => Ok(v.to_variant()),
             None => Err(()),
@@ -840,6 +887,7 @@ impl WasmInstance {
     ///   pass
     /// ```
     #[func]
+    #[instrument(skip(host, config), ret)]
     fn initialize(
         &self,
         module: Gd<WasmModule>,
@@ -847,6 +895,7 @@ impl WasmInstance {
         config: Variant,
     ) -> Option<Gd<WasmInstance>> {
         let Ok(host) = variant_to_option::<Dictionary>(host) else {
+            error!("Host is not a dictionary!");
             godot_error!("Host is not a dictionary!");
             return None;
         };
@@ -861,6 +910,7 @@ impl WasmInstance {
 
     /// Gets the module used to instantiate this object.
     #[func]
+    #[instrument(ret)]
     fn get_module(&self) -> Option<Gd<WasmModule>> {
         self.unwrap_data(|m| Ok(m.module.clone()))
     }
@@ -873,9 +923,12 @@ impl WasmInstance {
     ///
     /// Returns an array of results, or `null` if failed.
     #[func]
+    #[instrument(skip(args), fields(args.len = args.len()))]
     fn call_wasm(&self, name: StringName, args: VariantArray) -> Variant {
         option_to_variant(self.unwrap_data(move |m| {
             m.acquire_store(move |m, mut store| {
+                let _s = debug_span!("call_wasm.inner").entered();
+
                 let name = name.to_string();
                 let f = match site_context!(m.instance.get_core())?.get_export(&mut store, &name) {
                     Some(Extern::Func(f)) => f,
@@ -887,7 +940,9 @@ impl WasmInstance {
                 #[cfg(feature = "epoch-timeout")]
                 reset_epoch(&mut store);
 
-                unsafe { raw_call(store, &f, &ty, args.iter_shared()) }
+                let ret = unsafe { raw_call(store, &f, &ty, args.iter_shared())? };
+                info!(ret.len = ret.len());
+                Ok(ret)
             })
         }))
     }
@@ -899,9 +954,11 @@ impl WasmInstance {
     ///
     /// Returns a `Callable` that can be used to call into WASM.
     #[func]
+    #[instrument(ret(Display))]
     fn bind_wasm(&self, name: StringName) -> Callable {
-        self.unwrap_data(|m| {
-            m.acquire_store(|m, mut store| {
+        self.unwrap_data(move |m| {
+            m.acquire_store(move |m, mut store| {
+                let _s = debug_span!("bind_wasm.inner").entered();
                 let f = {
                     let name = name.to_string();
                     match site_context!(m.instance.get_core())?.get_export(&mut store, &name) {
@@ -927,15 +984,14 @@ impl WasmInstance {
     ///
     /// Returns previous error message, if any.
     #[func]
+    #[instrument(ret(level = Level::DEBUG))]
     fn signal_error(&self, msg: GString) -> Variant {
-        option_to_variant(self.unwrap_data(|m| {
-            m.acquire_store(|_, mut store| {
-                Ok(store
-                    .data_mut()
-                    .error_signal
-                    .replace(msg.to_string())
-                    .unwrap_or_default())
-            })
+        option_to_variant(self.acquire_store(move |mut store| {
+            Ok(store
+                .data_mut()
+                .error_signal
+                .replace(msg.to_string())
+                .unwrap_or_default())
         }))
     }
 
@@ -943,24 +999,22 @@ impl WasmInstance {
     ///
     /// Returns previous error message, if any.
     #[func]
+    #[instrument(ret(level = Level::DEBUG))]
     fn signal_error_cancel(&self) -> Variant {
-        option_to_variant(self.unwrap_data(|m| {
-            m.acquire_store(|_, mut store| {
-                Ok(store.data_mut().error_signal.take().unwrap_or_default())
-            })
+        option_to_variant(self.acquire_store(|mut store| {
+            Ok(store.data_mut().error_signal.take().unwrap_or_default())
         }))
     }
 
     /// Resets epoch timeout. Should only be used from imported host functions.
     #[func]
+    #[instrument]
     fn reset_epoch(&self) {
         cfg_if! {
             if #[cfg(feature = "epoch-timeout")] {
-                self.unwrap_data(|m| {
-                    m.acquire_store(|_, store| {
+                self.acquire_store(|store| {
                         reset_epoch(store);
                         Ok(())
-                    })
                 });
             } else {
                 godot_error!("Feature epoch-timeout not enabled!");
@@ -970,15 +1024,11 @@ impl WasmInstance {
 
     /// Registers value and returns it's index. Only usable with object registry.
     #[func]
+    #[instrument(skip(_obj))]
     fn register_object(&self, _obj: Variant) -> Variant {
         cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
-                option_to_variant(self.unwrap_data(|m| {
-                    if _obj.is_nil() {
-                        bail_with_site!("Value is null!");
-                    }
-                    m.acquire_store(|_, mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj) as u64))
-                }))
+                option_to_variant(self.acquire_store(move |mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj) as u64)))
             } else {
                 godot_error!("Feature object-registry-compat not enabled!");
                 Variant::nil()
@@ -988,14 +1038,13 @@ impl WasmInstance {
 
     /// Gets registered value in index. Only usable with object registry.
     #[func]
+    #[instrument]
     fn registry_get(&self, _ix: i64) -> Variant {
         cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
                 option_to_variant(
-                    self.unwrap_data(|m| {
-                        m.acquire_store(|_, store| {
+                    self.acquire_store(move |store| {
                             Ok(store.data().get_registry()?.get(usize::try_from(_ix)?))
-                        })
                     })
                     .flatten(),
                 )
@@ -1008,12 +1057,12 @@ impl WasmInstance {
 
     /// Sets registered value in index. Only usable with object registry.
     #[func]
+    #[instrument(skip(_obj))]
     fn registry_set(&self, _ix: i64, _obj: Variant) -> Variant {
         cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
                 option_to_variant(
-                    self.unwrap_data(|m| {
-                        m.acquire_store(|_, mut store| {
+                    self.acquire_store(move |mut store| {
                             let _ix = usize::try_from(_ix)?;
                             let reg = store.data_mut().get_registry_mut()?;
                             if _obj.is_nil() {
@@ -1021,7 +1070,6 @@ impl WasmInstance {
                             } else {
                                 Ok(reg.replace(_ix, _obj))
                             }
-                        })
                     })
                     .flatten(),
                 )
@@ -1034,17 +1082,16 @@ impl WasmInstance {
 
     /// Unregister and returns value in index. Only usable with object registry.
     #[func]
+    #[instrument]
     fn unregister_object(&self, _ix: i64) -> Variant {
         cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
                 option_to_variant(
-                    self.unwrap_data(|m| {
-                        m.acquire_store(|_, mut store| {
+                    self.acquire_store(|mut store| {
                             Ok(store
                                 .data_mut()
                                 .get_registry_mut()?
                                 .unregister(usize::try_from(_ix)?))
-                        })
                     })
                     .flatten(),
                 )
@@ -1057,8 +1104,9 @@ impl WasmInstance {
 
     /// Returns `true` if exported memory exists.
     #[func]
+    #[instrument(ret)]
     fn has_memory(&self) -> bool {
-        self.unwrap_data(|m| m.acquire_store(|_, _| Ok(self.memory.is_some())))
+        self.unwrap_data(|_| Ok(self.memory.is_some()))
             .unwrap_or_default()
     }
 
@@ -1068,9 +1116,10 @@ impl WasmInstance {
     ///
     /// Default exported memory name is `"memory"`.
     #[func]
+    #[instrument(ret)]
     fn memory_set_name(&self, name: GString) -> bool {
-        self.unwrap_data(|m| {
-            m.acquire_store(|m, store| {
+        self.unwrap_data(move |m| {
+            m.acquire_store(move |m, store| {
                 // SAFETY: Nobody else can access memory
                 unsafe {
                     *(ptr::addr_of!(self.memory) as *mut Option<MemoryType>) = match &m.instance {
@@ -1092,10 +1141,11 @@ impl WasmInstance {
 
     /// Inserts a line to stdin. Only usable with WASI.
     #[func]
+    #[instrument]
     fn stdin_add_line(&self, _line: GString) {
         cfg_if! {
             if #[cfg(feature = "wasi")] {
-                self.unwrap_data(|m| {
+                self.unwrap_data(move |m| {
                     if let Some(stdin) = &m.wasi_stdin {
                         stdin.write(_line.to_string().as_bytes());
                     }
@@ -1109,6 +1159,7 @@ impl WasmInstance {
 
     /// Closes stdin. Only usable with WASI.
     #[func]
+    #[instrument]
     fn stdin_close(&self) {
         cfg_if! {
             if #[cfg(feature = "wasi")] {
@@ -1126,6 +1177,7 @@ impl WasmInstance {
 
     /// Returns memory size.
     #[func]
+    #[instrument(ret)]
     fn memory_size(&self) -> i64 {
         self.get_memory(|data| Ok(data.len() as i64))
             .unwrap_or_default()
@@ -1133,6 +1185,7 @@ impl WasmInstance {
 
     /// Reads a chunk of memory.
     #[func]
+    #[instrument]
     fn memory_read(&self, i: i64, n: i64) -> PackedByteArray {
         self.read_memory(i as _, n as _, |s| Ok(PackedByteArray::from(s)))
             .unwrap_or_default()
@@ -1140,10 +1193,10 @@ impl WasmInstance {
 
     /// Writes a chunk of memory.
     #[func]
+    #[instrument(skip(a), fields(a.len = a.len()), ret)]
     fn memory_write(&self, i: i64, a: PackedByteArray) -> bool {
-        let a = a.as_slice();
-        self.write_memory(i as _, a.len(), |s| {
-            s.copy_from_slice(a);
+        self.write_memory(i as _, a.len(), move |s| {
+            s.copy_from_slice(a.as_slice());
             Ok(())
         })
         .is_some()
@@ -1151,6 +1204,7 @@ impl WasmInstance {
 
     /// Reads an unsigned 8-bit integer.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn get_8(&self, i: i64) -> i64 {
         self.read_memory(i as _, 1, |s| Ok(s[0]))
             .unwrap_or_default()
@@ -1159,6 +1213,7 @@ impl WasmInstance {
 
     /// Writes an unsigned 8-bit integer.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn put_8(&self, i: i64, v: i64) -> bool {
         self.write_memory(i as _, 1, |s| {
             s[0] = (v & 255) as _;
@@ -1169,6 +1224,7 @@ impl WasmInstance {
 
     /// Reads an unsigned 16-bit integer.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn get_16(&self, i: i64) -> i64 {
         self.read_memory(i as _, 2, |s| Ok(u16::from_le_bytes(s.try_into().unwrap())))
             .unwrap_or_default()
@@ -1177,6 +1233,7 @@ impl WasmInstance {
 
     /// Writes an unsigned 16-bit integer.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn put_16(&self, i: i64, v: i64) -> bool {
         self.write_memory(i as _, 2, |s| {
             s.copy_from_slice(&((v & 0xffff) as u16).to_le_bytes());
@@ -1187,6 +1244,7 @@ impl WasmInstance {
 
     /// Reads an unsigned 32-bit integer.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn get_32(&self, i: i64) -> i64 {
         self.read_memory(i as _, 4, |s| Ok(u32::from_le_bytes(s.try_into().unwrap())))
             .unwrap_or_default()
@@ -1195,6 +1253,7 @@ impl WasmInstance {
 
     /// Writes an unsigned 32-bit integer.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn put_32(&self, i: i64, v: i64) -> bool {
         self.write_memory(i as _, 4, |s| {
             s.copy_from_slice(&((v & 0xffffffff) as u32).to_le_bytes());
@@ -1205,6 +1264,7 @@ impl WasmInstance {
 
     /// Reads a signed 64-bit integer.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn get_64(&self, i: i64) -> i64 {
         self.read_memory(i as _, 8, |s| Ok(i64::from_le_bytes(s.try_into().unwrap())))
             .unwrap_or_default()
@@ -1212,6 +1272,7 @@ impl WasmInstance {
 
     /// Writes a signed 64-bit integer.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn put_64(&self, i: i64, v: i64) -> bool {
         self.write_memory(i as _, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
@@ -1222,6 +1283,7 @@ impl WasmInstance {
 
     /// Reads a 32-bit floating-point number.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn get_float(&self, i: i64) -> f64 {
         self.read_memory(i as _, 4, |s| Ok(f32::from_le_bytes(s.try_into().unwrap())))
             .unwrap_or_default()
@@ -1230,6 +1292,7 @@ impl WasmInstance {
 
     /// Writes a 32-bit floating-point number.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn put_float(&self, i: i64, v: f64) -> bool {
         self.write_memory(i as _, 4, |s| {
             s.copy_from_slice(&(v as f32).to_le_bytes());
@@ -1240,6 +1303,7 @@ impl WasmInstance {
 
     /// Reads a 64-bit floating-point number.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn get_double(&self, i: i64) -> f64 {
         self.read_memory(i as _, 8, |s| Ok(f64::from_le_bytes(s.try_into().unwrap())))
             .unwrap_or_default()
@@ -1247,6 +1311,7 @@ impl WasmInstance {
 
     /// Writes a 64-bit floating-point number.
     #[func]
+    #[instrument(level = Level::DEBUG, ret)]
     fn put_double(&self, i: i64, v: f64) -> bool {
         self.write_memory(i as _, 8, |s| {
             s.copy_from_slice(&v.to_le_bytes());
@@ -1257,7 +1322,9 @@ impl WasmInstance {
 
     /// Writes a `PackedArray`. Does not support `PackedStringArray`.
     #[func]
+    #[instrument(level = Level::DEBUG, skip(v), fields(v.type = ?v.get_type()), ret)]
     fn put_array(&self, i: i64, v: Variant) -> bool {
+        #[instrument(level = Level::DEBUG, skip_all, fields(N, d.len = d.len(), i, s.len = s.len()))]
         fn f<const N: usize, T: Sync>(
             d: &mut [u8],
             i: usize,
@@ -1276,7 +1343,7 @@ impl WasmInstance {
             Ok(())
         }
 
-        self.get_memory(|data| {
+        self.get_memory(move |data| {
             let i = i as usize;
             variant_dispatch!(v {
                 PACKED_BYTE_ARRAY => {
@@ -1304,7 +1371,9 @@ impl WasmInstance {
 
     /// Reads a `PackedArray`. Does not support `PackedStringArray`.
     #[func]
+    #[instrument(level = Level::DEBUG)]
     fn get_array(&self, i: i64, n: i64, t: VariantType) -> Variant {
+        #[instrument(level = Level::DEBUG, skip_all, fields(N, s.len = s.len(), i, n))]
         fn f<const N: usize, R>(
             s: &[u8],
             i: usize,
@@ -1329,7 +1398,7 @@ impl WasmInstance {
             Ok(r.to_variant())
         }
 
-        option_to_variant(self.get_memory(|data| {
+        option_to_variant(self.get_memory(move |data| {
             let data = &*data;
             let (i, n) = (i as usize, n as usize);
             match t {
@@ -1369,18 +1438,22 @@ impl WasmInstance {
 
     /// Reads a structured data.
     #[func]
+    #[instrument(level = Level::DEBUG)]
     fn read_struct(&self, format: GString, p: u64) -> Variant {
-        option_to_variant(self.get_memory(|data| {
+        option_to_variant(self.get_memory(move |data| {
             let mut f = Cursor::new(data);
             f.set_position(p);
-            read_struct(f, format.chars())
+            let ret = read_struct(f, format.chars())?;
+            info!(ret.len = ret.len());
+            Ok(ret)
         }))
     }
 
     /// Writes a structured data.
     #[func]
+    #[instrument(level = Level::DEBUG, skip(arr), fields(arr.len = arr.len()), ret)]
     fn write_struct(&self, format: GString, p: u64, arr: VariantArray) -> u64 {
-        self.get_memory(|data| {
+        self.get_memory(move |data| {
             let mut f = Cursor::new(data);
             f.set_position(p);
             write_struct(f, format.chars(), arr)

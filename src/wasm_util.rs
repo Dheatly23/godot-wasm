@@ -10,6 +10,7 @@ use anyhow::{Error, Result as AnyResult};
 use cfg_if::cfg_if;
 use godot::classes::WeakRef;
 use godot::prelude::*;
+use tracing::{debug, info_span, instrument, Level};
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
 #[cfg(feature = "epoch-timeout")]
@@ -125,6 +126,7 @@ macro_rules! func_registry{
     };
 }
 
+#[instrument(level = Level::TRACE)]
 pub fn from_signature(sig: &FuncType) -> (PackedByteArray, PackedByteArray) {
     fn f(v: ValType) -> u8 {
         (match v {
@@ -153,6 +155,7 @@ pub fn from_signature(sig: &FuncType) -> (PackedByteArray, PackedByteArray) {
     (params, results)
 }
 
+#[instrument(level = Level::TRACE, skip(params, results), ret)]
 pub fn to_signature(params: Variant, results: Variant, use_extern: bool) -> AnyResult<FuncType> {
     fn f(
         it: impl Iterator<Item = Result<i64, Error>>,
@@ -386,11 +389,13 @@ where
         .collect()
 }
 
+#[derive(Debug)]
 enum CallableEnum {
     ObjectMethod(Gd<Object>, StringName),
     Callable(Callable),
 }
 
+#[instrument(level = Level::DEBUG, skip(store))]
 fn wrap_godot_method<T>(
     store: impl AsContextMut<Data = T>,
     ty: FuncType,
@@ -402,6 +407,7 @@ where
     let callable = SendSyncWrapper::new(callable);
     let ty_cloned = ty.clone();
     let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> AnyResult<()> {
+        let _s = info_span!("wrap_godot_method.inner", ?callable);
         let p = ty
             .params()
             .enumerate()
@@ -531,6 +537,7 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
 }
 
 #[cfg(feature = "epoch-timeout")]
+#[instrument(level = Level::TRACE, skip_all)]
 pub fn config_store_epoch<T: HasEpochTimeout>(
     store: &mut Store<T>,
     config: &Config,
@@ -545,6 +552,7 @@ pub fn config_store_epoch<T: HasEpochTimeout>(
     Ok(())
 }
 
+#[instrument(level = Level::TRACE, skip_all)]
 pub fn config_store_common<T>(_store: &mut Store<T>, _config: &Config) -> AnyResult<()>
 where
     T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
@@ -578,6 +586,7 @@ pub trait HasEpochTimeout {
 }
 
 #[cfg(feature = "epoch-timeout")]
+#[instrument(level = Level::DEBUG, skip_all)]
 pub fn reset_epoch<C>(mut ctx: C)
 where
     C: AsContextMut,
@@ -589,9 +598,12 @@ where
         return;
     };
 
+    let d = EPOCH_INTERVAL * u32::try_from(t).unwrap_or(u32::MAX);
+    debug!(ticks = t, delta = ?d, "Reset epoch");
+
     #[cfg(feature = "wasi")]
     if let Some(ctx) = v.get_wasi_ctx() {
-        ctx.set_timeout(time::Instant::now() + EPOCH_INTERVAL * t as u32);
+        ctx.set_timeout(time::Instant::now() + (d + EPOCH_INTERVAL));
     }
 
     ctx.set_epoch_deadline(t);

@@ -1,6 +1,7 @@
 use std::borrow::{Borrow, Cow};
 use std::error::Error;
 use std::fmt;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
@@ -12,12 +13,18 @@ use godot::prelude::*;
 /// WARNING: Incredibly unsafe.
 /// It's just used as workaround to pass Godot objects across closure.
 /// (At least until it supports multi-threading)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub(crate) struct SendSyncWrapper<T: ?Sized>(T);
 
 unsafe impl<T: ?Sized> Send for SendSyncWrapper<T> {}
 unsafe impl<T: ?Sized> Sync for SendSyncWrapper<T> {}
+
+impl<T: ?Sized + Debug> Debug for SendSyncWrapper<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        self.0.fmt(f)
+    }
+}
 
 #[allow(dead_code)]
 impl<T> SendSyncWrapper<T> {
