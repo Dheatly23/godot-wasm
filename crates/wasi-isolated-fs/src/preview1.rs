@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
-use std::collections::btree_map::BTreeMap;
+use std::collections::btree_map::{BTreeMap, Entry, VacantEntry};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::io::ErrorKind;
 use std::mem::transmute;
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use anyhow::Error as AnyError;
+use anyhow::{Error as AnyError, Result as AnyResult};
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_fs_ext::{DirExt, FileTypeExt, MetadataExt, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
 use fs_set_times::SetTimes;
@@ -43,41 +43,45 @@ impl P1Items {
         Self::default()
     }
 
-    fn next_free(&mut self) -> u32 {
-        assert!(self.tree.len() < u32::MAX as usize, "file descriptor full");
+    #[instrument(level = Level::DEBUG, skip(self), ret, err(Display))]
+    pub fn register(&mut self, item: P1Item) -> AnyResult<Fd> {
+        fn f(e: VacantEntry<'_, u32, P1Item>, i: P1Item) -> AnyResult<Fd> {
+            let r = *e.key();
+            e.insert(i);
+            Ok(r.into())
+        }
+
+        if self.tree.len() > u32::MAX as usize {
+            return Err(crate::errors::FileDescriptorFullError.into());
+        }
 
         while let Some(ix) = self.ix.checked_sub(1) {
             self.ix = ix;
-            let k = self.buf[ix as usize];
-            if !self.tree.contains_key(&k) {
-                return k;
+            if let Entry::Vacant(v) = self.tree.entry(self.buf[ix as usize]) {
+                return f(v, item);
             }
         }
 
-        let Some((&(mut k), _)) = self.tree.last_key_value() else {
-            return 0;
+        let Some((&k, _)) = self.tree.last_key_value() else {
+            match self.tree.entry(0) {
+                Entry::Vacant(v) => return f(v, item),
+                _ => unreachable!("Impossible tree state"),
+            }
         };
 
         if let Some(k) = k.checked_add(1) {
-            debug_assert!(!self.tree.contains_key(&k));
-            return k;
-        }
-        let e = k;
-        loop {
-            k = k.wrapping_sub(1);
-            if !self.tree.contains_key(&k) {
-                break k;
-            } else if k == e {
-                panic!("file descriptor full");
+            match self.tree.entry(k) {
+                Entry::Vacant(v) => return f(v, item),
+                _ => unreachable!("Impossible tree state"),
             }
         }
-    }
+        for k in (0..u32::MAX).rev() {
+            if let Entry::Vacant(v) = self.tree.entry(k) {
+                return f(v, item);
+            }
+        }
 
-    #[instrument(level = Level::DEBUG, skip(self), ret)]
-    pub fn register(&mut self, item: P1Item) -> Fd {
-        let i = self.next_free();
-        self.tree.insert(i, item);
-        i.into()
+        Err(crate::errors::FileDescriptorFullError.into())
     }
 
     #[instrument(level = Level::DEBUG, skip(self), ret)]
@@ -1960,7 +1964,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         } else {
             P1File::new(ret)
         };
-        Ok(self.p1_items.register(Box::new(ret).into()))
+        Ok(self.p1_items.register(Box::new(ret).into())?)
     }
 
     #[instrument(skip(self, mem), err(level = Level::WARN))]

@@ -298,6 +298,22 @@ impl Display for NetworkUnsupportedError {
 
 impl Error for NetworkUnsupportedError {}
 
+pub(crate) struct FileDescriptorFullError;
+
+impl Debug for FileDescriptorFullError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for FileDescriptorFullError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "file descriptor full")
+    }
+}
+
+impl Error for FileDescriptorFullError {}
+
 pub(crate) struct WasiFSError(FSErrorCode);
 
 impl Debug for WasiFSError {
