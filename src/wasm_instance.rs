@@ -11,7 +11,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
 use rayon::prelude::*;
 use scopeguard::guard;
-use tracing::{debug, debug_span, error, info, instrument, warn, Level};
+use tracing::{debug, debug_span, error, info, instrument, trace_span, warn, Level};
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::bindings::wasi_snapshot_preview1::add_to_linker;
 #[cfg(feature = "wasi")]
@@ -474,6 +474,31 @@ where
                     }
                 }
 
+                if let Some(o) = module.imports.get(i.module()) {
+                    let _s = debug_span!("instantiate_wasm.import.recursive", ?o).entered();
+                    let id = o.instance_id();
+                    let mut v = match self.insts.entry(id) {
+                        Entry::Vacant(v) => v.insert(None),
+                        Entry::Occupied(v) => match v.into_mut() {
+                            None => bail_with_site!("Recursive data structure"),
+                            v => v,
+                        },
+                    };
+                    let _s = trace_span!("instantiate_wasm.import.recursive.inner");
+                    let t = loop {
+                        let _s = _s.enter();
+                        if let Some(v) = v {
+                            break v;
+                        }
+                        let t = self.instantiate_wasm(o.bind().get_data()?)?;
+                        v = self.insts.entry(id).or_insert(None);
+                        *v = Some(t);
+                    };
+                    if let Some(v) = t.get_export(&mut self.store, i.name()) {
+                        return Ok(v);
+                    }
+                }
+
                 #[cfg(any(feature = "object-registry-compat", feature = "object-registry-extern"))]
                 if let Some(v) = match (i.module(), &self.config) {
                     #[cfg(feature = "object-registry-compat")]
@@ -500,31 +525,6 @@ where
                 #[cfg(feature = "wasi")]
                 if let Some(v) = &self.wasi_linker {
                     if let Some(v) = v.get_by_import(&mut self.store, &i) {
-                        return Ok(v);
-                    }
-                }
-
-                if let Some(o) = module.imports.get(i.module()) {
-                    let _s = debug_span!("instantiate_wasm.import.recursive", ?o).entered();
-                    let id = o.instance_id();
-                    let mut v = match self.insts.entry(id) {
-                        Entry::Vacant(v) => v.insert(None),
-                        Entry::Occupied(v) => match v.into_mut() {
-                            None => bail_with_site!("Recursive data structure"),
-                            v => v,
-                        },
-                    };
-                    let _s = debug_span!("instantiate_wasm.import.recursive.inner");
-                    let t = loop {
-                        let _s = _s.enter();
-                        if let Some(v) = v {
-                            break v;
-                        }
-                        let t = self.instantiate_wasm(o.bind().get_data()?)?;
-                        v = self.insts.entry(id).or_insert(None);
-                        *v = Some(t);
-                    };
-                    if let Some(v) = t.get_export(&mut self.store, i.name()) {
                         return Ok(v);
                     }
                 }

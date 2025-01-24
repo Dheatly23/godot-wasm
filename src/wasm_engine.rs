@@ -11,7 +11,7 @@ use godot::classes::FileAccess;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
-use tracing::{debug, debug_span, error, info, info_span, instrument, Level};
+use tracing::{debug, debug_span, error, info, info_span, instrument, trace, Level};
 #[cfg(feature = "component-model")]
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
@@ -114,6 +114,7 @@ pub fn deinit_engine() {
                     engine.increment_epoch();
                 }
                 drop(engine);
+                debug!("Joining epoch thread");
                 handle.join().unwrap();
             }
         } else {
@@ -123,32 +124,39 @@ pub fn deinit_engine() {
 }
 
 #[cfg(feature = "epoch-timeout")]
+#[instrument(level = Level::DEBUG, err)]
 pub fn start_epoch() -> AnyResult<()> {
+    #[instrument]
+    fn epoch_thread() {
+        let mut timeout = time::Instant::now();
+        loop {
+            if let Some(d) = (timeout + EPOCH_INTERVAL).checked_duration_since(time::Instant::now())
+            {
+                trace!(duration = ?d, "Epoch thread sleeping");
+                thread::sleep(d);
+            }
+
+            let Some(guard) = ENGINE.try_read() else {
+                break;
+            };
+            let Some((engine, _)) = guard.as_ref() else {
+                break;
+            };
+            let t = time::Instant::now();
+            while timeout < t {
+                trace!("Epoch");
+                engine.increment_epoch();
+                timeout += EPOCH_INTERVAL;
+            }
+        }
+    }
+
     let mut guard = ENGINE.write();
     let (_, handle) = guard.as_mut().ok_or(EngineUninitError)?;
     if handle.is_none() {
         let _s = info_span!("start_epoch.thread").entered();
         let builder = thread::Builder::new().name("epoch-aux".to_string());
-        *handle = Some(builder.spawn(|| {
-            let _s = info_span!("epoch").entered();
-            let mut timeout = time::Instant::now();
-            loop {
-                thread::sleep(
-                    (timeout + EPOCH_INTERVAL).saturating_duration_since(time::Instant::now()),
-                );
-                let Some(guard) = ENGINE.try_read() else {
-                    break;
-                };
-                let Some((engine, _)) = guard.as_ref() else {
-                    break;
-                };
-                let t = time::Instant::now();
-                while timeout < t {
-                    engine.increment_epoch();
-                    timeout += EPOCH_INTERVAL;
-                }
-            }
-        })?);
+        *handle = Some(builder.spawn(epoch_thread)?);
     }
     Ok(())
 }
