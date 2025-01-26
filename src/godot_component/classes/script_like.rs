@@ -5,7 +5,7 @@ use parking_lot::Mutex;
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
 use wasmtime::component::{Linker, Resource as WasmResource};
-use wasmtime::Store;
+use wasmtime::{AsContextMut, Store};
 
 use crate::godot_component::filter::Filter;
 use crate::godot_component::{add_to_linker, bindgen, GodotCtx};
@@ -250,7 +250,7 @@ impl WasmScriptLike {
         self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
                 #[cfg(feature = "epoch-timeout")]
-                reset_epoch(&mut store);
+                reset_epoch(store.as_context_mut());
 
                 let res = store.data_mut().godot_ctx.set_into_var(args)?;
                 let ret = m

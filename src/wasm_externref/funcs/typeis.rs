@@ -1,6 +1,6 @@
 use anyhow::Result as AnyResult;
 use godot::prelude::*;
-use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut};
+use wasmtime::{AsContext, Caller, ExternRef, Func, Rooted, StoreContextMut};
 
 use crate::wasm_externref::externref_to_variant;
 use crate::wasm_instance::StoreData;
@@ -20,13 +20,13 @@ macro_rules! is_typecheck{
             {
                 match name {
                     $(concat!($n, ".is") => Some(self.$i.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-                        match externref_to_variant(&ctx, v)?.get_type() {
+                        match externref_to_variant(ctx.as_context(), v)?.get_type() {
                             VariantType::$var => Ok(1),
                             _ => Ok(0),
                         }
                     })).clone()),)*
                     "variant_type" => Some(self.variant_type.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-                        Ok(externref_to_variant(&ctx, v)?.get_type().ord() as _)
+                        Ok(externref_to_variant(ctx.as_context(), v)?.get_type().ord() as _)
                     })).clone()),
                     _ => None,
                 }

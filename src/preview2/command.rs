@@ -8,7 +8,7 @@ use parking_lot::Mutex;
 use wasi_isolated_fs::bindings::{Command, LinkOptions};
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
 use wasmtime::component::Linker;
-use wasmtime::Store;
+use wasmtime::{AsContextMut, Store};
 
 #[cfg(feature = "godot-component")]
 use crate::godot_component::filter::Filter;
@@ -343,7 +343,7 @@ impl WasiCommand {
         self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
                 #[cfg(feature = "epoch-timeout")]
-                reset_epoch(&mut store);
+                reset_epoch(store.as_context_mut());
 
                 Ok(m.bindings.wasi_cli_run().call_run(store)?.is_ok())
             })

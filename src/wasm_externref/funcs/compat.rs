@@ -1,5 +1,5 @@
 use anyhow::Result as AnyResult;
-use wasmtime::{Caller, ExternRef, Func, Rooted, StoreContextMut};
+use wasmtime::{AsContext, AsContextMut, Caller, ExternRef, Func, Rooted, StoreContextMut};
 
 use crate::func_registry;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
@@ -8,18 +8,18 @@ use crate::wasm_instance::StoreData;
 func_registry! {
     "compat.",
     register => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-        let v = externref_to_variant(&ctx, v)?;
+        let v = externref_to_variant(ctx.as_context(), v)?;
         Ok(ctx.data_mut()
             .as_mut()
             .get_registry_mut()?
             .register(v) as _)
     },
-    get => |ctx: Caller<'_, T>, i: u32| -> AnyResult<Option<Rooted<ExternRef>>> {
+    get => |mut ctx: Caller<'_, T>, i: u32| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = ctx.data().as_ref().get_registry()?.get_or_nil(i as _);
-        variant_to_externref(ctx, v)
+        variant_to_externref(ctx.as_context_mut(), v)
     },
     set => |mut ctx: Caller<'_, T>, i: u32, v: Option<Rooted<ExternRef>>| -> AnyResult<()> {
-        let v = externref_to_variant(&ctx, v)?;
+        let v = externref_to_variant(ctx.as_context(), v)?;
         ctx.data_mut()
             .as_mut()
             .get_registry_mut()?

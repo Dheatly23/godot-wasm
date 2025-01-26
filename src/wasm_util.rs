@@ -1,8 +1,10 @@
 use std::borrow::Borrow;
 use std::cell::{Cell, UnsafeCell};
+use std::marker::PhantomData;
+use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
+use std::ptr::NonNull;
 use std::rc::Rc;
-use std::slice;
 #[cfg(feature = "epoch-timeout")]
 use std::time;
 
@@ -16,7 +18,8 @@ use wasi_isolated_fs::context::WasiContext as WasiCtx;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{
-    AsContextMut, Caller, Extern, Func, FuncType, Linker, RootScope, Store, ValRaw, ValType,
+    AsContext, AsContextMut, Caller, Extern, Func, FuncType, Linker, RootScope, Store,
+    StoreContextMut, ValRaw, ValType,
 };
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, HeapType, RefType};
@@ -204,7 +207,7 @@ pub fn to_signature(params: Variant, results: Variant, use_extern: bool) -> AnyR
 
 // Mark this unsafe for future proofing.
 pub unsafe fn to_raw<T: AsRef<StoreData>>(
-    mut _store: impl AsContextMut<Data = T>,
+    mut _ctx: StoreContextMut<'_, T>,
     t: ValType,
     v: &Variant,
 ) -> AnyResult<ValRaw> {
@@ -228,12 +231,11 @@ pub unsafe fn to_raw<T: AsRef<StoreData>>(
         })),
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r)
-            if matches!(r.heap_type(), HeapType::Extern)
-                && _store.as_context().data().as_ref().use_extern =>
+            if matches!(r.heap_type(), HeapType::Extern) && _ctx.data().as_ref().use_extern =>
         {
             ValRaw::externref(
-                match variant_to_externref(_store.as_context_mut(), v.clone())? {
-                    Some(v) => v.to_raw(_store)?,
+                match variant_to_externref(_ctx.as_context_mut(), v.clone())? {
+                    Some(v) => v.to_raw(_ctx)?,
                     None if r.is_nullable() => 0,
                     None => bail_with_site!("Converting null into non-nullable WASM type"),
                 },
@@ -245,7 +247,7 @@ pub unsafe fn to_raw<T: AsRef<StoreData>>(
 
 // Mark this unsafe for future proofing.
 pub unsafe fn from_raw<T: AsRef<StoreData>>(
-    mut _store: impl AsContextMut<Data = T>,
+    mut _ctx: StoreContextMut<'_, T>,
     t: ValType,
     v: ValRaw,
 ) -> AnyResult<Variant> {
@@ -260,96 +262,113 @@ pub unsafe fn from_raw<T: AsRef<StoreData>>(
         }
         #[cfg(feature = "object-registry-extern")]
         ValType::Ref(r)
-            if _store.as_context().data().as_ref().use_extern
-                && matches!(r.heap_type(), HeapType::Extern) =>
+            if _ctx.data().as_ref().use_extern && matches!(r.heap_type(), HeapType::Extern) =>
         {
-            let v = ExternRef::from_raw(&mut _store, v.get_externref());
-            return externref_to_variant(_store, v);
+            let v = ExternRef::from_raw(_ctx.as_context_mut(), v.get_externref());
+            return externref_to_variant(_ctx.as_context(), v);
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })
 }
 
-struct ParamCache {
+struct ParamCache<T> {
     len: Cell<usize>,
-    data: Box<[ValRaw]>,
+    data: Box<[MaybeUninit<T>]>,
 }
 
-struct ParamCacheGuard<'a> {
-    len: &'a Cell<usize>,
+struct ParamCacheGuard<T> {
+    parent: Rc<ParamCache<T>>,
     old_len: usize,
-    data: &'a mut [ValRaw],
+    data: NonNull<[T]>,
+    _p: PhantomData<*mut [T]>,
 }
 
-impl Drop for ParamCacheGuard<'_> {
+impl<T> Drop for ParamCacheGuard<T> {
     fn drop(&mut self) {
-        let v = self.len.replace(self.len.get() - self.data.len());
+        let data_len;
+        // SAFETY: We have exclusive access to data.
+        unsafe {
+            data_len = self.data.as_mut().len();
+            self.data.drop_in_place();
+        }
+        let v = self.parent.len.replace(self.parent.len.get() - data_len);
         debug_assert_eq!(v, self.old_len);
     }
 }
 
-impl Deref for ParamCacheGuard<'_> {
-    type Target = [ValRaw];
-    fn deref(&self) -> &[ValRaw] {
-        &*self.data
+impl<T> Deref for ParamCacheGuard<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        // SAFETY: We have exclusive access to data.
+        unsafe { self.data.as_ref() }
     }
 }
 
-impl DerefMut for ParamCacheGuard<'_> {
-    fn deref_mut(&mut self) -> &mut [ValRaw] {
-        &mut *self.data
+impl<T> DerefMut for ParamCacheGuard<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        // SAFETY: We have exclusive access to data.
+        unsafe { self.data.as_mut() }
     }
 }
 
-impl ParamCache {
-    fn get(this: &mut Rc<Self>, n: usize) -> Rc<Self> {
-        if this.len.get() + n > this.data.len() {
+impl<T> ParamCache<T> {
+    fn new(len: usize) -> Self {
+        Self {
+            len: Cell::new(0),
+            data: Box::new_uninit_slice(len),
+        }
+    }
+
+    fn get(this: &mut Rc<Self>, n: usize, fill: impl Fn() -> T) -> ParamCacheGuard<T> {
+        let this = if this.len.get() + n > this.data.len() {
             let mut l = this.data.len() * 2;
             while l < n {
                 l *= 2;
             }
             let o = Rc::new(Self {
                 len: Cell::new(0),
-                data: vec![ValRaw::i32(0); l].into(),
+                data: Box::new_uninit_slice(l),
             });
             *this = o.clone();
             o
         } else {
             this.clone()
-        }
-    }
-
-    fn get_data(&self, n: usize) -> ParamCacheGuard<'_> {
-        let len = self.len.get();
-        assert!(
-            len + n <= self.data.len(),
-            "n is too large! (len: {}, n: {}, cap: {})",
-            len,
-            n,
-            self.data.len()
-        );
-        let v = self.len.replace(len + n);
+        };
+        let len = this.len.get();
+        let v = this.len.replace(len + n);
         debug_assert_eq!(v, len);
+        // SAFETY: We have exclusive right to that portion of data.
+        let data = unsafe {
+            let mut p = NonNull::from(&this.data[len..len + n]);
+            for i in p.as_mut() {
+                // If fill panics some data might be leaked, but that's okay.
+                i.write(fill());
+            }
+            NonNull::new_unchecked(p.as_ptr() as *mut [T])
+        };
         ParamCacheGuard {
-            len: &self.len,
+            parent: this,
             old_len: len + n,
-            // SAFETY: We have exclusive right to that portion of data.
-            data: unsafe {
-                slice::from_raw_parts_mut(self.data.as_ptr().add(len) as *mut ValRaw, n)
-            },
+            data,
+            _p: PhantomData,
         }
     }
 }
 
 thread_local! {
-    static PARAM_CACHE: UnsafeCell<Rc<ParamCache>> = UnsafeCell::new(Rc::new(ParamCache {
-        len: Cell::new(0),
-        data: vec![ValRaw::i32(0); 64].into(),
-    }));
+    static PARAM_CACHE: UnsafeCell<Rc<ParamCache<ValRaw>>> = UnsafeCell::new(Rc::new(ParamCache::new(64)));
+    static GODOT_PARAM_CACHE: UnsafeCell<Rc<ParamCache<Variant>>> = UnsafeCell::new(Rc::new(ParamCache::new(64)));
+}
+
+pub fn get_godot_param_cache(len: usize) -> impl DerefMut<Target = [Variant]> {
+    GODOT_PARAM_CACHE.with(|v| {
+        // SAFETY: We have exclusive right to value.
+        unsafe { ParamCache::get(&mut *v.get(), len, Variant::nil) }
+    })
 }
 
 pub unsafe fn raw_call<T, It>(
-    ctx: impl AsContextMut<Data = T>,
+    ctx: StoreContextMut<'_, T>,
     f: &Func,
     ty: &FuncType,
     args: It,
@@ -364,11 +383,10 @@ where
     let pl = pi.len();
     let l = pl.max(ri.len());
 
-    let v = PARAM_CACHE.with(|v| {
+    let mut v = PARAM_CACHE.with(|v| {
         // SAFETY: We have exclusive right to value.
-        unsafe { ParamCache::get(&mut *v.get(), l) }
+        unsafe { ParamCache::get(&mut *v.get(), l, || ValRaw::i32(0)) }
     });
-    let mut v = v.get_data(l);
 
     let mut ctx = RootScope::new(ctx);
     ctx.as_context_mut().gc();
@@ -378,14 +396,14 @@ where
         let Some(v) = args.next() else {
             bail_with_site!("Too few parameters (expected {pl}, got {i})")
         };
-        *o = to_raw(&mut ctx, p, v.borrow())?;
+        *o = to_raw(ctx.as_context_mut(), p, v.borrow())?;
     }
     drop(args);
 
-    f.call_unchecked(&mut ctx, &mut *v)?;
+    f.call_unchecked(ctx.as_context_mut(), &mut *v)?;
 
     ri.zip(v.iter())
-        .map(|(t, v)| from_raw(&mut ctx, t, *v))
+        .map(|(t, v)| from_raw(ctx.as_context_mut(), t, *v))
         .collect()
 }
 
@@ -395,24 +413,21 @@ enum CallableEnum {
     Callable(Callable),
 }
 
-#[instrument(level = Level::DEBUG, skip(store))]
-fn wrap_godot_method<T>(
-    store: impl AsContextMut<Data = T>,
-    ty: FuncType,
-    callable: CallableEnum,
-) -> Func
+#[instrument(level = Level::DEBUG, skip(ctx))]
+fn wrap_godot_method<T>(ctx: StoreContextMut<'_, T>, ty: FuncType, callable: CallableEnum) -> Func
 where
     T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     let callable = SendSyncWrapper::new(callable);
     let ty_cloned = ty.clone();
+    let _s = info_span!("wrap_godot_method.inner", ?callable);
     let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> AnyResult<()> {
-        let _s = info_span!("wrap_godot_method.inner", ?callable);
-        let p = ty
-            .params()
-            .enumerate()
-            .map(|(ix, t)| unsafe { from_raw(&mut ctx, t, args[ix]) })
-            .collect::<AnyResult<Vec<_>>>()?;
+        let _s = _s.enter();
+
+        let mut p = get_godot_param_cache(args.len());
+        for (ix, t) in ty.params().enumerate() {
+            p[ix] = unsafe { from_raw(ctx.as_context_mut(), t, args[ix])? };
+        }
 
         let r = match &*callable {
             CallableEnum::ObjectMethod(obj, method) => {
@@ -439,23 +454,23 @@ where
                 let Some(v) = r.get(i) else {
                     bail_with_site!("Too few return value (expected {rl}, got {i})")
                 };
-                *o = unsafe { to_raw(&mut ctx, t, &v)? };
+                *o = unsafe { to_raw(ctx.as_context_mut(), t, &v)? };
             }
         } else if rl == 1 {
-            args[0] = unsafe { to_raw(&mut ctx, ri.next().unwrap(), &r)? };
+            args[0] = unsafe { to_raw(ctx.as_context_mut(), ri.next().unwrap(), &r)? };
         } else {
             bail_with_site!("Unconvertible return value {}", r);
         }
 
         #[cfg(feature = "epoch-timeout")]
         if ctx.data().as_ref().epoch_autoreset {
-            reset_epoch(ctx);
+            reset_epoch(ctx.as_context_mut());
         }
 
         Ok(())
     };
 
-    unsafe { Func::new_unchecked(store, ty_cloned, f) }
+    unsafe { Func::new_unchecked(ctx, ty_cloned, f) }
 }
 
 fn process_func(dict: Dictionary, use_extern: bool) -> AnyResult<(FuncType, CallableEnum)> {
@@ -478,11 +493,11 @@ fn process_func(dict: Dictionary, use_extern: bool) -> AnyResult<(FuncType, Call
 
         CallableEnum::ObjectMethod(
             site_context!(from_var_any(object))?,
-            match method.get_type() {
-                VariantType::STRING => method.to::<GString>().into(),
-                VariantType::STRING_NAME => method.to(),
-                _ => bail_with_site!("Unknown method name {method}"),
-            },
+            variant_dispatch!(method {
+                STRING => method.into(),
+                STRING_NAME => method,
+                _ => bail_with_site!("Unknown method name type {:?}", method.get_type()),
+            }),
         )
     };
 
@@ -502,13 +517,13 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
         })
     }
 
-    pub fn get_extern<S: AsContextMut<Data = T>>(
+    pub fn get_extern(
         &mut self,
-        store: &mut S,
+        mut ctx: StoreContextMut<'_, T>,
         module: &str,
         name: &str,
     ) -> AnyResult<Option<Extern>> {
-        if let r @ Some(_) = self.cache.get(&mut *store, module, name) {
+        if let r @ Some(_) = self.cache.get(ctx.as_context_mut(), module, name) {
             Ok(r)
         } else if let Some(data) = self
             .host
@@ -519,7 +534,7 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
         {
             cfg_if! {
                 if #[cfg(feature = "object-registry-extern")] {
-                    let use_extern = store.as_context_mut().data().as_ref().use_extern;
+                    let use_extern = ctx.as_context_mut().data().as_ref().use_extern;
                 } else {
                     let use_extern = false;
                 }
@@ -527,8 +542,8 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
             let (sig, callable) =
                 process_func(site_context!(from_var_any::<Dictionary>(data))?, use_extern)?;
 
-            let v = Extern::from(wrap_godot_method(&mut *store, sig, callable));
-            self.cache.define(store, module, name, v.clone())?;
+            let v = Extern::from(wrap_godot_method(ctx.as_context_mut(), sig, callable));
+            self.cache.define(ctx, module, name, v.clone())?;
             Ok(Some(v))
         } else {
             Ok(None)
@@ -548,7 +563,7 @@ pub fn config_store_epoch<T: HasEpochTimeout>(
     } else {
         store.epoch_deadline_callback(|_| Ok(UpdateDeadline::Continue(EPOCH_DEADLINE)));
     }
-    reset_epoch(store);
+    reset_epoch(store.as_context_mut());
     Ok(())
 }
 
@@ -587,12 +602,7 @@ pub trait HasEpochTimeout {
 
 #[cfg(feature = "epoch-timeout")]
 #[instrument(level = Level::DEBUG, skip_all)]
-pub fn reset_epoch<C>(mut ctx: C)
-where
-    C: AsContextMut,
-    C::Data: HasEpochTimeout,
-{
-    let mut ctx = ctx.as_context_mut();
+pub fn reset_epoch<T: HasEpochTimeout>(mut ctx: StoreContextMut<'_, T>) {
     let v = ctx.data_mut();
     let t @ 1.. = v.get_epoch_timeout() else {
         return;

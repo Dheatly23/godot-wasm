@@ -1,6 +1,8 @@
 use anyhow::Result as AnyResult;
 use godot::prelude::*;
-use wasmtime::{Caller, Extern, ExternRef, Func, Rooted, StoreContextMut, TypedFunc};
+use wasmtime::{
+    AsContext, AsContextMut, Caller, Extern, ExternRef, Func, Rooted, StoreContextMut, TypedFunc,
+};
 
 use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
@@ -16,11 +18,11 @@ macro_rules! readwrite_array {
         func_registry!{
             $head,
             len => |ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-                let a = site_context!(from_var_any::<$t>(&externref_to_variant(&ctx, a)?))?;
+                let a = site_context!(from_var_any::<$t>(&externref_to_variant(ctx.as_context(), a)?))?;
                 Ok(a.len() as _)
             },
             read => |mut ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>, p: u32| -> AnyResult<u32> {
-                let a = site_context!(from_var_any::<$t>(&externref_to_variant(&ctx, a)?))?;
+                let a = site_context!(from_var_any::<$t>(&externref_to_variant(ctx.as_context(), a)?))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -46,7 +48,7 @@ macro_rules! readwrite_array {
                     return Ok(0);
                 }
 
-                let a = site_context!(from_var_any::<$t>(&externref_to_variant(&ctx, a)?))?;
+                let a = site_context!(from_var_any::<$t>(&externref_to_variant(ctx.as_context(), a)?))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -92,7 +94,7 @@ macro_rules! readwrite_array {
 
                 let r = <$t>::from(&*v).to_variant();
                 drop(v);
-                variant_to_externref(ctx, r)
+                variant_to_externref(ctx.as_context_mut(), r)
             },
         }
     )*};
@@ -141,11 +143,11 @@ impl Funcs {
 func_registry! {
     (ByteArrayFuncs, "byte_array."),
     len => |ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
-        let a = site_context!(from_var_any::<PackedByteArray>(&externref_to_variant(ctx, a)?))?;
+        let a = site_context!(from_var_any::<PackedByteArray>(&externref_to_variant(ctx.as_context(), a)?))?;
         Ok(a.len() as _)
     },
     read => |mut ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>, p: u32| -> AnyResult<u32> {
-        let a = site_context!(from_var_any::<PackedByteArray>(&externref_to_variant(&ctx, a)?))?;
+        let a = site_context!(from_var_any::<PackedByteArray>(&externref_to_variant(ctx.as_context(), a)?))?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -164,7 +166,7 @@ func_registry! {
             Some(v) => PackedByteArray::from(v),
             None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n),
         };
-        variant_to_externref(ctx, a.to_variant())
+        variant_to_externref(ctx.as_context_mut(), a.to_variant())
     },
 }
 
@@ -191,18 +193,18 @@ func_registry! {
     (StringArrayFuncs, "string_array."),
     len => |ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>| -> AnyResult<u32> {
         let a = site_context!(from_var_any::<PackedStringArray>(
-            &externref_to_variant(ctx, a)?
+            &externref_to_variant(ctx.as_context(), a)?
         ))?;
         Ok(a.len() as _)
     },
-    get => |ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<Option<Rooted<ExternRef>>> {
+    get => |mut ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>, i: u32| -> AnyResult<Option<Rooted<ExternRef>>> {
         let a = site_context!(from_var_any::<PackedStringArray>(
-            &externref_to_variant(&ctx, a)?
+            &externref_to_variant(ctx.as_context(), a)?
         ))?;
         let Some(v) = a.as_slice().get(i as usize).map(|v| v.to_variant()) else {
             bail_with_site!("Index {i} out of bounds")
         };
-        variant_to_externref(ctx, v)
+        variant_to_externref(ctx.as_context_mut(), v)
     },
     get_many => |mut ctx: Caller<'_, _>, a: Option<Rooted<ExternRef>>, i: u32, f: Option<Func>| -> AnyResult<u32> {
         let f: TypedFunc<Option<Rooted<ExternRef>>, u32> = match f {
@@ -210,7 +212,7 @@ func_registry! {
             None => return Ok(0),
         };
         let a = site_context!(from_var_any::<PackedStringArray>(
-            &externref_to_variant(&ctx, a)?
+            &externref_to_variant(ctx.as_context(), a)?
         ))?;
 
         let mut n = 0;
@@ -220,7 +222,7 @@ func_registry! {
         };
         while let Some((v, rest)) = s.split_first() {
             n += 1;
-            let v = variant_to_externref(&mut ctx, v.to_variant())?;
+            let v = variant_to_externref(ctx.as_context_mut(), v.to_variant())?;
             if site_context!(f.call(&mut ctx, v))? == 0 {
                 break;
             }
@@ -239,7 +241,7 @@ func_registry! {
         loop {
             let (e, n) = site_context!(f.call(&mut ctx, v.len() as _))?;
             v.push(site_context!(from_var_any::<GString>(
-                &externref_to_variant(&ctx, e)?
+                &externref_to_variant(ctx.as_context(), e)?
             ))?);
             if n == 0 {
                 break;
@@ -248,6 +250,6 @@ func_registry! {
 
         let r = PackedStringArray::from(&*v).to_variant();
         drop(v);
-        variant_to_externref(ctx, r)
+        variant_to_externref(ctx.as_context_mut(), r)
     },
 }

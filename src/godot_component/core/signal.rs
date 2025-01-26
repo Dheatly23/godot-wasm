@@ -4,6 +4,7 @@ use wasmtime::component::Resource as WasmResource;
 
 use crate::filter_macro;
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
+use crate::wasm_util::get_godot_param_cache;
 
 filter_macro! {method [
     from_object_signal -> "from-object-signal",
@@ -81,11 +82,11 @@ impl bindgen::godot::core::signal::Host for GodotCtx {
     ) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_core, signal, emit)?;
         let v: Signal = self.get_value(var)?;
-        let args = args
-            .into_iter()
-            .map(|v| self.maybe_get_var(v))
-            .collect::<AnyResult<Vec<_>>>()?;
-        self.release_store(move || v.emit(&args));
+        let mut a = get_godot_param_cache(args.len());
+        for (i, v) in args.into_iter().enumerate() {
+            a[i] = self.maybe_get_var(v)?;
+        }
+        self.release_store(move || v.emit(&a));
         Ok(())
     }
 }

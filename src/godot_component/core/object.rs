@@ -4,6 +4,7 @@ use wasmtime::component::Resource as WasmResource;
 
 use crate::filter_macro;
 use crate::godot_component::{bindgen, wrap_error, ErrorRes, GodotCtx};
+use crate::wasm_util::get_godot_param_cache;
 
 filter_macro! {method [
     from_instance_id -> "from-instance-id",
@@ -154,11 +155,11 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, call)?;
         let mut o: Gd<Object> = self.get_value(var)?;
         let name: StringName = self.get_value(name)?;
-        let args = args
-            .into_iter()
-            .map(|v| self.maybe_get_var(v))
-            .collect::<AnyResult<Vec<_>>>()?;
-        let r = self.release_store(move || o.try_call(&name, &args))?;
+        let mut a = get_godot_param_cache(args.len());
+        for (i, v) in args.into_iter().enumerate() {
+            a[i] = self.maybe_get_var(v)?;
+        }
+        let r = self.release_store(move || o.try_call(&name, &a))?;
         self.set_var(r)
     }
 
@@ -185,11 +186,11 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, call_deferred)?;
         let mut o: Gd<Object> = self.get_value(var)?;
         let name: StringName = self.get_value(name)?;
-        let args = args
-            .into_iter()
-            .map(|v| self.maybe_get_var(v))
-            .collect::<AnyResult<Vec<_>>>()?;
-        let r = self.release_store(move || o.try_call_deferred(&name, &args))?;
+        let mut a = get_godot_param_cache(args.len());
+        for (i, v) in args.into_iter().enumerate() {
+            a[i] = self.maybe_get_var(v)?;
+        }
+        let r = self.release_store(move || o.try_call_deferred(&name, &a))?;
         self.set_var(r)
     }
 

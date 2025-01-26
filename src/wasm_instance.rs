@@ -469,7 +469,9 @@ where
             .map(|i| {
                 let _s = debug_span!("instantiate_wasm.import", import = ?i).entered();
                 if let Some(v) = &mut self.host {
-                    if let Some(v) = v.get_extern(&mut self.store, i.module(), i.name())? {
+                    if let Some(v) =
+                        v.get_extern(self.store.as_context_mut(), i.module(), i.name())?
+                    {
                         return Ok(v);
                     }
                 }
@@ -829,7 +831,7 @@ impl RustCallable for WasmCallable {
             .acquire_store(|#[allow(unused_mut)] mut store| {
                 let _s = debug_span!("invoke.inner").entered();
                 #[cfg(feature = "epoch-timeout")]
-                reset_epoch(&mut store);
+                reset_epoch(store.as_context_mut());
 
                 // SAFETY: Function pointer is valid.
                 let ret = unsafe {
@@ -939,7 +941,7 @@ impl WasmInstance {
                 let ty = f.ty(&store);
 
                 #[cfg(feature = "epoch-timeout")]
-                reset_epoch(&mut store);
+                reset_epoch(store.as_context_mut());
 
                 let ret = unsafe { raw_call(store, &f, &ty, args.iter_shared())? };
                 info!(ret.len = ret.len());

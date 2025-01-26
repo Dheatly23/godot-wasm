@@ -4,7 +4,7 @@ use std::mem::{size_of, size_of_val};
 
 use anyhow::Result as AnyResult;
 use godot::prelude::*;
-use wasmtime::{Caller, Extern, ExternRef, Func, Rooted, StoreContextMut};
+use wasmtime::{AsContext, AsContextMut, Caller, Extern, ExternRef, Func, Rooted, StoreContextMut};
 
 use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
@@ -24,15 +24,15 @@ macro_rules! prim_value {
         func_registry!{
             $head,
             get => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<($($tx),*)> {
-                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(&ctx, v)?))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(ctx.as_context(), v)?))?;
                 Ok(($($x.into()),*))
             },
-            new => |ctx: Caller<'_, _>, $($x : $tx),*| -> AnyResult<Option<Rooted<ExternRef>>> {
+            new => |mut ctx: Caller<'_, _>, $($x : $tx),*| -> AnyResult<Option<Rooted<ExternRef>>> {
                 let v = $($v)*;
-                variant_to_externref(ctx, v.to_variant())
+                variant_to_externref(ctx.as_context_mut(), v.to_variant())
             },
             read => |mut ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, p: u32| -> AnyResult<u32> {
-                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(&ctx, v)?))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(ctx.as_context(), v)?))?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -69,7 +69,7 @@ macro_rules! prim_value {
                 )*
 
                 let v = <$tv>::from($($v)*);
-                variant_to_externref(ctx, v.to_variant())
+                variant_to_externref(ctx.as_context_mut(), v.to_variant())
             },
         }
     )*};
@@ -264,7 +264,7 @@ prim_value! {
 func_registry! {
     (ProjectionFuncs, "projection."),
     read => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, p: u32| -> AnyResult<u32> {
-        let v = site_context!(from_var_any::<Projection>(&externref_to_variant(&ctx, v)?))?;
+        let v = site_context!(from_var_any::<Projection>(&externref_to_variant(ctx.as_context(), v)?))?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -305,6 +305,6 @@ func_registry! {
             }
         }
 
-        variant_to_externref(ctx, Projection { cols }.to_variant())
+        variant_to_externref(ctx.as_context_mut(), Projection { cols }.to_variant())
     },
 }
