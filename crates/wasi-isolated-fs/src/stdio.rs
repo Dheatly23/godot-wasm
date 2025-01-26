@@ -353,6 +353,19 @@ impl StdinSignalPollable {
     }
 }
 
+pub trait HostStdin: Debug {
+    fn read(&self, len: usize) -> IoResult<Vec<u8>>;
+    fn read_block(&self, len: usize, timeout: Option<Instant>) -> IoResult<Vec<u8>>;
+    fn skip(&self, len: usize) -> IoResult<usize>;
+    fn skip_block(&self, len: usize, timeout: Option<Instant>) -> IoResult<usize>;
+    fn block(&self, timeout: Option<Instant>) -> IoResult<()>;
+}
+
+pub trait HostStdout: Debug {
+    fn write(&self, buf: &[u8]) -> IoResult<()>;
+    fn flush(&self) -> IoResult<()>;
+}
+
 cfg_if! {
     if #[cfg(test)] {
         const BUF_LEN: usize = 256;
@@ -609,24 +622,21 @@ impl StdoutCbLineBuffered {
             cb,
         }))
     }
+}
 
+impl HostStdout for StdoutCbLineBuffered {
     #[instrument(skip(buf), fields(buf.len = buf.len()))]
-    pub fn write(&self, buf: &[u8]) -> IoResult<()> {
+    fn write(&self, buf: &[u8]) -> IoResult<()> {
         let mut g = self.0.lock();
         let (lb, f) = g.split();
         lb.write(f, buf)
     }
 
     #[instrument]
-    pub fn flush(&self) -> IoResult<()> {
+    fn flush(&self) -> IoResult<()> {
         let mut g = self.0.lock();
         let (lb, f) = g.split();
         lb.flush(f)
-    }
-
-    #[instrument]
-    pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable::new())
     }
 }
 
@@ -667,9 +677,11 @@ impl StdoutCbBlockBuffered {
             cb,
         }))
     }
+}
 
+impl HostStdout for StdoutCbBlockBuffered {
     #[instrument(skip(buf), fields(buf.len = buf.len()))]
-    pub fn write(&self, mut buf: &[u8]) -> IoResult<()> {
+    fn write(&self, mut buf: &[u8]) -> IoResult<()> {
         let this = &mut *self.0.lock();
         let cb = &mut this.cb;
         while !buf.is_empty() {
@@ -711,17 +723,12 @@ impl StdoutCbBlockBuffered {
     }
 
     #[instrument]
-    pub fn flush(&self) -> IoResult<()> {
+    fn flush(&self) -> IoResult<()> {
         let this = &mut **guard(self.0.lock(), |mut this| this.len = 0);
         if this.len > 0 {
             (this.cb)(&this.buf[..this.len]);
         }
         Ok(())
-    }
-
-    #[instrument]
-    pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable::new())
     }
 }
 
@@ -783,20 +790,15 @@ impl Default for StdoutBypass {
     }
 }
 
-impl StdoutBypass {
+impl HostStdout for StdoutBypass {
     #[instrument(skip(buf), fields(buf.len = buf.len()))]
-    pub fn write(&self, buf: &[u8]) -> IoResult<()> {
+    fn write(&self, buf: &[u8]) -> IoResult<()> {
         self.0.lock().write_all(buf)
     }
 
     #[instrument]
-    pub fn flush(&self) -> IoResult<()> {
+    fn flush(&self) -> IoResult<()> {
         self.0.lock().flush()
-    }
-
-    #[instrument]
-    pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable::new())
     }
 }
 
@@ -809,20 +811,15 @@ impl Default for StderrBypass {
     }
 }
 
-impl StderrBypass {
+impl HostStdout for StderrBypass {
     #[instrument(skip(buf), fields(buf.len = buf.len()))]
-    pub fn write(&self, buf: &[u8]) -> IoResult<()> {
+    fn write(&self, buf: &[u8]) -> IoResult<()> {
         self.0.lock().write_all(buf)
     }
 
     #[instrument]
-    pub fn flush(&self) -> IoResult<()> {
+    fn flush(&self) -> IoResult<()> {
         self.0.lock().flush()
-    }
-
-    #[instrument]
-    pub fn poll(&self) -> AnyResult<NullPollable> {
-        Ok(NullPollable::new())
     }
 }
 

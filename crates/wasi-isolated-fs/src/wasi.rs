@@ -1,4 +1,4 @@
-use std::io::{Error as IoError, ErrorKind, Read};
+use std::io::{Error as IoError, ErrorKind};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -16,7 +16,7 @@ use tracing::{instrument, Level};
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
-use crate::context::{try_iso_fs, Stderr, Stdin, Stdout, WasiContext};
+use crate::context::{try_iso_fs, Stdin, WasiContext};
 use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
 use crate::fs_isolated::{AccessMode, CreateParams, OpenMode};
 use crate::items::Item;
@@ -140,12 +140,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
             items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
             items::IOStream::HostFSStream(mut v) => v.read(len)?,
             items::IOStream::StdinSignal(v) => v.read(len)?,
-            items::IOStream::BoxedRead(mut v) => {
-                let mut ret = vec![0; len.min(1024)];
-                let i = v.read(&mut ret)?;
-                ret.truncate(i);
-                ret
-            }
+            items::IOStream::HostStdin(v) => v.read(len)?,
             _ => return Err(ErrorKind::InvalidInput.into()),
         })
     }
@@ -162,12 +157,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
             items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
             items::IOStream::HostFSStream(mut v) => v.read(len)?,
             items::IOStream::StdinSignal(v) => v.read_block(len, self.timeout)?,
-            items::IOStream::BoxedRead(mut v) => {
-                let mut ret = vec![0; len.min(1024)];
-                let i = v.read(&mut ret)?;
-                ret.truncate(i);
-                ret
-            }
+            items::IOStream::HostStdin(v) => v.read_block(len, self.timeout)?,
             _ => return Err(ErrorKind::InvalidInput.into()),
         })
     }
@@ -184,7 +174,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
             items::IOStream::IsoFSAccess(mut v) => v.skip(len)? as u64,
             items::IOStream::HostFSStream(mut v) => v.skip(len)? as u64,
             items::IOStream::StdinSignal(v) => v.skip(len)? as u64,
-            items::IOStream::BoxedRead(mut v) => v.read(&mut vec![0; len.min(1024)])? as u64,
+            items::IOStream::HostStdin(v) => v.skip(len)? as u64,
             _ => return Err(ErrorKind::InvalidInput.into()),
         })
     }
@@ -201,7 +191,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
             items::IOStream::IsoFSAccess(mut v) => v.skip(len)? as u64,
             items::IOStream::HostFSStream(mut v) => v.skip(len)? as u64,
             items::IOStream::StdinSignal(v) => v.skip_block(len, self.timeout)? as u64,
-            items::IOStream::BoxedRead(mut v) => v.read(&mut vec![0; len.min(1024)])? as u64,
+            items::IOStream::HostStdin(v) => v.skip_block(len, self.timeout)? as u64,
             _ => return Err(ErrorKind::InvalidInput.into()),
         })
     }
@@ -215,7 +205,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
             items::IOStream::IsoFSAccess(v) => v.poll()?.into(),
             items::IOStream::StdinSignal(v) => v.poll()?.into(),
             items::IOStream::HostFSStream(_)
-            | items::IOStream::BoxedRead(_)
+            | items::IOStream::HostStdin(_)
             | items::IOStream::NullStdio(_) => NullPollable::new().into(),
             _ => return Err(IoError::from(ErrorKind::InvalidInput).into()),
         };
@@ -236,13 +226,10 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         res: Resource<wasi::io::streams::OutputStream>,
     ) -> Result<u64, errors::StreamError> {
         match self.items.get_item(res)? {
-            items::IOStream::NullStdio(_) => Ok(0),
-            items::IOStream::IsoFSAccess(_)
+            items::IOStream::NullStdio(_)
+            | items::IOStream::IsoFSAccess(_)
             | items::IOStream::HostFSStream(_)
-            | items::IOStream::StdoutBp(_)
-            | items::IOStream::StderrBp(_)
-            | items::IOStream::StdoutLBuf(_)
-            | items::IOStream::StdoutBBuf(_) => Ok(65536),
+            | items::IOStream::HostStdout(_) => Ok(65536),
             _ => Err(ErrorKind::InvalidInput.into()),
         }
     }
@@ -257,10 +244,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             items::IOStream::NullStdio(_) => (),
             items::IOStream::IsoFSAccess(mut v) => v.write(&data)?,
             items::IOStream::HostFSStream(mut v) => v.write(&data)?,
-            items::IOStream::StdoutBp(v) => v.write(&data)?,
-            items::IOStream::StderrBp(v) => v.write(&data)?,
-            items::IOStream::StdoutLBuf(v) => v.write(&data)?,
-            items::IOStream::StdoutBBuf(v) => v.write(&data)?,
+            items::IOStream::HostStdout(v) => v.write(&data)?,
             _ => return Err(ErrorKind::InvalidInput.into()),
         }
         Ok(())
@@ -276,19 +260,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             items::IOStream::NullStdio(_) => (),
             items::IOStream::IsoFSAccess(mut v) => v.write(&data)?,
             items::IOStream::HostFSStream(mut v) => v.write(&data)?,
-            items::IOStream::StdoutBp(v) => {
-                v.write(&data)?;
-                v.flush()?;
-            }
-            items::IOStream::StderrBp(v) => {
-                v.write(&data)?;
-                v.flush()?;
-            }
-            items::IOStream::StdoutLBuf(v) => {
-                v.write(&data)?;
-                v.flush()?;
-            }
-            items::IOStream::StdoutBBuf(v) => {
+            items::IOStream::HostStdout(v) => {
                 v.write(&data)?;
                 v.flush()?;
             }
@@ -314,10 +286,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             items::IOStream::NullStdio(_)
             | items::IOStream::IsoFSAccess(_)
             | items::IOStream::HostFSStream(_) => (),
-            items::IOStream::StdoutBp(v) => v.flush()?,
-            items::IOStream::StderrBp(v) => v.flush()?,
-            items::IOStream::StdoutLBuf(v) => v.flush()?,
-            items::IOStream::StdoutBBuf(v) => v.flush()?,
+            items::IOStream::HostStdout(v) => v.flush()?,
             _ => return Err(ErrorKind::InvalidInput.into()),
         }
         Ok(())
@@ -332,10 +301,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             items::IOStream::IsoFSAccess(v) => v.poll()?.into(),
             items::IOStream::NullStdio(_)
             | items::IOStream::HostFSStream(_)
-            | items::IOStream::StdoutBp(_)
-            | items::IOStream::StderrBp(_)
-            | items::IOStream::StdoutLBuf(_)
-            | items::IOStream::StdoutBBuf(_) => NullPollable::new().into(),
+            | items::IOStream::HostStdout(_) => NullPollable::new().into(),
             _ => return Err(IoError::from(ErrorKind::InvalidInput).into()),
         };
         self.register(ret)
@@ -354,10 +320,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
                 items::IOStream::NullStdio(_) => (),
                 items::IOStream::IsoFSAccess(v) => v.write(data)?,
                 items::IOStream::HostFSStream(v) => v.write(data)?,
-                items::IOStream::StdoutBp(v) => v.write(data)?,
-                items::IOStream::StderrBp(v) => v.write(data)?,
-                items::IOStream::StdoutLBuf(v) => v.write(data)?,
-                items::IOStream::StdoutBBuf(v) => v.write(data)?,
+                items::IOStream::HostStdout(v) => v.write(data)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
             len -= data.len() as u64;
@@ -378,10 +341,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
                 items::IOStream::NullStdio(_) => (),
                 items::IOStream::IsoFSAccess(v) => v.write(data)?,
                 items::IOStream::HostFSStream(v) => v.write(data)?,
-                items::IOStream::StdoutBp(v) => v.write(data)?,
-                items::IOStream::StderrBp(v) => v.write(data)?,
-                items::IOStream::StdoutLBuf(v) => v.write(data)?,
-                items::IOStream::StdoutBBuf(v) => v.write(data)?,
+                items::IOStream::HostStdout(v) => v.write(data)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
             len -= data.len() as u64;
@@ -391,10 +351,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             items::IOStream::NullStdio(_)
             | items::IOStream::IsoFSAccess(_)
             | items::IOStream::HostFSStream(_) => (),
-            items::IOStream::StdoutBp(v) => v.flush()?,
-            items::IOStream::StderrBp(v) => v.flush()?,
-            items::IOStream::StdoutLBuf(v) => v.flush()?,
-            items::IOStream::StdoutBBuf(v) => v.flush()?,
+            items::IOStream::HostStdout(v) => v.flush()?,
             _ => return Err(ErrorKind::InvalidInput.into()),
         }
         Ok(())
@@ -416,13 +373,10 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
                 items::IOStream::IsoFSAccess(_)
                 | items::IOStream::HostFSStream(_)
                 | items::IOStream::StdinSignal(_)
-                | items::IOStream::BoxedRead(_),
+                | items::IOStream::HostStdin(_),
                 items::IOStream::IsoFSAccess(_)
                 | items::IOStream::HostFSStream(_)
-                | items::IOStream::StdoutBp(_)
-                | items::IOStream::StderrBp(_)
-                | items::IOStream::StdoutLBuf(_)
-                | items::IOStream::StdoutBBuf(_),
+                | items::IOStream::HostStdout(_),
             ) => (),
             _ => return Err(ErrorKind::InvalidInput.into()),
         }
@@ -436,12 +390,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
                 items::IOStream::IsoFSAccess(v) => v.read(i)?,
                 items::IOStream::HostFSStream(v) => v.read(i)?,
                 items::IOStream::StdinSignal(v) => v.read(i)?,
-                items::IOStream::BoxedRead(v) => {
-                    let mut r = vec![0; i.min(1024)];
-                    let i = v.read(&mut r)?;
-                    r.truncate(i);
-                    r
-                }
+                items::IOStream::HostStdin(v) => v.read(i)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             };
             if b.is_empty() {
@@ -452,10 +401,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
 
             match &mut output {
                 items::IOStream::IsoFSAccess(v) => v.write(&b)?,
-                items::IOStream::StdoutBp(v) => v.write(&b)?,
-                items::IOStream::StderrBp(v) => v.write(&b)?,
-                items::IOStream::StdoutLBuf(v) => v.write(&b)?,
-                items::IOStream::StdoutBBuf(v) => v.write(&b)?,
+                items::IOStream::HostStdout(v) => v.write(&b)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
@@ -478,12 +424,8 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             (
                 items::IOStream::IsoFSAccess(_)
                 | items::IOStream::StdinSignal(_)
-                | items::IOStream::BoxedRead(_),
-                items::IOStream::IsoFSAccess(_)
-                | items::IOStream::StdoutBp(_)
-                | items::IOStream::StderrBp(_)
-                | items::IOStream::StdoutLBuf(_)
-                | items::IOStream::StdoutBBuf(_),
+                | items::IOStream::HostStdin(_),
+                items::IOStream::IsoFSAccess(_) | items::IOStream::HostStdout(_),
             ) => (),
             _ => return Err(ErrorKind::InvalidInput.into()),
         }
@@ -496,12 +438,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             let b = match &mut input {
                 items::IOStream::IsoFSAccess(v) => v.read(i)?,
                 items::IOStream::StdinSignal(v) => v.read_block(i, self.timeout)?,
-                items::IOStream::BoxedRead(v) => {
-                    let mut r = vec![0; i.min(1024)];
-                    let i = v.read(&mut r)?;
-                    r.truncate(i);
-                    r
-                }
+                items::IOStream::HostStdin(v) => v.read_block(i, self.timeout)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             };
             if b.is_empty() {
@@ -513,10 +450,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
             match &mut output {
                 items::IOStream::IsoFSAccess(v) => v.write(&b)?,
                 items::IOStream::HostFSStream(v) => v.write(&b)?,
-                items::IOStream::StdoutBp(v) => v.write(&b)?,
-                items::IOStream::StderrBp(v) => v.write(&b)?,
-                items::IOStream::StdoutLBuf(v) => v.write(&b)?,
-                items::IOStream::StdoutBBuf(v) => v.write(&b)?,
+                items::IOStream::HostStdout(v) => v.write(&b)?,
                 _ => return Err(ErrorKind::InvalidInput.into()),
             }
         }
@@ -532,7 +466,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
 }
 
 impl wasi::io::streams::Host for WasiContext {
-    #[instrument(level = Level::DEBUG, skip(self), err)]
+    #[instrument(level = Level::ERROR, skip_all, fields(%e), ret, err)]
     fn convert_stream_error(
         &mut self,
         e: errors::StreamError,
@@ -1990,7 +1924,7 @@ impl wasi::cli::stdin::Host for WasiContext {
         let ret: Item = match &mut self.stdin {
             None => NullStdio::default().into(),
             Some(Stdin::Signal((v, _))) => v.clone().into(),
-            Some(Stdin::Read(v)) => v()?.into(),
+            Some(Stdin::Host(v)) => v.clone().into(),
         };
         self.register(ret)
     }
@@ -2001,9 +1935,7 @@ impl wasi::cli::stdout::Host for WasiContext {
     fn get_stdout(&mut self) -> AnyResult<Resource<wasi::io::streams::OutputStream>> {
         let ret: Item = match &mut self.stdout {
             None => NullStdio::default().into(),
-            Some(Stdout::Bypass(v)) => v.clone().into(),
-            Some(Stdout::CbLine(v)) => v.clone().into(),
-            Some(Stdout::CbBlock(v)) => v.clone().into(),
+            Some(v) => v.clone().into(),
         };
         self.register(ret)
     }
@@ -2014,9 +1946,7 @@ impl wasi::cli::stderr::Host for WasiContext {
     fn get_stderr(&mut self) -> AnyResult<Resource<wasi::io::streams::OutputStream>> {
         let ret: Item = match &mut self.stderr {
             None => NullStdio::default().into(),
-            Some(Stderr::Bypass(v)) => v.clone().into(),
-            Some(Stderr::CbLine(v)) => v.clone().into(),
-            Some(Stderr::CbBlock(v)) => v.clone().into(),
+            Some(v) => v.clone().into(),
         };
         self.register(ret)
     }

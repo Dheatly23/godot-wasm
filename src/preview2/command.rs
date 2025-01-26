@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Error;
 use cfg_if::cfg_if;
 #[cfg(feature = "godot-component")]
@@ -7,6 +9,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use wasi_isolated_fs::bindings::{Command, LinkOptions};
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
+use wasi_isolated_fs::stdio::{StderrBypass, StdoutBypass};
 use wasmtime::component::Linker;
 use wasmtime::{AsContextMut, Store};
 
@@ -178,7 +181,9 @@ fn instantiate(
     {
         WasiContext::build_ctx(ctx, &mut builder, &config)
     } else {
-        builder.stdout_bypass()?.stderr_bypass()?;
+        builder
+            .stdout(Arc::new(StdoutBypass::default()))?
+            .stderr(Arc::new(StderrBypass::default()))?;
         WasiContext::init_ctx_no_context(&mut builder, &config)
     }?;
     let wasi_ctx = builder.build()?;

@@ -1,7 +1,6 @@
 use std::borrow::{Borrow, ToOwned};
 use std::collections::btree_map::{BTreeMap, Entry};
 use std::collections::hash_map::{HashMap, RandomState};
-use std::io::Read;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -22,10 +21,7 @@ use crate::fs_isolated::{AccessMode, CapWrapper, Dir, IsolatedFSController, Node
 use crate::items::Items;
 pub use crate::items::{Item, MaybeBorrowMut};
 use crate::preview1::{P1File, P1Item, P1Items};
-use crate::stdio::{
-    NullStdio, StderrBypass, StdinProvider, StdinSignal, StdoutBypass, StdoutCbBlockBuffered,
-    StdoutCbBlockFn, StdoutCbLineBuffered, StdoutCbLineFn,
-};
+use crate::stdio::{HostStdin, HostStdout, NullStdio, StdinProvider, StdinSignal};
 
 pub struct WasiContext {
     pub(crate) hasher: RandomState,
@@ -41,8 +37,8 @@ pub struct WasiContext {
     pub(crate) insecure_rng: Box<dyn Send + Sync + RngCore>,
     pub(crate) secure_rng: Box<dyn Send + Sync + RngCore>,
     pub(crate) stdin: Option<Stdin>,
-    pub(crate) stdout: Option<Stdout>,
-    pub(crate) stderr: Option<Stderr>,
+    pub(crate) stdout: Option<Arc<dyn Send + Sync + HostStdout>>,
+    pub(crate) stderr: Option<Arc<dyn Send + Sync + HostStdout>>,
 
     pub(crate) timeout: Option<Instant>,
 }
@@ -58,8 +54,8 @@ pub struct WasiContextBuilder {
     insecure_rng: Option<Box<dyn Send + Sync + RngCore>>,
     secure_rng: Option<Box<dyn Send + Sync + RngCore>>,
     stdin: Option<BuilderStdin>,
-    stdout: Option<BuilderStdout>,
-    stderr: Option<BuilderStdout>,
+    stdout: Option<Arc<dyn Send + Sync + HostStdout>>,
+    stderr: Option<Arc<dyn Send + Sync + HostStdout>>,
 }
 
 enum BuilderIsoFS {
@@ -70,13 +66,7 @@ enum BuilderIsoFS {
 
 enum BuilderStdin {
     Signal(Box<dyn Fn() + Send + Sync>),
-    Read(Box<dyn Send + Sync + FnMut() -> AnyResult<Box<dyn Send + Sync + Read>>>),
-}
-
-enum BuilderStdout {
-    Bypass,
-    CbLine(Arc<StdoutCbLineBuffered>),
-    CbBlock(Arc<StdoutCbBlockBuffered>),
+    Host(Arc<dyn Send + Sync + HostStdin>),
 }
 
 enum FilePreopenTy {
@@ -100,19 +90,7 @@ impl<'a> From<&'a FilePreopen> for Item {
 
 pub(crate) enum Stdin {
     Signal((Arc<StdinSignal>, StdinProvider)),
-    Read(Box<dyn Send + Sync + FnMut() -> AnyResult<Box<dyn Send + Sync + Read>>>),
-}
-
-pub(crate) enum Stdout {
-    Bypass(Arc<StdoutBypass>),
-    CbLine(Arc<StdoutCbLineBuffered>),
-    CbBlock(Arc<StdoutCbBlockBuffered>),
-}
-
-pub(crate) enum Stderr {
-    Bypass(Arc<StderrBypass>),
-    CbLine(Arc<StdoutCbLineBuffered>),
-    CbBlock(Arc<StdoutCbBlockBuffered>),
+    Host(Arc<dyn Send + Sync + HostStdin>),
 }
 
 impl Default for WasiContextBuilder {
@@ -296,70 +274,27 @@ impl WasiContextBuilder {
         Ok(self)
     }
 
-    pub fn stdin_read_builder(
-        &mut self,
-        f: Box<dyn Send + Sync + FnMut() -> AnyResult<Box<dyn Send + Sync + Read>>>,
-    ) -> AnyResult<&mut Self> {
+    pub fn stdin(&mut self, v: Arc<dyn Send + Sync + HostStdin>) -> AnyResult<&mut Self> {
         if self.stdin.is_some() {
             return Err(errors::BuilderStdioDefinedError.into());
         }
-        self.stdin = Some(BuilderStdin::Read(f));
+        self.stdin = Some(BuilderStdin::Host(v));
         Ok(self)
     }
 
-    pub fn stdout_bypass(&mut self) -> AnyResult<&mut Self> {
+    pub fn stdout(&mut self, v: Arc<dyn Send + Sync + HostStdout>) -> AnyResult<&mut Self> {
         if self.stdout.is_some() {
             return Err(errors::BuilderStdioDefinedError.into());
         }
-        self.stdout = Some(BuilderStdout::Bypass);
+        self.stdout = Some(v);
         Ok(self)
     }
 
-    pub fn stdout_line_buffer(&mut self, f: StdoutCbLineFn) -> AnyResult<&mut Self> {
-        if self.stdout.is_some() {
-            return Err(errors::BuilderStdioDefinedError.into());
-        }
-        self.stdout = Some(BuilderStdout::CbLine(Arc::new(StdoutCbLineBuffered::new(
-            f,
-        ))));
-        Ok(self)
-    }
-
-    pub fn stdout_block_buffer(&mut self, f: StdoutCbBlockFn) -> AnyResult<&mut Self> {
-        if self.stdout.is_some() {
-            return Err(errors::BuilderStdioDefinedError.into());
-        }
-        self.stdout = Some(BuilderStdout::CbBlock(Arc::new(
-            StdoutCbBlockBuffered::new(f),
-        )));
-        Ok(self)
-    }
-
-    pub fn stderr_bypass(&mut self) -> AnyResult<&mut Self> {
+    pub fn stderr(&mut self, v: Arc<dyn Send + Sync + HostStdout>) -> AnyResult<&mut Self> {
         if self.stderr.is_some() {
             return Err(errors::BuilderStdioDefinedError.into());
         }
-        self.stderr = Some(BuilderStdout::Bypass);
-        Ok(self)
-    }
-
-    pub fn stderr_line_buffer(&mut self, f: StdoutCbLineFn) -> AnyResult<&mut Self> {
-        if self.stderr.is_some() {
-            return Err(errors::BuilderStdioDefinedError.into());
-        }
-        self.stderr = Some(BuilderStdout::CbLine(Arc::new(StdoutCbLineBuffered::new(
-            f,
-        ))));
-        Ok(self)
-    }
-
-    pub fn stderr_block_buffer(&mut self, f: StdoutCbBlockFn) -> AnyResult<&mut Self> {
-        if self.stderr.is_some() {
-            return Err(errors::BuilderStdioDefinedError.into());
-        }
-        self.stderr = Some(BuilderStdout::CbBlock(Arc::new(
-            StdoutCbBlockBuffered::new(f),
-        )));
+        self.stderr = Some(v);
         Ok(self)
     }
 
@@ -432,36 +367,22 @@ impl WasiContextBuilder {
 
         let mut stdin = self.stdin.map(|v| match v {
             BuilderStdin::Signal(f) => Stdin::Signal(StdinSignal::new(f)),
-            BuilderStdin::Read(v) => Stdin::Read(v),
-        });
-        let mut stdout = self.stdout.map(|v| match v {
-            BuilderStdout::Bypass => Stdout::Bypass(Default::default()),
-            BuilderStdout::CbLine(v) => Stdout::CbLine(v),
-            BuilderStdout::CbBlock(v) => Stdout::CbBlock(v),
-        });
-        let mut stderr = self.stderr.map(|v| match v {
-            BuilderStdout::Bypass => Stderr::Bypass(Default::default()),
-            BuilderStdout::CbLine(v) => Stderr::CbLine(v),
-            BuilderStdout::CbBlock(v) => Stderr::CbBlock(v),
+            BuilderStdin::Host(v) => Stdin::Host(v),
         });
 
         let p1_items = [
             match &mut stdin {
                 None => P1Item::from(NullStdio::default()),
                 Some(Stdin::Signal((v, _))) => v.clone().into(),
-                Some(Stdin::Read(v)) => v()?.into(),
+                Some(Stdin::Host(v)) => v.clone().into(),
             },
-            match &mut stdout {
+            match &self.stdout {
                 None => NullStdio::default().into(),
-                Some(Stdout::Bypass(v)) => v.clone().into(),
-                Some(Stdout::CbLine(v)) => v.clone().into(),
-                Some(Stdout::CbBlock(v)) => v.clone().into(),
+                Some(v) => v.clone().into(),
             },
-            match &mut stderr {
+            match &self.stderr {
                 None => NullStdio::default().into(),
-                Some(Stderr::Bypass(v)) => v.clone().into(),
-                Some(Stderr::CbLine(v)) => v.clone().into(),
-                Some(Stderr::CbBlock(v)) => v.clone().into(),
+                Some(v) => v.clone().into(),
             },
         ]
         .into_iter()
@@ -492,8 +413,8 @@ impl WasiContextBuilder {
                 .unwrap_or_else(|| Box::new(Xoshiro512StarStar::from_entropy())),
             secure_rng: self.secure_rng.unwrap_or_else(|| Box::new(OsRng)),
             stdin,
-            stdout,
-            stderr,
+            stdout: self.stdout,
+            stderr: self.stderr,
             hasher: RandomState::new(),
             timeout: None,
         })

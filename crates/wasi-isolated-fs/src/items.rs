@@ -1,6 +1,5 @@
 use std::borrow::{Borrow, BorrowMut};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
-use std::io::Read;
 use std::mem::replace;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -14,10 +13,7 @@ use crate::clock::ClockPollable;
 use crate::errors;
 use crate::fs_host::{CapWrapper as HostCapWrapper, FileStream, ReadDir as HostReadDir};
 use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
-use crate::stdio::{
-    NullStdio, StderrBypass, StdinSignal, StdinSignalPollable, StdoutBypass, StdoutCbBlockBuffered,
-    StdoutCbLineBuffered,
-};
+use crate::stdio::{HostStdin, HostStdout, NullStdio, StdinSignal, StdinSignalPollable};
 use crate::NullPollable;
 
 #[derive(Default)]
@@ -193,11 +189,8 @@ item_def! {
         IsoFSAccess(Box<FileAccessor> |v| v),
         HostFSStream(Box<FileStream> |v| v),
         StdinSignal(Arc<StdinSignal> |v| v),
-        StdoutBp(Arc<StdoutBypass> |v| v),
-        StderrBp(Arc<StderrBypass> |v| v),
-        StdoutLBuf(Arc<StdoutCbLineBuffered> |v| v),
-        StdoutBBuf(Arc<StdoutCbBlockBuffered> |v| v),
-        BoxedRead(Box<dyn Send + Sync + Read> |v| &(&**v as *const _)),
+        HostStdin(Arc<dyn Send + Sync + HostStdin> |v| v),
+        HostStdout(Arc<dyn Send + Sync + HostStdout> |v| v),
         NullStdio(NullStdio |v| v),
     },
     Readdir | ReaddirR(wasi::filesystem::types::DirectoryEntryStream) {

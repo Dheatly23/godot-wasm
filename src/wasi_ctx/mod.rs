@@ -16,12 +16,16 @@ use wasi_isolated_fs::context::WasiContextBuilder;
 use wasi_isolated_fs::fs_isolated::{
     AccessMode, CapWrapper, CreateParams, Dir, File, IsolatedFSController, Link, Node,
 };
+use wasi_isolated_fs::stdio::{
+    HostStdout, StderrBypass, StdoutBypass, StdoutCbBlockBuffered, StdoutCbLineBuffered,
+};
 
 use crate::godot_util::{
     from_var_any, option_to_variant, variant_to_option, PhantomProperty, SendSyncWrapper,
     StructPacking,
 };
 use crate::rw_struct::{read_struct, write_struct};
+use crate::wasi_ctx::stdio::StdoutCbUnbuffered;
 use crate::wasm_config::{Config, PipeBindingType, PipeBufferType};
 use crate::wasm_util::{FILE_DIR, FILE_FILE, FILE_LINK, FILE_NOTEXIST};
 use crate::{bail_with_site, site_context, variant_dispatch};
@@ -113,6 +117,23 @@ impl WasiContext {
         move |buf| signal.emit(&[buf.to_variant()])
     }
 
+    pub fn make_host_stdout(
+        signal: Signal,
+        ty: PipeBufferType,
+    ) -> Arc<dyn Send + Sync + HostStdout> {
+        match ty {
+            PipeBufferType::Unbuffered => {
+                Arc::new(StdoutCbUnbuffered::new(Box::new(Self::emit_binary(signal))))
+            }
+            PipeBufferType::BlockBuffer => Arc::new(StdoutCbBlockBuffered::new(Box::new(
+                Self::emit_binary(signal),
+            ))),
+            PipeBufferType::LineBuffer => Arc::new(StdoutCbLineBuffered::new(Box::new(
+                Self::emit_string(signal),
+            ))),
+        }
+    }
+
     pub fn init_ctx_no_context(ctx: &mut WasiContextBuilder, config: &Config) -> AnyResult<()> {
         ctx.envs(config.wasi_envs.iter().map(|(k, v)| (k.clone(), v.clone())))
             .args(config.wasi_args.iter().cloned());
@@ -128,34 +149,24 @@ impl WasiContext {
         let o = o.get_data()?;
 
         if config.wasi_stdout == PipeBindingType::Context {
-            if o.bypass_stdio {
-                ctx.stdout_bypass()
+            ctx.stdout(if o.bypass_stdio {
+                Arc::new(StdoutBypass::default())
             } else {
-                let signal = Signal::from_object_signal(this, c"stdout_emit");
-                match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
-                        ctx.stdout_block_buffer(Box::new(WasiContext::emit_binary(signal)))
-                    }
-                    PipeBufferType::LineBuffer => {
-                        ctx.stdout_line_buffer(Box::new(WasiContext::emit_string(signal)))
-                    }
-                }
-            }?;
+                Self::make_host_stdout(
+                    Signal::from_object_signal(this, c"stdout_emit"),
+                    config.wasi_stdout_buffer,
+                )
+            })?;
         }
         if config.wasi_stderr == PipeBindingType::Context {
-            if o.bypass_stdio {
-                ctx.stderr_bypass()
+            ctx.stderr(if o.bypass_stdio {
+                Arc::new(StderrBypass::default())
             } else {
-                let signal = Signal::from_object_signal(this, c"stderr_emit");
-                match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
-                        ctx.stderr_block_buffer(Box::new(WasiContext::emit_binary(signal)))
-                    }
-                    PipeBufferType::LineBuffer => {
-                        ctx.stderr_line_buffer(Box::new(WasiContext::emit_string(signal)))
-                    }
-                }
-            }?;
+                Self::make_host_stdout(
+                    Signal::from_object_signal(this, c"stderr_emit"),
+                    config.wasi_stderr_buffer,
+                )
+            })?;
         }
 
         Self::init_ctx_no_context(&mut *ctx, config)?;

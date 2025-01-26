@@ -2,6 +2,8 @@ use std::collections::hash_map::{Entry, HashMap};
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::hash::{Hash, Hasher};
 use std::io::Cursor;
+#[cfg(feature = "wasi")]
+use std::sync::Arc;
 use std::{ffi, fmt, mem, ptr};
 
 use anyhow::{bail, Result as AnyResult};
@@ -42,7 +44,7 @@ use crate::wasm_config::Config;
 #[cfg(any(feature = "object-registry-compat", feature = "object-registry-extern"))]
 use crate::wasm_config::ExternBindingType;
 #[cfg(feature = "wasi")]
-use crate::wasm_config::{PipeBindingType, PipeBufferType};
+use crate::wasm_config::PipeBindingType;
 use crate::wasm_engine::{get_engine, ModuleData, ModuleType, WasmModule};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::Funcs as ExternrefFuncs;
@@ -369,10 +371,7 @@ where
 
             if config.wasi_stdin == PipeBindingType::Instance {
                 if let Some(data) = config.wasi_stdin_data.clone() {
-                    let data = SendSyncWrapper::new(data);
-                    builder.stdin_read_builder(Box::new(move || {
-                        Ok(Box::new(PackedByteArrayReader::from((*data).clone())))
-                    }))
+                    builder.stdin(Arc::new(PackedByteArrayReader::from(data)))
                 } else {
                     let signal =
                         SendSyncWrapper::new(Signal::from_object_signal(obj, c"stdin_request"));
@@ -380,26 +379,16 @@ where
                 }?;
             }
             if config.wasi_stdout == PipeBindingType::Instance {
-                let signal = Signal::from_object_signal(obj, c"stdout_emit");
-                match config.wasi_stdout_buffer {
-                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
-                        builder.stdout_block_buffer(Box::new(WasiContext::emit_binary(signal)))
-                    }
-                    PipeBufferType::LineBuffer => {
-                        builder.stdout_line_buffer(Box::new(WasiContext::emit_string(signal)))
-                    }
-                }?;
+                builder.stdout(WasiContext::make_host_stdout(
+                    Signal::from_object_signal(obj, c"stdout_emit"),
+                    config.wasi_stdout_buffer,
+                ))?;
             }
             if config.wasi_stderr == PipeBindingType::Instance {
-                let signal = Signal::from_object_signal(obj, c"stderr_emit");
-                match config.wasi_stderr_buffer {
-                    PipeBufferType::Unbuffered | PipeBufferType::BlockBuffer => {
-                        builder.stderr_block_buffer(Box::new(WasiContext::emit_binary(signal)))
-                    }
-                    PipeBufferType::LineBuffer => {
-                        builder.stderr_line_buffer(Box::new(WasiContext::emit_string(signal)))
-                    }
-                }?;
+                builder.stderr(WasiContext::make_host_stdout(
+                    Signal::from_object_signal(obj, c"stderr_emit"),
+                    config.wasi_stderr_buffer,
+                ))?;
             }
 
             match &config.wasi_context {

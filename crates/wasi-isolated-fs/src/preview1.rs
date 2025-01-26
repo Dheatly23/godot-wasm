@@ -23,6 +23,7 @@ use crate::context::{try_iso_fs, WasiContext};
 use crate::errors::StreamError;
 use crate::fs_host::Descriptor;
 use crate::fs_isolated::{AccessMode, CreateParams, NodeItem};
+use crate::stdio::{HostStdin, HostStdout};
 use crate::{print_byte_array, EMPTY_BUF};
 
 #[derive(Default)]
@@ -240,7 +241,8 @@ impl P1File {
 }
 
 macro_rules! p1item_gen {
-    (<$l:lifetime> $($i:ident($t:ty, $t2:ty, $t3:ty)),* $(,)?) => {
+    (<$l:lifetime, $v:ident> $($i:ident($t:ty, ($t2:ty, $e2:expr), ($t3:ty, $e3:expr))),* $(,)?) => {
+        #[derive(Debug)]
         #[non_exhaustive]
         pub enum P1Item {
             $($i($t)),*
@@ -254,11 +256,13 @@ macro_rules! p1item_gen {
         }
         )*
 
+        #[derive(Debug)]
         #[allow(dead_code)]
         enum FdItem<'a> {
             $($i($t2)),*
         }
 
+        #[derive(Debug)]
         #[allow(dead_code)]
         enum FdItemR<'a> {
             $($i($t3)),*
@@ -267,13 +271,13 @@ macro_rules! p1item_gen {
         impl P1Items {
             fn get_item(&mut self, fd: Fd) -> Result<FdItem<'_>, StreamError> {
                 Ok(match self.get_mut(fd)? {
-                    $(P1Item::$i(v) => FdItem::$i(v)),*
+                    $(P1Item::$i($v) => FdItem::$i($e2)),*
                 })
             }
 
             fn get_item_ref(&self, fd: Fd) -> Result<FdItemR<'_>, StreamError> {
                 Ok(match self.get(fd)? {
-                    $(P1Item::$i(v) => FdItemR::$i(v)),*
+                    $(P1Item::$i($v) => FdItemR::$i($e3)),*
                 })
             }
         }
@@ -281,69 +285,12 @@ macro_rules! p1item_gen {
 }
 
 p1item_gen! {
-    <'a>
-    P1File(Box<P1File>, &'a mut P1File, &'a P1File),
-    StdinSignal(Arc<crate::stdio::StdinSignal>, &'a Arc<crate::stdio::StdinSignal>, &'a Arc<crate::stdio::StdinSignal>),
-    StdoutBp(Arc<crate::stdio::StdoutBypass>, &'a crate::stdio::StdoutBypass, &'a crate::stdio::StdoutBypass),
-    StderrBp(Arc<crate::stdio::StderrBypass>, &'a crate::stdio::StderrBypass, &'a crate::stdio::StderrBypass),
-    StdoutLBuf(Arc<crate::stdio::StdoutCbLineBuffered>, &'a crate::stdio::StdoutCbLineBuffered, &'a crate::stdio::StdoutCbLineBuffered),
-    StdoutBBuf(Arc<crate::stdio::StdoutCbBlockBuffered>, &'a crate::stdio::StdoutCbBlockBuffered, &'a crate::stdio::StdoutCbBlockBuffered),
-    BoxedRead(Box<dyn Send + Sync + std::io::Read>, &'a mut (dyn Send + Sync + std::io::Read), &'a (dyn Send + Sync + std::io::Read)),
-    NullStdio(crate::stdio::NullStdio, &'a mut crate::stdio::NullStdio, &'a crate::stdio::NullStdio),
-}
-
-impl Debug for P1Item {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::P1File(v) => f.debug_tuple("P1Item::P1File").field(v).finish(),
-            Self::StdinSignal(v) => f.debug_tuple("P1Item::StdinSignal").field(v).finish(),
-            Self::StdoutBp(v) => f.debug_tuple("P1Item::StdoutBp").field(v).finish(),
-            Self::StderrBp(v) => f.debug_tuple("P1Item::StderrBp").field(v).finish(),
-            Self::StdoutLBuf(v) => f.debug_tuple("P1Item::StdoutLBuf").field(v).finish(),
-            Self::StdoutBBuf(v) => f.debug_tuple("P1Item::StdoutBBuf").field(v).finish(),
-            Self::BoxedRead(v) => f
-                .debug_tuple("P1Item::BoxedRead")
-                .field(&(&**v as *const _))
-                .finish(),
-            Self::NullStdio(v) => f.debug_tuple("P1Item::NullStdio").field(v).finish(),
-        }
-    }
-}
-
-impl Debug for FdItem<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::P1File(v) => f.debug_tuple("FdItem::P1File").field(v).finish(),
-            Self::StdinSignal(v) => f.debug_tuple("FdItem::StdinSignal").field(v).finish(),
-            Self::StdoutBp(v) => f.debug_tuple("FdItem::StdoutBp").field(v).finish(),
-            Self::StderrBp(v) => f.debug_tuple("FdItem::StderrBp").field(v).finish(),
-            Self::StdoutLBuf(v) => f.debug_tuple("FdItem::StdoutLBuf").field(v).finish(),
-            Self::StdoutBBuf(v) => f.debug_tuple("FdItem::StdoutBBuf").field(v).finish(),
-            Self::BoxedRead(v) => f
-                .debug_tuple("FdItem::BoxedRead")
-                .field(&(&**v as *const _))
-                .finish(),
-            Self::NullStdio(v) => f.debug_tuple("FdItem::NullStdio").field(v).finish(),
-        }
-    }
-}
-
-impl Debug for FdItemR<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        match self {
-            Self::P1File(v) => f.debug_tuple("FdItemR::P1File").field(v).finish(),
-            Self::StdinSignal(v) => f.debug_tuple("FdItemR::StdinSignal").field(v).finish(),
-            Self::StdoutBp(v) => f.debug_tuple("FdItemR::StdoutBp").field(v).finish(),
-            Self::StderrBp(v) => f.debug_tuple("FdItemR::StderrBp").field(v).finish(),
-            Self::StdoutLBuf(v) => f.debug_tuple("FdItemR::StdoutLBuf").field(v).finish(),
-            Self::StdoutBBuf(v) => f.debug_tuple("FdItemR::StdoutBBuf").field(v).finish(),
-            Self::BoxedRead(v) => f
-                .debug_tuple("FdItemR::BoxedRead")
-                .field(&(&**v as *const _))
-                .finish(),
-            Self::NullStdio(v) => f.debug_tuple("FdItemR::NullStdio").field(v).finish(),
-        }
-    }
+    <'a, v>
+    P1File(Box<P1File>, (&'a mut P1File, v), (&'a P1File, v)),
+    StdinSignal(Arc<crate::stdio::StdinSignal>, (&'a Arc<crate::stdio::StdinSignal>, v), (&'a Arc<crate::stdio::StdinSignal>, v)),
+    HostStdout(Arc<dyn Send + Sync + HostStdout>, (&'a (dyn Send + Sync + HostStdout), &**v), (&'a (dyn Send + Sync + HostStdout), &**v)),
+    HostStdin(Arc<dyn Send + Sync + HostStdin>, (&'a (dyn Send + Sync + HostStdin), &**v), (&'a (dyn Send + Sync + HostStdin), &**v)),
+    NullStdio(crate::stdio::NullStdio, (&'a mut crate::stdio::NullStdio, v), (&'a crate::stdio::NullStdio, v)),
 }
 
 struct MemIO<'a, 'b, T> {
@@ -835,11 +782,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             )?,
             FdItem::P1File(_)
             | FdItem::StdinSignal(_)
-            | FdItem::StdoutBp(_)
-            | FdItem::StderrBp(_)
-            | FdItem::StdoutLBuf(_)
-            | FdItem::StdoutBBuf(_)
-            | FdItem::BoxedRead(_)
+            | FdItem::HostStdin(_)
+            | FdItem::HostStdout(_)
             | FdItem::NullStdio(_) => (),
         }
         Ok(())
@@ -1001,7 +945,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     fs_rights_inheriting: rights,
                 }
             }
-            FdItem::StdinSignal(_) | FdItem::BoxedRead(_) => {
+            FdItem::StdinSignal(_) | FdItem::HostStdin(_) => {
                 let rights = Rights::FD_READ;
                 Fdstat {
                     fs_filetype: Filetype::Unknown,
@@ -1010,10 +954,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     fs_rights_inheriting: rights,
                 }
             }
-            FdItem::StdoutBp(_)
-            | FdItem::StderrBp(_)
-            | FdItem::StdoutLBuf(_)
-            | FdItem::StdoutBBuf(_) => {
+            FdItem::HostStdout(_) => {
                 let rights = Rights::FD_WRITE;
                 Fdstat {
                     fs_filetype: Filetype::Unknown,
@@ -1073,11 +1014,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 ..
             }) => Ok(host_filestat(host_metadata(v)?, &self.hasher)),
             FdItem::StdinSignal(_)
-            | FdItem::BoxedRead(_)
-            | FdItem::StdoutBp(_)
-            | FdItem::StderrBp(_)
-            | FdItem::StdoutLBuf(_)
-            | FdItem::StdoutBBuf(_)
+            | FdItem::HostStdin(_)
+            | FdItem::HostStdout(_)
             | FdItem::NullStdio(_) => Ok(Filestat {
                 dev: 0,
                 ino: 0,
@@ -1348,11 +1286,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 let l = ret.len() as Size;
                 Ok((ret.into(), l))
             }),
-            FdItem::BoxedRead(v) => memio.read(v, |v, len| {
-                let mut ret = vec![0; len.min(1024) as usize];
-                let i = v.read(&mut ret)?;
-                ret.truncate(i);
-                Ok((ret.into(), i as Size))
+            FdItem::HostStdin(v) => memio.read(v, |v, len| {
+                let ret = v.read_block(len.try_into().unwrap_or(usize::MAX), self.timeout)?;
+                let l = ret.len() as Size;
+                Ok((ret.into(), l))
             }),
             _ => Err(Errno::Badf.into()),
         }
@@ -1659,31 +1596,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 }
             }
             FdItem::NullStdio(_) => Ok(memio.len),
-            FdItem::StdoutBp(v) => {
-                let r = memio.write(|s| {
-                    v.write(s)?;
-                    Ok(s.len() as _)
-                })?;
-                v.flush()?;
-                Ok(r)
-            }
-            FdItem::StderrBp(v) => {
-                let r = memio.write(|s| {
-                    v.write(s)?;
-                    Ok(s.len() as _)
-                })?;
-                v.flush()?;
-                Ok(r)
-            }
-            FdItem::StdoutLBuf(v) => {
-                let r = memio.write(|s| {
-                    v.write(s)?;
-                    Ok(s.len() as _)
-                })?;
-                v.flush()?;
-                Ok(r)
-            }
-            FdItem::StdoutBBuf(v) => {
+            FdItem::HostStdout(v) => {
                 let r = memio.write(|s| {
                     v.write(s)?;
                     Ok(s.len() as _)
@@ -2218,7 +2131,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                         SubscriptionU::FdRead(v) => {
                             match self.p1_items.get_item(v.file_descriptor)? {
                                 // File is always ready
-                                FdItem::P1File(_) | FdItem::NullStdio(_) | FdItem::BoxedRead(_) => {
+                                FdItem::P1File(_) | FdItem::NullStdio(_) | FdItem::HostStdin(_) => {
                                     Poll::Always
                                 }
                                 FdItem::StdinSignal(v) => Poll::Signal(v.poll()?),
@@ -2230,10 +2143,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                                 // File is always ready
                                 FdItem::P1File(_)
                                 | FdItem::NullStdio(_)
-                                | FdItem::StdoutBp(_)
-                                | FdItem::StderrBp(_)
-                                | FdItem::StdoutLBuf(_)
-                                | FdItem::StdoutBBuf(_) => Poll::Always,
+                                | FdItem::HostStdout(_) => Poll::Always,
                                 _ => return Err(Errno::Badf.into()),
                             }
                         }
