@@ -1133,7 +1133,7 @@ impl WasmInstance {
 
     /// Inserts a line to stdin. Only usable with WASI.
     #[func]
-    #[instrument]
+    #[instrument(skip(_line), fields(line.len = _line.len()))]
     fn stdin_add_line(&self, _line: GString) {
         cfg_if! {
             if #[cfg(feature = "wasi")] {

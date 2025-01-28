@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::sync::Arc;
 
 use anyhow::Error;
@@ -7,9 +8,9 @@ use either::{Either, Left, Right};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use tracing::{instrument, Level};
 use wasi_isolated_fs::bindings::{Command, LinkOptions};
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
-use wasi_isolated_fs::stdio::{StderrBypass, StdoutBypass};
 use wasmtime::component::Linker;
 use wasmtime::{AsContextMut, Store};
 
@@ -17,8 +18,10 @@ use wasmtime::{AsContextMut, Store};
 use crate::godot_component::filter::Filter;
 #[cfg(feature = "godot-component")]
 use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
+use crate::godot_util::SendSyncWrapper;
+use crate::wasi_ctx::stdio::PackedByteArrayReader;
 use crate::wasi_ctx::WasiContext;
-use crate::wasm_config::Config;
+use crate::wasm_config::{Config, PipeBindingType};
 use crate::wasm_engine::WasmModule;
 #[cfg(feature = "memory-limiter")]
 use crate::wasm_instance::MemoryLimit;
@@ -38,6 +41,15 @@ struct CommandConfig {
     filter: Filter,
 }
 
+impl Debug for CommandConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("CommandConfig")
+            .field("config", &self.config)
+            .field("use_comp_godot", &self.use_comp_godot)
+            .finish_non_exhaustive()
+    }
+}
+
 impl GodotConvert for CommandConfig {
     type Via = Dictionary;
 }
@@ -51,25 +63,21 @@ impl FromGodot for CommandConfig {
     }
 
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
-        #[cfg(feature = "godot-component")]
-        let use_comp_godot = via
-            .get("component.godot.enable")
-            .map(|v| v.try_to())
-            .transpose()?
-            .unwrap_or_default();
-        #[cfg(feature = "godot-component")]
-        let filter = via
-            .get("component.godot.filter")
-            .map(|v| v.try_to())
-            .transpose()?
-            .unwrap_or_default();
-
         Ok(Self {
+            #[cfg(feature = "godot-component")]
+            use_comp_godot: via
+                .get("component.godot.enable")
+                .map(|v| v.try_to())
+                .transpose()?
+                .unwrap_or_default(),
+            #[cfg(feature = "godot-component")]
+            filter: via
+                .get("component.godot.filter")
+                .map(|v| v.try_to())
+                .transpose()?
+                .unwrap_or_default(),
+
             config: Config::try_from_godot(via)?,
-            #[cfg(feature = "godot-component")]
-            use_comp_godot,
-            #[cfg(feature = "godot-component")]
-            filter,
         })
     }
 }
@@ -83,6 +91,12 @@ pub struct WasiCommand {
     #[var(get = get_module)]
     #[allow(dead_code)]
     module: Option<Gd<WasmModule>>,
+}
+
+impl Debug for WasiCommand {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_tuple("WasiCommand").field(&self.base).finish()
+    }
 }
 
 pub struct CommandData {
@@ -158,8 +172,9 @@ impl HasEpochTimeout for StoreData {
     }
 }
 
+#[instrument]
 fn instantiate(
-    _inst_id: InstanceId,
+    obj: &Gd<WasiCommand>,
     config: CommandConfig,
     module: Gd<WasmModule>,
 ) -> Result<CommandData, Error> {
@@ -173,24 +188,40 @@ fn instantiate(
     let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
 
     let mut builder = WasiCtx::builder();
-    if let Config {
-        with_wasi: true,
-        wasi_context: Some(ctx),
-        ..
-    } = &config
-    {
-        WasiContext::build_ctx(ctx, &mut builder, &config)
-    } else {
-        builder
-            .stdout(Arc::new(StdoutBypass::default()))?
-            .stderr(Arc::new(StderrBypass::default()))?;
-        WasiContext::init_ctx_no_context(&mut builder, &config)
-    }?;
+    if config.with_wasi {
+        if config.wasi_stdin == PipeBindingType::Instance {
+            if let Some(data) = config.wasi_stdin_data.clone() {
+                builder.stdin(Arc::new(PackedByteArrayReader::from(data)))
+            } else {
+                let signal =
+                    SendSyncWrapper::new(Signal::from_object_signal(obj, c"stdin_request"));
+                builder.stdin_signal(Box::new(move || signal.emit(&[])))
+            }?;
+        }
+        if config.wasi_stdout == PipeBindingType::Instance {
+            builder.stdout(WasiContext::make_host_stdout(
+                Signal::from_object_signal(obj, c"stdout_emit"),
+                config.wasi_stdout_buffer,
+            ))?;
+        }
+        if config.wasi_stderr == PipeBindingType::Instance {
+            builder.stderr(WasiContext::make_host_stdout(
+                Signal::from_object_signal(obj, c"stderr_emit"),
+                config.wasi_stderr_buffer,
+            ))?;
+        }
+
+        match &config.wasi_context {
+            Some(ctx) => WasiContext::build_ctx(ctx, &mut builder, &config),
+            None => WasiContext::init_ctx_no_context(&mut builder, &config),
+        }?;
+    }
     let wasi_ctx = builder.build()?;
+    let wasi_stdin = wasi_ctx.stdin_provider().map(|v| v.dup());
 
     #[cfg(feature = "godot-component")]
     let godot_ctx = if use_comp_godot {
-        let mut ctx = GodotCtx::new(_inst_id);
+        let mut ctx = GodotCtx::new(obj.instance_id());
         ctx.filter = filter;
         Right(ctx)
     } else {
@@ -248,13 +279,14 @@ fn instantiate(
             instance: InstanceType::NoInstance,
             module,
 
-            wasi_stdin: None,
+            wasi_stdin,
         },
         bindings,
     })
 }
 
 impl WasiCommand {
+    #[instrument(level = Level::ERROR)]
     fn emit_error_wrapper(&self, msg: String) {
         self.to_gd().emit_signal(
             &StringName::from(c"error_happened"),
@@ -270,6 +302,7 @@ impl WasiCommand {
         }
     }
 
+    #[instrument(level = Level::DEBUG, skip(f))]
     pub fn unwrap_data<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&CommandData) -> Result<R, Error>,
@@ -293,6 +326,7 @@ impl WasiCommand {
         }
     }
 
+    #[instrument(level = Level::DEBUG, skip(config))]
     pub fn initialize_(&self, module: Gd<WasmModule>, config: Option<Variant>) -> bool {
         let t = self.data.get_or_try_init(move || {
             let config = config.and_then(|v| match v.try_to() {
@@ -302,11 +336,7 @@ impl WasiCommand {
                     None
                 }
             });
-            instantiate(
-                self.base().instance_id(),
-                config.unwrap_or_default(),
-                module,
-            )
+            instantiate(&self.to_gd(), config.unwrap_or_default(), module)
         });
         match t {
             Ok(_) => true,
@@ -322,12 +352,23 @@ impl WasiCommand {
 
 #[godot_api]
 impl WasiCommand {
+    /// Emitted if an error happened. Use it to handle errors.
     #[signal]
     fn error_happened(message: GString);
+    /// Emitted whenever WASI stdout is written. Only usable with WASI.
+    #[signal]
+    fn stdout_emit(message: Variant);
+    /// Emitted whenever WASI stderr is written. Only usable with WASI.
+    #[signal]
+    fn stderr_emit(message: Variant);
+    /// Emitted whenever WASI stdin is tried to be read. Only usable with WASI.
+    #[signal]
+    fn stdin_request();
 
     /// Initialize and loads module.
     /// MUST be called for the first time and only once.
     #[func]
+    #[instrument(skip(config), ret)]
     fn initialize(&self, module: Gd<WasmModule>, config: Variant) -> Option<Gd<WasiCommand>> {
         let config = if config.is_nil() { None } else { Some(config) };
 
@@ -339,11 +380,13 @@ impl WasiCommand {
     }
 
     #[func]
+    #[instrument(ret)]
     fn get_module(&self) -> Option<Gd<WasmModule>> {
         self.unwrap_data(|m| Ok(m.instance.module.clone()))
     }
 
     #[func]
+    #[instrument(ret)]
     fn run(&self) -> bool {
         self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
@@ -354,5 +397,29 @@ impl WasiCommand {
             })
         })
         .unwrap_or_default()
+    }
+
+    /// Inserts a line to stdin. Only usable with WASI.
+    #[func]
+    #[instrument(skip(line), fields(line.len = line.len()))]
+    fn stdin_add_line(&self, line: GString) {
+        self.unwrap_data(move |m| {
+            if let Some(stdin) = &m.instance.wasi_stdin {
+                stdin.write(line.to_string().as_bytes());
+            }
+            Ok(())
+        });
+    }
+
+    /// Closes stdin. Only usable with WASI.
+    #[func]
+    #[instrument]
+    fn stdin_close(&self) {
+        self.unwrap_data(|m| {
+            if let Some(stdin) = &m.instance.wasi_stdin {
+                stdin.close();
+            }
+            Ok(())
+        });
     }
 }

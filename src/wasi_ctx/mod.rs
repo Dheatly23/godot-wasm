@@ -135,6 +135,13 @@ impl WasiContext {
     }
 
     pub fn init_ctx_no_context(ctx: &mut WasiContextBuilder, config: &Config) -> AnyResult<()> {
+        if config.wasi_stdout == PipeBindingType::Bypass {
+            ctx.stdout(Arc::new(StdoutBypass::default()))?;
+        }
+        if config.wasi_stderr == PipeBindingType::Bypass {
+            ctx.stderr(Arc::new(StderrBypass::default()))?;
+        }
+
         ctx.envs(config.wasi_envs.iter().map(|(k, v)| (k.clone(), v.clone())))
             .args(config.wasi_args.iter().cloned());
         Ok(())
@@ -169,17 +176,10 @@ impl WasiContext {
             })?;
         }
 
-        Self::init_ctx_no_context(&mut *ctx, config)?;
+        ctx.envs(o.envs.iter().map(|(k, v)| (k.clone(), v.clone())))
+            .fs_readonly(o.fs_readonly || config.wasi_fs_readonly);
 
-        ctx.envs(
-            o.envs
-                .iter()
-                .filter_map(|(k, v)| match config.wasi_envs.contains_key(k) {
-                    true => None,
-                    false => Some((k.clone(), v.clone())),
-                }),
-        )
-        .fs_readonly(o.fs_readonly || config.wasi_fs_readonly);
+        Self::init_ctx_no_context(&mut *ctx, config)?;
 
         site_context!(ctx.isolated_fs_controller(&o.memfs_controller))?;
         site_context!(ctx.preopen_dir_isolated("/".parse().unwrap(), "/".parse().unwrap()))?;

@@ -1,7 +1,9 @@
 #[cfg(feature = "wasi")]
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter, Result as FmtResult};
 
 use godot::prelude::*;
+use tracing::warn;
 
 #[cfg(feature = "epoch-timeout")]
 use crate::variant_dispatch;
@@ -10,7 +12,7 @@ use crate::wasi_ctx::WasiContext;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::{EPOCH_DEADLINE, EPOCH_MULTIPLIER};
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct Config {
     #[cfg(feature = "epoch-timeout")]
     pub with_epoch: bool,
@@ -52,6 +54,50 @@ pub struct Config {
     // Not worth cfg() it
     #[allow(dead_code)]
     pub extern_bind: ExternBindingType,
+}
+
+impl Debug for Config {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        let mut f = f.debug_struct("Config");
+        #[cfg(feature = "epoch-timeout")]
+        f.field("with_epoch", &self.with_epoch);
+        #[cfg(feature = "epoch-timeout")]
+        f.field("epoch_autoreset", &self.epoch_autoreset);
+        #[cfg(feature = "epoch-timeout")]
+        f.field("epoch_timeout", &self.epoch_timeout);
+
+        #[cfg(feature = "memory-limiter")]
+        f.field("max_memory", &self.max_memory);
+        #[cfg(feature = "memory-limiter")]
+        f.field("max_entries", &self.max_entries);
+
+        #[cfg(feature = "wasi")]
+        f.field("with_wasi", &self.with_wasi);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_context", &self.wasi_context);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_args", &self.wasi_args);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_fs_readonly", &self.wasi_fs_readonly);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_stdin", &self.wasi_stdin);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_stdout", &self.wasi_stdout);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_stderr", &self.wasi_stderr);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_stdout_buffer", &self.wasi_stdout_buffer);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_stderr_buffer", &self.wasi_stderr_buffer);
+        #[cfg(feature = "wasi")]
+        f.field(
+            "wasi_stdin_data_len",
+            &self.wasi_stdin_data.as_ref().map(|v| v.len()),
+        );
+
+        f.field("extern_bind", &self.extern_bind);
+        f.finish_non_exhaustive()
+    }
 }
 
 fn get_field<T: FromGodot>(
@@ -141,8 +187,14 @@ impl Config {
             wasi_fs_readonly: get_field(&dict, ["wasi.fsReadonly", "wasi.fs_readonly"])?
                 .unwrap_or_default(),
             #[cfg(feature = "wasi")]
-            wasi_stdin: get_field(&dict, ["wasi.stdin.bindMode", "wasi.stdin"])?
-                .unwrap_or_default(),
+            wasi_stdin: get_field::<PipeBindingType>(&dict, ["wasi.stdin.bindMode", "wasi.stdin"])?
+                .inspect(|&v| {
+                    if let PipeBindingType::Bypass | PipeBindingType::Context = v {
+                        warn!(binding = ?v, "Stdin binding type is unsupported.");
+                        godot_warn!("Stdin binding type {v:?} is unsupported.");
+                    }
+                })
+                .unwrap_or(PipeBindingType::Unbound),
             #[cfg(feature = "wasi")]
             wasi_stdout: get_field(&dict, ["wasi.stdout.bindMode", "wasi.stdout"])?
                 .unwrap_or_default(),
@@ -245,6 +297,7 @@ impl ToGodot for ExternBindingType {
 #[non_exhaustive]
 pub enum PipeBindingType {
     Unbound,
+    Bypass,
     Instance,
     Context,
 }
@@ -268,6 +321,7 @@ impl FromGodot for PipeBindingType {
 
         match chars {
             [] | ['u', 'n', 'b', 'o', 'u', 'n', 'd'] => Ok(Self::Unbound),
+            ['b', 'y', 'p', 'a', 's', 's'] => Ok(Self::Bypass),
             ['i', 'n', 's', 't', 'a', 'n', 'c', 'e'] => Ok(Self::Instance),
             ['c', 'o', 'n', 't', 'e', 'x', 't'] => Ok(Self::Context),
             _ => Err(ConvertError::with_error_value("Unknown variant", via)),
@@ -282,6 +336,7 @@ impl ToGodot for PipeBindingType {
     fn to_godot(&self) -> Self::ToVia<'_> {
         match self {
             Self::Unbound => "unbound",
+            Self::Bypass => "bypass",
             Self::Instance => "instance",
             Self::Context => "context",
         }
