@@ -532,7 +532,7 @@ impl<T> InstanceData<T>
 where
     T: AsRef<InnerLock> + AsMut<InnerLock>,
 {
-    #[instrument(skip_all)]
+    #[instrument(skip(self, f))]
     pub fn acquire_store<F, R>(&self, f: F) -> R
     where
         for<'a> F: FnOnce(&Self, StoreContextMut<'a, T>) -> R,
@@ -555,7 +555,7 @@ where
 }
 
 impl InnerLock {
-    #[instrument(skip_all)]
+    #[instrument(skip(self, f))]
     pub fn release_store<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce() -> R,
