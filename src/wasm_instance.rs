@@ -1,10 +1,10 @@
 use std::collections::hash_map::{Entry, HashMap};
-use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::hash::{Hash, Hasher};
 use std::io::Cursor;
 #[cfg(feature = "wasi")]
 use std::sync::Arc;
-use std::{ffi, fmt, mem, ptr};
+use std::{ffi, mem, ptr};
 
 use anyhow::{bail, Result as AnyResult};
 use cfg_if::cfg_if;
@@ -753,11 +753,10 @@ impl WasmInstance {
     }
 }
 
-#[derive(Debug)]
 struct WasmCallable {
     name: StringName,
     ty: FuncType,
-    ptr: *const ffi::c_void,
+    ptr: *mut ffi::c_void,
     this: SendSyncWrapper<Gd<WasmInstance>>,
 }
 
@@ -784,12 +783,23 @@ impl Hash for WasmCallable {
     }
 }
 
-impl fmt::Display for WasmCallable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fn write_iter<I: fmt::Display>(
-            it: impl IntoIterator<Item = I>,
-            f: &mut fmt::Formatter<'_>,
-        ) -> fmt::Result {
+impl Debug for WasmCallable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        f.debug_struct("WasmCallable")
+            .field("this", &self.this)
+            .field("name", &self.name)
+            .field("ty", &self.ty)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Display for WasmCallable {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        fn write_iter<It>(it: It, f: &mut Formatter<'_>) -> FmtResult
+        where
+            It: IntoIterator,
+            It::Item: Display,
+        {
             let mut start = true;
             for v in it {
                 if !start {
@@ -814,22 +824,19 @@ impl fmt::Display for WasmCallable {
 impl RustCallable for WasmCallable {
     #[instrument(skip(args), fields(args.len = args.len()))]
     fn invoke(&mut self, args: &[&Variant]) -> Result<Variant, ()> {
-        let r = self
-            .this
-            .bind()
-            .acquire_store(|#[allow(unused_mut)] mut store| {
-                let _s = debug_span!("invoke.inner").entered();
-                #[cfg(feature = "epoch-timeout")]
-                reset_epoch(store.as_context_mut());
+        let r = self.this.bind().acquire_store(|mut store| {
+            let _s = debug_span!("invoke.inner").entered();
+            #[cfg(feature = "epoch-timeout")]
+            reset_epoch(store.as_context_mut());
 
-                // SAFETY: Function pointer is valid.
-                let ret = unsafe {
-                    let f = Func::from_raw(&mut store, self.ptr as *mut ffi::c_void).unwrap();
-                    raw_call(store, &f, &self.ty, args.iter().copied())?
-                };
-                info!(ret.len = ret.len());
-                Ok(ret)
-            });
+            // SAFETY: Function pointer is valid.
+            let ret = unsafe {
+                let f = Func::from_raw(store.as_context_mut(), self.ptr).expect("Pointer is null");
+                raw_call(store, &f, &self.ty, args.iter().copied())?
+            };
+            info!(ret.len = ret.len());
+            Ok(ret)
+        });
         match r {
             Some(v) => Ok(v.to_variant()),
             None => Err(()),
