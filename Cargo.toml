@@ -21,6 +21,7 @@ overflow-checks = false
 rayon = "^1.8"
 nom = "^7.1"
 either = "^1.0"
+smol_str = "^0.3"
 wasmparser = { version = "^0.224", optional = true }
 wat = { version = "~1", optional = true }
 log4rs = { version = "^1", optional = true }
@@ -34,7 +35,6 @@ tracing = { workspace = true }
 slab = { workspace = true, optional = true }
 camino = { workspace = true, optional = true }
 rbitset = { version = "^0.3", optional = true }
-smol_str = { version = "^0.3", optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
@@ -90,7 +90,6 @@ wasi-preview2 = [
 godot-component = [
   "dep:slab",
   "dep:rbitset",
-  "dep:smol_str",
   "component-model",
 ]
 log = [

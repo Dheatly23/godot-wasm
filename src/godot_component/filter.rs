@@ -10,8 +10,8 @@ use nom::error::{ErrorKind, ParseError};
 use nom::sequence::preceded;
 use nom::{Err as NomErr, IResult, Parser};
 use rbitset::BitSet;
-use smol_str::SmolStr;
 
+use crate::godot_util::to_lower_inline_smol_str;
 use crate::rw_struct::{CharSlice, SingleError};
 
 #[derive(Debug, Clone)]
@@ -572,14 +572,9 @@ fn parse_line(
     }
 
     let (i, v) = alpha1(i)?;
-    let v_ = if v.0.len() < 8 {
-        v.0.iter().flat_map(|v| v.to_lowercase()).collect()
-    } else {
-        SmolStr::new_static("")
-    };
-    let allow = match &*v_ {
-        "deny" | "d" | "-" => false,
-        "allow" | "a" | "+" => true,
+    let allow = match to_lower_inline_smol_str(v.0).as_deref() {
+        Some("deny" | "d" | "-") => false,
+        Some("allow" | "a" | "+") => true,
         _ => {
             return Err(NomErr::Error(SingleError::from_error_kind(
                 v,

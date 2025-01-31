@@ -5,6 +5,7 @@ use std::fmt::{Debug, Formatter, Result as FmtResult};
 use godot::prelude::*;
 use tracing::warn;
 
+use crate::godot_util::to_lower_inline_smol_str;
 #[cfg(feature = "epoch-timeout")]
 use crate::variant_dispatch;
 #[cfg(feature = "wasi")]
@@ -260,20 +261,14 @@ impl GodotConvert for ExternBindingType {
 
 impl FromGodot for ExternBindingType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
-        let chars = via.chars();
-
-        match chars {
-            [] | ['n', 'o', 'n', 'e'] | ['n', 'o', '_', 'b', 'i', 'n', 'd', 'i', 'n', 'g'] => {
-                Ok(Self::None)
-            }
+        Ok(match to_lower_inline_smol_str(via.chars()).as_deref() {
+            Some("" | "none" | "no_binding") => Self::None,
             #[cfg(feature = "object-registry-compat")]
-            ['c', 'o', 'm', 'p', 'a', 't'] | ['r', 'e', 'g', 'i', 's', 't', 'r', 'y'] => {
-                Ok(Self::Registry)
-            }
+            Some("compat" | "registry") => Self::Registry,
             #[cfg(feature = "object-registry-extern")]
-            ['e', 'x', 't', 'e', 'r', 'n'] | ['n', 'a', 't', 'i', 'v', 'e'] => Ok(Self::Native),
-            _ => Err(ConvertError::with_error_value("Unknown variant", via)),
-        }
+            Some("extern" | "native") => Self::Native,
+            _ => return Err(ConvertError::with_error_value("Unknown value", via)),
+        })
     }
 }
 
@@ -317,15 +312,13 @@ impl GodotConvert for PipeBindingType {
 #[cfg(feature = "wasi")]
 impl FromGodot for PipeBindingType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
-        let chars = via.chars();
-
-        match chars {
-            [] | ['u', 'n', 'b', 'o', 'u', 'n', 'd'] => Ok(Self::Unbound),
-            ['b', 'y', 'p', 'a', 's', 's'] => Ok(Self::Bypass),
-            ['i', 'n', 's', 't', 'a', 'n', 'c', 'e'] => Ok(Self::Instance),
-            ['c', 'o', 'n', 't', 'e', 'x', 't'] => Ok(Self::Context),
-            _ => Err(ConvertError::with_error_value("Unknown variant", via)),
-        }
+        Ok(match to_lower_inline_smol_str(via.chars()).as_deref() {
+            Some("" | "unbound") => Self::Unbound,
+            Some("bypass") => Self::Bypass,
+            Some("instance") => Self::Instance,
+            Some("context") => Self::Context,
+            _ => return Err(ConvertError::with_error_value("Unknown value", via)),
+        })
     }
 }
 

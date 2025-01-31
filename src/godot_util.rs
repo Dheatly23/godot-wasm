@@ -1,14 +1,15 @@
 use std::borrow::{Borrow, Cow};
 use std::error::Error;
-use std::fmt;
-use std::fmt::{Debug, Formatter, Result as FmtResult};
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::str::from_utf8;
 
 use anyhow::Result as AnyResult;
 use godot::global::Error as GError;
 use godot::meta::PropertyHintInfo;
 use godot::prelude::*;
+use smol_str::SmolStr;
 
 /// WARNING: Incredibly unsafe.
 /// It's just used as workaround to pass Godot objects across closure.
@@ -292,8 +293,8 @@ pub struct ErrorWrapper {
     msg: Option<String>,
 }
 
-impl fmt::Debug for ErrorWrapper {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for ErrorWrapper {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         if f.alternate() {
             if let Some(m) = &self.msg {
                 writeln!(f, "godot error {m}:")
@@ -312,8 +313,8 @@ impl fmt::Debug for ErrorWrapper {
     }
 }
 
-impl fmt::Display for ErrorWrapper {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Display for ErrorWrapper {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
         if f.alternate() {
             if let Some(m) = &self.msg {
                 writeln!(f, "godot error {m}:")
@@ -1011,4 +1012,19 @@ impl StructPacking<f64> for Transform3D {
         <_ as StructPacking<f64>>::write_array(&self.basis, (&mut a[..72]).try_into().unwrap());
         <_ as StructPacking<f64>>::write_array(&self.origin, (&mut a[72..]).try_into().unwrap());
     }
+}
+
+pub fn to_lower_inline_smol_str(chars: &[char]) -> Option<SmolStr> {
+    let mut buf = [0; 20];
+    let mut i = 0;
+    for c in chars.iter().flat_map(|c| c.to_lowercase()) {
+        let e = i + c.len_utf8();
+        let s = buf.get_mut(i..e)?;
+        let l = c.encode_utf8(s).len();
+        debug_assert_eq!(s.len(), l);
+        i = e;
+    }
+    Some(SmolStr::new_inline(
+        from_utf8(&buf[..i]).expect("Concatenated utf8-encoded chars must be a string"),
+    ))
 }
