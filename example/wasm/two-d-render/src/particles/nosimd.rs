@@ -121,7 +121,7 @@ impl Renderable for Particles {
 impl Particles {
     fn randomize(&mut self) {
         self.velocity.fill((0, 0));
-        let mut rng = Xoshiro512StarStar::from_entropy();
+        let mut rng = Xoshiro512StarStar::from_os_rng();
 
         for (px, py) in &mut self.position {
             *px = rng.gen();

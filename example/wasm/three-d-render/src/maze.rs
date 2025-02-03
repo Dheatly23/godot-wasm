@@ -56,7 +56,7 @@ impl Renderable for Maze {
             candidate: None,
             len: 0,
 
-            rng: Xoshiro512StarStar::from_entropy(),
+            rng: Xoshiro512StarStar::from_os_rng(),
 
             residue: 0.0,
             paused: false,
@@ -64,9 +64,9 @@ impl Renderable for Maze {
             slice: Slice::NoSlice,
         };
 
-        let x = ret.rng.gen_range(0..SIZE);
-        let y = ret.rng.gen_range(0..SIZE);
-        let z = ret.rng.gen_range(0..SIZE);
+        let x = ret.rng.random_range(0..SIZE);
+        let y = ret.rng.random_range(0..SIZE);
+        let z = ret.rng.random_range(0..SIZE);
         *ret.data_mut(x, y, z) |= FLAG_M;
         ret.add_candidates(x, y, z);
 
@@ -86,7 +86,7 @@ impl Renderable for Maze {
             if self.len == 0 {
                 break;
             }
-            let i = self.rng.gen_range(0..self.len);
+            let i = self.rng.random_range(0..self.len);
             let mut cp = &mut self.candidate;
             for _ in 0..i {
                 cp = &mut cp.as_mut().unwrap().next;
@@ -110,9 +110,9 @@ impl Renderable for Maze {
         } else if let MouseButton::Middle = button {
             self.data.fill(0);
 
-            let x = self.rng.gen_range(0..SIZE);
-            let y = self.rng.gen_range(0..SIZE);
-            let z = self.rng.gen_range(0..SIZE);
+            let x = self.rng.random_range(0..SIZE);
+            let y = self.rng.random_range(0..SIZE);
+            let z = self.rng.random_range(0..SIZE);
             *self.data_mut(x, y, z) |= FLAG_M;
             self.add_candidates(x, y, z);
         } else if let MouseButton::Left = button {

@@ -4,9 +4,9 @@ mod particles;
 
 use std::cell::RefCell;
 use std::fmt::{Arguments, Write as _};
-use std::ptr::{addr_of, addr_of_mut, null};
+use std::ptr::null;
 
-use getrandom::{register_custom_getrandom, Error as RandError};
+use getrandom::Error as RandError;
 
 #[link(wasm_import_module = "host")]
 extern "C" {
@@ -16,13 +16,12 @@ extern "C" {
     fn _rand(p: *mut u8, n: usize);
 }
 
-fn custom_rand(buf: &mut [u8]) -> Result<(), RandError> {
+#[unsafe(no_mangle)]
+unsafe extern "Rust" fn __getrandom_v03_custom(dest: *mut u8, len: usize) -> Result<(), RandError> {
     // SAFETY: Wraps extern call
-    unsafe { _rand(buf.as_mut_ptr(), buf.len()) }
+    unsafe { _rand(dest, len) }
     Ok(())
 }
-
-register_custom_getrandom!(custom_rand);
 
 pub(crate) fn log(s: &str) {
     // SAFETY: Wraps extern call
@@ -33,7 +32,7 @@ static mut TEMP_STR: RefCell<String> = RefCell::new(String::new());
 
 pub(crate) fn print_log(args: Arguments) {
     // SAFETY: Wraps static mut
-    let mut guard = unsafe { TEMP_STR.borrow_mut() };
+    let mut guard = unsafe { (*(&raw const TEMP_STR)).borrow_mut() };
     guard.clear();
     guard.write_fmt(args).unwrap();
     log(&guard);
@@ -155,7 +154,7 @@ impl RenderData {
             ConfigItem::from_str("Game of Life"),
             ConfigItem::from_str("Particle Sim"),
         ]);
-        addr_of!(CFG)
+        &raw const CFG
     }
 
     fn new(ix: u64) -> Option<Self> {
@@ -206,12 +205,12 @@ static mut STATE_EXPORT: ExportState = ExportState {
 };
 static mut T: f64 = 0.0;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn config() -> *const Config {
     RenderData::config()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn init(index: u64) {
     unsafe {
         STATE = State::default();
@@ -219,25 +218,26 @@ pub extern "C" fn init(index: u64) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn process(delta: f64) -> *const ExportState {
     unsafe {
         T += delta;
-        if let Some(rp) = &mut *addr_of_mut!(RENDER) {
+        let state = &mut *(&raw mut STATE);
+        if let Some(ref mut rp) = *(&raw mut RENDER) {
             rp.step(T as _, delta as _);
-            rp.render(&mut *addr_of_mut!(STATE));
+            rp.render(state);
         };
         STATE_EXPORT = ExportState {
-            width: STATE.width,
-            height: STATE.height,
-            colors_ptr: STATE.colors.as_ptr(),
-            colors_cnt: STATE.colors.len(),
+            width: state.width,
+            height: state.height,
+            colors_ptr: state.colors.as_ptr(),
+            colors_cnt: state.colors.len(),
         };
-        addr_of!(STATE_EXPORT)
+        &raw const STATE_EXPORT
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn click(x: f64, y: f64, button: u32) {
     let button = match button {
         0 => MouseButton::Left,
@@ -247,7 +247,7 @@ pub extern "C" fn click(x: f64, y: f64, button: u32) {
     };
 
     unsafe {
-        if let Some(rp) = &mut *addr_of_mut!(RENDER) {
+        if let Some(ref mut rp) = *(&raw mut RENDER) {
             rp.click(x as _, y as _, button);
         };
     }

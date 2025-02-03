@@ -10,6 +10,7 @@ use cap_std::ambient_authority;
 use cap_std::fs::Dir as CapDir;
 use rand::prelude::*;
 use rand::rngs::OsRng;
+use rand::TryRngCore;
 use rand_xoshiro::Xoshiro512StarStar;
 use wasmtime::component::Resource;
 
@@ -35,7 +36,7 @@ pub struct WasiContext {
     pub(crate) clock: ClockController,
     pub(crate) clock_tz: Box<dyn Send + Sync + wasi::clocks::timezone::Host>,
     pub(crate) insecure_rng: Box<dyn Send + Sync + RngCore>,
-    pub(crate) secure_rng: Box<dyn Send + Sync + RngCore>,
+    pub(crate) secure_rng: Box<dyn Send + Sync + CryptoRng>,
     pub(crate) stdin: Option<Stdin>,
     pub(crate) stdout: Option<Arc<dyn Send + Sync + HostStdout>>,
     pub(crate) stderr: Option<Arc<dyn Send + Sync + HostStdout>>,
@@ -52,7 +53,7 @@ pub struct WasiContextBuilder {
     args: Vec<String>,
     clock_tz: Box<dyn Send + Sync + wasi::clocks::timezone::Host>,
     insecure_rng: Option<Box<dyn Send + Sync + RngCore>>,
-    secure_rng: Option<Box<dyn Send + Sync + RngCore>>,
+    secure_rng: Option<Box<dyn Send + Sync + CryptoRng>>,
     stdin: Option<BuilderStdin>,
     stdout: Option<Arc<dyn Send + Sync + HostStdout>>,
     stderr: Option<Arc<dyn Send + Sync + HostStdout>>,
@@ -253,16 +254,13 @@ impl WasiContextBuilder {
         self
     }
 
-    pub fn insecure_rng(&mut self, rng: impl 'static + Send + Sync + RngCore) -> &mut Self {
-        self.insecure_rng = Some(Box::new(rng));
+    pub fn insecure_rng(&mut self, rng: Box<dyn Send + Sync + RngCore>) -> &mut Self {
+        self.insecure_rng = Some(rng);
         self
     }
 
-    pub fn secure_rng(
-        &mut self,
-        rng: impl 'static + Send + Sync + RngCore + CryptoRng,
-    ) -> &mut Self {
-        self.secure_rng = Some(Box::new(rng));
+    pub fn secure_rng(&mut self, rng: Box<dyn Send + Sync + CryptoRng>) -> &mut Self {
+        self.secure_rng = Some(rng);
         self
     }
 
@@ -408,10 +406,13 @@ impl WasiContextBuilder {
             args: self.args,
             clock: ClockController::new(),
             clock_tz: self.clock_tz,
-            insecure_rng: self
-                .insecure_rng
-                .unwrap_or_else(|| Box::new(Xoshiro512StarStar::from_entropy())),
-            secure_rng: self.secure_rng.unwrap_or_else(|| Box::new(OsRng)),
+            insecure_rng: match self.insecure_rng {
+                Some(v) => v,
+                None => Box::new(Xoshiro512StarStar::try_from_os_rng()?),
+            },
+            secure_rng: self
+                .secure_rng
+                .unwrap_or_else(|| Box::new(OsRng.unwrap_err())),
             stdin,
             stdout: self.stdout,
             stderr: self.stderr,

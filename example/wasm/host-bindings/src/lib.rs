@@ -14,7 +14,7 @@ fn write_log(s: &str) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn main() {
     let mut s = String::new();
     for i in 1..=30 {

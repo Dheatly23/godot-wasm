@@ -113,7 +113,7 @@ impl Renderable for Wave {
         if let MouseButton::Right = button {
             self.paused = !self.paused;
         } else if let MouseButton::Middle = button {
-            let mut rng = Xoshiro512StarStar::from_entropy();
+            let mut rng = Xoshiro512StarStar::from_os_rng();
 
             self.arr.fill(WavePoint::default());
 

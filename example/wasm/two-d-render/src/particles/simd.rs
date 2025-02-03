@@ -221,7 +221,7 @@ impl Renderable for Particles {
 impl Particles {
     fn randomize(&mut self) {
         self.velocity.fill(u32x4_splat(0));
-        let mut rng = Xoshiro512StarStar::from_entropy();
+        let mut rng = Xoshiro512StarStar::from_os_rng();
         // SAFETY: Layout matches.
         unsafe {
             rng.fill_bytes(from_raw_parts_mut(

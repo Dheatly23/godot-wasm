@@ -2,7 +2,7 @@ use std::arch::wasm32::*;
 use std::mem::size_of_val;
 use std::slice::from_raw_parts_mut;
 
-use rand_xoshiro::rand_core::{RngCore, SeedableRng};
+use rand::prelude::*;
 use rand_xoshiro::Xoshiro512StarStar;
 
 use super::SIZE;
@@ -280,7 +280,7 @@ impl Renderable for GameOfLife {
         if let MouseButton::Right = button {
             self.paused = !self.paused;
         } else if let MouseButton::Middle = button {
-            let mut rng = Xoshiro512StarStar::from_entropy();
+            let mut rng = Xoshiro512StarStar::from_os_rng();
             // SAFETY: All bounds are valid.
             unsafe {
                 rng.fill_bytes(from_raw_parts_mut(

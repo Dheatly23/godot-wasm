@@ -1350,14 +1350,14 @@ impl wasi::random::insecure::Host for WasiContext {
 
     #[instrument(skip(self), err)]
     fn get_insecure_random_u64(&mut self) -> AnyResult<u64> {
-        Ok(self.insecure_rng.gen())
+        Ok(self.insecure_rng.random())
     }
 }
 
 impl wasi::random::insecure_seed::Host for WasiContext {
     #[instrument(skip(self), err)]
     fn insecure_seed(&mut self) -> AnyResult<(u64, u64)> {
-        Ok(self.insecure_rng.gen())
+        Ok(self.insecure_rng.random())
     }
 }
 
@@ -1371,7 +1371,7 @@ impl wasi::random::random::Host for WasiContext {
 
     #[instrument(skip(self), err)]
     fn get_random_u64(&mut self) -> AnyResult<u64> {
-        Ok(self.secure_rng.gen())
+        Ok(self.secure_rng.random())
     }
 }
 

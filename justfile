@@ -119,3 +119,16 @@ deploy-wasm: build-wasm
 # Check compilation with multiple configs
 [group('Checks')]
 compile-test: (fmt "--all" "--check") (check) (clippy) (check "--all-features") (clippy "--all-features") (check "--no-default-features") (clippy "--no-default-features")
+
+# Check WASM example code
+[group('Checks')]
+[group('Example')]
+check-wasm fix="false":
+  @ls ./example/wasm \
+  | update name {path basename} \
+  | where type == "dir" and name != ".cargo" \
+  | get name \
+  | each {|v| \
+    print $"Building ($v)"; \
+    cargo clippy -p $v --target wasm32-unknown-unknown --profile {{build_profile}} --config "./example/wasm/.cargo/config.toml" {{ if fix == "true" { "--fix --allow-dirty --allow-staged" } else { "" } }} \
+  } | ignore

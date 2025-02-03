@@ -19,7 +19,7 @@ overflow-checks = false
 
 [dependencies]
 rayon = "^1.8"
-nom = "^7.1"
+nom = "^8.0"
 either = "^1.0"
 smol_str = "^0.3"
 wasmparser = { version = "^0.224", optional = true }
@@ -38,7 +38,7 @@ rbitset = { version = "^0.3", optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "40186f3a5afebafb7b86ce06a7d676bf418c646e"
+rev = "a2d4861383ac5e4a2a4d80a5ce03b12374309d98"
 features = [
   "experimental-threads",
   "register-docs",
@@ -123,11 +123,11 @@ cfg-if = "^1.0"
 glam = "^0.29"
 colorgrad = { version = "^0.7", default-features = false, features = ["preset"] }
 
-rand_xoshiro = "^0.6"
-rand = { version = "^0.8", default-features = false }
-rand_distr = { version = "^0.4", default-features = false }
-rand_core = { version = "^0.6", features = ["getrandom"] }
-getrandom = { version = "^0.2", features = ["custom"] }
+rand_xoshiro = "^0.7"
+getrandom = "^0.3"
+rand = { version = "^0.9", default-features = false }
+rand_distr = { version = "^0.5", default-features = false }
+rand_core = { version = "^0.9", features = ["os_rng"] }
 
 [workspace.dependencies.wasmtime]
 version = "^29.0"

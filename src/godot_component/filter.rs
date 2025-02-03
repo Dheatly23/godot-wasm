@@ -548,13 +548,15 @@ fn parse_line(
         take_while1(|c: char| c.is_alphanumeric() || matches!(c, ':' | '-'))
             .map(Some)
             .or(value(None, char_('*')))
-            .parse(i)
+            .parse_complete(i)
     }
 
     fn maybe_item_or_any(
         i: CharSlice<'_>,
     ) -> IResult<CharSlice<'_>, Option<&'_ [char]>, SingleError<CharSlice<'_>>> {
-        opt(item_or_any).map(|v| v.flatten().map(|v| v.0)).parse(i)
+        opt(item_or_any)
+            .map(|v| v.flatten().map(|v| v.0))
+            .parse_complete(i)
     }
 
     fn maybe_dotted_item_or_any(
@@ -562,7 +564,7 @@ fn parse_line(
     ) -> IResult<CharSlice<'_>, Option<&'_ [char]>, SingleError<CharSlice<'_>>> {
         opt(preceded(char_('.'), item_or_any))
             .map(|v| v.flatten().map(|v| v.0))
-            .parse(i)
+            .parse_complete(i)
     }
 
     let (i, _) = space0(i)?;
@@ -595,7 +597,7 @@ fn parse_line(
     } else {
         (i, None)
     };
-    let (i, _) = all_consuming(space0)(i)?;
+    let (i, _) = all_consuming(space0).parse_complete(i)?;
 
     Ok((i, Some((allow, [module, interface, method]))))
 }

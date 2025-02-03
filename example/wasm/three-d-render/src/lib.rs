@@ -4,9 +4,9 @@ mod wave;
 
 use std::cell::RefCell;
 use std::fmt::{Arguments, Write as _};
-use std::ptr::{addr_of, addr_of_mut, null};
+use std::ptr::null;
 
-use getrandom::{register_custom_getrandom, Error as RandError};
+use getrandom::Error as RandError;
 use glam::f32::*;
 
 #[link(wasm_import_module = "host")]
@@ -17,13 +17,12 @@ extern "C" {
     fn _rand(p: *mut u8, n: usize);
 }
 
-fn custom_rand(buf: &mut [u8]) -> Result<(), RandError> {
+#[unsafe(no_mangle)]
+unsafe extern "Rust" fn __getrandom_v03_custom(dest: *mut u8, len: usize) -> Result<(), RandError> {
     // SAFETY: Wraps extern call
-    unsafe { _rand(buf.as_mut_ptr(), buf.len()) }
+    unsafe { _rand(dest, len) }
     Ok(())
 }
-
-register_custom_getrandom!(custom_rand);
 
 #[allow(dead_code)]
 pub(crate) fn log(s: &str) {
@@ -37,7 +36,7 @@ static mut TEMP_STR: RefCell<String> = RefCell::new(String::new());
 #[allow(dead_code)]
 pub(crate) fn print_log(args: Arguments) {
     // SAFETY: Wraps static mut
-    let mut guard = unsafe { TEMP_STR.borrow_mut() };
+    let mut guard = unsafe { (*(&raw const TEMP_STR)).borrow_mut() };
     guard.clear();
     guard.write_fmt(args).unwrap();
     log(&guard);
@@ -145,7 +144,7 @@ impl RenderData {
             ConfigItem::from_str("Double Joint"),
             ConfigItem::from_str("Maze"),
         ]);
-        addr_of!(CFG)
+        &raw const CFG
     }
 
     fn new(ix: u64) -> Option<Self> {
@@ -207,12 +206,12 @@ static mut STATE_EXPORT: ExportState = ExportState {
 };
 static mut T: f64 = 0.0;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn config() -> *const Config {
     RenderData::config()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn init(index: u64) {
     unsafe {
         STATE = State::default();
@@ -220,33 +219,34 @@ pub extern "C" fn init(index: u64) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn process(delta: f64) -> *const ExportState {
     unsafe {
         T += delta;
-        if let Some(rp) = &mut *addr_of_mut!(RENDER) {
+        let state = &mut *(&raw mut STATE);
+        if let Some(ref mut rp) = *(&raw mut RENDER) {
             rp.step(T as _, delta as _);
-            rp.render(&mut *addr_of_mut!(STATE));
+            rp.render(state);
         };
         STATE_EXPORT = ExportState {
-            vertex_ptr: STATE.vertex.as_ptr(),
-            vertex_cnt: STATE.vertex.len(),
-            normal_ptr: STATE.normal.as_ptr(),
-            normal_cnt: STATE.normal.len(),
-            tangent_ptr: STATE.tangent.as_ptr(),
-            tangent_cnt: STATE.tangent.len(),
-            uv_ptr: STATE.uv.as_ptr(),
-            uv_cnt: STATE.uv.len(),
-            color_ptr: STATE.color.as_ptr(),
-            color_cnt: STATE.color.len(),
-            index_ptr: STATE.index.as_ptr(),
-            index_cnt: STATE.index.len(),
+            vertex_ptr: state.vertex.as_ptr(),
+            vertex_cnt: state.vertex.len(),
+            normal_ptr: state.normal.as_ptr(),
+            normal_cnt: state.normal.len(),
+            tangent_ptr: state.tangent.as_ptr(),
+            tangent_cnt: state.tangent.len(),
+            uv_ptr: state.uv.as_ptr(),
+            uv_cnt: state.uv.len(),
+            color_ptr: state.color.as_ptr(),
+            color_cnt: state.color.len(),
+            index_ptr: state.index.as_ptr(),
+            index_cnt: state.index.len(),
         };
-        addr_of!(STATE_EXPORT)
+        &raw const STATE_EXPORT
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn click(ox: f32, oy: f32, oz: f32, nx: f32, ny: f32, nz: f32, button: u32) {
     let button = match button {
         0 => MouseButton::Left,
@@ -266,7 +266,7 @@ pub extern "C" fn click(ox: f32, oy: f32, oz: f32, nx: f32, ny: f32, nz: f32, bu
     };
 
     unsafe {
-        if let Some(rp) = &mut *addr_of_mut!(RENDER) {
+        if let Some(ref mut rp) = *(&raw mut RENDER) {
             rp.click(origin, norm, button);
         };
     }
