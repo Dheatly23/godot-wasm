@@ -1,0 +1,39 @@
+package godot:global@0.1.0;
+
+interface time {
+    use godot:core/core@0.1.0.{godot-var};
+
+    singleton: func() -> godot-var;
+
+    get-date-dict-from-system: func(utc: bool) -> godot-var;
+    get-date-dict-from-unix-time: func(unix-time-val: s64) -> godot-var;
+
+    get-date-string-from-system: func(utc: bool) -> godot-var;
+    get-date-string-from-unix-time: func(unix-time-val: s64) -> godot-var;
+
+    get-datetime-dict-from-datetime-string: func(datetime: borrow<godot-var>, weekday: bool) -> godot-var;
+    get-datetime-dict-from-system: func(utc: bool) -> godot-var;
+    get-datetime-dict-from-unix-time: func(unix-time-val: s64) -> godot-var;
+
+    get-datetime-string-from-datetime-dict: func(datetime: borrow<godot-var>, use-space: bool) -> godot-var;
+    get-datetime-string-from-system: func(utc: bool, use-space: bool) -> godot-var;
+    get-datetime-string-from-unix-time: func(unix-time-val: s64, use-space: bool) -> godot-var;
+
+    get-offset-string-from-offset-minutes: func(offset-minutes: s64) -> godot-var;
+
+    get-ticks-msec: func() -> u64;
+    get-ticks-usec: func() -> u64;
+
+    get-time-dict-from-system: func(utc: bool) -> godot-var;
+    get-time-dict-from-unix-time: func(unix-time-val: s64) -> godot-var;
+
+    get-time-string-from-system: func(utc: bool) -> godot-var;
+    get-time-string-from-unix-time: func(unix-time-val: s64) -> godot-var;
+
+    get-time-zone-from-system: func() -> godot-var;
+
+    get-unix-time-from-datetime-dict: func(datetime: borrow<godot-var>) -> s64;
+    get-unix-time-from-datetime-string: func(datetime: borrow<godot-var>) -> s64;
+
+    get-unix-time-from-system: func() -> f64;
+}

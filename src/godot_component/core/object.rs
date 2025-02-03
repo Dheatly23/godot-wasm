@@ -9,6 +9,10 @@ use crate::wasm_util::get_godot_param_cache;
 filter_macro! {method [
     from_instance_id -> "from-instance-id",
     instance_id -> "instance-id",
+    free -> "free",
+    queue_free -> "queue-free",
+    is_queued_for_deletion -> "is-queued-for-deletion",
+    cancel_free -> "cancel-free",
     get_class -> "get-class",
     is_class -> "is-class",
     get_script -> "get-script",
@@ -18,6 +22,7 @@ filter_macro! {method [
     get_signal_list -> "get-signal-list",
     has_meta -> "has-meta",
     has_method -> "has-method",
+    get_method_argument_count -> "get-method-argument-count",
     has_signal -> "has-signal",
     call -> "call",
     callv -> "callv",
@@ -26,6 +31,8 @@ filter_macro! {method [
     disconnect -> "disconnect",
     is_connected -> "is-connected",
     emit_signal -> "emit-signal",
+    is_blocking_signals -> "is-blocking-signals",
+    set_block_signals -> "set-block-signals",
     get -> "get",
     set -> "set",
     set_deferred -> "set-deferred",
@@ -54,6 +61,34 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, instance_id)?;
         self.get_value::<Gd<Object>>(var)
             .map(|v| v.instance_id().to_i64())
+    }
+
+    fn free(&mut self, var: WasmResource<Variant>) -> AnyResult<()> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, free)?;
+        let o: Gd<Object> = self.get_value(var)?;
+        self.release_store(move || o.free());
+        Ok(())
+    }
+
+    // It's weird that is_queued_for_deletion and cancel_free are object method, but queue_free is node method.
+    // So for symmetry reason upgrade it to object method.
+    fn queue_free(&mut self, var: WasmResource<Variant>) -> AnyResult<()> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, queue_free)?;
+        let mut o: Gd<Node> = self.get_value(var)?;
+        self.release_store(move || o.queue_free());
+        Ok(())
+    }
+
+    fn is_queued_for_deletion(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, is_queued_for_deletion)?;
+        self.get_value::<Gd<Object>>(var)
+            .map(|o| o.is_queued_for_deletion())
+    }
+
+    fn cancel_free(&mut self, var: WasmResource<Variant>) -> AnyResult<()> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, cancel_free)?;
+        self.get_value::<Gd<Object>>(var)
+            .map(|mut o| o.cancel_free())
     }
 
     fn get_class(&mut self, var: WasmResource<Variant>) -> AnyResult<WasmResource<Variant>> {
@@ -133,6 +168,17 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         let o: Gd<Object> = self.get_value(var)?;
         let n: StringName = self.get_value(name)?;
         Ok(self.release_store(move || o.has_method(&n)))
+    }
+
+    fn get_method_argument_count(
+        &mut self,
+        var: WasmResource<Variant>,
+        name: WasmResource<Variant>,
+    ) -> AnyResult<i32> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, get_method_argument_count)?;
+        let o: Gd<Object> = self.get_value(var)?;
+        let n: StringName = self.get_value(name)?;
+        Ok(self.release_store(move || o.get_method_argument_count(&n)))
     }
 
     fn has_signal(
@@ -256,6 +302,19 @@ impl bindgen::godot::core::object::Host for GodotCtx {
             .map(|v| self.maybe_get_var(v))
             .collect::<AnyResult<Vec<_>>>()?;
         wrap_error(self.release_store(move || o.try_emit_signal(&name, &args))?)
+    }
+
+    fn is_blocking_signals(&mut self, var: WasmResource<Variant>) -> AnyResult<bool> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, is_blocking_signals)?;
+        let o: Gd<Object> = self.get_value(var)?;
+        Ok(self.release_store(move || o.is_blocking_signals()))
+    }
+
+    fn set_block_signals(&mut self, var: WasmResource<Variant>, val: bool) -> AnyResult<()> {
+        filter_macro!(filter self.filter.as_ref(), godot_core, object, set_block_signals)?;
+        let mut o: Gd<Object> = self.get_value(var)?;
+        self.release_store(move || o.set_block_signals(val));
+        Ok(())
     }
 
     fn get(

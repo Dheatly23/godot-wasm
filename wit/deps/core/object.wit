@@ -1,10 +1,15 @@
 package godot:core@0.1.0;
 
 interface object {
-    use core.{godot-var, error-res};
+    use core.{godot-var, error-res, int};
 
     from-instance-id: func(id: s64) -> godot-var;
     instance-id: func(var: borrow<godot-var>) -> s64;
+
+    free: func(var: borrow<godot-var>);
+    queue-free: func(var: borrow<godot-var>);
+    is-queued-for-deletion: func(var: borrow<godot-var>) -> bool;
+    cancel-free: func(var: borrow<godot-var>);
 
     get-class: func(var: borrow<godot-var>) -> godot-var;
     is-class: func(var: borrow<godot-var>, class: borrow<godot-var>) -> bool;
@@ -17,6 +22,7 @@ interface object {
 
     has-meta: func(var: borrow<godot-var>, name: borrow<godot-var>) -> bool;
     has-method: func(var: borrow<godot-var>, name: borrow<godot-var>) -> bool;
+    get-method-argument-count: func(var: borrow<godot-var>, name: borrow<godot-var>) -> int;
     has-signal: func(var: borrow<godot-var>, name: borrow<godot-var>) -> bool;
 
     call: func(var: borrow<godot-var>, name: borrow<godot-var>, args: list<option<borrow<godot-var>>>) -> option<godot-var>;
@@ -27,6 +33,9 @@ interface object {
     disconnect: func(var: borrow<godot-var>, name: borrow<godot-var>, callable: borrow<godot-var>);
     is-connected: func(var: borrow<godot-var>, name: borrow<godot-var>, callable: borrow<godot-var>) -> bool;
     emit-signal: func(var: borrow<godot-var>, name: borrow<godot-var>, args: list<option<borrow<godot-var>>>) -> error-res;
+
+    is-blocking-signals: func(var: borrow<godot-var>) -> bool;
+    set-block-signals: func(var: borrow<godot-var>, val: bool);
 
     get: func(var: borrow<godot-var>, name: borrow<godot-var>) -> option<godot-var>;
     set: func(var: borrow<godot-var>, name: borrow<godot-var>, val: option<borrow<godot-var>>);

@@ -1,0 +1,29 @@
+package godot:global@0.1.0;
+
+interface project-settings {
+    use godot:core/core@0.1.0.{godot-var, int};
+
+    singleton: func() -> godot-var;
+
+    add-property-info: func(val: borrow<godot-var>);
+
+    get-global-class-list: func() -> godot-var;
+
+    has-setting: func(name: borrow<godot-var>) -> bool;
+    clear: func(name: borrow<godot-var>);
+
+    get-setting: func(name: borrow<godot-var>) -> option<godot-var>;
+    get-setting-with-override: func(name: borrow<godot-var>) -> option<godot-var>;
+    set-setting: func(name: borrow<godot-var>, val: option<borrow<godot-var>>);
+
+    get-order: func(name: borrow<godot-var>) -> int;
+    set-order: func(name: borrow<godot-var>, val: int);
+
+    set-as-basic: func(name: borrow<godot-var>, val: bool);
+    set-as-internal: func(name: borrow<godot-var>, val: bool);
+    set-restart-if-changed: func(name: borrow<godot-var>, val: bool);
+    set-initial-value: func(name: borrow<godot-var>, val: option<borrow<godot-var>>);
+
+    globalize-path: func(path: borrow<godot-var>) -> godot-var;
+    localize-path: func(path: borrow<godot-var>) -> godot-var;
+}

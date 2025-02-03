@@ -1,0 +1,16 @@
+package godot:global@0.1.0;
+
+interface marshalls {
+    use godot:core/core@0.1.0.{godot-var};
+
+    singleton: func() -> godot-var;
+
+    base64-to-raw: func(var: borrow<godot-var>) -> godot-var;
+    raw-to-base64: func(var: borrow<godot-var>) -> godot-var;
+    base64-to-utf8: func(var: borrow<godot-var>) -> godot-var;
+    utf8-to-base64: func(var: borrow<godot-var>) -> godot-var;
+    base64-to-variant: func(var: borrow<godot-var>) -> option<godot-var>;
+    variant-to-base64: func(var: option<borrow<godot-var>>) -> godot-var;
+    base64-to-variant-with-objects: func(var: borrow<godot-var>) -> option<godot-var>;
+    variant-to-base64-with-objects: func(var: option<borrow<godot-var>>) -> godot-var;
+}
