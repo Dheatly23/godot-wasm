@@ -1,5 +1,7 @@
 #[cfg(feature = "godot-component")]
 mod godot_component;
+#[cfg(feature = "log")]
+mod godot_log;
 mod godot_util;
 #[cfg(feature = "wasi-preview2")]
 mod preview2;
@@ -23,6 +25,8 @@ use std::path::PathBuf;
 
 use godot::prelude::*;
 #[cfg(feature = "log")]
+use log4rs::config::Deserializers;
+#[cfg(feature = "log")]
 use log4rs::init_file;
 
 // This is just a type tag without any functionality
@@ -38,7 +42,9 @@ unsafe impl ExtensionLibrary for GodotWasm {
         if level == InitLevel::Servers {
             #[cfg(feature = "log")]
             if let Some(v) = var_os("GODOT_WASM_LOG_CONFIG_FILE") {
-                init_file(PathBuf::from(v), Default::default()).unwrap();
+                let mut d = Deserializers::default();
+                d.insert("godot", godot_log::GodotAppenderDeserializer);
+                init_file(PathBuf::from(v), d).unwrap();
             }
             wasm_engine::init_engine();
         }
