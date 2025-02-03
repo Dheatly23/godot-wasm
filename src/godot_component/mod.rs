@@ -150,7 +150,7 @@ pub mod bindgen {
 
     wasmtime::component::bindgen!({
         path: "wit",
-        tracing: false,
+        tracing: true,
         async: false,
         ownership: Borrowing {
             duplicate_if_necessary: false
