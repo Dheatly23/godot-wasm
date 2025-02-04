@@ -37,6 +37,7 @@ parking_lot = { workspace = true }
 tracing = { workspace = true }
 slab = { workspace = true, optional = true }
 camino = { workspace = true, optional = true }
+memchr = { workspace = true, optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
@@ -97,6 +98,7 @@ godot-component = [
 log = [
   "dep:log",
   "dep:log4rs",
+  "dep:memchr",
   "dep:serde",
   "tracing/log",
 ]

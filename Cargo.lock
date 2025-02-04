@@ -706,6 +706,7 @@ dependencies = [
  "godot",
  "log",
  "log4rs",
+ "memchr",
  "nom",
  "once_cell",
  "parking_lot",
