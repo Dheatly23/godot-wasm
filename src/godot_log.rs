@@ -256,3 +256,48 @@ impl<'a> BBCodeWriter<'a> {
         v.open(self.inner.by_ref())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use proptest::collection::vec;
+    use proptest::option::of;
+    use proptest::prelude::*;
+
+    #[test]
+    fn test_style() {
+        fn to_color(i: u8) -> Color {
+            match i {
+                0 => Color::Black,
+                1 => Color::Red,
+                2 => Color::Green,
+                3 => Color::Yellow,
+                4 => Color::Blue,
+                5 => Color::Magenta,
+                6 => Color::Cyan,
+                7 => Color::White,
+                _ => unreachable!(),
+            }
+        }
+
+        fn f(v: Vec<(bool, Option<u8>, Option<u8>)>) {
+            let mut b = Vec::new();
+            let mut w = BBCodeWriter::new(&mut b);
+
+            for (bold, bg, fg) in v {
+                let mut s = Style::new();
+                s.intense(bold);
+                if let Some(bg) = bg {
+                    s.background(to_color(bg));
+                }
+                if let Some(fg) = fg {
+                    s.text(to_color(fg));
+                }
+                w.set_style(&s).unwrap();
+            }
+        }
+
+        proptest!(|(v in vec((any::<bool>(), of(..8u8), of(..8u8)), 0..32))| f(v));
+    }
+}

@@ -710,6 +710,7 @@ dependencies = [
  "nom",
  "once_cell",
  "parking_lot",
+ "proptest",
  "rayon",
  "rbitset",
  "scopeguard",

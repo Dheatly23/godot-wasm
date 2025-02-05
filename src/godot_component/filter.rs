@@ -575,8 +575,8 @@ fn parse_line(
 
     let (i, v) = alpha1(i)?;
     let allow = match to_lower_inline_smol_str(v.0).as_deref() {
-        Some("deny" | "d" | "-") => false,
-        Some("allow" | "a" | "+") => true,
+        Some("deny" | "d") => false,
+        Some("allow" | "a") => true,
         _ => {
             return Err(NomErr::Error(SingleError::from_error_kind(
                 v,
@@ -653,6 +653,9 @@ fn parse_script(s: CharSlice<'_>) -> Result<Filter, NomErr<SingleError<String>>>
 mod tests {
     use super::*;
 
+    use proptest::collection::vec;
+    use proptest::prelude::*;
+
     fn to_char_array(s: &str) -> Vec<char> {
         s.chars().collect()
     }
@@ -672,5 +675,20 @@ deny godot:core.primitive.to-vector2i";
         let f = parse_script(CharSlice(&to_char_array(SCRIPT))).unwrap();
         println!("{:?}", f);
         print_filter(f.as_ref(), FilterItem::default());
+    }
+
+    #[test]
+    fn test_filter_script() {
+        fn f(v: Vec<String>) {
+            let s = v
+                .iter()
+                .flat_map(|s| s.chars().chain(['\n']))
+                .collect::<Vec<char>>();
+            drop(v);
+            parse_script(CharSlice(&s)).unwrap();
+        }
+
+        const REGEX_LINE: &str = "[ \\t]*((//|#)[^\\n]*|(allow|a|deny|d)[ \\t]+(\\*|godot:core(\\.(\\*|primitive(\\.(\\*|to-vector2i))?))?))?";
+        proptest!(|(v in vec(REGEX_LINE, 0..32))| f(v));
     }
 }

@@ -68,6 +68,9 @@ features = [
 path = "crates/wasi-isolated-fs"
 optional = true
 
+[dev-dependencies]
+proptest = { workspace = true }
+
 [features]
 default = ["epoch-timeout", "memory-limiter", "wasi", "object-registry", "wasi-preview2", "godot-component"]
 memory-limiter = []

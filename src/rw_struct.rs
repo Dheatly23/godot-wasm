@@ -114,7 +114,7 @@ impl<'a> Input for CharSlice<'a> {
 
     fn take_split(&self, index: usize) -> (Self, Self) {
         let (a, b) = self.0.split_at(index);
-        (Self(a), Self(b))
+        (Self(b), Self(a))
     }
 
     fn position<P>(&self, predicate: P) -> Option<usize>
