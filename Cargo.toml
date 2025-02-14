@@ -22,7 +22,7 @@ rayon = "^1.8"
 nom = "^8.0"
 either = "^1.0"
 smol_str = "^0.3"
-wasmparser = { version = "^0.224", optional = true }
+wasmparser = { version = "^0.225", optional = true }
 wat = { version = "~1", optional = true }
 log4rs = { version = "^1", optional = true }
 log = { version = "^0.4", optional = true }
@@ -41,7 +41,7 @@ memchr = { workspace = true, optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "a2d4861383ac5e4a2a4d80a5ce03b12374309d98"
+rev = "b2bff8808bc8cac1a31784a905df8d44155e8d8d"
 features = [
   "experimental-threads",
   "register-docs",
@@ -125,7 +125,7 @@ memchr = "^2.7"
 camino = "^1.1"
 
 proptest = "^1"
-tracing = "0.1"
+tracing = "^0.1"
 
 # Dependencies for example crates
 cfg-if = "^1.0"
