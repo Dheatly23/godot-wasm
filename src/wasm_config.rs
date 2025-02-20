@@ -361,14 +361,12 @@ impl GodotConvert for PipeBufferType {
 #[cfg(feature = "wasi")]
 impl FromGodot for PipeBufferType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
-        let chars = via.chars();
-
-        match chars {
-            [] | ['u', 'n', 'b', 'u', 'f', 'f', 'e', 'r', 'e', 'd'] => Ok(Self::Unbuffered),
-            ['l', 'i', 'n', 'e'] => Ok(Self::LineBuffer),
-            ['b', 'l', 'o', 'c', 'k'] => Ok(Self::BlockBuffer),
-            _ => Err(ConvertError::with_error_value("Unknown variant", via)),
-        }
+        Ok(match to_lower_inline_smol_str(via.chars()).as_deref() {
+            "" | "unbuffered" => Self::Unbuffered,
+            "line" => Self::LineBuffer,
+            "block" => Self::BlockBuffer,
+            _ => return Err(ConvertError::with_error_value("Unknown variant", via)),
+        })
     }
 }
 

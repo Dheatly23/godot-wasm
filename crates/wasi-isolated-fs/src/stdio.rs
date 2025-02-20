@@ -634,9 +634,12 @@ impl HostStdout for StdoutCbLineBuffered {
 
     #[instrument]
     fn flush(&self) -> IoResult<()> {
+        /* Rust asks to flush every time and messes up the buffering mechanism.
         let mut g = self.0.lock();
         let (lb, f) = g.split();
         lb.flush(f)
+        */
+        Ok(())
     }
 }
 
@@ -724,10 +727,12 @@ impl HostStdout for StdoutCbBlockBuffered {
 
     #[instrument]
     fn flush(&self) -> IoResult<()> {
+        /*
         let this = &mut **guard(self.0.lock(), |mut this| this.len = 0);
         if this.len > 0 {
             (this.cb)(&this.buf[..this.len]);
         }
+        */
         Ok(())
     }
 }
