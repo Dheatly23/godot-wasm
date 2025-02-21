@@ -362,9 +362,9 @@ impl GodotConvert for PipeBufferType {
 impl FromGodot for PipeBufferType {
     fn try_from_godot(via: Self::Via) -> Result<Self, ConvertError> {
         Ok(match to_lower_inline_smol_str(via.chars()).as_deref() {
-            "" | "unbuffered" => Self::Unbuffered,
-            "line" => Self::LineBuffer,
-            "block" => Self::BlockBuffer,
+            Some("" | "unbuffered") => Self::Unbuffered,
+            Some("line") => Self::LineBuffer,
+            Some("block") => Self::BlockBuffer,
             _ => return Err(ConvertError::with_error_value("Unknown variant", via)),
         })
     }
