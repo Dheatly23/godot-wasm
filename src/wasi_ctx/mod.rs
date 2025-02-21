@@ -21,8 +21,8 @@ use wasi_isolated_fs::stdio::{
 };
 
 use crate::godot_util::{
-    from_var_any, option_to_variant, variant_to_option, PhantomProperty, SendSyncWrapper,
-    StructPacking,
+    PhantomProperty, SendSyncWrapper, StructPacking, from_var_any, option_to_variant,
+    variant_to_option,
 };
 use crate::rw_struct::{read_struct, write_struct};
 use crate::wasi_ctx::stdio::StdoutCbUnbuffered;
@@ -90,10 +90,9 @@ struct WasiContextInner {
 
 impl WasiContext {
     fn get_data(&self) -> AnyResult<MutexGuard<'_, WasiContextInner>> {
-        if let Some(data) = self.data.get() {
-            Ok(data.lock())
-        } else {
-            bail_with_site!("Uninitialized instance")
+        match self.data.get() {
+            Some(data) => Ok(data.lock()),
+            None => bail_with_site!("Uninitialized instance"),
         }
     }
 
@@ -218,17 +217,21 @@ impl WasiContext {
 
             Ok(Mutex::new(WasiContextInner {
                 memfs_controller: site_context!(IsolatedFSController::new(
-                    site_context!(config
-                        .as_ref()
-                        .and_then(|c| c.get("memfs.max_size"))
-                        .map(from_var_any::<i64>)
-                        .transpose())?
+                    site_context!(
+                        config
+                            .as_ref()
+                            .and_then(|c| c.get("memfs.max_size"))
+                            .map(from_var_any::<i64>)
+                            .transpose()
+                    )?
                     .map_or(isize::MAX as usize, |v| v as usize),
-                    site_context!(config
-                        .as_ref()
-                        .and_then(|c| c.get("memfs.max_node"))
-                        .map(from_var_any::<i64>)
-                        .transpose())?
+                    site_context!(
+                        config
+                            .as_ref()
+                            .and_then(|c| c.get("memfs.max_node"))
+                            .map(from_var_any::<i64>)
+                            .transpose()
+                    )?
                     .map_or(isize::MAX as usize, |v| v as usize),
                 ))?,
                 physical_mount: HashMap::new(),
@@ -631,9 +634,10 @@ impl WasiContext {
         option_to_variant(self.wrap_data(move |this| {
             let p = Utf8PathBuf::from(path.to_string());
             let parent = p.parent().unwrap_or(&p);
-            let name = site_context!(p
-                .file_name()
-                .ok_or_else(|| IoError::from(ErrorKind::InvalidInput)))?;
+            let name = site_context!(
+                p.file_name()
+                    .ok_or_else(|| IoError::from(ErrorKind::InvalidInput))
+            )?;
 
             let f = site_context!(
                 CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(

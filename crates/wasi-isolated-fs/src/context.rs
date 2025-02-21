@@ -8,9 +8,9 @@ use anyhow::Result as AnyResult;
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use cap_std::ambient_authority;
 use cap_std::fs::Dir as CapDir;
+use rand::TryRngCore;
 use rand::prelude::*;
 use rand::rngs::OsRng;
-use rand::TryRngCore;
 use rand_xoshiro::Xoshiro512StarStar;
 use wasmtime::component::Resource;
 
@@ -18,7 +18,7 @@ use crate::bindings::wasi;
 use crate::clock::{ClockController, UTCClock};
 use crate::errors;
 use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
-use crate::fs_isolated::{AccessMode, CapWrapper, Dir, IsolatedFSController, Node, ILLEGAL_CHARS};
+use crate::fs_isolated::{AccessMode, CapWrapper, Dir, ILLEGAL_CHARS, IsolatedFSController, Node};
 use crate::items::Items;
 pub use crate::items::{Item, MaybeBorrowMut};
 use crate::preview1::{P1File, P1Item, P1Items};
@@ -109,7 +109,7 @@ fn preopen_dir_iso_fs(
         node = match c {
             Utf8Component::CurDir => continue,
             Utf8Component::ParentDir | Utf8Component::Prefix(_) => {
-                return Err(errors::InvalidPathError(path.into()).into())
+                return Err(errors::InvalidPathError(path.into()).into());
             }
             Utf8Component::Normal(s) => {
                 let mut n = node.try_dir()?;

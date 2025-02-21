@@ -5,13 +5,13 @@ mod global;
 
 use std::borrow::Cow;
 
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use godot::global::Error;
 use godot::prelude::*;
 use slab::Slab;
 use wasmtime::component::{Linker, Resource as WasmResource};
 
-use crate::godot_util::{from_var_any, ErrorWrapper, SendSyncWrapper};
+use crate::godot_util::{ErrorWrapper, SendSyncWrapper, from_var_any};
 use crate::wasm_instance::InnerLock;
 use crate::{bail_with_site, filter_macro};
 

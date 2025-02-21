@@ -8,7 +8,7 @@ use wasmtime::component::{Linker, Resource as WasmResource};
 use wasmtime::{AsContextMut, Store};
 
 use crate::godot_component::filter::Filter;
-use crate::godot_component::{add_to_linker, bindgen, GodotCtx};
+use crate::godot_component::{GodotCtx, add_to_linker, bindgen};
 use crate::godot_util::PhantomProperty;
 use crate::wasm_config::Config;
 use crate::wasm_engine::WasmModule;
@@ -165,10 +165,9 @@ impl WasmScriptLike {
     }
 
     pub fn get_data(&self) -> AnyResult<&WasmScriptLikeData> {
-        if let Some(data) = self.data.get() {
-            Ok(data)
-        } else {
-            bail_with_site!("Uninitialized instance")
+        match self.data.get() {
+            Some(data) => Ok(data),
+            None => bail_with_site!("Uninitialized instance"),
         }
     }
 

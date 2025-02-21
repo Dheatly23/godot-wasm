@@ -12,17 +12,17 @@ use cap_std::fs::{Dir as CapDir, FileType, Metadata, OpenOptions};
 use fs_set_times::{SetTimes, SystemTimeSpec};
 use rand::prelude::*;
 use system_interface::fs::{Advice, FdFlags, FileIoExt, GetSetFdFlags};
-use tracing::{instrument, Level};
+use tracing::{Level, instrument};
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
-use crate::context::{try_iso_fs, Stdin, WasiContext};
+use crate::context::{Stdin, WasiContext, try_iso_fs};
 use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
 use crate::fs_isolated::{AccessMode, CreateParams, OpenMode};
 use crate::items::Item;
 use crate::poll::PollController;
 use crate::stdio::NullStdio;
-use crate::{errors, items, NullPollable, EMPTY_BUF};
+use crate::{EMPTY_BUF, NullPollable, errors, items};
 
 impl wasi::io::poll::HostPollable for WasiContext {
     #[instrument(skip(self), err)]
@@ -367,7 +367,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         let (mut input, mut output) = self.items.get_item((input, output))?;
         match (&input, &output) {
             (items::IOStream::NullStdio(_), _) | (_, items::IOStream::NullStdio(_)) => {
-                return Ok(0)
+                return Ok(0);
             }
             (
                 items::IOStream::IsoFSAccess(_)
@@ -419,7 +419,7 @@ impl wasi::io::streams::HostOutputStream for WasiContext {
         let (mut input, mut output) = self.items.get_item((input, output))?;
         match (&input, &output) {
             (items::IOStream::NullStdio(_), _) | (_, items::IOStream::NullStdio(_)) => {
-                return Ok(0)
+                return Ok(0);
             }
             (
                 items::IOStream::IsoFSAccess(_)

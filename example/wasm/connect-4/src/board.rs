@@ -57,11 +57,7 @@ impl Board {
         }
 
         y += 1;
-        if y == self.height {
-            None
-        } else {
-            Some(y)
-        }
+        if y == self.height { None } else { Some(y) }
     }
 }
 

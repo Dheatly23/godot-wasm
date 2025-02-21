@@ -5,16 +5,16 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
-use tracing::{debug, error, instrument, Level};
+use tracing::{Level, debug, error, instrument};
 use wasmtime::component::Resource;
 
+use crate::NullPollable;
 use crate::bindings::wasi;
 use crate::clock::ClockPollable;
 use crate::errors;
 use crate::fs_host::{CapWrapper as HostCapWrapper, FileStream, ReadDir as HostReadDir};
 use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
 use crate::stdio::{HostStdin, HostStdout, NullStdio, StdinSignal, StdinSignalPollable};
-use crate::NullPollable;
 
 #[derive(Default)]
 pub(crate) struct Items {

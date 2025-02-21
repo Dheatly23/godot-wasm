@@ -581,7 +581,7 @@ fn parse_line(
             return Err(NomErr::Error(SingleError::from_error_kind(
                 v,
                 ErrorKind::OneOf,
-            )))
+            )));
         }
     };
     let (i, _) = space1(i)?;

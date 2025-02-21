@@ -1201,7 +1201,7 @@ impl CapWrapper {
                     continue;
                 }
                 Utf8Component::Normal(p) if p.contains(ILLEGAL_CHARS) => {
-                    return Err(ErrorKind::InvalidInput.into())
+                    return Err(ErrorKind::InvalidInput.into());
                 }
                 Utf8Component::Normal(p) => p,
             };

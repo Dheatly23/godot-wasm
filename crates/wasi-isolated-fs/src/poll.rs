@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use std::mem::replace;
 use std::ptr::null;
 use std::sync::{Arc, Weak};
-use std::thread::{current, park_timeout, sleep, Thread};
+use std::thread::{Thread, current, park_timeout, sleep};
 use std::time::{Duration, Instant, SystemTime};
 
 use scopeguard::guard;
@@ -36,7 +36,9 @@ enum WaitState {
 impl WaitData {
     #[inline]
     pub(crate) unsafe fn waited(&self) {
-        *self.state.get() = WaitState::Waited;
+        unsafe {
+            *self.state.get() = WaitState::Waited;
+        }
         self.thread.unpark();
     }
 }

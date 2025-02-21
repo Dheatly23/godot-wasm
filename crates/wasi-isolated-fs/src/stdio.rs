@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 use std::io::{
-    stderr, stdout, Error as IoError, ErrorKind, IoSlice, Result as IoResult, Stderr, Stdout, Write,
+    Error as IoError, ErrorKind, IoSlice, Result as IoResult, Stderr, Stdout, Write, stderr, stdout,
 };
 use std::mem::replace;
 use std::panic::{RefUnwindSafe, UnwindSafe};
@@ -837,7 +837,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use anyhow::Result as AnyResult;
-    use proptest::collection::{btree_set, vec, SizeRange};
+    use proptest::collection::{SizeRange, btree_set, vec};
     use proptest::prelude::*;
 
     #[derive(Debug, Clone)]

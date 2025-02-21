@@ -5,22 +5,22 @@ use std::path::PathBuf;
 #[cfg(feature = "epoch-timeout")]
 use std::{thread, time};
 
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use cfg_if::cfg_if;
 use godot::classes::FileAccess;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
-use tracing::{debug, debug_span, error, info, info_span, instrument, trace, Level};
+use tracing::{Level, debug, debug_span, error, info, info_span, instrument, trace};
 #[cfg(feature = "component-model")]
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
 
-use crate::godot_util::{from_var_any, variant_to_option, PhantomProperty};
+use crate::godot_util::{PhantomProperty, from_var_any, variant_to_option};
 use crate::wasm_instance::WasmInstance;
-use crate::wasm_util::from_signature;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
+use crate::wasm_util::from_signature;
 use crate::{bail_with_site, display_option, site_context, variant_dispatch};
 
 cfg_if! {
@@ -271,10 +271,9 @@ impl ModuleType {
 
 impl WasmModule {
     pub fn get_data(&self) -> AnyResult<&ModuleData> {
-        if let Some(data) = self.data.get() {
-            Ok(data)
-        } else {
-            bail_with_site!("Uninitialized module")
+        match self.data.get() {
+            Some(data) => Ok(data),
+            None => bail_with_site!("Uninitialized module"),
         }
     }
 
@@ -674,13 +673,12 @@ impl WasmModule {
 
                 debug!(name = i.name(), "type" = %f, "Imported function");
                 let (p, r) = from_signature(&f);
-                let mut v = match ret.get(i.module()) {
-                    Some(v) => Dictionary::from_variant(&v),
-                    None => {
-                        let v = Dictionary::new();
-                        ret.set(i.module(), v.clone());
-                        v
-                    }
+                let mut v = if let Some(v) = ret.get(i.module()) {
+                    Dictionary::from_variant(&v)
+                } else {
+                    let v = Dictionary::new();
+                    ret.set(i.module(), v.clone());
+                    v
                 };
                 v.set(
                     i.name(),

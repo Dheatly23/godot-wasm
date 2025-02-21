@@ -5,7 +5,7 @@ use glam::f32::*;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro512StarStar;
 
-use crate::{log, Color, MouseButton, Renderable, State};
+use crate::{Color, MouseButton, Renderable, State, log};
 
 const SIZE: usize = 8;
 const TIME_SCALE: f32 = 1. / 64.;

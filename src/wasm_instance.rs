@@ -6,58 +6,58 @@ use std::io::Cursor;
 use std::sync::Arc;
 use std::{ffi, mem, ptr};
 
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use cfg_if::cfg_if;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
-use parking_lot::{lock_api::RawMutex as RawMutexTrait, Mutex, RawMutex};
+use parking_lot::{Mutex, RawMutex, lock_api::RawMutex as RawMutexTrait};
 use rayon::prelude::*;
 use scopeguard::guard;
-use tracing::{debug, debug_span, error, info, instrument, trace_span, warn, Level};
+use tracing::{Level, debug, debug_span, error, info, instrument, trace_span, warn};
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::bindings::wasi_snapshot_preview1::add_to_linker;
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::stdio::StdinProvider;
-#[cfg(feature = "component-model")]
-use wasmtime::component::Instance as InstanceComp;
 #[cfg(feature = "wasi")]
 use wasmtime::Linker;
 #[cfg(feature = "memory-limiter")]
 use wasmtime::ResourceLimiter;
+#[cfg(feature = "component-model")]
+use wasmtime::component::Instance as InstanceComp;
 use wasmtime::{
     AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, SharedMemory, Store,
     StoreContextMut,
 };
 
 use crate::godot_util::{
-    option_to_variant, variant_to_option, PackedArrayLike, PhantomProperty, SendSyncWrapper,
-    StructPacking,
+    PackedArrayLike, PhantomProperty, SendSyncWrapper, StructPacking, option_to_variant,
+    variant_to_option,
 };
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
-use crate::wasi_ctx::stdio::PackedByteArrayReader;
-#[cfg(feature = "wasi")]
 use crate::wasi_ctx::WasiContext;
+#[cfg(feature = "wasi")]
+use crate::wasi_ctx::stdio::PackedByteArrayReader;
 use crate::wasm_config::Config;
 #[cfg(any(feature = "object-registry-compat", feature = "object-registry-extern"))]
 use crate::wasm_config::ExternBindingType;
 #[cfg(feature = "wasi")]
 use crate::wasm_config::PipeBindingType;
-use crate::wasm_engine::{get_engine, ModuleData, ModuleType, WasmModule};
+use crate::wasm_engine::{ModuleData, ModuleType, WasmModule, get_engine};
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_externref::Funcs as ExternrefFuncs;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_objregistry::{Funcs as ObjregistryFuncs, ObjectRegistry};
-#[cfg(feature = "epoch-timeout")]
-use crate::wasm_util::reset_epoch;
 #[cfg(feature = "object-registry-extern")]
 use crate::wasm_util::EXTERNREF_MODULE;
 #[cfg(feature = "object-registry-compat")]
 use crate::wasm_util::OBJREGISTRY_MODULE;
+#[cfg(feature = "epoch-timeout")]
+use crate::wasm_util::reset_epoch;
 use crate::wasm_util::{
-    config_store_common, raw_call, HasEpochTimeout, HostModuleCache, MEMORY_EXPORT,
+    HasEpochTimeout, HostModuleCache, MEMORY_EXPORT, config_store_common, raw_call,
 };
 use crate::{bail_with_site, site_context, variant_dispatch};
 
@@ -448,8 +448,7 @@ where
     #[instrument(skip_all, fields(?module.module))]
     fn instantiate_wasm(&mut self, module: &ModuleData) -> AnyResult<InstanceWasm> {
         #[allow(irrefutable_let_patterns)]
-        let ModuleType::Core(module_) = &module.module
-        else {
+        let ModuleType::Core(module_) = &module.module else {
             bail_with_site!("Cannot instantiate component")
         };
 
@@ -616,10 +615,9 @@ impl WasmInstance {
 
     #[instrument(level = Level::TRACE)]
     pub fn get_data(&self) -> AnyResult<&InstanceData<StoreData>> {
-        if let Some(data) = self.data.get() {
-            Ok(data)
-        } else {
-            bail_with_site!("Uninitialized instance")
+        match self.data.get() {
+            Some(data) => Ok(data),
+            None => bail_with_site!("Uninitialized instance"),
         }
     }
 

@@ -15,16 +15,16 @@ use fs_set_times::SetTimes;
 use rand::Rng;
 use smallvec::SmallVec;
 use system_interface::fs::FileIoExt;
-use tracing::{debug, debug_span, info, instrument, warn, Level};
+use tracing::{Level, debug, debug_span, info, instrument, warn};
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
 use crate::bindings::types::*;
-use crate::context::{try_iso_fs, WasiContext};
+use crate::context::{WasiContext, try_iso_fs};
 use crate::errors::StreamError;
 use crate::fs_host::Descriptor;
 use crate::fs_isolated::{AccessMode, CreateParams, NodeItem};
 use crate::stdio::{HostStdin, HostStdout};
-use crate::{print_byte_array, EMPTY_BUF};
+use crate::{EMPTY_BUF, print_byte_array};
 
 #[derive(Default)]
 pub struct P1Items {

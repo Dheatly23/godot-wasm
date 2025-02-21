@@ -6,11 +6,11 @@ use anyhow::{Error as AnyError, Result as AnyResult};
 use godot::prelude::*;
 use nom::character::complete::{anychar, satisfy, u32 as u32_};
 use nom::combinator::{map, opt};
-use nom::error::{context, ContextError, ErrorKind, ParseError};
+use nom::error::{ContextError, ErrorKind, ParseError, context};
 use nom::sequence::pair;
 use nom::{AsChar, Compare, CompareResult, Err as NomErr, IResult, Input, Needed, Offset, Parser};
 
-use crate::godot_util::{from_var_any, StructPacking};
+use crate::godot_util::{StructPacking, from_var_any};
 use crate::{bail_with_site, site_context};
 
 #[derive(Clone)]

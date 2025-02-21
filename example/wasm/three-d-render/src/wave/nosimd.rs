@@ -6,7 +6,7 @@ use rand::prelude::*;
 use rand_distr::StandardNormal;
 use rand_xoshiro::Xoshiro512StarStar;
 
-use super::{map_color, MAX_REP, SIZE, SPACE_SCALE, SPEED_SCALE, TIME_SCALE, WAVE_SCALE};
+use super::{MAX_REP, SIZE, SPACE_SCALE, SPEED_SCALE, TIME_SCALE, WAVE_SCALE, map_color};
 use crate::{MouseButton, Renderable, State};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]

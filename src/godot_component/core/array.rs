@@ -1,4 +1,4 @@
-use anyhow::{bail, Result as AnyResult};
+use anyhow::{Result as AnyResult, bail};
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 

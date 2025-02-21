@@ -12,7 +12,7 @@ use anyhow::{Error, Result as AnyResult};
 use cfg_if::cfg_if;
 use godot::classes::WeakRef;
 use godot::prelude::*;
-use tracing::{debug, info_span, instrument, Level};
+use tracing::{Level, debug, info_span, instrument};
 #[cfg(feature = "wasi")]
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
 #[cfg(feature = "epoch-timeout")]
@@ -24,7 +24,7 @@ use wasmtime::{
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, HeapType, RefType};
 
-use crate::godot_util::{from_var_any, SendSyncWrapper};
+use crate::godot_util::{SendSyncWrapper, from_var_any};
 use crate::variant_dispatch;
 use crate::wasm_config::Config;
 use crate::wasm_engine::get_engine;
@@ -105,7 +105,7 @@ pub fn add_site(e: Error, site: Site<'static>) -> Error {
 */
 
 #[macro_export]
-macro_rules! func_registry{
+macro_rules! func_registry {
     ($head:literal, $($t:tt)*) => {
         $crate::func_registry!{(Funcs, $head), $($t)*}
     };
@@ -235,7 +235,7 @@ pub unsafe fn to_raw<T: AsRef<StoreData>>(
         {
             ValRaw::externref(
                 match variant_to_externref(_ctx.as_context_mut(), v.clone())? {
-                    Some(v) => v.to_raw(_ctx)?,
+                    Some(v) => unsafe { v.to_raw(_ctx)? },
                     None if r.is_nullable() => 0,
                     None => bail_with_site!("Converting null into non-nullable WASM type"),
                 },
@@ -264,7 +264,7 @@ pub unsafe fn from_raw<T: AsRef<StoreData>>(
         ValType::Ref(r)
             if _ctx.data().as_ref().use_extern && matches!(r.heap_type(), HeapType::Extern) =>
         {
-            let v = ExternRef::from_raw(_ctx.as_context_mut(), v.get_externref());
+            let v = unsafe { ExternRef::from_raw(_ctx.as_context_mut(), v.get_externref()) };
             return externref_to_variant(_ctx.as_context(), v);
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
@@ -396,14 +396,16 @@ where
         let Some(v) = args.next() else {
             bail_with_site!("Too few parameters (expected {pl}, got {i})")
         };
-        *o = to_raw(ctx.as_context_mut(), p, v.borrow())?;
+        *o = unsafe { to_raw(ctx.as_context_mut(), p, v.borrow())? };
     }
     drop(args);
 
-    f.call_unchecked(ctx.as_context_mut(), &mut *v)?;
+    unsafe {
+        f.call_unchecked(ctx.as_context_mut(), &mut *v)?;
+    }
 
     ri.zip(v.iter())
-        .map(|(t, v)| from_raw(ctx.as_context_mut(), t, *v))
+        .map(|(t, v)| unsafe { from_raw(ctx.as_context_mut(), t, *v) })
         .collect()
 }
 

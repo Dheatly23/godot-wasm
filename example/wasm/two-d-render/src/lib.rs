@@ -9,7 +9,7 @@ use std::ptr::null;
 use getrandom::Error as RandError;
 
 #[link(wasm_import_module = "host")]
-extern "C" {
+unsafe extern "C" {
     #[link_name = "log"]
     fn _log(p: *const u8, n: usize);
     #[link_name = "rand"]

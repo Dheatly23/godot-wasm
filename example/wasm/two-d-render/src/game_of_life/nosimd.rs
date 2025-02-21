@@ -5,7 +5,7 @@ use rand::prelude::*;
 use rand_xoshiro::Xoshiro512StarStar;
 
 use super::SIZE;
-use crate::{log, Color, MouseButton, Renderable, State};
+use crate::{Color, MouseButton, Renderable, State, log};
 
 #[derive(Debug, Default)]
 pub struct GameOfLife {

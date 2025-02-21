@@ -8,7 +8,7 @@ use either::{Either, Left, Right};
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use tracing::{instrument, Level};
+use tracing::{Level, instrument};
 use wasi_isolated_fs::bindings::{Command, LinkOptions};
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
 use wasmtime::component::Linker;
@@ -17,10 +17,10 @@ use wasmtime::{AsContextMut, Store};
 #[cfg(feature = "godot-component")]
 use crate::godot_component::filter::Filter;
 #[cfg(feature = "godot-component")]
-use crate::godot_component::{add_to_linker as godot_add_to_linker, GodotCtx};
+use crate::godot_component::{GodotCtx, add_to_linker as godot_add_to_linker};
 use crate::godot_util::SendSyncWrapper;
-use crate::wasi_ctx::stdio::PackedByteArrayReader;
 use crate::wasi_ctx::WasiContext;
+use crate::wasi_ctx::stdio::PackedByteArrayReader;
 use crate::wasm_config::{Config, PipeBindingType};
 use crate::wasm_engine::WasmModule;
 #[cfg(feature = "memory-limiter")]
@@ -295,10 +295,9 @@ impl WasiCommand {
     }
 
     pub fn get_data(&self) -> Result<&CommandData, Error> {
-        if let Some(data) = self.data.get() {
-            Ok(data)
-        } else {
-            bail_with_site!("Uninitialized instance")
+        match self.data.get() {
+            Some(data) => Ok(data),
+            None => bail_with_site!("Uninitialized instance"),
         }
     }
 

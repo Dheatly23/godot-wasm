@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 #[link(wasm_import_module = "host")]
-extern "C" {
+unsafe extern "C" {
     fn write(ptr: u32, n: u32);
 }
 
