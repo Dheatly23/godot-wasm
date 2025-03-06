@@ -1,6 +1,6 @@
 [gd_scene load_steps=2 format=3 uid="uid://d2re1jqfyqf12"]
 
-[ext_resource type="Script" path="res://script/LogContainer.gd" id="1"]
+[ext_resource type="Script" uid="uid://c1o88jay6vysb" path="res://script/LogContainer.gd" id="1"]
 
 [node name="LogContainer" type="VBoxContainer"]
 anchors_preset = 15

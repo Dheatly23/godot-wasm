@@ -1,8 +1,8 @@
 [gd_scene load_steps=3 format=3 uid="uid://cw1cwdnbvf2uu"]
 
-[ext_resource type="Script" path="res://script/HelloWorld.gd" id="1"]
-[ext_resource type="WasmModule" path="res://wasm/hello.wat" id="2_8d3mr"]
+[ext_resource type="Script" uid="uid://chqsq28nxs48m" path="res://script/HelloWorld.gd" id="1"]
+[ext_resource type="WasmModule" uid="uid://b8c5jt7kxyubw" path="res://wasm/hello.wat" id="2_3b7yx"]
 
 [node name="Root" type="Node"]
 script = ExtResource("1")
-wasm_file = ExtResource("2_8d3mr")
+wasm_file = ExtResource("2_3b7yx")

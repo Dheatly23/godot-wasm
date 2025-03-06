@@ -1,7 +1,7 @@
 [gd_scene load_steps=3 format=3 uid="uid://bsda8lsvhgmsf"]
 
 [ext_resource type="Theme" uid="uid://cia5aaiffmela" path="res://theme/default.tres" id="1_12ynb"]
-[ext_resource type="Script" path="res://script/ConfigDialog.gd" id="2_1xbwi"]
+[ext_resource type="Script" uid="uid://70o3q7uehsyy" path="res://script/ConfigDialog.gd" id="2_1xbwi"]
 
 [node name="ConfigDialog" type="Window"]
 canvas_item_default_texture_filter = 0

@@ -15,16 +15,18 @@ dest_files=["res://.godot/imported/Monocraft.otf-6309ee003041165c2af2fb091c6584e
 Rendering=null
 antialiasing=1
 generate_mipmaps=true
+disable_embedded_bitmaps=true
 multichannel_signed_distance_field=false
 msdf_pixel_range=8
 msdf_size=48
 allow_system_fallback=true
 force_autohinter=false
-hinting=1
+hinting=2
 subpixel_positioning=1
+keep_rounding_remainders=true
 oversampling=0.0
 Fallbacks=null
-fallbacks=[Object(SystemFont,"resource_local_to_scene":false,"resource_name":"","fallbacks":Array[Font]([]),"font_names":PackedStringArray("Monospace"),"font_italic":false,"font_weight":400,"font_stretch":100,"antialiasing":1,"generate_mipmaps":false,"allow_system_fallback":true,"force_autohinter":false,"hinting":1,"subpixel_positioning":1,"multichannel_signed_distance_field":false,"msdf_pixel_range":16,"msdf_size":48,"oversampling":0.0,"script":null)
+fallbacks=[Object(SystemFont,"resource_local_to_scene":false,"resource_name":"","fallbacks":Array[Font]([]),"font_names":PackedStringArray("Monospace"),"font_italic":false,"font_weight":400,"font_stretch":100,"antialiasing":1,"generate_mipmaps":false,"disable_embedded_bitmaps":true,"allow_system_fallback":true,"force_autohinter":false,"hinting":1,"subpixel_positioning":1,"keep_rounding_remainders":true,"multichannel_signed_distance_field":false,"msdf_pixel_range":16,"msdf_size":48,"oversampling":0.0,"script":null)
 ]
 Compress=null
 compress=true
@@ -33,8 +35,10 @@ preload=[{
 "glyphs": [],
 "name": "New Configuration",
 "size": Vector2i(16, 0),
-"variation_embolden": 0.0
+&"variation_embolden": 0.0
 }]
 language_support={}
 script_support={}
-opentype_features={}
+opentype_features={
+1818847073: 1
+}

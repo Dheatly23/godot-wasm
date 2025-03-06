@@ -1,13 +1,13 @@
 [gd_scene load_steps=4 format=3 uid="uid://wj0exo4d4w02"]
 
 [ext_resource type="Texture2D" uid="uid://b8l0fcnxc2rc8" path="res://img/Pendulum.png" id="1"]
-[ext_resource type="Script" path="res://script/Pendulum.gd" id="2"]
-[ext_resource type="WasmModule" path="res://wasm/double_pendulum.wasm" id="2_sqd5h"]
+[ext_resource type="Script" uid="uid://c6wquoigfdriv" path="res://script/Pendulum.gd" id="2"]
+[ext_resource type="WasmModule" uid="uid://gnjolff0q2rd" path="res://wasm/double_pendulum.wasm" id="2_43cg1"]
 
 [node name="Pendulum" type="Node2D"]
 use_parent_material = true
 script = ExtResource("2")
-wasm_file = ExtResource("2_sqd5h")
+wasm_file = ExtResource("2_43cg1")
 
 [node name="Shaft" type="Sprite2D" parent="."]
 use_parent_material = true
