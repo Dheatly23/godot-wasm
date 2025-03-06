@@ -37,13 +37,13 @@ static ENGINE: RwLock<Option<EngineData>> = RwLock::new(None);
 pub fn get_engine() -> Result<Engine, EngineUninitError> {
     cfg_if! {
         if #[cfg(feature = "epoch-timeout")] {
-            let ret = match ENGINE.try_read().as_deref() {
-                Some(Some((e, _))) => Some(e.clone()),
+            let ret = match &*ENGINE.read() {
+                Some((e, _)) => Some(e.clone()),
                 _ => None,
             };
         } else {
-            let ret = ENGINE.try_read().as_deref() {
-                Some(Some(e)) => Some(e.clone()),
+            let ret = &*ENGINE.read() {
+                Some(e) => Some(e.clone()),
                 _ => None,
             };
         }
