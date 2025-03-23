@@ -79,10 +79,7 @@ pub fn init_engine() {
             .wasm_extended_const(true)
             .wasm_wide_arithmetic(true);
         #[cfg(feature = "component-model")]
-        config
-            .wasm_component_model(true)
-            .wasm_component_model_more_flags(true)
-            .wasm_component_model_multiple_returns(true);
+        config.wasm_component_model(true);
 
         info!(?config, "Engine configuration");
         let e = match Engine::new(&config) {
@@ -301,24 +298,17 @@ impl WasmModule {
 
     #[instrument(skip(bytes), fields(bytes.len = bytes.len()), ret)]
     fn load_module(bytes: &[u8]) -> AnyResult<ModuleType> {
-        cfg_if! {
-            if #[cfg(feature = "component-model")] {
-                let bytes = site_context!(wat::parse_bytes(bytes))?;
-                if wasmparser::Parser::is_component(&bytes) {
-                    Ok(ModuleType::Component(site_context!(
-                        Component::from_binary(&get_engine()?, &bytes,)
-                    )?))
-                } else {
-                    Ok(ModuleType::Core(site_context!(Module::from_binary(
-                        &get_engine()?, &bytes
-                    ))?))
-                }
-            } else {
-                Ok(ModuleType::Core(site_context!(Module::new(
-                    &get_engine()?, bytes
-                ))?))
-            }
+        let engine = get_engine()?;
+        let bytes = site_context!(wat::parse_bytes(bytes))?;
+
+        #[cfg(feature = "component-model")]
+        if wasmtime::wasmparser::Parser::is_component(&bytes) {
+            return site_context!(
+                Component::from_binary(&engine, &bytes).map(ModuleType::Component)
+            );
         }
+
+        site_context!(Module::from_binary(&engine, &bytes).map(ModuleType::Core))
     }
 
     #[instrument(skip(imports), fields(imports = %display_option(&imports)), ret)]
