@@ -26,8 +26,17 @@ grow_vertical = 2
 mouse_filter = 1
 theme = ExtResource("2")
 script = ExtResource("3")
-scenes = Array[PackedScene]([ExtResource("4"), ExtResource("6"), ExtResource("5_ab7r4"), ExtResource("7"), ExtResource("8"), ExtResource("10"), ExtResource("7_o8e6r"), ExtResource("8_hy7s2"), ExtResource("11_fr2jm")])
-names = Array[String](["Hello World", "Host Bindings", "Recursive Host", "Double Pendulum", "Connect 4", "2D Render", "3D Render", "Run WASI", "Test WASI"])
+scenes = Dictionary[String, PackedScene]({
+"2D Render": ExtResource("10"),
+"3D Render": ExtResource("7_o8e6r"),
+"Connect 4": ExtResource("8"),
+"Double Pendulum": ExtResource("7"),
+"Hello World": ExtResource("4"),
+"Host Bindings": ExtResource("6"),
+"Recursive Host": ExtResource("5_ab7r4"),
+"Run WASI": ExtResource("8_hy7s2"),
+"Test WASI": ExtResource("11_fr2jm")
+})
 
 [node name="BGLayer" type="CanvasLayer" parent="."]
 layer = -1

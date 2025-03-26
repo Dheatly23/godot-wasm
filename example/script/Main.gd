@@ -2,8 +2,7 @@ extends Control
 
 @export var anim_seconds: float = 1
 
-@export var scenes: Array[PackedScene] = []
-@export var names: Array[String] = []
+@export var scenes: Dictionary[String, PackedScene] = {}
 
 @onready var tween: Tween = null
 @onready var sidebar := $SidebarMenu
@@ -43,12 +42,12 @@ func _ready():
 	var box := $SidebarMenu/Panel/Scroller/VBox
 	var button: Button
 
-	for i in range(len(names)):
+	for k in scenes:
 		button = Button.new()
 
-		button.text = names[i]
+		button.text = k
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.pressed.connect(__load_scene.bind(names[i], scenes[i]))
+		button.pressed.connect(__load_scene.bind(k, scenes[k]))
 
 		box.add_child(button)
 
