@@ -6,10 +6,10 @@ Simply enables the addon and it'll recognize those files.
 ## Internals
 
 There are 3 classes that helps with
-registering, loading, saving, and importing WASM file.
-`WasmLoader.gd` is tasked to deserialize WASM module.
-`WasmSaver.gd` is tasked to serialize WASM module.
-`WasmImporter.gd` is tasked to compile and load WASM file.
+registering, loading, saving, and importing WASM file:
+- `WasmLoader.gd` for deserializing WASM module.
+- `WasmSaver.gd` for serializing WASM module.
+- `WasmImporter.gd` for compiling and loading WASM file.
 
 ## Import Types
 

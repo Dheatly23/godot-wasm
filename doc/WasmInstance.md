@@ -195,11 +195,11 @@ Reads array of values from memory.
 
 ### `Array read_struct(String format, int ptr)`
 
-Reads a formatted data from memory.
+Reads a formatted data from memory. See Addendum 1 for format string details.
 
 ### `int write_struct(String format, int ptr, Array data)`
 
-Writes a formatted data into memory.
+Writes a formatted data into memory. See Addendum 1 for format string details.
 
 ## Addendum 1: Struct Format String
 
@@ -223,34 +223,34 @@ The valid types are as follows:
 | `d` | `float` | 8 | 64-bit floating-point number |
 | `v2f` | `Vector2` | 8 | 2D vector as 2 32-bit floating-point number |
 | `v2d` | `Vector2` | 16 | 2D vector as 2 64-bit floating-point number |
-| `v2i` | `Vector2i` | 8 | 2D vector as 2 32-bit signed integer number |
-| `v2l` | `Vector2i` | 16 | 2D vector as 2 64-bit signed integer number |
-| `v3f` | `Vector3` | 12 | 3D vector as a 3 32-bit floating-point number |
-| `v3d` | `Vector3` | 24 | 3D vector as a 3 64-bit floating-point number |
-| `v3i` | `Vector3i` | 12 | 3D vector as a 3 32-bit signed integer number |
-| `v3l` | `Vector3i` | 24 | 3D vector as a 3 64-bit signed integer number |
-| `v4f` | `Vector4` | 12 | 4D vector as a 4 32-bit floating-point number |
-| `v4d` | `Vector4` | 24 | 4D vector as a 4 64-bit floating-point number |
-| `v4i` | `Vector4i` | 12 | 4D vector as a 4 32-bit signed integer number |
-| `v4l` | `Vector4i` | 24 | 4D vector as a 4 64-bit signed integer number |
-| `pf` | `Plane` | 16 | Plane represented as abcd 32-bit floating-point number |
-| `pd` | `Plane` | 32 | Plane represented as abcd 64-bit floating-point number |
-| `qf` | `Quat` | 16 | Quaternion represented as xyzw 32-bit floating-point number |
-| `qd` | `Quat` | 32 | Quaternion represented as xyzw 64-bit floating-point number |
-| `Cf` | `Color` | 16 | Color represented as rgba 32-bit floating-point number |
-| `Cd` | `Color` | 32 | Color represented as rgba 64-bit floating-point number |
-| `Cb` | `Color` | 4 | Color represented as rgba 8-bit integer |
-| `rf` | `Rect2` | 16 | Rect2 represented as 4 32-bit floating-point number |
-| `rd` | `Rect2` | 32 | Rect2 represented as 4 64-bit floating-point number |
-| `ri` | `Rect2i` | 16 | Rect2i represented as 4 32-bit signed integer number |
-| `rl` | `Rect2i` | 32 | Rect2i represented as 4 64-bit signed integer number |
-| `af` | `Aabb` | 24 | Aabb represented as 6 32-bit floating-point number |
-| `ad` | `Aabb` | 48 | Aabb represented as 6 64-bit floating-point number |
-| `mf` | `Basis` | 36 | Basis represented as 9 row-major 32-bit floating-point number |
-| `md` | `Basis` | 72 | Basis represented as 9 row-major 64-bit floating-point number |
-| `Mf` | `Projection` | 64 | Projection represented as 16 column-major 32-bit floating-point number |
-| `Md` | `Projection` | 128 | Projection represented as 16 column-major 64-bit floating-point number |
-| `tf` | `Transform2D` | 24 | 2D transform represented as 6 32-bit floating-point number |
-| `td` | `Transform2D` | 48 | 2D transform represented as 6 64-bit floating-point number |
-| `Tf` | `Transform2D` | 48 | 3D transform represented as 12 32-bit floating-point number |
-| `Td` | `Transform2D` | 96 | 3D transform represented as 12 64-bit floating-point number |
+| `v2i` | `Vector2i` | 8 | 2D integer vector as 2 32-bit signed integer number |
+| `v2l` | `Vector2i` | 16 | 2D integer vector as 2 64-bit signed integer number |
+| `v3f` | `Vector3` | 12 | 3D vector as 3 32-bit floating-point number |
+| `v3d` | `Vector3` | 24 | 3D vector as 3 64-bit floating-point number |
+| `v3i` | `Vector3i` | 12 | 3D integer vector as 3 32-bit signed integer number |
+| `v3l` | `Vector3i` | 24 | 3D integer vector as 3 64-bit signed integer number |
+| `v4f` | `Vector4` | 12 | 4D vector as 4 32-bit floating-point number |
+| `v4d` | `Vector4` | 24 | 4D vector as 4 64-bit floating-point number |
+| `v4i` | `Vector4i` | 12 | 4D integer vector as 4 32-bit signed integer number |
+| `v4l` | `Vector4i` | 24 | 4D integer vector as 4 64-bit signed integer number |
+| `pf` | `Plane` | 16 | Plane as abcd 32-bit floating-point number |
+| `pd` | `Plane` | 32 | Plane as abcd 64-bit floating-point number |
+| `qf` | `Quat` | 16 | Quaternion as xyzw 32-bit floating-point number |
+| `qd` | `Quat` | 32 | Quaternion as xyzw 64-bit floating-point number |
+| `Cf` | `Color` | 16 | Color as rgba 32-bit floating-point number |
+| `Cd` | `Color` | 32 | Color as rgba 64-bit floating-point number |
+| `Cb` | `Color` | 4 | Color as rgba 8-bit integer |
+| `rf` | `Rect2` | 16 | 2D rectangle as 4 32-bit floating-point number |
+| `rd` | `Rect2` | 32 | 2D rectangle as 4 64-bit floating-point number |
+| `ri` | `Rect2i` | 16 | 2D integer rectangle as 4 32-bit signed integer number |
+| `rl` | `Rect2i` | 32 | 2D integer rectangle as 4 64-bit signed integer number |
+| `af` | `Aabb` | 24 | Aabb as 6 32-bit floating-point number |
+| `ad` | `Aabb` | 48 | Aabb as 6 64-bit floating-point number |
+| `mf` | `Basis` | 36 | Basis as 9 row-major 32-bit floating-point number |
+| `md` | `Basis` | 72 | Basis as 9 row-major 64-bit floating-point number |
+| `Mf` | `Projection` | 64 | Projection as 16 column-major 32-bit floating-point number |
+| `Md` | `Projection` | 128 | Projection as 16 column-major 64-bit floating-point number |
+| `tf` | `Transform2D` | 24 | 2D transform as 6 32-bit floating-point number |
+| `td` | `Transform2D` | 48 | 2D transform as 6 64-bit floating-point number |
+| `Tf` | `Transform3D` | 48 | 3D transform as 12 32-bit floating-point number |
+| `Td` | `Transform3D` | 96 | 3D transform as 12 64-bit floating-point number |

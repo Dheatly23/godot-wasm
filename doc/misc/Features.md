@@ -14,7 +14,7 @@ just features=feat1,feat2,feat3 command
 ### Memory Limiter
 
 * Feature: `memory-limiter`
-* Default: true
+* Default: ✔
 
 Enables memory limiter to limit memory usage.
 By default it's set to unlimited.
@@ -23,7 +23,7 @@ Note that the limiter is only approximate and should not be relied to provide ha
 ### Epoch-based Timeout
 
 * Feature: `epoch-timeout`
-* Default: true
+* Default: ✔
 
 Enables epoch-based timeout mechanism to stop possible hang.
 Default timeout is 5s.
@@ -32,7 +32,7 @@ Default precision is 20ms.
 ### Object Registry (Legacy)
 
 * Feature: `object-registry-compat`
-* Default: true
+* Default: ✔
 
 Enables legacy registry-based Godot value manipulation.
 Needs to be enabled via config option.
@@ -40,7 +40,7 @@ Needs to be enabled via config option.
 ### Object Registry (New)
 
 * Feature: `object-registry-extern`
-* Default: true
+* Default: ✔
 
 Enables extern-based Godot value manipulation.
 Needs to be enabled via config option.
@@ -48,35 +48,35 @@ Needs to be enabled via config option.
 ### Object Registry
 
 * Feature: `object-registry`
-* Default: true
+* Default: ✔
 
 Enables both `object-registry-compat` and `object-registry-extern`.
 
 ### WASI 0.1
 
 * Feature: `wasi`
-* Default: true
+* Default: ✔
 
 Enables WASI 0.1
 
 ### WASI 0.2
 
 * Feature: `wasi-preview2`
-* Default: false
+* Default: ✔
 
 Enables WASI 0.2
 
 ### Godot Component
 
 * Feature: `godot-component`
-* Default: false
+* Default: ✔
 
-Enables component-based Godot value manipulation.
+Enables component-based Godot API.
 
 ### Deterministic WASM
 
 * Feature: `deterministic-wasm`
-* Default: false
+* Default: ❌
 
 Enables config options that make WASM code execution more equivalent across CPU architecture.
 Note that this feature is experimental and may incur performance penalty.
@@ -84,6 +84,6 @@ Note that this feature is experimental and may incur performance penalty.
 ### Precise Timeout
 
 * Feature: `more-precise-timer`
-* Default: false
+* Default: ❌
 
 Increase epoch timeout precision to 1ms.
