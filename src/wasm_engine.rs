@@ -392,7 +392,7 @@ impl WasmModule {
             let data = data.as_slice();
             // SAFETY: Assume the supplied data is safe to deserialize.
             let module = unsafe {
-                match engine.detect_precompiled(data) {
+                match Engine::detect_precompiled(data) {
                     Some(Precompiled::Module) => {
                         ModuleType::Core(site_context!(Module::deserialize(&engine, data))?)
                     }
@@ -427,7 +427,7 @@ impl WasmModule {
             let path = PathBuf::from(path);
             // SAFETY: Assume the supplied file is safe to deserialize.
             let module = unsafe {
-                match site_context!(engine.detect_precompiled_file(&path))? {
+                match site_context!(Engine::detect_precompiled_file(&path))? {
                     Some(Precompiled::Module) => {
                         ModuleType::Core(site_context!(Module::deserialize_file(&engine, path))?)
                     }
