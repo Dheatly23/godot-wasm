@@ -34,7 +34,7 @@ pub mod bindings {
     });
 
     wiggle::from_witx!({
-        witx: ["$CARGO_MANIFEST_DIR/witx/wasi_snapshot_preview1.witx"],
+        witx: ["witx/wasi_snapshot_preview1.witx"],
         errors: { errno => StreamError },
     });
 

@@ -389,7 +389,7 @@ where
     });
 
     let mut ctx = RootScope::new(ctx);
-    ctx.as_context_mut().gc();
+    ctx.as_context_mut().gc(None);
 
     let mut args = args.into_iter();
     for (p, (i, o)) in pi.zip(v.iter_mut().enumerate()) {
