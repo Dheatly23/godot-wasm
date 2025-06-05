@@ -153,9 +153,9 @@ checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
 name = "camino"
-version = "1.1.9"
+version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b96ec4966b5813e2c0507c1f86115c8c5abaadc3980879c3424042a02fd1ad3"
+checksum = "0da45bc31171d8d6960122e222a67740df867c1dd53b4d51caa297084c185cab"
 
 [[package]]
 name = "cap-fs-ext"
@@ -201,9 +201,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.24"
+version = "1.2.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16595d3be041c03b09d08d0858631facccee9221e579704070e6e9e4915d3bc7"
+checksum = "d0fc897dc1e865cc67c0e05a836d9d3f1df3cbe442aa4a9473b18e12624a4951"
 dependencies = [
  "shlex",
 ]
@@ -240,9 +240,9 @@ checksum = "67ba02a97a2bd10f4b59b25c7973101c79642302776489e030cd13cdab09ed15"
 
 [[package]]
 name = "colorgrad"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "770315cbc9e3909b1f574a1ab4923a1e1e2f39442ac432cbf7e30e405ee9db1a"
+checksum = "faedab4fd8670120c2be7f49225fbdb8b6db6d46f04ce4f864b1f1cdd55e6400"
 dependencies = [
  "csscolorparser",
 ]
@@ -438,9 +438,9 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
 name = "csscolorparser"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "148247664b27bf6bf5041b46cf1e8c4872f70e75e3281348deb88abd75c915ab"
+checksum = "5fda6aace1fbef3aa217b27f4c8d7d071ef2a70a5ca51050b1f17d40299d3f16"
 
 [[package]]
 name = "derivative"
@@ -599,8 +599,8 @@ checksum = "6b46b9ca4690308844c644e7c634d68792467260e051c8543e0c7871662b3ba7"
 
 [[package]]
 name = "godot"
-version = "0.2.4"
-source = "git+https://github.com/godot-rust/gdext?rev=bb39acd42ce82362eb262a64fef3ebd114daf0ad#bb39acd42ce82362eb262a64fef3ebd114daf0ad"
+version = "0.3.0"
+source = "git+https://github.com/godot-rust/gdext?rev=8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba#8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba"
 dependencies = [
  "godot-core",
  "godot-macros",
@@ -608,21 +608,21 @@ dependencies = [
 
 [[package]]
 name = "godot-bindings"
-version = "0.2.4"
-source = "git+https://github.com/godot-rust/gdext?rev=bb39acd42ce82362eb262a64fef3ebd114daf0ad#bb39acd42ce82362eb262a64fef3ebd114daf0ad"
+version = "0.3.0"
+source = "git+https://github.com/godot-rust/gdext?rev=8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba#8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba"
 dependencies = [
  "gdextension-api",
 ]
 
 [[package]]
 name = "godot-cell"
-version = "0.2.4"
-source = "git+https://github.com/godot-rust/gdext?rev=bb39acd42ce82362eb262a64fef3ebd114daf0ad#bb39acd42ce82362eb262a64fef3ebd114daf0ad"
+version = "0.3.0"
+source = "git+https://github.com/godot-rust/gdext?rev=8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba#8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba"
 
 [[package]]
 name = "godot-codegen"
-version = "0.2.4"
-source = "git+https://github.com/godot-rust/gdext?rev=bb39acd42ce82362eb262a64fef3ebd114daf0ad#bb39acd42ce82362eb262a64fef3ebd114daf0ad"
+version = "0.3.0"
+source = "git+https://github.com/godot-rust/gdext?rev=8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba#8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba"
 dependencies = [
  "godot-bindings",
  "heck",
@@ -634,8 +634,8 @@ dependencies = [
 
 [[package]]
 name = "godot-core"
-version = "0.2.4"
-source = "git+https://github.com/godot-rust/gdext?rev=bb39acd42ce82362eb262a64fef3ebd114daf0ad#bb39acd42ce82362eb262a64fef3ebd114daf0ad"
+version = "0.3.0"
+source = "git+https://github.com/godot-rust/gdext?rev=8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba#8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba"
 dependencies = [
  "glam",
  "godot-bindings",
@@ -646,8 +646,8 @@ dependencies = [
 
 [[package]]
 name = "godot-ffi"
-version = "0.2.4"
-source = "git+https://github.com/godot-rust/gdext?rev=bb39acd42ce82362eb262a64fef3ebd114daf0ad#bb39acd42ce82362eb262a64fef3ebd114daf0ad"
+version = "0.3.0"
+source = "git+https://github.com/godot-rust/gdext?rev=8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba#8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba"
 dependencies = [
  "godot-bindings",
  "godot-codegen",
@@ -657,8 +657,8 @@ dependencies = [
 
 [[package]]
 name = "godot-macros"
-version = "0.2.4"
-source = "git+https://github.com/godot-rust/gdext?rev=bb39acd42ce82362eb262a64fef3ebd114daf0ad#bb39acd42ce82362eb262a64fef3ebd114daf0ad"
+version = "0.3.0"
+source = "git+https://github.com/godot-rust/gdext?rev=8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba#8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba"
 dependencies = [
  "godot-bindings",
  "libc",
@@ -864,9 +864,9 @@ dependencies = [
 
 [[package]]
 name = "lock_api"
-version = "0.4.12"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07af8b9cdd281b7915f413fa73f29ebd5d55d0d3f0155584dade1ff18cea1b17"
+checksum = "96936507f153605bddfcda068dd804796c84324ed2510809e5b2a624c81da765"
 dependencies = [
  "autocfg",
  "scopeguard",
@@ -1029,9 +1029,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
+checksum = "70d58bf43669b5795d1576d0641cfb6fbb2057bf629506267a92807158584a13"
 dependencies = [
  "lock_api",
  "parking_lot_core",
@@ -1039,9 +1039,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot_core"
-version = "0.9.10"
+version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
+checksum = "bc838d2a56b5b1a6c25f55575dfc605fabb63bb2365f6c2353ef9159aa69e4a5"
 dependencies = [
  "cfg-if",
  "libc",
@@ -1861,12 +1861,12 @@ dependencies = [
 
 [[package]]
 name = "wasm-encoder"
-version = "0.231.0"
+version = "0.233.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e62baf58bc14f219d1d12d082ea99860acb479b582e8f3d292d8a7c8f756091c"
+checksum = "9679ae3cf7cfa2ca3a327f7fab97f27f3294d402fd1a76ca8ab514e17973e4d3"
 dependencies = [
  "leb128fmt",
- "wasmparser 0.231.0",
+ "wasmparser 0.233.0",
 ]
 
 [[package]]
@@ -1884,9 +1884,9 @@ dependencies = [
 
 [[package]]
 name = "wasmparser"
-version = "0.231.0"
+version = "0.233.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1ddaf0d6e069fcd98801b1bf030e3648897d9f09c45ac9ef566d068aca1b76f"
+checksum = "b51cb03afce7964bbfce46602d6cb358726f36430b6ba084ac6020d8ce5bc102"
 dependencies = [
  "bitflags",
  "indexmap",
@@ -2141,24 +2141,24 @@ dependencies = [
 
 [[package]]
 name = "wast"
-version = "231.0.0"
+version = "233.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6258b542d232ac51c0426de6ae0efb31fc9e89f64fe3a525aff1524a06a13417"
+checksum = "2eaf4099d8d0c922b83bf3c90663f5666f0769db9e525184284ebbbdb1dd2180"
 dependencies = [
  "bumpalo",
  "leb128fmt",
  "memchr",
  "unicode-width",
- "wasm-encoder 0.231.0",
+ "wasm-encoder 0.233.0",
 ]
 
 [[package]]
 name = "wat"
-version = "1.231.0"
+version = "1.233.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97eec2bd34dcd2a2cea1c501fed0c25171cfd02900716d8357639797fa629c2e"
+checksum = "3d9bc80f5e4b25ea086ef41b91ccd244adde45d931c384d94a8ff64ab8bd7d87"
 dependencies = [
- "wast 231.0.0",
+ "wast 233.0.0",
 ]
 
 [[package]]

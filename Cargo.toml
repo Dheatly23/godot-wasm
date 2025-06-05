@@ -40,7 +40,7 @@ memchr = { workspace = true, optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "bb39acd42ce82362eb262a64fef3ebd114daf0ad"
+rev = "8d7d8eb8abff4f71d223ae3c9e94d1a21238e0ba"
 features = [
   "experimental-threads",
   "register-docs",
