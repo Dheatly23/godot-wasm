@@ -10,12 +10,31 @@ It has gone through a _lot_ of changes.
 
 For the Godot 3 version, check out branch `gdnative`.
 
-## ⚠ WARNING! Very Beta! ⚠
-**This repository is changing rapidly.** And since i don't really like
-semver, things might break unexpectedly. Just follow the latest commit
-and you're probably safe.
+## Stability
 
-Documentation is in [doc](doc/README.md) folder. But it may be not up-to-date.
+Generally speaking, this library is stable enough to be used in production.
+As of writing, there is no new features to be planned.
+Though it could change in the future.
+
+We _may_ cause breaking changes if/when:
+- Wasmtime update breaks our feature.
+- Godot-rust update breaks our bindings.
+- Feature is deprecated (there's no guarantee on removal timeline).
+
+Stuff that is not covered in stability:
+- Feature flags beyond default feature.
+- Justfile.
+- Internal properties/methods.
+- Properties/methods marked as unsafe.
+
+## Update Schedule
+
+Update schedule is generally in sync with wasmtime release.
+Interim updates might happen to fix bugs or add features.
+
+## Documentation
+
+Documentation is in [doc](doc/README.md) folder. Also available as doc comments.
 
 ## Features
 
