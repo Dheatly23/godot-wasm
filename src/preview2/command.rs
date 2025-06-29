@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use tracing::{Level, instrument};
 use wasi_isolated_fs::bindings::{Command, LinkOptions};
 use wasi_isolated_fs::context::WasiContext as WasiCtx;
-use wasmtime::component::Linker;
+use wasmtime::component::{HasSelf, Linker};
 use wasmtime::{AsContextMut, Store};
 
 #[cfg(feature = "godot-component")]
@@ -160,6 +160,16 @@ impl AsMut<InnerLock> for StoreData {
     }
 }
 
+#[cfg(feature = "godot-component")]
+impl AsMut<GodotCtx> for StoreData {
+    fn as_mut(&mut self) -> &mut GodotCtx {
+        self.godot_ctx
+            .as_mut()
+            .right()
+            .expect("Godot component is enabled, but no context is provided")
+    }
+}
+
 impl HasEpochTimeout for StoreData {
     #[cfg(feature = "epoch-timeout")]
     fn get_epoch_timeout(&self) -> u64 {
@@ -185,7 +195,12 @@ fn instantiate(
         #[cfg(feature = "godot-component")]
         filter,
     } = config;
-    let comp = site_context!(module.bind().get_data()?.module.get_component())?.clone();
+    let comp = site_context!(
+        module
+            .bind()
+            .get_data()
+            .and_then(|m| m.module.get_component().cloned())
+    )?;
 
     let mut builder = WasiCtx::builder();
     if config.with_wasi {
@@ -253,22 +268,17 @@ fn instantiate(
     store.limiter(|data| &mut data.memory_limits);
 
     let mut linker = <Linker<StoreData>>::new(store.engine());
-    Command::add_to_linker(
+    site_context!(Command::add_to_linker::<_, HasSelf<WasiCtx>>(
         &mut linker,
         LinkOptions::default()
             .cli_exit_with_code(true)
             .clocks_timezone(true)
             .network_error_code(true),
         |v| &mut v.wasi_ctx,
-    )?;
+    ))?;
     #[cfg(feature = "godot-component")]
     if use_comp_godot {
-        godot_add_to_linker(&mut linker, |v| {
-            v.godot_ctx
-                .as_mut()
-                .right()
-                .expect("Godot component is enabled, but no context is provided")
-        })?;
+        site_context!(godot_add_to_linker(&mut linker))?;
     }
 
     let bindings = Command::instantiate(&mut store, &comp, &linker)?;

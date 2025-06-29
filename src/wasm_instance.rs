@@ -142,7 +142,7 @@ impl Debug for WasmInstance {
     }
 }
 
-pub struct InstanceData<T> {
+pub struct InstanceData<T: 'static> {
     pub store: Mutex<Store<T>>,
     pub instance: InstanceType,
     pub module: Gd<WasmModule>,
@@ -329,7 +329,7 @@ impl ResourceLimiter for MemoryLimit {
     }
 }
 
-struct InstanceArgs<'a, T> {
+struct InstanceArgs<'a, T: 'static> {
     store: StoreContextMut<'a, T>,
     #[allow(dead_code)]
     config: &'a Config,
@@ -345,7 +345,7 @@ struct InstanceArgs<'a, T> {
 
 impl<T> InstanceData<T>
 where
-    T: Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
+    T: 'static + Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     #[instrument(level = Level::DEBUG, skip_all, fields(?obj, ?module))]
     pub fn instantiate<C: GodotClass>(
@@ -443,7 +443,7 @@ where
 
 impl<T> InstanceArgs<'_, T>
 where
-    T: Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
+    T: 'static + Send + AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout,
 {
     #[instrument(skip_all, fields(?module.module))]
     fn instantiate_wasm(&mut self, module: &ModuleData) -> AnyResult<InstanceWasm> {
@@ -529,7 +529,7 @@ where
 
 impl<T> InstanceData<T>
 where
-    T: AsRef<InnerLock> + AsMut<InnerLock>,
+    T: 'static + AsRef<InnerLock> + AsMut<InnerLock>,
 {
     #[instrument(skip(self, f))]
     pub fn acquire_store<F, R>(&self, f: F) -> R

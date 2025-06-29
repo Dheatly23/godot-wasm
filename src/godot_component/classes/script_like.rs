@@ -148,7 +148,7 @@ impl WasmScriptLike {
         store.limiter(|data| &mut data.memory_limits);
 
         let mut linker = <Linker<WasmScriptLikeStore>>::new(store.engine());
-        site_context!(add_to_linker(&mut linker, |v| v))?;
+        site_context!(add_to_linker(&mut linker))?;
 
         let bindings = site_context!(bindgen::Script::instantiate(&mut store, &comp, &linker))?;
 

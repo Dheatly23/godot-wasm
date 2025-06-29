@@ -9,7 +9,7 @@ use anyhow::{Result as AnyResult, bail};
 use godot::global::Error;
 use godot::prelude::*;
 use slab::Slab;
-use wasmtime::component::{Linker, Resource as WasmResource};
+use wasmtime::component::{HasSelf, Linker, Resource as WasmResource};
 
 use crate::godot_util::{ErrorWrapper, SendSyncWrapper, from_var_any};
 use crate::wasm_instance::InnerLock;
@@ -264,45 +264,43 @@ impl bindgen::godot::reflection::this::Host for GodotCtx {
     }
 }
 
-pub fn add_to_linker<T, U: AsMut<GodotCtx> + 'static>(
-    linker: &mut Linker<T>,
-    f: impl Fn(&mut T) -> &mut U + Send + Sync + Copy + 'static,
-) -> AnyResult<()> {
-    fn g<T, U, F>(
-        f: F,
-    ) -> impl for<'a> Fn(&'a mut T) -> &'a mut GodotCtx + Send + Sync + Copy + 'static
-    where
-        U: AsMut<GodotCtx> + 'static,
-        F: Fn(&mut T) -> &mut U + Send + Sync + Copy + 'static,
-    {
-        move |v| f(v).as_mut()
+pub trait HasGodotCtx {
+    fn get_ctx(&mut self) -> &mut GodotCtx;
+}
+
+impl<T: AsMut<GodotCtx>> HasGodotCtx for T {
+    fn get_ctx(&mut self) -> &mut GodotCtx {
+        self.as_mut()
     }
-    let f = g(f);
+}
 
-    bindgen::godot::core::core::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::typeis::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::primitive::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::byte_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::int32_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::int64_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::float32_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::float64_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::vector2_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::vector3_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::color_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::string_array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::array::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::dictionary::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::object::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::callable::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::core::signal::add_to_linker(&mut *linker, f)?;
+pub fn add_to_linker<T: 'static + HasGodotCtx>(linker: &mut Linker<T>) -> AnyResult<()> {
+    let f: fn(&mut T) -> &mut GodotCtx = <T as HasGodotCtx>::get_ctx;
 
-    bindgen::godot::global::globalscope::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::global::classdb::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::global::engine::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::global::input::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::global::input_map::add_to_linker(&mut *linker, f)?;
-    bindgen::godot::global::ip::add_to_linker(&mut *linker, f)?;
+    bindgen::godot::core::core::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::typeis::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::primitive::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::byte_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::int32_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::int64_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::float32_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::float64_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::vector2_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::vector3_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::color_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::string_array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::array::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::dictionary::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::object::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::callable::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::core::signal::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
 
-    bindgen::godot::reflection::this::add_to_linker(&mut *linker, f)
+    bindgen::godot::global::globalscope::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::global::classdb::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::global::engine::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::global::input::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::global::input_map::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+    bindgen::godot::global::ip::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+
+    bindgen::godot::reflection::this::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)
 }
