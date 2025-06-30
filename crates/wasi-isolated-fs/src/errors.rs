@@ -444,12 +444,12 @@ impl From<GuestError> for StreamError {
             GuestError::InvalidFlagValue { .. } | GuestError::InvalidEnumValue { .. } => {
                 FSErrorCode::Invalid.into()
             }
-            GuestError::PtrOverflow { .. }
+            GuestError::PtrOverflow
             | GuestError::PtrOutOfBounds { .. }
             | GuestError::PtrNotAligned { .. }
             | GuestError::PtrBorrowed { .. }
-            | GuestError::SliceLengthsDiffer { .. }
-            | GuestError::BorrowCheckerOutOfHandles { .. } => AnyError::from(err).into(),
+            | GuestError::SliceLengthsDiffer
+            | GuestError::BorrowCheckerOutOfHandles => AnyError::from(err).into(),
             GuestError::InvalidUtf8 { .. } => FSErrorCode::IllegalByteSequence.into(),
             GuestError::TryFromIntError { .. } => FSErrorCode::Overflow.into(),
             GuestError::InFunc { err, .. } => Self::from(*err),

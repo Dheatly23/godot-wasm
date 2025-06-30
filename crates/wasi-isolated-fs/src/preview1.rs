@@ -347,9 +347,7 @@ impl<'a, 'b> MemIO<'a, 'b, Iovec> {
 
             debug_assert!(
                 l <= len,
-                "too many bytes returned (asked for {} bytes, got {} bytes)",
-                len,
-                l
+                "too many bytes returned (asked for {len} bytes, got {l} bytes)"
             );
             n += l;
             len -= l;
@@ -1429,10 +1427,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 buf_len,
                 cookie,
                 iso_inode(v.node()),
-                v.read_directory()?.map(|v| {
-                    v.map(|(k, v)| (v.inode() as Inode, iso_filetype(&v), k))
-                        .map_err(StreamError::from)
-                }),
+                v.read_directory()?
+                    .map(|v| v.map(|(k, v)| (v.inode() as Inode, iso_filetype(&v), k))),
             ),
             FdItem::P1File(P1File {
                 desc: P1Desc::HostFS(v),

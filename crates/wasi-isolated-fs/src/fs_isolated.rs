@@ -1141,9 +1141,7 @@ impl CapWrapper {
     where
         E: From<errors::StreamError>,
     {
-        self.access
-            .write_or_err()
-            .map_err(errors::StreamError::from)?;
+        self.access.write_or_err()?;
 
         f(&mut self.node.stamp())
     }

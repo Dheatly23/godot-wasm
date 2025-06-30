@@ -368,7 +368,7 @@ use crate::godot_component::filter_data::indices::filter_len as ENDPOINT;
 use crate::godot_component::filter_data::parse_filter;
 #[cfg(test)]
 use crate::godot_component::filter_data::print_filter;
-const DATA_LEN: usize = (ENDPOINT + 7) / 8;
+const DATA_LEN: usize = ENDPOINT.div_ceil(8);
 
 pub type Filter = FilterFlags<DATA_LEN>;
 
@@ -673,7 +673,7 @@ allow godot:core.primitive.*
     deny godot:core.primitive.from-vector2i
 deny godot:core.primitive.to-vector2i";
         let f = parse_script(CharSlice(&to_char_array(SCRIPT))).unwrap();
-        println!("{:?}", f);
+        println!("{f:?}");
         print_filter(f.as_ref(), FilterItem::default());
     }
 
