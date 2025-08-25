@@ -32,8 +32,7 @@ use wasmtime::{
 };
 
 use crate::godot_util::{
-    PackedArrayLike, PhantomProperty, SendSyncWrapper, StructPacking, option_to_variant,
-    variant_to_option,
+    PackedArrayLike, SendSyncWrapper, StructPacking, option_to_variant, variant_to_option,
 };
 use crate::rw_struct::{read_struct, write_struct};
 #[cfg(feature = "wasi")]
@@ -133,7 +132,7 @@ pub struct WasmInstance {
     /// Reference to the module that is used to instantiate this object.
     #[var(get = get_module)]
     #[allow(dead_code)]
-    module: PhantomProperty<Option<Gd<WasmModule>>>,
+    module: PhantomVar<Option<Gd<WasmModule>>>,
 }
 
 impl Debug for WasmInstance {
@@ -456,12 +455,11 @@ where
             .imports()
             .map(|i| {
                 let _s = debug_span!("instantiate_wasm.import", import = ?i).entered();
-                if let Some(v) = &mut self.host {
-                    if let Some(v) =
+                if let Some(v) = &mut self.host
+                    && let Some(v) =
                         v.get_extern(self.store.as_context_mut(), i.module(), i.name())?
-                    {
-                        return Ok(v);
-                    }
+                {
+                    return Ok(v);
                 }
 
                 if let Some(o) = module.imports.get(i.module()) {
@@ -513,10 +511,10 @@ where
                 }
 
                 #[cfg(feature = "wasi")]
-                if let Some(v) = &self.wasi_linker {
-                    if let Some(v) = v.get_by_import(&mut self.store, &i) {
-                        return Ok(v);
-                    }
+                if let Some(v) = &self.wasi_linker
+                    && let Some(v) = v.get_by_import(&mut self.store, &i)
+                {
+                    return Ok(v);
                 }
 
                 bail_with_site!("Unknown import {:?}.{:?}", i.module(), i.name());
@@ -968,8 +966,7 @@ impl WasmInstance {
                 Ok(Callable::from_custom(WasmCallable {
                     name,
                     ty: f.ty(&store),
-                    // SAFETY: Pointer is valid for the entire lifetime of callable.
-                    ptr: unsafe { f.to_raw(store) },
+                    ptr: f.to_raw(store),
                     this: SendSyncWrapper::new(self.to_gd()),
                 }))
             })

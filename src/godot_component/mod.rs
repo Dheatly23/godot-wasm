@@ -78,7 +78,7 @@ impl GodotCtx {
         self.inner_lock.release_store(f)
     }
 
-    pub fn get_var_borrow(&mut self, res: WasmResource<Variant>) -> AnyResult<Cow<Variant>> {
+    pub fn get_var_borrow(&'_ mut self, res: WasmResource<Variant>) -> AnyResult<Cow<'_, Variant>> {
         let i = res.rep() as usize;
         if res.owned() {
             if let Some(v) = self.table.try_remove(i) {
@@ -96,9 +96,9 @@ impl GodotCtx {
     }
 
     pub fn maybe_get_var_borrow(
-        &mut self,
+        &'_ mut self,
         res: Option<WasmResource<Variant>>,
-    ) -> AnyResult<Cow<Variant>> {
+    ) -> AnyResult<Cow<'_, Variant>> {
         match res {
             None => Ok(Cow::Owned(Variant::nil())),
             Some(res) => self.get_var_borrow(res),
@@ -150,12 +150,12 @@ pub mod bindgen {
 
     wasmtime::component::bindgen!({
         path: "wit",
-        tracing: true,
-        async: false,
         ownership: Borrowing {
             duplicate_if_necessary: false
         },
-        trappable_imports: true,
+        imports: {
+            default: tracing | trappable,
+        },
         with: {
             "godot:core/core/godot-var": GVar,
         },

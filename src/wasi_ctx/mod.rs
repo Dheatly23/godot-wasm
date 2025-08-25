@@ -21,8 +21,7 @@ use wasi_isolated_fs::stdio::{
 };
 
 use crate::godot_util::{
-    PhantomProperty, SendSyncWrapper, StructPacking, from_var_any, option_to_variant,
-    variant_to_option,
+    SendSyncWrapper, StructPacking, from_var_any, option_to_variant, variant_to_option,
 };
 use crate::rw_struct::{read_struct, write_struct};
 use crate::wasi_ctx::stdio::StdoutCbUnbuffered;
@@ -71,12 +70,12 @@ pub struct WasiContext {
     /// Flag to pass through stdio into terminal.
     #[var(get = is_bypass_stdio, set = set_bypass_stdio)]
     #[allow(dead_code)]
-    bypass_stdio: PhantomProperty<bool>,
+    bypass_stdio: PhantomVar<bool>,
 
     /// Flag to force filesystem to be read-only.
     #[var(get = is_fs_readonly, set = set_fs_readonly)]
     #[allow(dead_code)]
-    fs_readonly: PhantomProperty<bool>,
+    fs_readonly: PhantomVar<bool>,
 }
 
 struct WasiContextInner {

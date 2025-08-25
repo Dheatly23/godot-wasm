@@ -16,7 +16,7 @@ use tracing::{Level, debug, debug_span, error, info, info_span, instrument, trac
 use wasmtime::component::Component;
 use wasmtime::{Config, Engine, ExternType, Module, Precompiled, ResourcesRequired};
 
-use crate::godot_util::{PhantomProperty, from_var_any, variant_to_option};
+use crate::godot_util::{from_var_any, variant_to_option};
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
@@ -196,24 +196,24 @@ pub struct WasmModule {
     /// Property is `true` if module is a core module.
     #[var(get = get_is_core_module, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
-    is_core_module: PhantomProperty<bool>,
+    is_core_module: PhantomVar<bool>,
 
     /// Property is `true` if module is a component.
     #[var(get = get_is_component, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
-    is_component: PhantomProperty<bool>,
+    is_component: PhantomVar<bool>,
 
     /// Name of the module, if any.
     #[var(get = get_name, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
-    name: PhantomProperty<GString>,
+    name: PhantomVar<GString>,
 
     /// **⚠ THIS PROPERTY IS HIDDEN AND SHOULD NOT BE USED DIRECTLY**
     ///
     /// Serialized module data. It is only used for storage only and should not be used in code.
     #[var(get = serialize, set = deserialize_bytes, usage_flags = [STORAGE, INTERNAL])]
     #[allow(dead_code)]
-    bytes_data: PhantomProperty<PackedByteArray>,
+    bytes_data: PhantomVar<PackedByteArray>,
     _bytes_data: OnceCell<PackedByteArray>,
 }
 
@@ -333,10 +333,10 @@ impl WasmModule {
                 .collect::<AnyResult<_>>()?;
         }
         #[cfg(feature = "component-model")]
-        if let ModuleType::Component(_) = module {
-            if !imports.is_empty() {
-                bail_with_site!("Imports not supported with component yet");
-            }
+        if let ModuleType::Component(_) = module
+            && !imports.is_empty()
+        {
+            bail_with_site!("Imports not supported with component yet");
         }
 
         Ok(deps_map)
@@ -358,13 +358,10 @@ impl WasmModule {
             let module = variant_dispatch!(data {
                 PACKED_BYTE_ARRAY => Self::load_module(data.as_slice())?,
                 STRING => Self::load_module(data.to_string().as_bytes())?,
-                OBJECT => match data
-                    .try_cast::<FileAccess>()
-                    .map_err(|v| v.try_cast::<WasmModule>())
-                {
-                    Ok(v) => Self::load_module(v.get_buffer(v.get_length() as _).as_slice())?,
-                    Err(Ok(v)) => v.bind().get_data()?.module.clone(),
-                    Err(Err(v)) => bail_with_site!("Unknown module value {}", v),
+                OBJECT => match_class!{data,
+                    v @ FileAccess => Self::load_module(v.get_buffer(v.get_length() as _).as_slice())?,
+                    v @ WasmModule => v.bind().get_data()?.module.clone(),
+                    v => bail_with_site!("Unknown module value {}", v),
                 },
                 _ => bail_with_site!("Unknown module value {}", data),
             });

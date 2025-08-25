@@ -235,7 +235,7 @@ pub unsafe fn to_raw<T: AsRef<StoreData>>(
         {
             ValRaw::externref(
                 match variant_to_externref(_ctx.as_context_mut(), v.clone())? {
-                    Some(v) => unsafe { v.to_raw(_ctx)? },
+                    Some(v) => v.to_raw(_ctx)?,
                     None if r.is_nullable() => 0,
                     None => bail_with_site!("Converting null into non-nullable WASM type"),
                 },
@@ -264,7 +264,7 @@ pub unsafe fn from_raw<T: AsRef<StoreData>>(
         ValType::Ref(r)
             if _ctx.data().as_ref().use_extern && matches!(r.heap_type(), HeapType::Extern) =>
         {
-            let v = unsafe { ExternRef::from_raw(_ctx.as_context_mut(), v.get_externref()) };
+            let v = ExternRef::from_raw(_ctx.as_context_mut(), v.get_externref());
             return externref_to_variant(_ctx.as_context(), v);
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),

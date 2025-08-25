@@ -9,7 +9,6 @@ use wasmtime::{AsContextMut, Store};
 
 use crate::godot_component::filter::Filter;
 use crate::godot_component::{GodotCtx, add_to_linker, bindgen};
-use crate::godot_util::PhantomProperty;
 use crate::wasm_config::Config;
 use crate::wasm_engine::WasmModule;
 #[cfg(feature = "memory-limiter")]
@@ -61,7 +60,7 @@ pub struct WasmScriptLike {
 
     #[var(get = get_module)]
     #[allow(dead_code)]
-    module: PhantomProperty<Option<Gd<WasmModule>>>,
+    module: PhantomVar<Option<Gd<WasmModule>>>,
 }
 
 pub struct WasmScriptLikeData {

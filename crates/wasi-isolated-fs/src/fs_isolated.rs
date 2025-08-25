@@ -373,10 +373,10 @@ impl File {
         self.size = size;
         self.data.truncate(new_chunks >> MAX_SHIFT);
         let i = self.size - self.data.len().saturating_sub(1) * MAX_SECTOR;
-        if let Some(v) = self.data.last_mut() {
-            if i < v.len() {
-                v[i..].fill(0);
-            }
+        if let Some(v) = self.data.last_mut()
+            && i < v.len()
+        {
+            v[i..].fill(0);
         }
 
         debug_assert_eq!(self.data.len(), (size + MASK) >> MAX_SHIFT);

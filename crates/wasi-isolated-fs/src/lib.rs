@@ -20,12 +20,12 @@ pub mod bindings {
     wasmtime::component::bindgen!({
         path: "wit",
         world: "wasi:cli/command",
-        tracing: true,
-        async: false,
         ownership: Borrowing {
             duplicate_if_necessary: false
         },
-        trappable_imports: true,
+        imports: {
+            default: tracing | trappable,
+        },
         trappable_error_type: {
             "wasi:io/streams/stream-error" => StreamError,
             "wasi:filesystem/types/error-code" => StreamError,

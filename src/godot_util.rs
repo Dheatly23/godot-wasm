@@ -1,13 +1,11 @@
 use std::borrow::{Borrow, Cow};
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
-use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::str::from_utf8;
 
 use anyhow::Result as AnyResult;
 use godot::global::Error as GError;
-use godot::meta::PropertyHintInfo;
 use godot::prelude::*;
 use smol_str::SmolStr;
 
@@ -78,38 +76,6 @@ pub fn variant_to_option<T: FromGodot>(v: Variant) -> AnyResult<Option<T>> {
             Ok(v) => Ok(Some(v)),
             Err(e) => Err(e.into_erased().into()),
         }
-    }
-}
-
-pub struct PhantomProperty<T>(PhantomData<T>);
-
-impl<T: Default> Default for PhantomProperty<T> {
-    fn default() -> Self {
-        Self(PhantomData)
-    }
-}
-
-impl<T> GodotConvert for PhantomProperty<T>
-where
-    T: GodotConvert,
-    T::Via: Default,
-{
-    type Via = T::Via;
-}
-
-impl<T> Var for PhantomProperty<T>
-where
-    T: Var,
-    T::Via: Default,
-{
-    fn get_property(&self) -> Self::Via {
-        Self::Via::default()
-    }
-
-    fn set_property(&mut self, _: Self::Via) {}
-
-    fn var_hint() -> PropertyHintInfo {
-        T::var_hint()
     }
 }
 

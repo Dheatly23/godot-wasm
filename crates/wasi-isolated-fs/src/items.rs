@@ -400,10 +400,10 @@ impl<T: ResItem + 'static> GetItem for T {
     }
 
     fn maybe_unregister(self, items: &mut Items) {
-        if self.is_owned() {
-            if let Ok(i) = usize::try_from(self.id()) {
-                items.remove(i);
-            }
+        if self.is_owned()
+            && let Ok(i) = usize::try_from(self.id())
+        {
+            items.remove(i);
         }
     }
 }
@@ -611,11 +611,11 @@ impl<T: ResItem + 'static> GetItem for Vec<T> {
     #[instrument(level = Level::TRACE, skip(items))]
     fn maybe_unregister(self, items: &mut Items) {
         for r in self.into_iter() {
-            if r.is_owned() {
-                if let Ok(ix) = usize::try_from(r.id()) {
-                    let data = items.remove(ix);
-                    debug!(ix, ?data, "Unregister resource");
-                }
+            if r.is_owned()
+                && let Ok(ix) = usize::try_from(r.id())
+            {
+                let data = items.remove(ix);
+                debug!(ix, ?data, "Unregister resource");
             }
         }
     }

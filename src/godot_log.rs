@@ -213,15 +213,15 @@ impl LogWrite for BBCodeWriter<'_> {
         }
 
         // Push tags
-        if bg_color != this_bg_color {
-            if let Some(c) = bg_color {
-                self.push_tag(BBCodeTag::BgColor(c))?;
-            }
+        if bg_color != this_bg_color
+            && let Some(c) = bg_color
+        {
+            self.push_tag(BBCodeTag::BgColor(c))?;
         }
-        if color != this_color {
-            if let Some(c) = color {
-                self.push_tag(BBCodeTag::Color(c))?;
-            }
+        if color != this_color
+            && let Some(c) = color
+        {
+            self.push_tag(BBCodeTag::Color(c))?;
         }
         if bold && !this_bold {
             self.push_tag(BBCodeTag::Bold)?;
