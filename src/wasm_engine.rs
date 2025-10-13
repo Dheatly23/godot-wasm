@@ -188,7 +188,6 @@ impl Error for EngineUninitError {}
 ///
 /// 📌 Use `initialize()` to properly initialize object.
 /// **Uninitialized object should not be used.**
-/// ```
 pub struct WasmModule {
     base: Base<Resource>,
     data: OnceCell<ModuleData>,
