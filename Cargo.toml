@@ -42,7 +42,7 @@ memchr = { workspace = true, optional = true }
 git = "https://github.com/godot-rust/gdext"
 rev = "2dde78e817b778258dcd7c3395be659f62a87885"
 features = [
-  "api-4-4",
+  "api-4-3",
   "experimental-threads",
   "register-docs",
 ]
