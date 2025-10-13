@@ -476,27 +476,27 @@ where
 }
 
 fn process_func(dict: Dictionary, use_extern: bool) -> AnyResult<(FuncType, CallableEnum)> {
-    let Some(params) = dict.get(StringName::from(c"params")) else {
+    let Some(params) = dict.get(StringName::from("params")) else {
         bail_with_site!("Key \"params\" does not exist")
     };
-    let Some(results) = dict.get(StringName::from(c"results")) else {
+    let Some(results) = dict.get(StringName::from("results")) else {
         bail_with_site!("Key \"results\" does not exist")
     };
 
-    let callable = if let Some(c) = dict.get(StringName::from(c"callable")) {
+    let callable = if let Some(c) = dict.get(StringName::from("callable")) {
         CallableEnum::Callable(site_context!(from_var_any(c))?)
     } else {
-        let Some(object) = dict.get(StringName::from(c"object")) else {
+        let Some(object) = dict.get(StringName::from("object")) else {
             bail_with_site!("Key \"object\" does not exist")
         };
-        let Some(method) = dict.get(StringName::from(c"method")) else {
+        let Some(method) = dict.get(StringName::from("method")) else {
             bail_with_site!("Key \"method\" does not exist")
         };
 
         CallableEnum::ObjectMethod(
             site_context!(from_var_any(object))?,
             variant_dispatch!(method {
-                STRING => method.into(),
+                STRING => (&method).into(),
                 STRING_NAME => method,
                 _ => bail_with_site!("Unknown method name type {:?}", method.get_type()),
             }),

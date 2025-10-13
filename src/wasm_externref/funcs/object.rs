@@ -1,4 +1,5 @@
 use anyhow::Result as AnyResult;
+use godot::classes::object::ConnectFlags;
 use godot::global::Error as GError;
 use godot::prelude::*;
 use wasmtime::{
@@ -136,7 +137,7 @@ func_registry! {
         let signal = site_context!(from_var_any::<StringName>(&externref_to_variant(ctx.as_context(), signal)?))?;
         let target = site_context!(from_var_any::<Callable>(&externref_to_variant(ctx.as_context(), target)?))?;
 
-        match obj.connect_ex(&signal, &target).flags(flags).done() {
+        match obj.connect_flags(&signal, &target, ConnectFlags::from_godot(flags as u64)) {
             GError::OK => Ok(()),
             e => Err(ErrorWrapper::from(e).into()),
         }

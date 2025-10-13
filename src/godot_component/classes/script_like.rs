@@ -110,10 +110,10 @@ impl HasEpochTimeout for WasmScriptLikeStore {
 
 impl WasmScriptLike {
     fn emit_error_wrapper(&self, msg: String) {
-        self.to_gd().emit_signal(
-            &StringName::from(c"error_happened"),
-            &[GString::from(msg).to_variant()],
-        );
+        let arg = GString::from(&msg);
+        drop(msg);
+        self.to_gd()
+            .emit_signal("error_happened", &[arg.to_variant()]);
     }
 
     fn instantiate(

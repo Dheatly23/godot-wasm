@@ -158,7 +158,7 @@ impl WasiContext {
                 Arc::new(StdoutBypass::default())
             } else {
                 Self::make_host_stdout(
-                    Signal::from_object_signal(this, c"stdout_emit"),
+                    Signal::from_object_signal(this, "stdout_emit"),
                     config.wasi_stdout_buffer,
                 )
             })?;
@@ -168,7 +168,7 @@ impl WasiContext {
                 Arc::new(StderrBypass::default())
             } else {
                 Self::make_host_stdout(
-                    Signal::from_object_signal(this, c"stderr_emit"),
+                    Signal::from_object_signal(this, "stderr_emit"),
                     config.wasi_stderr_buffer,
                 )
             })?;
@@ -297,8 +297,13 @@ impl WasiContext {
     #[func]
     fn delete_env_variable(&self, key: GString) -> Variant {
         option_to_variant(
-            self.wrap_data(move |this| Ok(this.envs.remove(&key.to_string()).map(GString::from)))
-                .flatten(),
+            self.wrap_data(move |this| {
+                Ok(this
+                    .envs
+                    .remove(&key.to_string())
+                    .map(|v| GString::from(&v)))
+            })
+            .flatten(),
         )
     }
 

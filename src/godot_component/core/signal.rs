@@ -1,4 +1,5 @@
 use anyhow::Result as AnyResult;
+use godot::classes::object::ConnectFlags;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
@@ -51,7 +52,10 @@ impl bindgen::godot::core::signal::Host for GodotCtx {
     ) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_core, signal, connect)?;
         let v: Signal = self.get_value(var)?;
-        wrap_error(v.connect(&self.get_value(callable)?, flags as _))
+        wrap_error(v.connect_flags(
+            &self.get_value(callable)?,
+            ConnectFlags::from_godot(flags as u64),
+        ))
     }
 
     fn disconnect(

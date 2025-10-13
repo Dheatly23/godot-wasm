@@ -3,6 +3,7 @@
 use std::mem::{size_of, size_of_val};
 
 use anyhow::Result as AnyResult;
+use godot::meta::ByValue;
 use godot::prelude::*;
 use wasmtime::{AsContext, AsContextMut, Caller, Extern, ExternRef, Func, Rooted, StoreContextMut};
 
@@ -101,9 +102,9 @@ impl FromGodot for BoolWrapper {
 }
 
 impl ToGodot for BoolWrapper {
-    type ToVia<'a> = bool;
+    type Pass = ByValue;
 
-    fn to_godot(&self) -> bool {
+    fn to_godot(&self) -> Self::Via {
         self.0 != 0
     }
 }

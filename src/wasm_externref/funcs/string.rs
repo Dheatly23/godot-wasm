@@ -44,10 +44,14 @@ func_registry! {
     },
     to_string_name => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<GString>(&externref_to_variant(ctx.as_context(), v)?))?;
-        variant_to_externref(ctx.as_context_mut(), StringName::from(v).to_variant())
+        let r = StringName::from(&v);
+        drop(v);
+        variant_to_externref(ctx.as_context_mut(), r.to_variant())
     },
     from_string_name => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<StringName>(&externref_to_variant(ctx.as_context(), v)?))?;
-        variant_to_externref(ctx.as_context_mut(), GString::from(v).to_variant())
+        let r = GString::from(&v);
+        drop(v);
+        variant_to_externref(ctx.as_context_mut(), r.to_variant())
     },
 }

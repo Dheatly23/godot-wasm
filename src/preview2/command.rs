@@ -208,20 +208,19 @@ fn instantiate(
             if let Some(data) = config.wasi_stdin_data.clone() {
                 builder.stdin(Arc::new(PackedByteArrayReader::from(data)))
             } else {
-                let signal =
-                    SendSyncWrapper::new(Signal::from_object_signal(obj, c"stdin_request"));
+                let signal = SendSyncWrapper::new(Signal::from_object_signal(obj, "stdin_request"));
                 builder.stdin_signal(Box::new(move || signal.emit(&[])))
             }?;
         }
         if config.wasi_stdout == PipeBindingType::Instance {
             builder.stdout(WasiContext::make_host_stdout(
-                Signal::from_object_signal(obj, c"stdout_emit"),
+                Signal::from_object_signal(obj, "stdout_emit"),
                 config.wasi_stdout_buffer,
             ))?;
         }
         if config.wasi_stderr == PipeBindingType::Instance {
             builder.stderr(WasiContext::make_host_stdout(
-                Signal::from_object_signal(obj, c"stderr_emit"),
+                Signal::from_object_signal(obj, "stderr_emit"),
                 config.wasi_stderr_buffer,
             ))?;
         }
@@ -298,10 +297,10 @@ fn instantiate(
 impl WasiCommand {
     #[instrument(level = Level::ERROR)]
     fn emit_error_wrapper(&self, msg: String) {
-        self.to_gd().emit_signal(
-            &StringName::from(c"error_happened"),
-            &[GString::from(msg).to_variant()],
-        );
+        let arg = GString::from(&msg);
+        drop(msg);
+        self.to_gd()
+            .emit_signal("error_happened", &[arg.to_variant()]);
     }
 
     pub fn get_data(&self) -> Result<&CommandData, Error> {

@@ -603,8 +603,8 @@ impl WasmModule {
         self.unwrap_data(|m| {
             let _s = debug_span!("get_exports.inner").entered();
             let mut ret = Dictionary::new();
-            let params_str = StringName::from(c"params");
-            let results_str = StringName::from(c"results");
+            let params_str = StringName::from("params");
+            let results_str = StringName::from("results");
             for i in site_context!(m.module.get_core())?.exports() {
                 let ExternType::Func(f) = i.ty() else {
                     continue;
@@ -636,8 +636,8 @@ impl WasmModule {
         self.unwrap_data(|m| {
             let _s = debug_span!("get_host_imports.inner").entered();
             let mut ret = Dictionary::new();
-            let params_str = StringName::from(c"params");
-            let results_str = StringName::from(c"results");
+            let params_str = StringName::from("params");
+            let results_str = StringName::from("results");
 
             for i in site_context!(m.module.get_core())?.imports() {
                 let ExternType::Func(f) = i.ty() else {
@@ -708,8 +708,8 @@ impl WasmModule {
 
             let (p, r) = from_signature(&f);
             Ok([
-                (StringName::from(c"params"), p),
-                (StringName::from(c"results"), r),
+                (StringName::from("params"), p),
+                (StringName::from("results"), r),
             ]
             .into_iter()
             .collect())

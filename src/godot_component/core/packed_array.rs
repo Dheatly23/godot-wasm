@@ -107,7 +107,7 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<WasmResource<Variant>> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, subarray)?;
                 let v: $t = self.get_value(var)?;
-                self.set_into_var(v.subarray(begin as _, end as _))
+                self.set_into_var(v.subarray(begin as usize..end as usize))
             }
         }
     };
@@ -212,7 +212,7 @@ macro_rules! impl_packed_array {
             ) -> AnyResult<WasmResource<Variant>> {
                 filter_macro!(filter self.filter.as_ref(), godot_core, $m, subarray)?;
                 let v: $t = self.get_value(var)?;
-                self.set_into_var(v.subarray(begin as _, end as _))
+                self.set_into_var(v.subarray(begin as usize..end as usize))
             }
         }
     };
@@ -250,7 +250,7 @@ impl string_array::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, string_array, from)?;
         self.set_into_var(
             val.into_iter()
-                .map(GString::from)
+                .map(|v| GString::from(&v))
                 .collect::<PackedStringArray>(),
         )
     }
@@ -342,6 +342,6 @@ impl string_array::Host for GodotCtx {
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, string_array, subarray)?;
         let v: PackedStringArray = self.get_value(var)?;
-        self.set_into_var(v.subarray(begin as _, end as _))
+        self.set_into_var(v.subarray(begin as usize..end as usize))
     }
 }

@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
+use godot::meta::ByValue;
 use godot::prelude::*;
 use tracing::warn;
 
@@ -273,9 +274,9 @@ impl FromGodot for ExternBindingType {
 }
 
 impl ToGodot for ExternBindingType {
-    type ToVia<'a> = Self::Via;
+    type Pass = ByValue;
 
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    fn to_godot(&self) -> Self::Via {
         match self {
             Self::None => "none",
             #[cfg(feature = "object-registry-compat")]
@@ -324,9 +325,9 @@ impl FromGodot for PipeBindingType {
 
 #[cfg(feature = "wasi")]
 impl ToGodot for PipeBindingType {
-    type ToVia<'a> = Self::Via;
+    type Pass = ByValue;
 
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    fn to_godot(&self) -> Self::Via {
         match self {
             Self::Unbound => "unbound",
             Self::Bypass => "bypass",
@@ -372,9 +373,9 @@ impl FromGodot for PipeBufferType {
 
 #[cfg(feature = "wasi")]
 impl ToGodot for PipeBufferType {
-    type ToVia<'a> = Self::Via;
+    type Pass = ByValue;
 
-    fn to_godot(&self) -> Self::ToVia<'_> {
+    fn to_godot(&self) -> Self::Via {
         match self {
             Self::Unbuffered => "unbuffered",
             Self::LineBuffer => "line",

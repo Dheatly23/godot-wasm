@@ -702,7 +702,9 @@ impl primitive::Host for crate::godot_component::GodotCtx {
 
     fn from_string(&mut self, val: String) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, primitive, from_string)?;
-        self.set_into_var(GString::from(val))
+        let ret = GString::from(&val);
+        drop(val);
+        self.set_into_var(ret)
     }
 
     fn to_string(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
@@ -712,7 +714,9 @@ impl primitive::Host for crate::godot_component::GodotCtx {
 
     fn from_stringname(&mut self, val: String) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, primitive, from_stringname)?;
-        self.set_into_var(StringName::from(val))
+        let ret = StringName::from(&val);
+        drop(val);
+        self.set_into_var(ret)
     }
 
     fn to_stringname(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
@@ -722,7 +726,9 @@ impl primitive::Host for crate::godot_component::GodotCtx {
 
     fn from_nodepath(&mut self, val: String) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, primitive, from_nodepath)?;
-        self.set_into_var(NodePath::from(val))
+        let ret = NodePath::from(&val);
+        drop(val);
+        self.set_into_var(ret)
     }
 
     fn to_nodepath(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {

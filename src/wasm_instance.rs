@@ -373,19 +373,19 @@ where
                     builder.stdin(Arc::new(PackedByteArrayReader::from(data)))
                 } else {
                     let signal =
-                        SendSyncWrapper::new(Signal::from_object_signal(obj, c"stdin_request"));
+                        SendSyncWrapper::new(Signal::from_object_signal(obj, "stdin_request"));
                     builder.stdin_signal(Box::new(move || signal.emit(&[])))
                 }?;
             }
             if config.wasi_stdout == PipeBindingType::Instance {
                 builder.stdout(WasiContext::make_host_stdout(
-                    Signal::from_object_signal(obj, c"stdout_emit"),
+                    Signal::from_object_signal(obj, "stdout_emit"),
                     config.wasi_stdout_buffer,
                 ))?;
             }
             if config.wasi_stderr == PipeBindingType::Instance {
                 builder.stderr(WasiContext::make_host_stdout(
-                    Signal::from_object_signal(obj, c"stderr_emit"),
+                    Signal::from_object_signal(obj, "stderr_emit"),
                     config.wasi_stderr_buffer,
                 ))?;
             }
@@ -605,10 +605,10 @@ impl StoreData {
 impl WasmInstance {
     #[instrument(level = Level::ERROR)]
     fn emit_error_wrapper(&self, msg: String) {
-        self.to_gd().emit_signal(
-            &StringName::from(c"error_happened"),
-            &[GString::from(msg).to_variant()],
-        );
+        let arg = GString::from(&msg);
+        drop(msg);
+        self.to_gd()
+            .emit_signal("error_happened", &[arg.to_variant()]);
     }
 
     #[instrument(level = Level::TRACE)]
@@ -819,24 +819,28 @@ impl Display for WasmCallable {
 
 impl RustCallable for WasmCallable {
     #[instrument(skip(args), fields(args.len = args.len()))]
-    fn invoke(&mut self, args: &[&Variant]) -> Result<Variant, ()> {
-        let r = self.this.bind().acquire_store(|mut store| {
-            let _s = debug_span!("invoke.inner").entered();
-            #[cfg(feature = "epoch-timeout")]
-            reset_epoch(store.as_context_mut());
+    fn invoke(&mut self, args: &[&Variant]) -> Variant {
+        self.this
+            .bind()
+            .acquire_store(|mut store| {
+                let _s = debug_span!("invoke.inner").entered();
+                #[cfg(feature = "epoch-timeout")]
+                reset_epoch(store.as_context_mut());
 
-            // SAFETY: Function pointer is valid.
-            let ret = unsafe {
-                let f = Func::from_raw(store.as_context_mut(), self.ptr).expect("Pointer is null");
-                raw_call(store, &f, &self.ty, args.iter().copied())?
-            };
-            info!(ret.len = ret.len());
-            Ok(ret)
-        });
-        match r {
-            Some(v) => Ok(v.to_variant()),
-            None => Err(()),
-        }
+                // SAFETY: Function pointer is valid.
+                let ret = unsafe {
+                    let f =
+                        Func::from_raw(store.as_context_mut(), self.ptr).expect("Pointer is null");
+                    raw_call(store, &f, &self.ty, args.iter().copied())?
+                };
+                info!(ret.len = ret.len());
+                Ok(ret.to_variant())
+            })
+            .unwrap_or_else(Variant::nil)
+    }
+
+    fn is_valid(&self) -> bool {
+        self.this.is_instance_valid()
     }
 }
 

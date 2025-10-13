@@ -121,7 +121,7 @@ impl crate::godot_component::bindgen::godot::core::array::Host
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, array, subarray)?;
         let v: VariantArray = self.get_value(var)?;
-        self.set_into_var(v.subarray_shallow(begin as _, end as _, step.map(|v| v as _)))
+        self.set_into_var(v.subarray_shallow(begin as usize..end as usize, step.map(|v| v as _)))
     }
 
     fn get(

@@ -1,4 +1,4 @@
-use std::borrow::{Borrow, Cow};
+use std::borrow::Borrow;
 use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::ops::{Deref, DerefMut};
@@ -55,10 +55,7 @@ pub fn from_var_any<T: FromGodot>(v: impl Borrow<Variant>) -> AnyResult<T> {
 
 #[allow(dead_code)]
 pub fn gstring_from_maybe_utf8(buf: &[u8]) -> GString {
-    match String::from_utf8_lossy(buf) {
-        Cow::Owned(v) => GString::from(v),
-        Cow::Borrowed(v) => GString::from(v),
-    }
+    GString::from(&*String::from_utf8_lossy(buf))
 }
 
 pub fn option_to_variant<T: ToGodot>(t: Option<T>) -> Variant {

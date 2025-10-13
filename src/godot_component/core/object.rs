@@ -1,4 +1,5 @@
 use anyhow::{Result as AnyResult, bail};
+use godot::classes::object::ConnectFlags;
 use godot::prelude::*;
 use wasmtime::component::Resource as WasmResource;
 
@@ -114,7 +115,8 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, get_script)?;
         let o: Gd<Object> = self.get_value(var)?;
-        self.set_var(o.get_script())
+        o.get_script()
+            .map_or_else(|| Ok(None), |v| self.set_into_var(v).map(Some))
     }
 
     fn get_property_list(
@@ -249,14 +251,11 @@ impl bindgen::godot::core::object::Host for GodotCtx {
     ) -> ErrorRes {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, connect)?;
         let mut o: Gd<Object> = self.get_value(var)?;
-        wrap_error(
-            o.connect_ex(
-                &self.get_value::<StringName>(name)?,
-                &self.get_value(callable)?,
-            )
-            .flags(flags)
-            .done(),
-        )
+        wrap_error(o.connect_flags(
+            &self.get_value::<StringName>(name)?,
+            &self.get_value(callable)?,
+            ConnectFlags::from_godot(flags as u64),
+        ))
     }
 
     fn disconnect(

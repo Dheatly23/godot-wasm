@@ -45,7 +45,7 @@ workspace = true
 default-features = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = "0.59"
+windows-sys = "0.61"
 
 [dev-dependencies]
 proptest = { workspace = true }
