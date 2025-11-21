@@ -38,8 +38,6 @@ Documentation is in [doc](doc/README.md) folder. Also available as doc comments.
 
 ## Features
 
-**NOTE:** Many features are not yet available or (partially) broken.
-
 * Easily run any WASM module.
 * Supports WAT compilation.
 * Imports any (custom) Godot methods into WASM.
@@ -55,6 +53,16 @@ Documentation is in [doc](doc/README.md) folder. Also available as doc comments.
 * WASI common API with in-memory filesystem.
 * Native resource support to ease import/export.
 * Optional support for component model and WASI 0.2
+* Partial support for WASM GC.
+  Support is dependent on wasmtime.
+
+Features not supported:
+
+* Binding host functions into WASM component. Support is coming later.
+* Composing WASM components. Use tool like `wac` for the moment.
+* WASI network API.
+* WASI preview 0 API. Not many user of this API, so support is not likely.
+* Passing WASM GC values in to/out of host.
 
 ## Building
 To build the addon:
