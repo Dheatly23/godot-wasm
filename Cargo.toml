@@ -25,7 +25,7 @@ smol_str = "^0.3"
 wat = "^1.227"
 log4rs = { version = "^1.3", optional = true }
 log = { version = "^0.4", optional = true }
-rbitset = { version = "^0.3", optional = true }
+rbitset = { version = "^1", optional = true }
 serde = { version = "^1", features = ["derive"], optional = true }
 
 scopeguard = { workspace = true }
@@ -40,7 +40,7 @@ memchr = { workspace = true, optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "2dde78e817b778258dcd7c3395be659f62a87885"
+rev = "3416265e2f894be3c1a916f8590524f7be94ed3f"
 features = [
   "api-4-3",
   "experimental-threads",
@@ -137,14 +137,14 @@ rand_distr = { version = "^0.5", default-features = false }
 rand_core = { version = "^0.9", features = ["os_rng"] }
 
 [workspace.dependencies.wasmtime]
-version = "^37.0"
+version = "^39.0"
 default-features = false
 features = [
   "std",
 ]
 
 [workspace.dependencies.wiggle]
-version = "^37.0"
+version = "^39.0"
 default-features = false
 features = [
   "wasmtime",

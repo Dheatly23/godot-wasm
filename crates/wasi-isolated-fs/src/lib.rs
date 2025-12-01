@@ -27,9 +27,9 @@ pub mod bindings {
             default: tracing | trappable,
         },
         trappable_error_type: {
-            "wasi:io/streams/stream-error" => StreamError,
-            "wasi:filesystem/types/error-code" => StreamError,
-            "wasi:sockets/network/error-code" => NetworkError,
+            "wasi:io/streams.stream-error" => StreamError,
+            "wasi:filesystem/types.error-code" => StreamError,
+            "wasi:sockets/network.error-code" => NetworkError,
         },
     });
 

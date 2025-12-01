@@ -157,7 +157,7 @@ pub mod bindgen {
             default: tracing | trappable,
         },
         with: {
-            "godot:core/core/godot-var": GVar,
+            "godot:core/core.godot-var": GVar,
         },
     });
 }
@@ -244,7 +244,7 @@ impl bindgen::godot::core::core::Host for GodotCtx {
 
     fn var_hash(&mut self, var: WasmResource<Variant>) -> AnyResult<i64> {
         filter_macro!(filter self.filter.as_ref(), godot_core, core, var_hash)?;
-        Ok(self.get_var(var)?.hash())
+        Ok(self.get_var(var)?.hash_u32().into())
     }
 
     fn var_stringify(&mut self, var: WasmResource<Variant>) -> AnyResult<String> {
