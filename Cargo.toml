@@ -40,7 +40,7 @@ memchr = { workspace = true, optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "3416265e2f894be3c1a916f8590524f7be94ed3f"
+rev = "2ade41f00a7da9ebfff1ac21fdc6fbab397894ff"
 features = [
   "api-4-3",
   "experimental-threads",
@@ -128,7 +128,7 @@ tracing = "^0.1"
 # Dependencies for example crates
 cfg-if = "^1.0"
 glam = "^0.30"
-colorgrad = { version = "^0.7", default-features = false, features = ["preset"] }
+colorgrad = { version = "^0.8", default-features = false, features = ["preset"] }
 
 rand_xoshiro = "^0.7"
 getrandom = "^0.3"
