@@ -1,5 +1,5 @@
 package tmp:tmp;
 
 world tmp {
-  include wasi:cli/imports@0.2.3;
+  include wasi:cli/imports@0.2.9;
 }
