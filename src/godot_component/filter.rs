@@ -373,7 +373,7 @@ const DATA_LEN: usize = ENDPOINT.div_ceil(8);
 pub type Filter = FilterFlags<DATA_LEN>;
 
 impl GodotConvert for Filter {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl FromGodot for Filter {
@@ -397,7 +397,7 @@ impl FromGodot for Filter {
     }
 }
 
-fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
+fn from_dict(d: VarDictionary) -> Result<Filter, ConvertError> {
     let f = |s: &mut String, k: Variant| -> Result<(), ConvertError> {
         s.clear();
         if k.get_type() == VariantType::STRING_NAME {
@@ -437,7 +437,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
             continue;
         }
 
-        for (k, v) in v.try_to::<Dictionary>()?.iter_shared() {
+        for (k, v) in v.try_to::<VarDictionary>()?.iter_shared() {
             f(&mut interface, k)?;
             if interface == "*" {
                 parse_filter(
@@ -464,7 +464,7 @@ fn from_dict(d: Dictionary) -> Result<Filter, ConvertError> {
                 continue;
             }
 
-            for (k, v) in v.try_to::<Dictionary>()?.iter_shared() {
+            for (k, v) in v.try_to::<VarDictionary>()?.iter_shared() {
                 f(&mut method, k)?;
                 let allow = v.try_to::<bool>()?;
                 if method == "*" {

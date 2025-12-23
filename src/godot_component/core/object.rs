@@ -220,7 +220,7 @@ impl bindgen::godot::core::object::Host for GodotCtx {
         filter_macro!(filter self.filter.as_ref(), godot_core, object, callv)?;
         let mut o: Gd<Object> = self.get_value(var)?;
         let name: StringName = self.get_value(name)?;
-        let args: VariantArray = self.get_value(args)?;
+        let args: VarArray = self.get_value(args)?;
         let r = self.release_store(move || o.callv(&name, &args));
         self.set_var(r)
     }

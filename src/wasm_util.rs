@@ -223,9 +223,9 @@ pub unsafe fn to_raw<T: AsRef<StoreData>>(
             PACKED_INT32_ARRAY => (0..4).zip(v.as_slice()).fold(0u128, |t, (s, &v)| t | (v as u128) << (s * 32)),
             PACKED_INT64_ARRAY => (0..2).zip(v.as_slice()).fold(0u128, |t, (s, &v)| t | (v as u128) << (s * 64)),
             ARRAY => {
-                let v0 = site_context!(from_var_any::<u64>(v.get(0).unwrap_or_default()))?;
-                let v1 = site_context!(from_var_any::<u64>(v.get(1).unwrap_or_default()))?;
-                v0 as u128 | (v1 as u128) << 64
+                let v0 = site_context!(from_var_any::<i64>(v.get(0).unwrap_or_default()))?;
+                let v1 = site_context!(from_var_any::<i64>(v.get(1).unwrap_or_default()))?;
+                v0 as u64 as u128 | (v1 as u64 as u128) << 64
             },
             _ => bail_with_site!("Unknown value type {:?}", v.get_type()),
         })),
@@ -372,7 +372,7 @@ pub unsafe fn raw_call<T, It>(
     f: &Func,
     ty: &FuncType,
     args: It,
-) -> AnyResult<VariantArray>
+) -> AnyResult<VarArray>
 where
     T: AsRef<StoreData>,
     It: IntoIterator,
@@ -451,7 +451,7 @@ where
         let mut ri = ty.results();
         let rl = ri.len();
         if rl == 0 {
-        } else if let Ok(r) = r.try_to::<VariantArray>() {
+        } else if let Ok(r) = r.try_to::<VarArray>() {
             for (t, (i, o)) in ri.zip(args.iter_mut().enumerate()) {
                 let Some(v) = r.get(i) else {
                     bail_with_site!("Too few return value (expected {rl}, got {i})")
@@ -475,7 +475,7 @@ where
     unsafe { Func::new_unchecked(ctx, ty_cloned, f) }
 }
 
-fn process_func(dict: Dictionary, use_extern: bool) -> AnyResult<(FuncType, CallableEnum)> {
+fn process_func(dict: VarDictionary, use_extern: bool) -> AnyResult<(FuncType, CallableEnum)> {
     let Some(params) = dict.get(StringName::from("params")) else {
         bail_with_site!("Key \"params\" does not exist")
     };
@@ -508,11 +508,11 @@ fn process_func(dict: Dictionary, use_extern: bool) -> AnyResult<(FuncType, Call
 
 pub struct HostModuleCache<T> {
     cache: Linker<T>,
-    host: Dictionary,
+    host: VarDictionary,
 }
 
 impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T> {
-    pub fn new(host: Dictionary) -> AnyResult<Self> {
+    pub fn new(host: VarDictionary) -> AnyResult<Self> {
         Ok(Self {
             cache: Linker::new(&site_context!(get_engine())?),
             host,
@@ -530,7 +530,7 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
         } else if let Some(data) = self
             .host
             .get(module)
-            .map(|d| site_context!(from_var_any::<Dictionary>(d)))
+            .map(|d| site_context!(from_var_any::<VarDictionary>(d)))
             .transpose()?
             .and_then(|d| d.get(name))
         {
@@ -541,8 +541,10 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
                     let use_extern = false;
                 }
             }
-            let (sig, callable) =
-                process_func(site_context!(from_var_any::<Dictionary>(data))?, use_extern)?;
+            let (sig, callable) = process_func(
+                site_context!(from_var_any::<VarDictionary>(data))?,
+                use_extern,
+            )?;
 
             let v = Extern::from(wrap_godot_method(ctx.as_context_mut(), sig, callable));
             self.cache.define(ctx, module, name, v.clone())?;

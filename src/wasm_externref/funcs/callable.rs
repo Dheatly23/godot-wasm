@@ -71,14 +71,14 @@ func_registry! {
     },
     callv => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(ctx.as_context(), v)?))?;
-        let a = site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx.as_context(), args)?))?;
+        let a = site_context!(from_var_any::<VarArray>(&externref_to_variant(ctx.as_context(), args)?))?;
 
         let r = ctx.data_mut().as_mut().release_store(move || v.callv(&a));
         variant_to_externref(ctx.as_context_mut(), r)
     },
     bindv => |mut ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let v = site_context!(from_var_any::<Callable>(&externref_to_variant(ctx.as_context(), v)?))?;
-        let a = site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx.as_context(), args)?))?;
+        let a = site_context!(from_var_any::<VarArray>(&externref_to_variant(ctx.as_context(), args)?))?;
 
         variant_to_externref(ctx.as_context_mut(), v.bindv(&a).to_variant())
     },

@@ -89,7 +89,7 @@ func_registry! {
     callv => |mut ctx: Caller<'_, T>, obj: Option<Rooted<ExternRef>>, name: Option<Rooted<ExternRef>>, args: Option<Rooted<ExternRef>>| -> AnyResult<Option<Rooted<ExternRef>>> {
         let mut obj = site_context!(from_var_any::<Gd<Object>>(&externref_to_variant(ctx.as_context(), obj)?))?;
         let name = site_context!(from_var_any::<StringName>(&externref_to_variant(ctx.as_context(), name)?))?;
-        let args = site_context!(from_var_any::<VariantArray>(&externref_to_variant(ctx.as_context(), args)?))?;
+        let args = site_context!(from_var_any::<VarArray>(&externref_to_variant(ctx.as_context(), args)?))?;
 
         let r = ctx.data_mut().as_mut().release_store(move || obj.callv(&name, &args));
         variant_to_externref(ctx.as_context_mut(), r)

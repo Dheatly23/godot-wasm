@@ -113,8 +113,8 @@ macro_rules! variant_dispatch {
     (#el $v:ident OBJECT $e:expr) => {{ let $v: godot::obj::Gd<godot::classes::Object> = $v.to(); $e }};
     (#el $v:ident CALLABLE $e:expr) => {{ let $v: godot::builtin::Callable = $v.to(); $e }};
     (#el $v:ident SIGNAL $e:expr) => {{ let $v: godot::builtin::Signal = $v.to(); $e }};
-    (#el $v:ident DICTIONARY $e:expr) => {{ let $v: godot::builtin::Dictionary = $v.to(); $e }};
-    (#el $v:ident ARRAY $e:expr) => {{ let $v: godot::builtin::VariantArray = $v.to(); $e }};
+    (#el $v:ident DICTIONARY $e:expr) => {{ let $v: godot::builtin::VarDictionary = $v.to(); $e }};
+    (#el $v:ident ARRAY $e:expr) => {{ let $v: godot::builtin::VarArray = $v.to(); $e }};
     (#el $v:ident PACKED_BYTE_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedByteArray = $v.to(); $e }};
     (#el $v:ident PACKED_INT32_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedInt32Array = $v.to(); $e }};
     (#el $v:ident PACKED_INT64_ARRAY $e:expr) => {{ let $v: godot::builtin::PackedInt64Array = $v.to(); $e }};
@@ -157,8 +157,8 @@ pub enum VariantDispatch {
     Object(Gd<Object>),
     Callable(Callable),
     Signal(Signal),
-    Dictionary(Dictionary),
-    Array(VariantArray),
+    VarDictionary(VarDictionary),
+    Array(VarArray),
     PackedByteArray(PackedByteArray),
     PackedInt32Array(PackedInt32Array),
     PackedInt64Array(PackedInt64Array),
@@ -200,7 +200,7 @@ impl From<&'_ Variant> for VariantDispatch {
             VariantType::OBJECT => Self::Object(var.to()),
             VariantType::CALLABLE => Self::Callable(var.to()),
             VariantType::SIGNAL => Self::Signal(var.to()),
-            VariantType::DICTIONARY => Self::Dictionary(var.to()),
+            VariantType::DICTIONARY => Self::VarDictionary(var.to()),
             VariantType::ARRAY => Self::Array(var.to()),
             VariantType::PACKED_BYTE_ARRAY => Self::PackedByteArray(var.to()),
             VariantType::PACKED_INT32_ARRAY => Self::PackedInt32Array(var.to()),

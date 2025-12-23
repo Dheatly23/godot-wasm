@@ -99,7 +99,7 @@ impl crate::godot_component::bindgen::godot::global::time::Host
         space: bool,
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_global, time, get_datetime_string_from_datetime_dict)?;
-        let d: Dictionary = self.get_value(d)?;
+        let d: VarDictionary = self.get_value(d)?;
         self.set_into_var(Time::singleton().get_datetime_string_from_datetime_dict(&d, space))
     }
 

@@ -212,7 +212,7 @@ impl WasiContext {
     #[func]
     fn initialize(&self, config: Variant) -> Option<Gd<WasiContext>> {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
-            let config = site_context!(variant_to_option::<Dictionary>(config))?;
+            let config = site_context!(variant_to_option::<VarDictionary>(config))?;
 
             Ok(Mutex::new(WasiContextInner {
                 memfs_controller: site_context!(IsolatedFSController::new(
@@ -338,7 +338,7 @@ impl WasiContext {
                 .physical_mount
                 .iter()
                 .map(|(k, v)| (GString::from(k.as_str()), GString::from(v.as_str())))
-                .collect::<Dictionary>())
+                .collect::<VarDictionary>())
         }))
     }
 
@@ -563,7 +563,7 @@ impl WasiContext {
             )?;
             let n = &**f.node();
 
-            let mut ret = Dictionary::new();
+            let mut ret = VarDictionary::new();
             ret.set(
                 "filetype",
                 if n.is_link() {
@@ -575,7 +575,7 @@ impl WasiContext {
                 },
             );
             let (len, stamp) = n.len_and_stamp();
-            ret.set("size", len as u64);
+            ret.set("size", len as u64 as i64);
             ret.set("atime", to_unix_time(stamp.atime) as i64);
             ret.set("mtime", to_unix_time(stamp.mtime) as i64);
             ret.set("ctime", to_unix_time(stamp.ctime) as i64);
@@ -592,7 +592,7 @@ impl WasiContext {
     /// - `time` : A dictionary with key of ctime/mtime/atime and value of seconds since unix epoch.
     /// - `follow_symlink` : If `true`, follow symbolic links.
     #[func]
-    fn file_set_time(&self, path: GString, time: Dictionary, follow_symlink: Variant) -> bool {
+    fn file_set_time(&self, path: GString, time: VarDictionary, follow_symlink: Variant) -> bool {
         self.wrap_data(move |this| {
             let mtime = time
                 .get("mtime")
@@ -667,12 +667,12 @@ impl WasiContext {
     fn file_read(
         &self,
         path: GString,
-        length: u64,
+        length: i64,
         offset: Variant,
         follow_symlink: Variant,
     ) -> Variant {
         option_to_variant(self.wrap_data(move |this| {
-            let mut off = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
+            let mut off = variant_to_option::<i64>(offset)?.unwrap_or(0) as u64 as usize;
 
             let f = site_context!(
                 CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
@@ -685,7 +685,7 @@ impl WasiContext {
             )?;
             let mut n = site_context!(f.node().try_file())?;
 
-            let mut l = length as usize;
+            let mut l = length as u64 as usize;
             let mut ret = Vec::new();
             while l > 0 {
                 let (v, n) = n.read(l, off);
@@ -750,7 +750,7 @@ impl WasiContext {
         }
 
         self.wrap_data(move |this| {
-            let mut off = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
+            let mut off = variant_to_option::<i64>(offset)?.unwrap_or(0) as u64 as usize;
 
             let f = site_context!(
                 CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
@@ -813,7 +813,7 @@ impl WasiContext {
         follow_symlink: Variant,
     ) -> Variant {
         option_to_variant(self.wrap_data(|this| {
-            let cursor = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
+            let cursor = variant_to_option::<i64>(offset)?.unwrap_or(0) as u64 as usize;
 
             let f = site_context!(
                 CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
@@ -846,13 +846,13 @@ impl WasiContext {
         &self,
         path: GString,
         format: GString,
-        arr: VariantArray,
+        arr: VarArray,
         offset: Variant,
         truncate: Variant,
         follow_symlink: Variant,
     ) -> Variant {
         option_to_variant(self.wrap_data(|this| {
-            let cursor = variant_to_option::<u64>(offset)?.unwrap_or(0) as usize;
+            let cursor = variant_to_option::<i64>(offset)?.unwrap_or(0) as u64 as usize;
 
             let f = site_context!(
                 CapWrapper::new(this.memfs_controller.root(), AccessMode::RW).open(
@@ -869,7 +869,7 @@ impl WasiContext {
                 site_context!(file.resize(0))?;
             }
 
-            write_struct(FileWrapper { file, cursor }, format.chars(), arr).map(|v| v as u64)
+            write_struct(FileWrapper { file, cursor }, format.chars(), arr).map(|v| v as u64 as i64)
         }))
     }
 }

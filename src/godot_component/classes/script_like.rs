@@ -27,7 +27,7 @@ struct ScriptConfig {
 }
 
 impl GodotConvert for ScriptConfig {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl FromGodot for ScriptConfig {
@@ -244,7 +244,7 @@ impl WasmScriptLike {
     }
 
     #[func]
-    fn call_wasm(&self, args: VariantArray) -> Variant {
+    fn call_wasm(&self, args: VarArray) -> Variant {
         self.unwrap_data(move |m| {
             m.instance.acquire_store(move |_, mut store| {
                 #[cfg(feature = "epoch-timeout")]

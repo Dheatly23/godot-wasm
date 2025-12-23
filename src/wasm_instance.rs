@@ -352,7 +352,7 @@ where
         mut store: Store<T>,
         config: &Config,
         module: Gd<WasmModule>,
-        host: Option<Dictionary>,
+        host: Option<VarDictionary>,
     ) -> AnyResult<Self> {
         config_store_common(&mut store, config)?;
 
@@ -647,7 +647,7 @@ impl WasmInstance {
     pub fn initialize_(
         &self,
         module: Gd<WasmModule>,
-        host: Option<Dictionary>,
+        host: Option<VarDictionary>,
         config: Option<Variant>,
     ) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
@@ -867,7 +867,7 @@ impl WasmInstance {
     ///
     /// Arguments:
     /// - `module` : `WasmModule` to be instantiated.
-    /// - `host` : Dictionary containing host module and functions to be bound.
+    /// - `host` : VarDictionary containing host module and functions to be bound.
     ///   It's value is a struct of the following:
     ///   - `params` : Array of parameter types.
     ///   - `results` : Array of result types.
@@ -893,7 +893,7 @@ impl WasmInstance {
         host: Variant,
         config: Variant,
     ) -> Option<Gd<WasmInstance>> {
-        let Ok(host) = variant_to_option::<Dictionary>(host) else {
+        let Ok(host) = variant_to_option::<VarDictionary>(host) else {
             error!("Host is not a dictionary!");
             godot_error!("Host is not a dictionary!");
             return None;
@@ -923,7 +923,7 @@ impl WasmInstance {
     /// Returns an array of results, or `null` if failed.
     #[func]
     #[instrument(skip(args), fields(args.len = args.len()))]
-    fn call_wasm(&self, name: StringName, args: VariantArray) -> Variant {
+    fn call_wasm(&self, name: StringName, args: VarArray) -> Variant {
         option_to_variant(self.unwrap_data(move |m| {
             m.acquire_store(move |m, mut store| {
                 let _s = debug_span!("call_wasm.inner").entered();
@@ -1026,7 +1026,7 @@ impl WasmInstance {
     fn register_object(&self, _obj: Variant) -> Variant {
         cfg_if! {
             if #[cfg(feature = "object-registry-compat")] {
-                option_to_variant(self.acquire_store(move |mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj) as u64)))
+                option_to_variant(self.acquire_store(move |mut store| Ok(store.data_mut().get_registry_mut()?.register(_obj) as u64 as i64)))
             } else {
                 godot_error!("Feature object-registry-compat not enabled!");
                 Variant::nil()
@@ -1436,11 +1436,11 @@ impl WasmInstance {
 
     /// Reads a structured data.
     #[func]
-    #[instrument(level = Level::DEBUG)]
-    fn read_struct(&self, format: GString, p: u64) -> Variant {
+    #[instrument(level = Level::DEBUG, skip(p), fields(p = p as u64))]
+    fn read_struct(&self, format: GString, p: i64) -> Variant {
         option_to_variant(self.get_memory(move |data| {
             let mut f = Cursor::new(data);
-            f.set_position(p);
+            f.set_position(p as u64);
             let ret = read_struct(f, format.chars())?;
             info!(ret.len = ret.len());
             Ok(ret)
@@ -1449,13 +1449,13 @@ impl WasmInstance {
 
     /// Writes a structured data.
     #[func]
-    #[instrument(level = Level::DEBUG, skip(arr), fields(arr.len = arr.len()), ret)]
-    fn write_struct(&self, format: GString, p: u64, arr: VariantArray) -> u64 {
+    #[instrument(level = Level::DEBUG, skip(arr, p), fields(p = p as u64, arr.len = arr.len()), ret)]
+    fn write_struct(&self, format: GString, p: i64, arr: VarArray) -> i64 {
         self.get_memory(move |data| {
             let mut f = Cursor::new(data);
-            f.set_position(p);
+            f.set_position(p as u64);
             write_struct(f, format.chars(), arr)
         })
-        .unwrap_or_default() as _
+        .unwrap_or_default() as u64 as i64
     }
 }

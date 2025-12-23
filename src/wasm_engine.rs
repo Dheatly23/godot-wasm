@@ -313,7 +313,7 @@ impl WasmModule {
     #[instrument(skip(imports), fields(imports = %display_option(&imports)), ret)]
     fn process_deps_map(
         module: &ModuleType,
-        imports: Option<Dictionary>,
+        imports: Option<VarDictionary>,
     ) -> AnyResult<HashMap<String, Gd<WasmModule>>> {
         let mut deps_map = HashMap::new();
         let Some(imports) = imports else {
@@ -352,7 +352,7 @@ impl WasmModule {
     }
 
     #[instrument(skip(self, data, imports), ret(level = Level::DEBUG))]
-    fn _initialize(&self, data: Variant, imports: Option<Dictionary>) -> bool {
+    fn _initialize(&self, data: Variant, imports: Option<VarDictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let module = variant_dispatch!(data {
                 PACKED_BYTE_ARRAY => Self::load_module(data.as_slice())?,
@@ -382,7 +382,7 @@ impl WasmModule {
     }
 
     #[instrument(skip(self, data, imports), fields(data.len = data.len()), ret(level = Level::DEBUG))]
-    fn _deserialize(&self, data: PackedByteArray, imports: Option<Dictionary>) -> bool {
+    fn _deserialize(&self, data: PackedByteArray, imports: Option<VarDictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let engine = site_context!(get_engine())?;
             let data = data.as_slice();
@@ -417,7 +417,7 @@ impl WasmModule {
     }
 
     #[instrument(skip(self, imports), ret(level = Level::DEBUG))]
-    fn _deserialize_file(&self, path: String, imports: Option<Dictionary>) -> bool {
+    fn _deserialize_file(&self, path: String, imports: Option<VarDictionary>) -> bool {
         let r = self.data.get_or_try_init(move || -> AnyResult<_> {
             let engine = site_context!(get_engine())?;
             let path = PathBuf::from(path);
@@ -478,7 +478,7 @@ impl WasmModule {
     /// ```
     #[func]
     #[instrument(level = Level::DEBUG, skip(data, imports))]
-    fn initialize(&self, data: Variant, imports: Dictionary) -> Option<Gd<WasmModule>> {
+    fn initialize(&self, data: Variant, imports: VarDictionary) -> Option<Gd<WasmModule>> {
         if self._initialize(data, Some(imports)) {
             Some(self.to_gd())
         } else {
@@ -517,9 +517,9 @@ impl WasmModule {
     /// Gets all the module it imported.
     #[func]
     #[instrument]
-    fn get_imported_modules(&self) -> VariantArray {
+    fn get_imported_modules(&self) -> VarArray {
         self.unwrap_data(|m| {
-            Ok(VariantArray::from_iter(
+            Ok(VarArray::from_iter(
                 m.imports.values().map(|v| v.clone().to_variant()),
             ))
         })
@@ -531,7 +531,7 @@ impl WasmModule {
     /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
     #[instrument(level = Level::DEBUG, skip(data, imports))]
-    fn deserialize(&self, data: PackedByteArray, imports: Dictionary) -> Option<Gd<WasmModule>> {
+    fn deserialize(&self, data: PackedByteArray, imports: VarDictionary) -> Option<Gd<WasmModule>> {
         if self._deserialize(data, Some(imports)) {
             Some(self.to_gd())
         } else {
@@ -544,7 +544,7 @@ impl WasmModule {
     /// **⚠ DO NOT USE THIS WITH UNTRUSTED DATA**
     #[func]
     #[instrument(level = Level::DEBUG, skip(imports))]
-    fn deserialize_file(&self, path: GString, imports: Dictionary) -> Option<Gd<WasmModule>> {
+    fn deserialize_file(&self, path: GString, imports: VarDictionary) -> Option<Gd<WasmModule>> {
         if self._deserialize_file(path.to_string(), Some(imports)) {
             Some(self.to_gd())
         } else {
@@ -598,10 +598,10 @@ impl WasmModule {
     /// - `results` : Array of result types.
     #[func]
     #[instrument]
-    fn get_exports(&self) -> Dictionary {
+    fn get_exports(&self) -> VarDictionary {
         self.unwrap_data(|m| {
             let _s = debug_span!("get_exports.inner").entered();
-            let mut ret = Dictionary::new();
+            let mut ret = VarDictionary::new();
             let params_str = StringName::from("params");
             let results_str = StringName::from("results");
             for i in site_context!(m.module.get_core())?.exports() {
@@ -615,7 +615,7 @@ impl WasmModule {
                     i.name(),
                     [(params_str.clone(), p), (results_str.clone(), r)]
                         .into_iter()
-                        .collect::<Dictionary>(),
+                        .collect::<VarDictionary>(),
                 );
             }
             Ok(ret)
@@ -631,10 +631,10 @@ impl WasmModule {
     /// - `results` : Array of result types.
     #[func]
     #[instrument]
-    fn get_host_imports(&self) -> Dictionary {
+    fn get_host_imports(&self) -> VarDictionary {
         self.unwrap_data(|m| {
             let _s = debug_span!("get_host_imports.inner").entered();
-            let mut ret = Dictionary::new();
+            let mut ret = VarDictionary::new();
             let params_str = StringName::from("params");
             let results_str = StringName::from("results");
 
@@ -660,9 +660,9 @@ impl WasmModule {
                 debug!(name = i.name(), "type" = %f, "Imported function");
                 let (p, r) = from_signature(&f);
                 let mut v = if let Some(v) = ret.get(i.module()) {
-                    Dictionary::from_variant(&v)
+                    VarDictionary::from_variant(&v)
                 } else {
-                    let v = Dictionary::new();
+                    let v = VarDictionary::new();
                     ret.set(i.module(), v.clone());
                     v
                 };
@@ -670,7 +670,7 @@ impl WasmModule {
                     i.name(),
                     [(params_str.clone(), p), (results_str.clone(), r)]
                         .into_iter()
-                        .collect::<Dictionary>(),
+                        .collect::<VarDictionary>(),
                 );
             }
 
@@ -695,7 +695,7 @@ impl WasmModule {
     /// Gets the signature of exported function.
     #[func]
     #[instrument]
-    fn get_signature(&self, name: StringName) -> Dictionary {
+    fn get_signature(&self, name: StringName) -> VarDictionary {
         self.unwrap_data(|m| {
             let _s = debug_span!("get_signature.inner").entered();
             let Some(ExternType::Func(f)) =
@@ -744,15 +744,15 @@ impl WasmModule {
                 ("num_tables", num_tables.to_variant()),
                 (
                     "max_initial_memory_size",
-                    max_initial_memory_size.unwrap_or_default().to_variant(),
+                    (max_initial_memory_size.unwrap_or_default() as i64).to_variant(),
                 ),
                 (
                     "max_initial_table_size",
-                    max_initial_table_size.unwrap_or_default().to_variant(),
+                    (max_initial_table_size.unwrap_or_default() as i64).to_variant(),
                 ),
             ]
             .into_iter()
-            .collect::<Dictionary>()
+            .collect::<VarDictionary>()
             .to_variant())
         })
         .unwrap_or_default()
@@ -807,15 +807,15 @@ impl WasmModule {
                 ("num_tables", num_tables.to_variant()),
                 (
                     "max_initial_memory_size",
-                    max_initial_memory_size.unwrap_or_default().to_variant(),
+                    (max_initial_memory_size.unwrap_or_default() as i64).to_variant(),
                 ),
                 (
                     "max_initial_table_size",
-                    max_initial_table_size.unwrap_or_default().to_variant(),
+                    (max_initial_table_size.unwrap_or_default() as i64).to_variant(),
                 ),
             ]
             .into_iter()
-            .collect::<Dictionary>()
+            .collect::<VarDictionary>()
             .to_variant())
         })
         .unwrap_or_default()
@@ -826,7 +826,7 @@ impl WasmModule {
     /// See `WasmInstance.initialize` for more info.
     #[func]
     fn instantiate(&self, host: Variant, config: Variant) -> Option<Gd<WasmInstance>> {
-        let Ok(host) = variant_to_option::<Dictionary>(host) else {
+        let Ok(host) = variant_to_option::<VarDictionary>(host) else {
             godot_error!("Host is not a dictionary!");
             return None;
         };

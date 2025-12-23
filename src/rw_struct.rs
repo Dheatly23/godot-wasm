@@ -374,9 +374,9 @@ fn io_to_any(err: IoError) -> AnyError {
     }
 }
 
-pub fn read_struct(data: impl Read + Seek, format: &[char]) -> AnyResult<VariantArray> {
+pub fn read_struct(data: impl Read + Seek, format: &[char]) -> AnyResult<VarArray> {
     fn f<const N: usize, T: ToGodot>(
-        (data, a): &mut (impl Read, VariantArray),
+        (data, a): &mut (impl Read, VarArray),
         n: usize,
         f: impl Fn(&[u8; N]) -> T,
     ) -> AnyResult<()> {
@@ -408,7 +408,7 @@ pub fn read_struct(data: impl Read + Seek, format: &[char]) -> AnyResult<Variant
             DataType::SignedInt => f::<4, _>(&mut r, n, |v| i32::from_le_bytes(*v) as i64),
             DataType::UnsignedInt => f::<4, _>(&mut r, n, |v| u32::from_le_bytes(*v) as i64),
             DataType::SignedLong => f::<8, _>(&mut r, n, |v| i64::from_le_bytes(*v)),
-            DataType::UnsignedLong => f::<8, _>(&mut r, n, |v| u64::from_le_bytes(*v)),
+            DataType::UnsignedLong => f::<8, _>(&mut r, n, |v| u64::from_le_bytes(*v) as i64),
             DataType::Float => f::<4, _>(&mut r, n, |v| f32::from_le_bytes(*v)),
             DataType::Double => f::<8, _>(&mut r, n, |v| f64::from_le_bytes(*v)),
             DataType::Vector2(VectorSubtype::Float) => {
@@ -516,11 +516,7 @@ pub fn read_struct(data: impl Read + Seek, format: &[char]) -> AnyResult<Variant
     Ok(r.1)
 }
 
-pub fn write_struct(
-    data: impl Write + Seek,
-    format: &[char],
-    arr: VariantArray,
-) -> AnyResult<usize> {
+pub fn write_struct(data: impl Write + Seek, format: &[char], arr: VarArray) -> AnyResult<usize> {
     fn f<const N: usize, T: FromGodot>(
         (data, total, a): &mut (impl Write, usize, impl Iterator<Item = Variant>),
         n: usize,

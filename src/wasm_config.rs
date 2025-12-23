@@ -103,7 +103,7 @@ impl Debug for Config {
 }
 
 fn get_field<T: FromGodot>(
-    d: &Dictionary,
+    d: &VarDictionary,
     names: impl IntoIterator<Item = &'static str>,
 ) -> Result<Option<T>, ConvertError> {
     for name in names {
@@ -133,7 +133,7 @@ fn compute_epoch(v: Option<Variant>) -> Result<u64, ConvertError> {
 #[cfg(feature = "wasi")]
 fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, ConvertError> {
     let v = match v {
-        Some(v) => v.try_to::<VariantArray>()?,
+        Some(v) => v.try_to::<VarArray>()?,
         None => return Ok(Vec::new()),
     };
     let mut ret = Vec::with_capacity(v.len());
@@ -146,7 +146,7 @@ fn get_wasi_args(v: Option<Variant>) -> Result<Vec<String>, ConvertError> {
 #[cfg(feature = "wasi")]
 fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, ConvertError> {
     let v = match v {
-        Some(v) => v.try_to::<Dictionary>()?,
+        Some(v) => v.try_to::<VarDictionary>()?,
         None => return Ok(HashMap::new()),
     };
     let mut ret = HashMap::with_capacity(v.len());
@@ -157,7 +157,7 @@ fn get_wasi_envs(v: Option<Variant>) -> Result<HashMap<String, String>, ConvertE
 }
 
 impl Config {
-    fn convert(dict: Dictionary) -> Result<Self, ConvertError> {
+    fn convert(dict: VarDictionary) -> Result<Self, ConvertError> {
         Ok(Self {
             #[cfg(feature = "epoch-timeout")]
             with_epoch: get_field(&dict, ["epoch.enable", "engine.use_epoch"])?.unwrap_or_default(),
@@ -220,7 +220,7 @@ impl Config {
 }
 
 impl GodotConvert for Config {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl FromGodot for Config {

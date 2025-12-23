@@ -51,7 +51,7 @@ impl Debug for CommandConfig {
 }
 
 impl GodotConvert for CommandConfig {
-    type Via = Dictionary;
+    type Via = VarDictionary;
 }
 
 impl FromGodot for CommandConfig {

@@ -105,7 +105,7 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
     ) -> AnyResult<Option<WasmResource<Variant>>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, callable, callv)?;
         let v: Callable = self.get_value(var)?;
-        let args: VariantArray = self.get_value(args)?;
+        let args: VarArray = self.get_value(args)?;
         let r = self.release_store(move || v.callv(&args));
         self.set_var(r)
     }
@@ -131,7 +131,7 @@ impl crate::godot_component::bindgen::godot::core::callable::Host
     ) -> AnyResult<WasmResource<Variant>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, callable, bindv)?;
         let v: Callable = self.get_value(var)?;
-        let args: VariantArray = self.get_value(args)?;
+        let args: VarArray = self.get_value(args)?;
         self.set_into_var(v.bindv(&args))
     }
 

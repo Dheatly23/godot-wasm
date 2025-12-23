@@ -34,7 +34,7 @@ impl crate::godot_component::bindgen::godot::global::project_settings::Host
 
     fn add_property_info(&mut self, val: WasmResource<Variant>) -> AnyResult<()> {
         filter_macro!(filter self.filter.as_ref(), godot_global, project_settings, add_property_info)?;
-        let v: Dictionary = self.get_value(val)?;
+        let v: VarDictionary = self.get_value(val)?;
         self.release_store(move || ProjectSettings::singleton().add_property_info(&v));
         Ok(())
     }
