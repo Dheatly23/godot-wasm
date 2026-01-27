@@ -38,8 +38,8 @@ unsafe impl ExtensionLibrary for GodotWasm {
         InitLevel::Servers
     }
 
-    fn on_level_init(level: InitLevel) {
-        if level == InitLevel::Servers {
+    fn on_stage_init(level: InitStage) {
+        if level == InitStage::Servers {
             #[cfg(feature = "log")]
             if let Some(v) = var_os("GODOT_WASM_LOG_CONFIG_FILE") {
                 let mut d = Deserializers::default();
@@ -50,8 +50,8 @@ unsafe impl ExtensionLibrary for GodotWasm {
         }
     }
 
-    fn on_level_deinit(level: InitLevel) {
-        if level == InitLevel::Servers {
+    fn on_stage_deinit(level: InitStage) {
+        if level == InitStage::Servers {
             wasm_engine::deinit_engine();
         }
     }

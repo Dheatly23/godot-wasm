@@ -1,5 +1,7 @@
 use std::borrow::Borrow;
 use std::cell::{Cell, UnsafeCell};
+use std::error::Error as StdError;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
@@ -103,6 +105,22 @@ pub fn add_site(e: Error, site: Site<'static>) -> Error {
     }
 }
 */
+
+pub struct UninitializedObjectError;
+
+impl Display for UninitializedObjectError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "uninitialized Godot object")
+    }
+}
+
+impl Debug for UninitializedObjectError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        Display::fmt(self, f)
+    }
+}
+
+impl StdError for UninitializedObjectError {}
 
 #[macro_export]
 macro_rules! func_registry {

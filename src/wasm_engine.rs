@@ -20,7 +20,7 @@ use crate::godot_util::{from_var_any, variant_to_option};
 use crate::wasm_instance::WasmInstance;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::EPOCH_INTERVAL;
-use crate::wasm_util::from_signature;
+use crate::wasm_util::{UninitializedObjectError, from_signature};
 use crate::{bail_with_site, display_option, site_context, variant_dispatch};
 
 cfg_if! {
@@ -193,17 +193,17 @@ pub struct WasmModule {
     data: OnceCell<ModuleData>,
 
     /// Property is `true` if module is a core module.
-    #[var(get = get_is_core_module, usage_flags = [EDITOR, READ_ONLY])]
+    #[var(no_set, get = get_is_core_module, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     is_core_module: PhantomVar<bool>,
 
     /// Property is `true` if module is a component.
-    #[var(get = get_is_component, usage_flags = [EDITOR, READ_ONLY])]
+    #[var(no_set, get = get_is_component, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     is_component: PhantomVar<bool>,
 
     /// Name of the module, if any.
-    #[var(get = get_name, usage_flags = [EDITOR, READ_ONLY])]
+    #[var(no_set, get = get_name, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     name: PhantomVar<GString>,
 
@@ -269,7 +269,7 @@ impl WasmModule {
     pub fn get_data(&self) -> AnyResult<&ModuleData> {
         match self.data.get() {
             Some(data) => Ok(data),
-            None => bail_with_site!("Uninitialized module"),
+            None => Err(UninitializedObjectError.into()),
         }
     }
 

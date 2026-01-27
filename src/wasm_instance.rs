@@ -56,7 +56,8 @@ use crate::wasm_util::OBJREGISTRY_MODULE;
 #[cfg(feature = "epoch-timeout")]
 use crate::wasm_util::reset_epoch;
 use crate::wasm_util::{
-    HasEpochTimeout, HostModuleCache, MEMORY_EXPORT, config_store_common, raw_call,
+    HasEpochTimeout, HostModuleCache, MEMORY_EXPORT, UninitializedObjectError, config_store_common,
+    raw_call,
 };
 use crate::{bail_with_site, site_context, variant_dispatch};
 
@@ -130,7 +131,7 @@ pub struct WasmInstance {
     memory: Option<MemoryType>,
 
     /// Reference to the module that is used to instantiate this object.
-    #[var(get = get_module)]
+    #[var(no_set, get = get_module, usage_flags = [EDITOR, READ_ONLY])]
     #[allow(dead_code)]
     module: PhantomVar<Option<Gd<WasmModule>>>,
 }
@@ -615,7 +616,7 @@ impl WasmInstance {
     pub fn get_data(&self) -> AnyResult<&InstanceData<StoreData>> {
         match self.data.get() {
             Some(data) => Ok(data),
-            None => bail_with_site!("Uninitialized instance"),
+            None => Err(UninitializedObjectError.into()),
         }
     }
 
@@ -627,6 +628,14 @@ impl WasmInstance {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
+                let e = match e.downcast::<UninitializedObjectError>() {
+                    Ok(e) => {
+                        godot_error!("{e}");
+                        return None;
+                    }
+                    Err(e) => e,
+                };
+
                 let s = format!("{e:?}");
                 /*
                 error(
@@ -636,6 +645,7 @@ impl WasmInstance {
                     &s,
                 );
                 */
+                drop(e);
                 godot_error!("{s}");
                 self.emit_error_wrapper(s);
                 None
@@ -911,6 +921,7 @@ impl WasmInstance {
     #[func]
     #[instrument(ret)]
     fn get_module(&self) -> Option<Gd<WasmModule>> {
+        println!("called get_module");
         self.unwrap_data(|m| Ok(m.module.clone()))
     }
 
