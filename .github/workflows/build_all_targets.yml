@@ -1,0 +1,138 @@
+name: Godot WASM Addon (Manual)
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to upload builds to"
+        required: true
+
+env:
+  ADDON_PATH: out/addons/godot_wasm
+  PROFILE: release
+
+jobs:
+
+  build-native:
+    name: Build Native (${{ matrix.target }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-unknown-linux-gnu
+          - x86_64-pc-windows-gnu
+          - aarch64-linux-android
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            unzip zip curl \
+            mingw-w64 \
+            gcc-aarch64-linux-gnu
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+          components: clippy,rustfmt
+
+      
+      - name: Configure cross linkers
+        run: |
+          mkdir -p .cargo
+          cat > .cargo/config.toml <<EOF
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+
+          [target.x86_64-pc-windows-gnu]
+          linker = "x86_64-w64-mingw32-gcc"
+          EOF
+
+      
+      - name: Setup Android
+        if: matrix.target == 'aarch64-linux-android'
+        uses: android-actions/setup-android@v3
+
+      - name: Configure Android toolchain
+        if: matrix.target == 'aarch64-linux-android'
+        run: |
+          NDK=$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin
+
+          echo "CC_aarch64_linux_android=$NDK/aarch64-linux-android21-clang" >> $GITHUB_ENV
+          echo "AR_aarch64_linux_android=$NDK/llvm-ar" >> $GITHUB_ENV
+
+          mkdir -p .cargo
+          cat >> .cargo/config.toml <<EOF
+          [target.aarch64-linux-android]
+          linker = "$NDK/aarch64-linux-android21-clang"
+          ar = "$NDK/llvm-ar"
+          EOF
+
+      # ---------------- Build
+      - name: Build godot-wasm
+        run: |
+          cargo build -p godot-wasm \
+            --target ${{ matrix.target }} \
+            --release
+
+      # ---------------- Upload compiled lib only
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/
+
+
+  package-addon:
+    name: Combine + Package Addon
+    needs: build-native
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all native builds
+        uses: actions/download-artifact@v4
+        with:
+          path: native-builds
+
+      - name: Combine into addon structure
+        run: |
+          mkdir -p out/addons/godot_wasm/bin
+
+          for dir in native-builds/*; do
+            triple=$(basename $dir | sed 's/native-//')
+            out_dir="out/addons/godot_wasm/bin/$triple"
+            mkdir -p "$out_dir"
+
+            find "$dir" -maxdepth 1 -type f \
+              \( -name "godot_wasm.dll" \
+                 -o -name "godot_wasm.so" \
+                 -o -name "libgodot_wasm.so" \
+                 -o -name "libgodot_wasm.dylib" \) \
+              -exec cp {} "$out_dir" \;
+          done
+
+      - name: Zip combined addon
+        run: |
+          mkdir release
+          cp -r out/addons release/
+          cd release
+          zip -r godot_wasm_addon_full.zip addons
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          files: release/godot_wasm_addon_full.zip
+

@@ -9,6 +9,7 @@ use wasmtime::{AsContextMut, Store};
 
 use crate::godot_component::filter::Filter;
 use crate::godot_component::{GodotCtx, add_to_linker, bindgen};
+use crate::site_context;
 use crate::wasm_config::Config;
 use crate::wasm_engine::WasmModule;
 #[cfg(feature = "memory-limiter")]
@@ -16,8 +17,7 @@ use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
 use crate::wasm_util::HasEpochTimeout;
 #[cfg(feature = "epoch-timeout")]
-use crate::wasm_util::{config_store_epoch, reset_epoch};
-use crate::{bail_with_site, site_context};
+use crate::wasm_util::{UninitializedObjectError, config_store_epoch, reset_epoch};
 
 #[derive(Default)]
 struct ScriptConfig {
@@ -58,7 +58,7 @@ pub struct WasmScriptLike {
     base: Base<RefCounted>,
     data: OnceCell<WasmScriptLikeData>,
 
-    #[var(get = get_module)]
+    #[var(no_set, get = get_module)]
     #[allow(dead_code)]
     module: PhantomVar<Option<Gd<WasmModule>>>,
 }
@@ -166,7 +166,7 @@ impl WasmScriptLike {
     pub fn get_data(&self) -> AnyResult<&WasmScriptLikeData> {
         match self.data.get() {
             Some(data) => Ok(data),
-            None => bail_with_site!("Uninitialized instance"),
+            None => Err(UninitializedObjectError.into()),
         }
     }
 
@@ -177,6 +177,14 @@ impl WasmScriptLike {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
+                let e = match e.downcast::<UninitializedObjectError>() {
+                    Ok(e) => {
+                        godot_error!("{e}");
+                        return None;
+                    }
+                    Err(e) => e,
+                };
+
                 let s = format!("{e:?}");
                 /*
                 error(
@@ -186,6 +194,7 @@ impl WasmScriptLike {
                     &s,
                 );
                 */
+                drop(e);
                 godot_error!("{s}");
                 self.emit_error_wrapper(s);
                 None

@@ -19,6 +19,7 @@ use crate::godot_component::filter::Filter;
 #[cfg(feature = "godot-component")]
 use crate::godot_component::{GodotCtx, add_to_linker as godot_add_to_linker};
 use crate::godot_util::SendSyncWrapper;
+use crate::site_context;
 use crate::wasi_ctx::WasiContext;
 use crate::wasi_ctx::stdio::PackedByteArrayReader;
 use crate::wasm_config::{Config, PipeBindingType};
@@ -28,8 +29,7 @@ use crate::wasm_instance::MemoryLimit;
 use crate::wasm_instance::{InnerLock, InstanceData, InstanceType};
 use crate::wasm_util::HasEpochTimeout;
 #[cfg(feature = "epoch-timeout")]
-use crate::wasm_util::{config_store_epoch, reset_epoch};
-use crate::{bail_with_site, site_context};
+use crate::wasm_util::{UninitializedObjectError, config_store_epoch, reset_epoch};
 
 #[derive(Default)]
 struct CommandConfig {
@@ -88,9 +88,9 @@ pub struct WasiCommand {
     base: Base<RefCounted>,
     data: OnceCell<CommandData>,
 
-    #[var(get = get_module)]
+    #[var(no_set, get = get_module)]
     #[allow(dead_code)]
-    module: Option<Gd<WasmModule>>,
+    module: PhantomVar<Option<Gd<WasmModule>>>,
 }
 
 impl Debug for WasiCommand {
@@ -306,7 +306,7 @@ impl WasiCommand {
     pub fn get_data(&self) -> Result<&CommandData, Error> {
         match self.data.get() {
             Some(data) => Ok(data),
-            None => bail_with_site!("Uninitialized instance"),
+            None => Err(UninitializedObjectError.into()),
         }
     }
 
@@ -318,6 +318,14 @@ impl WasiCommand {
         match self.get_data().and_then(f) {
             Ok(v) => Some(v),
             Err(e) => {
+                let e = match e.downcast::<UninitializedObjectError>() {
+                    Ok(e) => {
+                        godot_error!("{e}");
+                        return None;
+                    }
+                    Err(e) => e,
+                };
+
                 let s = format!("{e:?}");
                 /*
                 error(
@@ -327,6 +335,7 @@ impl WasiCommand {
                     &s,
                 );
                 */
+                drop(e);
                 godot_error!("{s}");
                 self.emit_error_wrapper(s);
                 None
