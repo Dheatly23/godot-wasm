@@ -1,4 +1,5 @@
 use anyhow::Result as AnyResult;
+use godot::meta::GodotShape;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -28,6 +29,10 @@ struct ScriptConfig {
 
 impl GodotConvert for ScriptConfig {
     type Via = VarDictionary;
+
+    fn godot_shape() -> GodotShape {
+        Variant::godot_shape()
+    }
 }
 
 impl FromGodot for ScriptConfig {

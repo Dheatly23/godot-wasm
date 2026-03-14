@@ -8,14 +8,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use anyhow::{Error as AnyError, Result as AnyResult};
 use camino::{Utf8Path, Utf8PathBuf};
 use cap_fs_ext::{DirExt, FileTypeExt, MetadataExt, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
 use fs_set_times::SetTimes;
-use rand::Rng;
 use smallvec::SmallVec;
 use system_interface::fs::FileIoExt;
 use tracing::{Level, debug, debug_span, info, instrument, warn};
+use wasmtime::{Error as AnyError, Result as AnyResult};
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
 use crate::bindings::types::*;
@@ -643,7 +642,7 @@ where
 impl crate::bindings::types::UserErrorConversion for WasiContext {
     #[instrument(level = Level::DEBUG, skip(self), err)]
     fn errno_from_stream_error(&mut self, e: StreamError) -> Result<Errno, AnyError> {
-        e.into()
+        <Result<Errno, anyhow::Error>>::from(e).map_err(AnyError::from_anyhow)
     }
 }
 
@@ -1038,7 +1037,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             FdItem::P1File(P1File {
                 desc: P1Desc::IsoFS(v),
                 ..
-            }) => v.resize(size.try_into().map_err(AnyError::from)?)?,
+            }) => v.resize(size.try_into().map_err(anyhow::Error::from)?)?,
             FdItem::P1File(P1File {
                 desc: P1Desc::HostFS(v),
                 ..
@@ -1873,7 +1872,10 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         } else {
             P1File::new(ret)
         };
-        Ok(self.p1_items.register(Box::new(ret).into())?)
+        Ok(self
+            .p1_items
+            .register(Box::new(ret).into())
+            .map_err(anyhow::Error::from)?)
     }
 
     #[instrument(skip(self, mem), err(level = Level::WARN))]
@@ -2255,7 +2257,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }),
         };
         if let Some(src) = src {
-            self.secure_rng.fill(src);
+            self.secure_rng.fill_bytes(src);
             Ok(())
         } else {
             Err(GuestError::PtrOutOfBounds(Region {

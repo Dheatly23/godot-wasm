@@ -2,10 +2,9 @@
 
 use std::mem::{size_of, size_of_val};
 
-use anyhow::Error;
-use godot::meta::ByValue;
+use godot::meta::{ByValue, GodotShape};
 use godot::prelude::*;
-use wasmtime::{Caller, Extern, Func, StoreContextMut};
+use wasmtime::{Caller, Error, Extern, Func, StoreContextMut};
 
 use crate::godot_util::from_var_any;
 use crate::wasm_instance::StoreData;
@@ -24,21 +23,21 @@ macro_rules! prim_value {
         func_registry!{
             $head,
             get => |ctx: Caller<'_, T>, i: u32| -> Result<($($tx),*), Error> {
-                let v = ctx.data().as_ref().get_registry()?.get_or_nil(i as _);
-                let $($v)* = site_context!(from_var_any::<$tv>(&v))?;
+                let v = ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?.get_or_nil(i as _);
+                let $($v)* = site_context!(from_var_any::<$tv>(&v)).map_err(Error::from_anyhow)?;
                 Ok(($($x.into()),*))
             },
             set => |mut ctx: Caller<'_, T>, i: u32, $($x : $tx),*| -> Result<(), Error> {
                 let v = $($v)*;
-                ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, <$tv>::from(v).to_variant());
+                ctx.data_mut().as_mut().get_registry_mut().map_err(Error::from_anyhow)?.replace(i as _, <$tv>::from(v).to_variant());
                 Ok(())
             },
             new => |mut ctx: Caller<'_, T>, $($x : $tx),*| -> Result<u32, Error> {
                 let v = $($v)*;
-                Ok(ctx.data_mut().as_mut().get_registry_mut()?.register(v.to_variant()) as _)
+                Ok(ctx.data_mut().as_mut().get_registry_mut().map_err(Error::from_anyhow)?.register(v.to_variant()) as _)
             },
             read => |mut ctx: Caller<'_, T>, i: u32, p: u32| -> Result<u32, Error> {
-                let $($v)* = site_context!(from_var_any::<$tv>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -51,7 +50,7 @@ macro_rules! prim_value {
                         &mut ctx,
                         p,
                         &v.to_le_bytes(),
-                    ))?;
+                    )).map_err(Error::from_anyhow)?;
                     p += size_of_val(&v);
                 })*
 
@@ -68,14 +67,14 @@ macro_rules! prim_value {
                     let $x: $tx = {
                         const SIZE: usize = size_of::<prim_value!(#writer $tx $(as $ti)?)>();
                         let mut s = [0u8; SIZE];
-                        site_context!(mem.read(&ctx, p, &mut s))?;
+                        site_context!(mem.read(&ctx, p, &mut s)).map_err(Error::from_anyhow)?;
                         p += SIZE;
                         <prim_value!(#writer $tx $(as $ti)?)>::from_le_bytes(s).into()
                     };
                 )*
 
                 let v = <$tv>::from($($v)*);
-                ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, v.to_variant());
+                ctx.data_mut().as_mut().get_registry_mut().map_err(Error::from_anyhow)?.replace(i as _, v.to_variant());
                 Ok(1)
             },
         }
@@ -99,6 +98,10 @@ impl BoolWrapper {
 
 impl GodotConvert for BoolWrapper {
     type Via = bool;
+
+    fn godot_shape() -> GodotShape {
+        Self::Via::godot_shape()
+    }
 }
 
 impl FromGodot for BoolWrapper {
@@ -271,7 +274,7 @@ prim_value! {
 func_registry! {
     (ProjectionFuncs, "projection."),
     read => |mut ctx: Caller<'_, T>, i: u32, p: u32| -> Result<u32, Error> {
-        let v = site_context!(from_var_any::<Projection>(&ctx.data().as_ref().get_registry()?.get_or_nil(i as _)))?;
+        let v = site_context!(from_var_any::<Projection>(&ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -284,7 +287,7 @@ func_registry! {
                     &mut ctx,
                     p,
                     &i.to_le_bytes(),
-                ))?;
+                )).map_err(Error::from_anyhow)?;
                 p += 4;
             }
         }
@@ -306,14 +309,14 @@ func_registry! {
                     &mut ctx,
                     p,
                     &mut s,
-                ))?;
+                )).map_err(Error::from_anyhow)?;
                 *i = f32::from_le_bytes(s);
                 p += 4;
             }
         }
 
         let v = Projection { cols };
-        ctx.data_mut().as_mut().get_registry_mut()?.replace(i as _, v.to_variant());
+        ctx.data_mut().as_mut().get_registry_mut().map_err(Error::from_anyhow)?.replace(i as _, v.to_variant());
         Ok(1)
     },
 }

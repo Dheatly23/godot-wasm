@@ -1,6 +1,5 @@
-use anyhow::Error;
 use godot::prelude::*;
-use wasmtime::{Caller, Func, StoreContextMut};
+use wasmtime::{Caller, Error, Func, StoreContextMut};
 
 use crate::wasm_instance::StoreData;
 
@@ -20,19 +19,19 @@ macro_rules! is_typecheck{
             {
                 match name {
                     $(concat!($n, ".is") => Some(self.$i.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
-                        match ctx.data().as_ref().get_registry()?.get(i as _) {
+                        match ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?.get(i as _) {
                             Some(v) if v.get_type() == VariantType::$var => Ok(1),
                             _ => Ok(0),
                         }
                     })).clone()),)*
                     "null.is_not" => Some(self.not_null.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
-                        match ctx.data().as_ref().get_registry()?.get(i as _) {
+                        match ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?.get(i as _) {
                             Some(_) => Ok(1),
                             None => Ok(0),
                         }
                     })).clone()),
                     "variant_type" => Some(self.variant_type.get_or_insert_with(move || Func::wrap(store, |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
-                        match ctx.data().as_ref().get_registry()?.get(i as _) {
+                        match ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?.get(i as _) {
                             Some(v) => Ok(v.get_type().ord() as _),
                             _ => Ok(0),
                         }

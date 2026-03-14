@@ -2,10 +2,12 @@
 
 use std::mem::{size_of, size_of_val};
 
-use anyhow::Result as AnyResult;
-use godot::meta::ByValue;
+use godot::meta::{ByValue, GodotShape};
 use godot::prelude::*;
-use wasmtime::{AsContext, AsContextMut, Caller, Extern, ExternRef, Func, Rooted, StoreContextMut};
+use wasmtime::{
+    AsContext, AsContextMut, Caller, Error as AnyError, Extern, ExternRef, Func,
+    Result as AnyResult, Rooted, StoreContextMut,
+};
 
 use crate::godot_util::from_var_any;
 use crate::wasm_externref::{externref_to_variant, variant_to_externref};
@@ -25,7 +27,7 @@ macro_rules! prim_value {
         func_registry!{
             $head,
             get => |ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>| -> AnyResult<($($tx),*)> {
-                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(ctx.as_context(), v)?))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(ctx.as_context(), v)?)).map_err(AnyError::from_anyhow)?;
                 Ok(($($x.into()),*))
             },
             new => |mut ctx: Caller<'_, _>, $($x : $tx),*| -> AnyResult<Option<Rooted<ExternRef>>> {
@@ -33,7 +35,7 @@ macro_rules! prim_value {
                 variant_to_externref(ctx.as_context_mut(), v.to_variant())
             },
             read => |mut ctx: Caller<'_, _>, v: Option<Rooted<ExternRef>>, p: u32| -> AnyResult<u32> {
-                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(ctx.as_context(), v)?))?;
+                let $($v)* = site_context!(from_var_any::<$tv>(&externref_to_variant(ctx.as_context(), v)?)).map_err(AnyError::from_anyhow)?;
                 let mem = match ctx.get_export("memory") {
                     Some(Extern::Memory(v)) => v,
                     _ => return Ok(0),
@@ -46,7 +48,7 @@ macro_rules! prim_value {
                         &mut ctx,
                         p,
                         &v.to_le_bytes(),
-                    ))?;
+                    )).map_err(AnyError::from_anyhow)?;
                     p += size_of_val(&v);
                 })*
 
@@ -63,7 +65,7 @@ macro_rules! prim_value {
                     let $x: $tx = {
                         const SIZE: usize = size_of::<prim_value!(#writer $tx $(as $ti)?)>();
                         let mut s = [0u8; SIZE];
-                        site_context!(mem.read(&ctx, p, &mut s))?;
+                        site_context!(mem.read(&ctx, p, &mut s)).map_err(AnyError::from_anyhow)?;
                         p += SIZE;
                         <prim_value!(#writer $tx $(as $ti)?)>::from_le_bytes(s).into()
                     };
@@ -93,6 +95,10 @@ impl BoolWrapper {
 
 impl GodotConvert for BoolWrapper {
     type Via = bool;
+
+    fn godot_shape() -> GodotShape {
+        Self::Via::godot_shape()
+    }
 }
 
 impl FromGodot for BoolWrapper {
@@ -265,7 +271,7 @@ prim_value! {
 func_registry! {
     (ProjectionFuncs, "projection."),
     read => |mut ctx: Caller<'_, T>, v: Option<Rooted<ExternRef>>, p: u32| -> AnyResult<u32> {
-        let v = site_context!(from_var_any::<Projection>(&externref_to_variant(ctx.as_context(), v)?))?;
+        let v = site_context!(from_var_any::<Projection>(&externref_to_variant(ctx.as_context(), v)?)).map_err(AnyError::from_anyhow)?;
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
@@ -278,7 +284,7 @@ func_registry! {
                     &mut ctx,
                     p,
                     &i.to_le_bytes(),
-                ))?;
+                )).map_err(AnyError::from_anyhow)?;
                 p += 4;
             }
         }
@@ -300,7 +306,7 @@ func_registry! {
                     &mut ctx,
                     p,
                     &mut s,
-                ))?;
+                )).map_err(AnyError::from_anyhow)?;
                 *i = f32::from_le_bytes(s);
                 p += 4;
             }

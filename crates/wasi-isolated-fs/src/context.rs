@@ -8,9 +8,9 @@ use anyhow::Result as AnyResult;
 use camino::{Utf8Component, Utf8Path, Utf8PathBuf};
 use cap_std::ambient_authority;
 use cap_std::fs::Dir as CapDir;
-use rand::TryRngCore;
 use rand::prelude::*;
-use rand::rngs::OsRng;
+use rand::rngs::{StdRng, SysRng};
+use rand::{CryptoRng, Rng};
 use rand_xoshiro::Xoshiro512StarStar;
 use wasmtime::component::Resource;
 
@@ -35,7 +35,7 @@ pub struct WasiContext {
     pub(crate) args: Vec<String>,
     pub(crate) clock: ClockController,
     pub(crate) clock_tz: Box<dyn Send + Sync + wasi::clocks::timezone::Host>,
-    pub(crate) insecure_rng: Box<dyn Send + Sync + RngCore>,
+    pub(crate) insecure_rng: Box<dyn Send + Sync + Rng>,
     pub(crate) secure_rng: Box<dyn Send + Sync + CryptoRng>,
     pub(crate) stdin: Option<Stdin>,
     pub(crate) stdout: Option<Arc<dyn Send + Sync + HostStdout>>,
@@ -52,7 +52,7 @@ pub struct WasiContextBuilder {
     envs: HashMap<String, String>,
     args: Vec<String>,
     clock_tz: Box<dyn Send + Sync + wasi::clocks::timezone::Host>,
-    insecure_rng: Option<Box<dyn Send + Sync + RngCore>>,
+    insecure_rng: Option<Box<dyn Send + Sync + Rng>>,
     secure_rng: Option<Box<dyn Send + Sync + CryptoRng>>,
     stdin: Option<BuilderStdin>,
     stdout: Option<Arc<dyn Send + Sync + HostStdout>>,
@@ -254,7 +254,7 @@ impl WasiContextBuilder {
         self
     }
 
-    pub fn insecure_rng(&mut self, rng: Box<dyn Send + Sync + RngCore>) -> &mut Self {
+    pub fn insecure_rng(&mut self, rng: Box<dyn Send + Sync + Rng>) -> &mut Self {
         self.insecure_rng = Some(rng);
         self
     }
@@ -408,11 +408,12 @@ impl WasiContextBuilder {
             clock_tz: self.clock_tz,
             insecure_rng: match self.insecure_rng {
                 Some(v) => v,
-                None => Box::new(Xoshiro512StarStar::try_from_os_rng()?),
+                None => Box::new(Xoshiro512StarStar::try_from_rng(&mut SysRng)?),
             },
-            secure_rng: self
-                .secure_rng
-                .unwrap_or_else(|| Box::new(OsRng.unwrap_err())),
+            secure_rng: match self.secure_rng {
+                Some(v) => v,
+                None => Box::new(StdRng::try_from_rng(&mut SysRng)?),
+            },
             stdin,
             stdout: self.stdout,
             stderr: self.stderr,

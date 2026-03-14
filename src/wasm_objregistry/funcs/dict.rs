@@ -1,79 +1,81 @@
-use anyhow::Error;
 use godot::prelude::*;
-use wasmtime::{Caller, Extern, Func, StoreContextMut};
+use wasmtime::{Caller, Error, Extern, Func, StoreContextMut};
 
 use crate::godot_util::from_var_any;
 use crate::wasm_instance::StoreData;
-use crate::{bail_with_site, func_registry, site_context};
+use crate::{bail_with_site_wasm, func_registry, site_context};
 
 func_registry! {
     "dictionary.",
     new => |mut ctx: Caller<'_, T>| -> Result<u32, Error> {
         Ok(ctx
             .data_mut().as_mut()
-            .get_registry_mut()?
+            .get_registry_mut()
+            .map_err(Error::from_anyhow)?
             .register(VarDictionary::new().to_variant()) as _)
     },
     len => |ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
         Ok(site_context!(from_var_any::<VarDictionary>(
-            &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
-        ))?.len() as _)
+            &ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?.get_or_nil(i as _)
+        )).map_err(Error::from_anyhow)?.len() as _)
     },
     has => |ctx: Caller<'_, T>, i: u32, k: u32| -> Result<u32, Error> {
-        let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
+        let reg = ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?;
+        let v = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         let k = reg.get_or_nil(k as _);
-        Ok(v.contains_key(k) as _)
+        Ok(v.contains_key(&k) as _)
     },
     has_all => |ctx: Caller<'_, T>, i: u32, ka: u32| -> Result<u32, Error> {
-        let reg = ctx.data().as_ref().get_registry()?;
-        let v = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
-        let ka = site_context!(from_var_any::<VarArray>(&reg.get_or_nil(ka as _)))?;
+        let reg = ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?;
+        let v = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
+        let ka = site_context!(from_var_any::<VarArray>(&reg.get_or_nil(ka as _))).map_err(Error::from_anyhow)?;
         Ok(v.contains_all_keys(&ka) as _)
     },
     get => |mut ctx: Caller<'_, T>, i: u32, k: u32| -> Result<u32, Error> {
-        let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let v = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
+        let reg = ctx.data_mut().as_mut().get_registry_mut().map_err(Error::from_anyhow)?;
+        let v = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         let k = reg.get_or_nil(k as _);
-        match v.get(k) {
+        match v.get(&k) {
             Some(v) => Ok(reg.register(v.to_variant()) as _),
             _ => Ok(0),
         }
     },
     set => |ctx: Caller<'_, T>, i: u32, k: u32, v: u32| -> Result<u32, Error> {
-        let reg = ctx.data().as_ref().get_registry()?;
-        let mut d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
+        let reg = ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?;
+        let mut d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         let k = reg.get_or_nil(k as _);
         let v = reg.get_or_nil(v as _);
-        Ok(d.insert(k, v).is_some() as _)
+        Ok(d.insert(&k, &v).is_some() as _)
     },
     delete => |ctx: Caller<'_, T>, i: u32, k: u32| -> Result<u32, Error> {
-        let reg = ctx.data().as_ref().get_registry()?;
-        let mut d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
+        let reg = ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?;
+        let mut d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         let k = reg.get_or_nil(k as _);
-        Ok(d.remove(k).is_some() as _)
+        Ok(d.remove(&k).is_some() as _)
     },
     keys => |mut ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
-        let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
+        let reg = ctx.data_mut().as_mut().get_registry_mut().map_err(Error::from_anyhow)?;
+        let d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         Ok(reg.register(d.keys_array().to_variant()) as _)
     },
     values => |mut ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
-        let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
+        let reg = ctx.data_mut().as_mut().get_registry_mut().map_err(Error::from_anyhow)?;
+        let d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         Ok(reg.register(d.values_array().to_variant()) as _)
     },
     iter_slice => |mut ctx: Caller<'_, T>, i: u32, from: u32, to: u32, p: u32| -> Result<u32, Error> {
         if to > from {
-            bail_with_site!("Invalid range ({}..{})", from, to);
+            bail_with_site_wasm!("Invalid range ({}..{})", from, to);
         }
         let mem = match ctx.get_export("memory") {
             Some(Extern::Memory(v)) => v,
             _ => return Ok(0),
         };
+        let (ps, data) = mem.data_and_store_mut(&mut ctx);
+        let reg = data.as_mut().get_registry_mut().map_err(Error::from_anyhow)?;
         let d = site_context!(from_var_any::<VarDictionary>(
-            &ctx.data().as_ref().get_registry()?.get_or_nil(i as _)
-        ))?;
+            &reg.get_or_nil(i as _)
+        )).map_err(Error::from_anyhow)?;
 
         if to == from {
             return Ok(0);
@@ -82,11 +84,9 @@ func_registry! {
         let n = (to - from) as usize;
         let p = p as usize;
 
-        let (ps, data) = mem.data_and_store_mut(&mut ctx);
-        let reg = data.as_mut().get_registry_mut()?;
         let ps = match ps.get_mut(p..p + n * 8) {
             Some(v) => v,
-            None => bail_with_site!("Invalid memory bounds ({}..{})", p, p + n * 8),
+            None => bail_with_site_wasm!("Invalid memory bounds ({}..{})", p, p + n * 8),
         };
 
         let mut ret = 0u32;
@@ -102,14 +102,14 @@ func_registry! {
         Ok(ret)
     },
     clear => |ctx: Caller<'_, T>, i: u32| -> Result<(), Error> {
-        let reg = ctx.data().as_ref().get_registry()?;
-        let mut d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
+        let reg = ctx.data().as_ref().get_registry().map_err(Error::from_anyhow)?;
+        let mut d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         d.clear();
         Ok(())
     },
     duplicate => |mut ctx: Caller<'_, T>, i: u32| -> Result<u32, Error> {
-        let reg = ctx.data_mut().as_mut().get_registry_mut()?;
-        let d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _)))?;
+        let reg = ctx.data_mut().as_mut().get_registry_mut().map_err(Error::from_anyhow)?;
+        let d = site_context!(from_var_any::<VarDictionary>(&reg.get_or_nil(i as _))).map_err(Error::from_anyhow)?;
         Ok(reg.register(d.duplicate_shallow().to_variant()) as _)
     },
 }

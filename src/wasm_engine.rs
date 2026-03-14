@@ -358,7 +358,10 @@ impl WasmModule {
                 PACKED_BYTE_ARRAY => Self::load_module(data.as_slice())?,
                 STRING => Self::load_module(data.to_string().as_bytes())?,
                 OBJECT => match_class!{data,
-                    v @ FileAccess => Self::load_module(v.get_buffer(v.get_length() as _).as_slice())?,
+                    mut v @ FileAccess => {
+                        let l = v.get_length();
+                        Self::load_module(v.get_buffer(l as _).as_slice())?
+                    },
                     v @ WasmModule => v.bind().get_data()?.module.clone(),
                     v => bail_with_site!("Unknown module value {}", v),
                 },
@@ -611,12 +614,10 @@ impl WasmModule {
                 debug!(name = i.name(), "type" = %f, "Exported function");
 
                 let (p, r) = from_signature(&f);
-                ret.set(
-                    i.name(),
-                    [(params_str.clone(), p), (results_str.clone(), r)]
-                        .into_iter()
-                        .collect::<VarDictionary>(),
-                );
+                let v = [(params_str.clone(), p), (results_str.clone(), r)]
+                    .into_iter()
+                    .collect::<Dictionary<StringName, PackedByteArray>>();
+                ret.set(i.name(), &v);
             }
             Ok(ret)
         })
@@ -663,15 +664,13 @@ impl WasmModule {
                     VarDictionary::from_variant(&v)
                 } else {
                     let v = VarDictionary::new();
-                    ret.set(i.module(), v.clone());
+                    ret.set(i.module(), &v);
                     v
                 };
-                v.set(
-                    i.name(),
-                    [(params_str.clone(), p), (results_str.clone(), r)]
+                let t = [(params_str.clone(), p), (results_str.clone(), r)]
                         .into_iter()
-                        .collect::<VarDictionary>(),
-                );
+                        .collect::<Dictionary<StringName, PackedByteArray>>();
+                v.set(i.name(), &t);
             }
 
             Ok(ret)
@@ -695,7 +694,7 @@ impl WasmModule {
     /// Gets the signature of exported function.
     #[func]
     #[instrument]
-    fn get_signature(&self, name: StringName) -> VarDictionary {
+    fn get_signature(&self, name: StringName) -> Dictionary<StringName, PackedByteArray> {
         self.unwrap_data(|m| {
             let _s = debug_span!("get_signature.inner").entered();
             let Some(ExternType::Func(f)) =
@@ -740,19 +739,19 @@ impl WasmModule {
             };
 
             Ok([
-                ("num_memories", num_memories.to_variant()),
-                ("num_tables", num_tables.to_variant()),
+                (StringName::from("num_memories"), num_memories.to_variant()),
+                (StringName::from("num_tables"), num_tables.to_variant()),
                 (
-                    "max_initial_memory_size",
+                    StringName::from("max_initial_memory_size"),
                     (max_initial_memory_size.unwrap_or_default() as i64).to_variant(),
                 ),
                 (
-                    "max_initial_table_size",
+                    StringName::from("max_initial_table_size"),
                     (max_initial_table_size.unwrap_or_default() as i64).to_variant(),
                 ),
             ]
             .into_iter()
-            .collect::<VarDictionary>()
+            .collect::<Dictionary<StringName, Variant>>()
             .to_variant())
         })
         .unwrap_or_default()
@@ -803,19 +802,19 @@ impl WasmModule {
             };
 
             Ok([
-                ("num_memories", num_memories.to_variant()),
-                ("num_tables", num_tables.to_variant()),
+                (StringName::from("num_memories"), num_memories.to_variant()),
+                (StringName::from("num_tables"), num_tables.to_variant()),
                 (
-                    "max_initial_memory_size",
+                    StringName::from("max_initial_memory_size"),
                     (max_initial_memory_size.unwrap_or_default() as i64).to_variant(),
                 ),
                 (
-                    "max_initial_table_size",
+                    StringName::from("max_initial_table_size"),
                     (max_initial_table_size.unwrap_or_default() as i64).to_variant(),
                 ),
             ]
             .into_iter()
-            .collect::<VarDictionary>()
+            .collect::<Dictionary<StringName, Variant>>()
             .to_variant())
         })
         .unwrap_or_default()

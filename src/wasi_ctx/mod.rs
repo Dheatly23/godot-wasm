@@ -338,7 +338,7 @@ impl WasiContext {
                 .physical_mount
                 .iter()
                 .map(|(k, v)| (GString::from(k.as_str()), GString::from(v.as_str())))
-                .collect::<VarDictionary>())
+                .collect::<Dictionary<_, _>>())
         }))
     }
 

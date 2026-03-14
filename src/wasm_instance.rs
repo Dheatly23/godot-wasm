@@ -27,8 +27,8 @@ use wasmtime::ResourceLimiter;
 #[cfg(feature = "component-model")]
 use wasmtime::component::Instance as InstanceComp;
 use wasmtime::{
-    AsContextMut, Extern, Func, FuncType, Instance as InstanceWasm, Memory, SharedMemory, Store,
-    StoreContextMut,
+    AsContextMut, Error as WasmError, Extern, Func, FuncType, Instance as InstanceWasm, Memory,
+    SharedMemory, Store, StoreContextMut,
 };
 
 use crate::godot_util::{
@@ -291,7 +291,7 @@ impl ResourceLimiter for MemoryLimit {
         current: usize,
         desired: usize,
         max: Option<usize>,
-    ) -> AnyResult<bool> {
+    ) -> Result<bool, WasmError> {
         if max.is_some_and(|max| desired > max) {
             return Ok(false);
         } else if self.max_memory == u64::MAX {
@@ -312,7 +312,7 @@ impl ResourceLimiter for MemoryLimit {
         current: usize,
         desired: usize,
         max: Option<usize>,
-    ) -> AnyResult<bool> {
+    ) -> Result<bool, WasmError> {
         if max.is_some_and(|max| desired > max) {
             return Ok(false);
         } else if self.max_table_entries == u64::MAX {
@@ -522,7 +522,7 @@ where
             })
             .collect::<AnyResult<Vec<_>>>()?;
 
-        InstanceWasm::new(&mut self.store, module_, &imports)
+        Ok(InstanceWasm::new(&mut self.store, module_, &imports)?)
     }
 }
 

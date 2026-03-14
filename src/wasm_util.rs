@@ -20,8 +20,8 @@ use wasi_isolated_fs::context::WasiContext as WasiCtx;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{
-    AsContext, AsContextMut, Caller, Extern, Func, FuncType, Linker, RootScope, Store,
-    StoreContextMut, ValRaw, ValType,
+    AsContext, AsContextMut, Caller, Error as WasmError, Extern, Func, FuncType, Linker, RootScope,
+    Store, StoreContextMut, ValRaw, ValType,
 };
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, HeapType, RefType};
@@ -78,6 +78,19 @@ macro_rules! bail_with_site {
         return Err(anyhow::anyhow!($($t)*).context(gdnative::log::godot_site!()))
         */
         return Err(anyhow::anyhow!($($t)*)).inspect_err(|err| tracing::error!(%err, "Error happened"))
+    };
+}
+
+#[macro_export]
+macro_rules! bail_with_site_wasm {
+    ($($t:tt)*) => {
+        /*
+        return Err(anyhow::anyhow!($($t)*).context(gdnative::log::godot_site!()))
+        */
+        return Err(anyhow::anyhow!($($t)*)).map_err(|err| {
+            tracing::error!(%err, "Error happened");
+            wasmtime::Error::from_anyhow(err)
+        })
     };
 }
 
@@ -283,7 +296,7 @@ pub unsafe fn from_raw<T: AsRef<StoreData>>(
             if _ctx.data().as_ref().use_extern && matches!(r.heap_type(), HeapType::Extern) =>
         {
             let v = ExternRef::from_raw(_ctx.as_context_mut(), v.get_externref());
-            return externref_to_variant(_ctx.as_context(), v);
+            return externref_to_variant(_ctx.as_context(), v).map_err(Error::from);
         }
         _ => bail_with_site!("Unsupported WASM type conversion {}", t),
     })
@@ -407,7 +420,7 @@ where
     });
 
     let mut ctx = RootScope::new(ctx);
-    ctx.as_context_mut().gc(None);
+    ctx.as_context_mut().gc(None)?;
 
     let mut args = args.into_iter();
     for (p, (i, o)) in pi.zip(v.iter_mut().enumerate()) {
@@ -441,12 +454,12 @@ where
     let callable = SendSyncWrapper::new(callable);
     let ty_cloned = ty.clone();
     let _s = info_span!("wrap_godot_method.inner", ?callable);
-    let f = move |mut ctx: Caller<T>, args: &mut [ValRaw]| -> AnyResult<()> {
+    let f = move |mut ctx: Caller<'_, T>, args: &mut [MaybeUninit<ValRaw>]| -> AnyResult<()> {
         let _s = _s.enter();
 
         let mut p = get_godot_param_cache(args.len());
         for (ix, t) in ty.params().enumerate() {
-            p[ix] = unsafe { from_raw(ctx.as_context_mut(), t, args[ix])? };
+            p[ix] = unsafe { from_raw(ctx.as_context_mut(), t, args[ix].assume_init_read())? };
         }
 
         let r = match &*callable {
@@ -474,10 +487,10 @@ where
                 let Some(v) = r.get(i) else {
                     bail_with_site!("Too few return value (expected {rl}, got {i})")
                 };
-                *o = unsafe { to_raw(ctx.as_context_mut(), t, &v)? };
+                o.write(unsafe { to_raw(ctx.as_context_mut(), t, &v)? });
             }
         } else if rl == 1 {
-            args[0] = unsafe { to_raw(ctx.as_context_mut(), ri.next().unwrap(), &r)? };
+            args[0].write(unsafe { to_raw(ctx.as_context_mut(), ri.next().unwrap(), &r)? });
         } else {
             bail_with_site!("Unconvertible return value {}", r);
         }
@@ -490,24 +503,32 @@ where
         Ok(())
     };
 
-    unsafe { Func::new_unchecked(ctx, ty_cloned, f) }
+    unsafe {
+        Func::new_unchecked(
+            ctx,
+            ty_cloned,
+            move |ctx: Caller<'_, T>, args: &mut [MaybeUninit<ValRaw>]| {
+                f(ctx, args).map_err(WasmError::from_anyhow)
+            },
+        )
+    }
 }
 
 fn process_func(dict: VarDictionary, use_extern: bool) -> AnyResult<(FuncType, CallableEnum)> {
-    let Some(params) = dict.get(StringName::from("params")) else {
+    let Some(params) = dict.get(&StringName::from("params")) else {
         bail_with_site!("Key \"params\" does not exist")
     };
-    let Some(results) = dict.get(StringName::from("results")) else {
+    let Some(results) = dict.get(&StringName::from("results")) else {
         bail_with_site!("Key \"results\" does not exist")
     };
 
-    let callable = if let Some(c) = dict.get(StringName::from("callable")) {
+    let callable = if let Some(c) = dict.get(&StringName::from("callable")) {
         CallableEnum::Callable(site_context!(from_var_any(c))?)
     } else {
-        let Some(object) = dict.get(StringName::from("object")) else {
+        let Some(object) = dict.get(&StringName::from("object")) else {
             bail_with_site!("Key \"object\" does not exist")
         };
-        let Some(method) = dict.get(StringName::from("method")) else {
+        let Some(method) = dict.get(&StringName::from("method")) else {
             bail_with_site!("Key \"method\" does not exist")
         };
 

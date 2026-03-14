@@ -83,7 +83,7 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, get)?;
         let v: VarDictionary = self.get_value(var)?;
-        match v.get(self.maybe_get_var(key)?) {
+        match v.get(&*self.maybe_get_var_borrow(key)?) {
             Some(v) => self.set_var(v).map(Some),
             None => Ok(None),
         }
@@ -97,7 +97,7 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, has)?;
         Ok(self
             .get_value::<VarDictionary>(var)?
-            .contains_key(self.maybe_get_var(key)?))
+            .contains_key(&*self.maybe_get_var_borrow(key)?))
     }
 
     fn has_all(
@@ -119,7 +119,7 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, insert)?;
         let mut v: VarDictionary = self.get_value(var)?;
-        match v.insert(self.maybe_get_var(key)?, self.maybe_get_var(val)?) {
+        match v.insert(&self.maybe_get_var(key)?, &*self.maybe_get_var_borrow(val)?) {
             Some(v) => self.set_var(v).map(Some),
             None => Ok(None),
         }
@@ -132,7 +132,7 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
     ) -> AnyResult<Option<Option<WasmResource<Variant>>>> {
         filter_macro!(filter self.filter.as_ref(), godot_core, dictionary, remove)?;
         let mut v: VarDictionary = self.get_value(var)?;
-        match v.remove(self.maybe_get_var(key)?) {
+        match v.remove(&*self.maybe_get_var_borrow(key)?) {
             Some(v) => self.set_var(v).map(Some),
             None => Ok(None),
         }
@@ -171,7 +171,7 @@ impl crate::godot_component::bindgen::godot::core::dictionary::Host
         let mut var: VarDictionary = self.get_value(var)?;
 
         for (k, v) in val.into_iter() {
-            var.set(self.maybe_get_var(k)?, self.maybe_get_var(v)?);
+            var.set(&self.maybe_get_var(k)?, &*self.maybe_get_var_borrow(v)?);
         }
 
         Ok(())

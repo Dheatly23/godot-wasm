@@ -149,6 +149,7 @@ pub mod bindgen {
     pub use super::GVar;
 
     wasmtime::component::bindgen!({
+        anyhow: true,
         path: "wit",
         ownership: Borrowing {
             duplicate_if_necessary: false
@@ -302,5 +303,7 @@ pub fn add_to_linker<T: 'static + HasGodotCtx>(linker: &mut Linker<T>) -> AnyRes
     bindgen::godot::global::input_map::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
     bindgen::godot::global::ip::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
 
-    bindgen::godot::reflection::this::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)
+    bindgen::godot::reflection::this::add_to_linker::<T, HasSelf<GodotCtx>>(&mut *linker, f)?;
+
+    Ok(())
 }

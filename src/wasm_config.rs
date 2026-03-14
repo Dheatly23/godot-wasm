@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use godot::meta::ByValue;
+use godot::meta::{ByValue, GodotShape};
 use godot::prelude::*;
 use tracing::warn;
 
@@ -221,6 +221,10 @@ impl Config {
 
 impl GodotConvert for Config {
     type Via = VarDictionary;
+
+    fn godot_shape() -> GodotShape {
+        Variant::godot_shape()
+    }
 }
 
 impl FromGodot for Config {
@@ -258,6 +262,10 @@ impl Default for ExternBindingType {
 
 impl GodotConvert for ExternBindingType {
     type Via = GString;
+
+    fn godot_shape() -> GodotShape {
+        Self::Via::godot_shape()
+    }
 }
 
 impl FromGodot for ExternBindingType {
@@ -308,6 +316,10 @@ impl Default for PipeBindingType {
 #[cfg(feature = "wasi")]
 impl GodotConvert for PipeBindingType {
     type Via = GString;
+
+    fn godot_shape() -> GodotShape {
+        Self::Via::godot_shape()
+    }
 }
 
 #[cfg(feature = "wasi")]
@@ -357,6 +369,10 @@ impl Default for PipeBufferType {
 #[cfg(feature = "wasi")]
 impl GodotConvert for PipeBufferType {
     type Via = GString;
+
+    fn godot_shape() -> GodotShape {
+        Self::Via::godot_shape()
+    }
 }
 
 #[cfg(feature = "wasi")]

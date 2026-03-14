@@ -1,6 +1,5 @@
-use anyhow::Result as AnyResult;
 use godot::prelude::*;
-use wasmtime::{AsContext, Caller, ExternRef, Func, Rooted, StoreContextMut};
+use wasmtime::{AsContext, Caller, ExternRef, Func, Result as AnyResult, Rooted, StoreContextMut};
 
 use crate::wasm_externref::externref_to_variant;
 use crate::wasm_instance::StoreData;

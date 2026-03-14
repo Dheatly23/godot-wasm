@@ -5,6 +5,7 @@ use anyhow::Error;
 use cfg_if::cfg_if;
 #[cfg(feature = "godot-component")]
 use either::{Either, Left, Right};
+use godot::meta::GodotShape;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -52,6 +53,10 @@ impl Debug for CommandConfig {
 
 impl GodotConvert for CommandConfig {
     type Via = VarDictionary;
+
+    fn godot_shape() -> GodotShape {
+        Variant::godot_shape()
+    }
 }
 
 impl FromGodot for CommandConfig {

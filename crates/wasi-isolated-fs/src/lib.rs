@@ -18,6 +18,7 @@ pub mod bindings {
     use crate::errors::{NetworkError, StreamError};
 
     wasmtime::component::bindgen!({
+        anyhow: true,
         path: "wit",
         world: "wasi:cli/command",
         ownership: Borrowing {
