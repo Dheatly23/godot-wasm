@@ -25,11 +25,14 @@ use crate::fs_isolated::{AccessMode, CreateParams, NodeItem};
 use crate::stdio::{HostStdin, HostStdout};
 use crate::{EMPTY_BUF, print_byte_array};
 
-#[derive(Default)]
+const MAX_ITEMS_DEFAULT: usize = 4096;
+
 pub struct P1Items {
     tree: BTreeMap<u32, P1Item>,
     buf: [u32; 16],
     ix: u8,
+
+    max_items: usize,
 }
 
 impl Debug for P1Items {
@@ -38,9 +41,21 @@ impl Debug for P1Items {
     }
 }
 
+impl Default for P1Items {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl P1Items {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            tree: BTreeMap::default(),
+            buf: Default::default(),
+            ix: 0,
+
+            max_items: MAX_ITEMS_DEFAULT,
+        }
     }
 
     #[instrument(level = Level::DEBUG, skip(self), ret, err(Display))]
@@ -51,7 +66,7 @@ impl P1Items {
             Ok(r.into())
         }
 
-        if self.tree.len() > u32::MAX as usize {
+        if self.tree.len() > self.max_items.min(u32::MAX as usize) {
             return Err(crate::errors::FileDescriptorFullError.into());
         }
 
@@ -127,6 +142,11 @@ impl P1Items {
         debug!(fd = ?dst, item = ?v, "Re-register descriptor");
         self.tree.insert(dst.into(), v);
         Ok(())
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_max_items(&mut self, max_items: usize) {
+        self.max_items = max_items;
     }
 }
 
@@ -2095,6 +2115,8 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
     ) -> Result<Size, StreamError> {
         if nsubscriptions == 0 {
             return Err(ErrorKind::InvalidInput.into());
+        } else if usize::try_from(nsubscriptions).unwrap_or(usize::MAX) > self.max_poll_fds {
+            return Err(anyhow::anyhow!("too many poll fds").into());
         }
 
         enum Poll {
@@ -2245,6 +2267,9 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         let buf = buf.offset();
         let s = usize::try_from(buf)?;
         let l = usize::try_from(buf_len)?;
+        if l > self.max_random_read {
+            return Err(anyhow::anyhow!("too many random reads").into());
+        }
 
         let src = match mem {
             GuestMemory::Unshared(mem) => mem.get_mut(s..).and_then(|v| v.get_mut(..l)),

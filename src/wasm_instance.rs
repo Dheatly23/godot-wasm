@@ -395,8 +395,19 @@ where
                 Some(ctx) => WasiContext::build_ctx(ctx, &mut builder, config),
                 None => WasiContext::init_ctx_no_context(&mut builder, config),
             }?;
-            let ctx = builder.build()?;
+            let mut ctx = builder.build()?;
+
+            if let Some(v) = config.wasi_max_poll_fds {
+                ctx.set_max_poll_fds(v);
+            }
+            if let Some(v) = config.wasi_max_random_read {
+                ctx.set_max_random_read(v);
+            }
+            if let Some(v) = config.wasi_max_items {
+                ctx.set_max_items(v);
+            }
             wasi_stdin = ctx.stdin_provider().map(|v| v.dup());
+
             *wasi_ctx = Some(ctx);
             let mut r = <Linker<T>>::new(store.engine());
             add_to_linker(&mut r, |data| {

@@ -54,6 +54,10 @@ impl wasi::io::poll::HostPollable for WasiContext {
 impl wasi::io::poll::Host for WasiContext {
     #[instrument(skip(self), err)]
     fn poll(&mut self, res: Vec<Resource<wasi::io::poll::Pollable>>) -> AnyResult<Vec<u32>> {
+        if res.len() > self.max_poll_fds {
+            anyhow::bail!("too many poll fds");
+        }
+
         let polls = self.items.get_item(res)?;
         match &*polls {
             [] => return Ok(Vec::new()),
@@ -134,7 +138,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         res: Resource<wasi::io::streams::InputStream>,
         len: u64,
     ) -> Result<Vec<u8>, errors::StreamError> {
-        let len = len.try_into().unwrap_or(usize::MAX);
+        let len = len.try_into().unwrap_or(usize::MAX).max(EMPTY_BUF.len());
         Ok(match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => Vec::new(),
             items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
@@ -151,7 +155,7 @@ impl wasi::io::streams::HostInputStream for WasiContext {
         res: Resource<wasi::io::streams::InputStream>,
         len: u64,
     ) -> Result<Vec<u8>, errors::StreamError> {
-        let len = len.try_into().unwrap_or(usize::MAX);
+        let len = len.try_into().unwrap_or(usize::MAX).max(EMPTY_BUF.len());
         Ok(match self.items.get_item(res)? {
             items::IOStream::NullStdio(_) => Vec::new(),
             items::IOStream::IsoFSAccess(mut v) => v.read(len)?,
@@ -708,7 +712,9 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         len: wasi::filesystem::types::Filesize,
         off: wasi::filesystem::types::Filesize,
     ) -> Result<(Vec<u8>, bool), errors::StreamError> {
-        let len = usize::try_from(len).unwrap_or(usize::MAX);
+        let len = usize::try_from(len)
+            .unwrap_or(usize::MAX)
+            .max(EMPTY_BUF.len());
         Ok(match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
                 if let Ok(off) = usize::try_from(off) {
@@ -1261,7 +1267,7 @@ impl wasi::filesystem::preopens::Host for WasiContext {
         self.preopens
             .iter()
             .map(|(p, v)| {
-                let i = self.items.insert(v.into());
+                let i = self.items.insert(v.into())?;
                 match u32::try_from(i) {
                     Ok(i) => Ok((Resource::new_own(i), p.to_string())),
                     Err(e) => {
@@ -1343,7 +1349,12 @@ impl wasi::clocks::timezone::Host for WasiContext {
 impl wasi::random::insecure::Host for WasiContext {
     #[instrument(skip(self), err)]
     fn get_insecure_random_bytes(&mut self, len: u64) -> AnyResult<Vec<u8>> {
-        let mut ret = vec![0u8; len.try_into()?];
+        let len = usize::try_from(len)?;
+        if len > self.max_random_read {
+            anyhow::bail!("too many random reads");
+        }
+
+        let mut ret = vec![0u8; len];
         self.insecure_rng.fill(&mut ret[..]);
         Ok(ret)
     }
@@ -1364,7 +1375,12 @@ impl wasi::random::insecure_seed::Host for WasiContext {
 impl wasi::random::random::Host for WasiContext {
     #[instrument(skip(self), err)]
     fn get_random_bytes(&mut self, len: u64) -> AnyResult<Vec<u8>> {
-        let mut ret = vec![0u8; len.try_into()?];
+        let len = usize::try_from(len)?;
+        if len > self.max_random_read {
+            anyhow::bail!("too many random reads");
+        }
+
+        let mut ret = vec![0u8; len];
         self.secure_rng.fill(&mut ret[..]);
         Ok(ret)
     }

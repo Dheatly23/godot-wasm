@@ -24,6 +24,9 @@ pub use crate::items::{Item, MaybeBorrowMut};
 use crate::preview1::{P1File, P1Item, P1Items};
 use crate::stdio::{HostStdin, HostStdout, NullStdio, StdinProvider, StdinSignal};
 
+const MAX_POLL_FDS_DEFAULT: usize = 4096;
+const MAX_RANDOM_READ_DEFAULT: usize = 65536;
+
 pub struct WasiContext {
     pub(crate) hasher: RandomState,
     pub(crate) iso_fs: Option<IsolatedFSController>,
@@ -42,6 +45,8 @@ pub struct WasiContext {
     pub(crate) stderr: Option<Arc<dyn Send + Sync + HostStdout>>,
 
     pub(crate) timeout: Option<Instant>,
+    pub(crate) max_poll_fds: usize,
+    pub(crate) max_random_read: usize,
 }
 
 pub struct WasiContextBuilder {
@@ -418,7 +423,10 @@ impl WasiContextBuilder {
             stdout: self.stdout,
             stderr: self.stderr,
             hasher: RandomState::new(),
+
             timeout: None,
+            max_poll_fds: MAX_POLL_FDS_DEFAULT,
+            max_random_read: MAX_RANDOM_READ_DEFAULT,
         })
     }
 }
@@ -457,8 +465,24 @@ impl WasiContext {
         self.timeout = Some(timeout);
     }
 
+    #[inline(always)]
+    pub fn set_max_poll_fds(&mut self, max_poll_fds: usize) {
+        self.max_poll_fds = max_poll_fds;
+    }
+
+    #[inline(always)]
+    pub fn set_max_random_read(&mut self, max_random_read: usize) {
+        self.max_random_read = max_random_read;
+    }
+
+    #[inline(always)]
+    pub fn set_max_items(&mut self, max_items: usize) {
+        self.items.set_max_items(max_items);
+        self.p1_items.set_max_items(max_items);
+    }
+
     pub fn register<T: 'static>(&mut self, v: impl Into<Item>) -> AnyResult<Resource<T>> {
-        let i = self.items.insert(v.into());
+        let i = self.items.insert(v.into())?;
         match i.try_into() {
             Ok(i) => Ok(Resource::new_own(i)),
             Err(e) => {

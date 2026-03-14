@@ -633,6 +633,13 @@ where
         _store.limiter(|data| &mut data.as_mut().memory_limits);
     }
 
+    #[cfg(feature = "component-model")]
+    {
+        if let Some(fuel) = _config.hostcall_fuel {
+            _store.set_hostcall_fuel(fuel);
+        }
+    }
+
     Ok(())
 }
 

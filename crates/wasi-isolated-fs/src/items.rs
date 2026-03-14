@@ -16,10 +16,15 @@ use crate::fs_host::{CapWrapper as HostCapWrapper, FileStream, ReadDir as HostRe
 use crate::fs_isolated::{CapWrapper, DirEntryAccessor, FileAccessor};
 use crate::stdio::{HostStdin, HostStdout, NullStdio, StdinSignal, StdinSignalPollable};
 
+const MAX_ITEMS_DEFAULT: usize = 4096;
+
 #[derive(Default)]
 pub(crate) struct Items {
     data: Vec<MaybeItem>,
     next: usize,
+    n_items: usize,
+
+    max_items: usize,
 }
 
 enum MaybeItem {
@@ -228,6 +233,9 @@ impl Items {
         Self {
             data: Vec::new(),
             next: 0,
+            n_items: 0,
+
+            max_items: MAX_ITEMS_DEFAULT,
         }
     }
 
@@ -251,6 +259,7 @@ impl Items {
         match replace(v, MaybeItem::Empty(self.next)) {
             MaybeItem::Item(v) => {
                 self.next = i;
+                self.n_items -= 1;
                 Some(v)
             }
             t @ MaybeItem::Empty(_) => {
@@ -261,8 +270,12 @@ impl Items {
     }
 
     #[instrument(level = Level::DEBUG, skip(self), ret)]
-    pub(crate) fn insert(&mut self, v: Item) -> usize {
-        if let Some(t) = self.data.get_mut(self.next) {
+    pub(crate) fn insert(&mut self, v: Item) -> AnyResult<usize> {
+        if self.n_items >= self.max_items {
+            anyhow::bail!("too many open fds");
+        }
+
+        let ret = if let Some(t) = self.data.get_mut(self.next) {
             let i = self.next;
             let MaybeItem::Empty(j) = *t else {
                 unreachable!("Slot {i} should be empty")
@@ -274,7 +287,10 @@ impl Items {
             self.data.push(MaybeItem::Item(v));
             self.next = self.data.len();
             i
-        }
+        };
+
+        self.n_items += 1;
+        Ok(ret)
     }
 
     #[inline(always)]
@@ -290,6 +306,11 @@ impl Items {
     #[inline(always)]
     pub(crate) fn maybe_unregister<T: GetItem>(&mut self, t: T) {
         t.maybe_unregister(self)
+    }
+
+    #[inline(always)]
+    pub(crate) fn set_max_items(&mut self, max_items: usize) {
+        self.max_items = max_items;
     }
 }
 

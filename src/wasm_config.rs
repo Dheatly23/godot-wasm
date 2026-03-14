@@ -27,6 +27,8 @@ pub struct Config {
     pub max_memory: Option<u64>,
     #[cfg(feature = "memory-limiter")]
     pub max_entries: Option<u64>,
+    #[cfg(feature = "component-model")]
+    pub hostcall_fuel: Option<usize>,
 
     #[cfg(feature = "wasi")]
     pub with_wasi: bool,
@@ -50,6 +52,12 @@ pub struct Config {
     pub wasi_stderr_buffer: PipeBufferType,
     #[cfg(feature = "wasi")]
     pub wasi_stdin_data: Option<PackedByteArray>,
+    #[cfg(feature = "wasi")]
+    pub wasi_max_poll_fds: Option<usize>,
+    #[cfg(feature = "wasi")]
+    pub wasi_max_random_read: Option<usize>,
+    #[cfg(feature = "wasi")]
+    pub wasi_max_items: Option<usize>,
     //#[cfg(feature = "wasi")]
     //pub wasi_stdin_file: Option<String>,
 
@@ -72,6 +80,8 @@ impl Debug for Config {
         f.field("max_memory", &self.max_memory);
         #[cfg(feature = "memory-limiter")]
         f.field("max_entries", &self.max_entries);
+        #[cfg(feature = "component-model")]
+        f.field("hostcall_fuel", &self.hostcall_fuel);
 
         #[cfg(feature = "wasi")]
         f.field("with_wasi", &self.with_wasi);
@@ -96,6 +106,12 @@ impl Debug for Config {
             "wasi_stdin_data_len",
             &self.wasi_stdin_data.as_ref().map(|v| v.len()),
         );
+        #[cfg(feature = "wasi")]
+        f.field("wasi_max_poll_fds", &self.wasi_max_poll_fds);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_max_random_read", &self.wasi_max_random_read);
+        #[cfg(feature = "wasi")]
+        f.field("wasi_max_items", &self.wasi_max_items);
 
         f.field("extern_bind", &self.extern_bind);
         f.finish_non_exhaustive()
@@ -176,6 +192,9 @@ impl Config {
             #[cfg(feature = "memory-limiter")]
             max_entries: get_field::<i64>(&dict, ["table.maxGrowEntries", "engine.max_entries"])?
                 .map(|v| v as _),
+            #[cfg(feature = "component-model")]
+            hostcall_fuel: get_field::<i64>(&dict, ["component.hostcallFuel"])?
+                .map(|v| usize::try_from(v as u64).unwrap_or(usize::MAX)),
 
             #[cfg(feature = "wasi")]
             with_wasi: get_field(&dict, ["wasi.enable", "engine.use_wasi"])?.unwrap_or_default(),
@@ -211,6 +230,15 @@ impl Config {
                 .unwrap_or_default(),
             #[cfg(feature = "wasi")]
             wasi_stdin_data: get_field(&dict, ["wasi.stdin.inputData", "wasi.stdin_data"])?,
+            #[cfg(feature = "wasi")]
+            wasi_max_poll_fds: get_field::<i64>(&dict, ["wasi.limits.maxPollFds"])?
+                .map(|v| usize::try_from(v as u64).unwrap_or(usize::MAX)),
+            #[cfg(feature = "wasi")]
+            wasi_max_random_read: get_field::<i64>(&dict, ["wasi.limits.maxRandomRead"])?
+                .map(|v| usize::try_from(v as u64).unwrap_or(usize::MAX)),
+            #[cfg(feature = "wasi")]
+            wasi_max_items: get_field::<i64>(&dict, ["wasi.limits.maxOpenFds"])?
+                .map(|v| usize::try_from(v as u64).unwrap_or(usize::MAX)),
             //#[cfg(feature = "wasi")]
             //wasi_stdin_file: get_field(&dict, ["wasi.stdin.inputFile", "wasi.stdin_file"])?,
             extern_bind: get_field(&dict, ["extern.bindMode", "godot.extern_binding"])?

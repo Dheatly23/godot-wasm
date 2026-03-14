@@ -235,7 +235,18 @@ fn instantiate(
             None => WasiContext::init_ctx_no_context(&mut builder, &config),
         }?;
     }
-    let wasi_ctx = builder.build()?;
+    let mut wasi_ctx = builder.build()?;
+
+    if let Some(v) = config.wasi_max_poll_fds {
+        wasi_ctx.set_max_poll_fds(v);
+    }
+    if let Some(v) = config.wasi_max_random_read {
+        wasi_ctx.set_max_random_read(v);
+    }
+    if let Some(v) = config.wasi_max_items {
+        wasi_ctx.set_max_items(v);
+    }
+
     let wasi_stdin = wasi_ctx.stdin_provider().map(|v| v.dup());
 
     #[cfg(feature = "godot-component")]
