@@ -2,7 +2,8 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
-use godot::meta::{ByValue, GodotShape};
+use godot::meta::conv::ByValue;
+use godot::meta::shape::GodotShape;
 use godot::prelude::*;
 use tracing::warn;
 

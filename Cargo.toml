@@ -40,7 +40,7 @@ memchr = { workspace = true, optional = true }
 
 [dependencies.godot]
 git = "https://github.com/godot-rust/gdext"
-rev = "12e81f025b9252f6068fd7d642efd9d141ea4cf8"
+rev = "ed460cd7f83df4d6f06d5fba66323f3258f3cbb6"
 features = [
   "api-4-3",
   "experimental-threads",
@@ -137,7 +137,7 @@ rand_distr = { version = "^0.6", default-features = false }
 rand_core = { version = "^0.10" }
 
 [workspace.dependencies.wasmtime]
-version = "^42.0"
+version = "^43.0"
 default-features = false
 features = [
   "std",
@@ -145,7 +145,7 @@ features = [
 ]
 
 [workspace.dependencies.wiggle]
-version = "^42.0"
+version = "^43.0"
 default-features = false
 features = [
   "wasmtime",

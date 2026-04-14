@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter, Result as FmtResult, Write as _};
 use std::ops::{Bound, Range, RangeBounds};
 
-use godot::meta::GodotShape;
+use godot::meta::shape::GodotShape;
 use godot::prelude::*;
 use nom::bytes::complete::take_while1;
 use nom::character::complete::{alpha1, char as char_, space0, space1};

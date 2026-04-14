@@ -2,7 +2,8 @@
 
 use std::mem::{size_of, size_of_val};
 
-use godot::meta::{ByValue, GodotShape};
+use godot::meta::conv::ByValue;
+use godot::meta::shape::GodotShape;
 use godot::prelude::*;
 use wasmtime::{Caller, Error, Extern, Func, StoreContextMut};
 

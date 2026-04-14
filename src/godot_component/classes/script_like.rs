@@ -1,5 +1,5 @@
 use anyhow::Result as AnyResult;
-use godot::meta::GodotShape;
+use godot::meta::shape::GodotShape;
 use godot::prelude::*;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
