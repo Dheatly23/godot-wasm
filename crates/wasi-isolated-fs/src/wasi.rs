@@ -924,14 +924,20 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
         let exclusive = open_flags.contains(wasi::filesystem::types::OpenFlags::EXCLUSIVE);
         let is_dir = open_flags.contains(wasi::filesystem::types::OpenFlags::DIRECTORY);
         let is_truncate = open_flags.contains(wasi::filesystem::types::OpenFlags::TRUNCATE);
+
         if is_dir && is_truncate {
             return Err(ErrorKind::InvalidInput.into());
+        }
+        // CVE wuz here (GHSA-2r75-cxrj-cmph)
+        // We copied wasmtime's access control blindly D:
+        // Might be 📺/10 due to how sloppy the copies are monochrome.
+        if create || is_truncate {
+            access = access | AccessMode::W;
         }
 
         let ret: Item = match self.items.get_item(res)? {
             items::Desc::IsoFSNode(v) => {
                 let create = if create {
-                    access = access | AccessMode::W;
                     Some(CreateParams {
                         dir: is_dir,
                         exclusive,
@@ -960,18 +966,14 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 Box::new(v).into()
             }
             items::Desc::HostFSDesc(v) => {
-                access = access & v.access();
                 let mut opts = OpenOptions::new();
                 if create {
-                    v.access().write_or_err()?;
-                    access = access | AccessMode::W;
                     if exclusive {
                         opts.create_new(true);
                     } else {
                         opts.create(true);
                     }
                 }
-                access.access_or_err()?;
                 match access {
                     AccessMode::NA | AccessMode::R => opts.read(true),
                     AccessMode::W => opts.write(true),
@@ -989,6 +991,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                     opts.maybe_dir(true);
                 }
 
+                (access & v.access()).access_or_err()?;
                 let v = v.dir()?.open_with(path, &opts)?;
                 let v = if v.metadata()?.is_dir() {
                     Descriptor::Dir(CapDir::from_std_file(v.into_std()))

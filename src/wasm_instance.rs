@@ -468,8 +468,7 @@ where
             .map(|i| {
                 let _s = debug_span!("instantiate_wasm.import", import = ?i).entered();
                 if let Some(v) = &mut self.host
-                    && let Some(v) =
-                        v.get_extern(self.store.as_context_mut(), i.module(), i.name())?
+                    && let Some(v) = v.get_extern(self.store.as_context_mut(), &i)?
                 {
                     return Ok(v);
                 }

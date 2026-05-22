@@ -1734,7 +1734,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 desc: P1Desc::HostFS(v),
                 ..
             }) => {
-                let v = v.dir()?;
+                let v = v.write()?.dir()?;
                 let p = to_path(path);
                 let atime = time_cvt(
                     atim,
@@ -1807,6 +1807,12 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
         if is_dir && is_truncate {
             return Err(ErrorKind::InvalidInput.into());
         }
+        // CVE wuz here (GHSA-2r75-cxrj-cmph)
+        // We copied wasmtime's access control blindly D:
+        // Might be 📺/10 due to how sloppy the copies are monochrome.
+        if create || append || is_truncate {
+            access = access | AccessMode::W;
+        }
 
         let ret: P1Desc = match self.p1_items.get_item(fd)? {
             FdItem::P1File(P1File {
@@ -1814,7 +1820,6 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 ..
             }) => {
                 let create = if create {
-                    access = access | AccessMode::W;
                     Some(CreateParams {
                         dir: is_dir,
                         exclusive,
@@ -1848,8 +1853,6 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }) => {
                 let mut opts = cap_std::fs::OpenOptions::new();
                 if create {
-                    v.access().write_or_err()?;
-                    access = access | AccessMode::W;
                     if exclusive {
                         opts.create_new(true);
                     } else {
@@ -1873,6 +1876,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     opts.maybe_dir(true);
                 }
 
+                (access & v.access()).write_or_err()?;
                 let v = v.dir()?.open_with(to_path(path), &opts)?;
                 let v = if v.metadata()?.is_dir() {
                     crate::fs_host::Descriptor::Dir(cap_std::fs::Dir::from_std_file(v.into_std()))

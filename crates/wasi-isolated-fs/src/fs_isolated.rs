@@ -1213,9 +1213,7 @@ impl CapWrapper {
                 Some(_) if create_exclusive && it.peek().is_none() => Err(ErrorKind::AlreadyExists),
                 Some(v) => Ok(v),
                 None if create && it.peek().is_none() => {
-                    if !self.access.is_write() {
-                        return Err(ErrorKind::PermissionDenied.into());
-                    }
+                    self.access.write_or_err()?;
 
                     v.add::<Error>(p, || {
                         Ok(Arc::new(if create_dir {

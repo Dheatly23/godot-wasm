@@ -10,7 +10,7 @@ use std::rc::Rc;
 #[cfg(feature = "epoch-timeout")]
 use std::time;
 
-use anyhow::{Error, Result as AnyResult};
+use anyhow::{Error, Result as AnyResult, bail};
 use cfg_if::cfg_if;
 use godot::classes::WeakRef;
 use godot::prelude::*;
@@ -20,8 +20,8 @@ use wasi_isolated_fs::context::WasiContext as WasiCtx;
 #[cfg(feature = "epoch-timeout")]
 use wasmtime::UpdateDeadline;
 use wasmtime::{
-    AsContext, AsContextMut, Caller, Error as WasmError, Extern, Func, FuncType, Linker, RootScope,
-    Store, StoreContextMut, ValRaw, ValType,
+    AsContext, AsContextMut, Caller, Error as WasmError, Extern, ExternType, Func, FuncType,
+    ImportType, Linker, RootScope, Store, StoreContextMut, ValRaw, ValType,
 };
 #[cfg(feature = "object-registry-extern")]
 use wasmtime::{ExternRef, HeapType, RefType};
@@ -561,17 +561,16 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
     pub fn get_extern(
         &mut self,
         mut ctx: StoreContextMut<'_, T>,
-        module: &str,
-        name: &str,
+        import: &ImportType<'_>,
     ) -> AnyResult<Option<Extern>> {
-        if let r @ Some(_) = self.cache.get(ctx.as_context_mut(), module, name) {
+        if let r @ Some(_) = self.cache.get_by_import(ctx.as_context_mut(), import) {
             Ok(r)
         } else if let Some(data) = self
             .host
-            .get(module)
+            .get(import.module())
             .map(|d| site_context!(from_var_any::<VarDictionary>(d)))
             .transpose()?
-            .and_then(|d| d.get(name))
+            .and_then(|d| d.get(import.name()))
         {
             cfg_if! {
                 if #[cfg(feature = "object-registry-extern")] {
@@ -586,7 +585,21 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
             )?;
 
             let v = Extern::from(wrap_godot_method(ctx.as_context_mut(), sig, callable));
-            self.cache.define(ctx, module, name, v.clone())?;
+            self.cache.define(
+                ctx.as_context(),
+                import.module(),
+                import.name(),
+                v.clone(),
+            )?;
+
+            if !matches!((v.ty(ctx), import.ty()), (ExternType::Func(v), ExternType::Func(i)) if v.matches(&i))
+            {
+                bail!(
+                    "import signature mismatch for {:?}:{:?}",
+                    import.module(),
+                    import.name()
+                );
+            }
             Ok(Some(v))
         } else {
             Ok(None)
