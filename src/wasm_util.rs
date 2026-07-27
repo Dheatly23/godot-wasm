@@ -454,7 +454,7 @@ where
     let callable = SendSyncWrapper::new(callable);
     let ty_cloned = ty.clone();
     let f = move |mut ctx: Caller<'_, T>, args: &mut [MaybeUninit<ValRaw>]| -> AnyResult<()> {
-        let _s = info_span!("wrap_godot_method.inner", ?callable).enter();
+        let _s = info_span!("wrap_godot_method.inner", ?callable).entered();
 
         let mut p = get_godot_param_cache(args.len());
         for (ix, t) in ty.params().enumerate() {
