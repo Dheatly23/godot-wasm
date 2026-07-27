@@ -630,7 +630,6 @@ where
 {
     #[cfg(feature = "epoch-timeout")]
     {
-        config_store_epoch(&mut *_store, _config)?;
         let data = _store.data_mut().as_mut();
         data.epoch_timeout = if _config.with_epoch {
             _config.epoch_timeout
@@ -638,6 +637,7 @@ where
             0
         };
         data.epoch_autoreset = _config.epoch_autoreset;
+        config_store_epoch(&mut *_store, _config)?;
     }
 
     #[cfg(feature = "memory-limiter")]
