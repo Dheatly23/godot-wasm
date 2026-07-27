@@ -16,7 +16,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 config/name="godot-wasm-example"
 run/main_scene="res://scene/Main.tscn"
-config/features=PackedStringArray("4.6")
+config/features=PackedStringArray("4.7")
 
 [editor_plugins]
 
