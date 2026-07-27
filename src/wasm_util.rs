@@ -453,9 +453,8 @@ where
 {
     let callable = SendSyncWrapper::new(callable);
     let ty_cloned = ty.clone();
-    let _s = info_span!("wrap_godot_method.inner", ?callable);
     let f = move |mut ctx: Caller<'_, T>, args: &mut [MaybeUninit<ValRaw>]| -> AnyResult<()> {
-        let _s = _s.enter();
+        let _s = info_span!("wrap_godot_method.inner", ?callable).enter();
 
         let mut p = get_godot_param_cache(args.len());
         for (ix, t) in ty.params().enumerate() {
@@ -585,12 +584,8 @@ impl<T: AsRef<StoreData> + AsMut<StoreData> + HasEpochTimeout> HostModuleCache<T
             )?;
 
             let v = Extern::from(wrap_godot_method(ctx.as_context_mut(), sig, callable));
-            self.cache.define(
-                ctx.as_context(),
-                import.module(),
-                import.name(),
-                v.clone(),
-            )?;
+            self.cache
+                .define(ctx.as_context(), import.module(), import.name(), v.clone())?;
 
             if !matches!((v.ty(ctx), import.ty()), (ExternType::Func(v), ExternType::Func(i)) if v.matches(&i))
             {
