@@ -7,8 +7,8 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
-cap-std = "^3.4"
-cap-fs-ext = "^3.4"
+cap-std = "^4.0"
+cap-fs-ext = "^4.0"
 fs-set-times = "^0.20"
 system-interface = { version = "^0.27", features = ["cap_std_impls"] }
 
