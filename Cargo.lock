@@ -1983,6 +1983,7 @@ dependencies = [
  "cap-std 4.0.3",
  "cfg-if",
  "fs-set-times",
+ "io-lifetimes 3.0.1",
  "memchr",
  "parking_lot",
  "proptest",

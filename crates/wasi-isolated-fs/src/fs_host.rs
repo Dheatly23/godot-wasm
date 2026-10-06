@@ -8,9 +8,9 @@ use cap_fs_ext::MetadataExt;
 use cap_std::fs::{Dir as CapDir, DirEntry, File as CapFile, Metadata, ReadDir as CapReadDir};
 use cfg_if::cfg_if;
 use parking_lot::Mutex;
-use system_interface::fs::FileIoExt;
 
 use crate::bindings::wasi;
+use crate::cap_file_wrap::CapFileWrapper;
 use crate::errors;
 use crate::fs_isolated::AccessMode;
 #[doc(no_inline)]
@@ -221,20 +221,6 @@ impl CapWrapper {
             _ => Err(ErrorKind::NotADirectory.into()),
         }
     }
-
-    pub(crate) fn read_at(
-        file: &CapFile,
-        buf: &mut [u8],
-        off: u64,
-    ) -> Result<usize, errors::StreamError> {
-        loop {
-            match file.read_at(buf, off) {
-                Ok(v) => return Ok(v),
-                Err(e) if e.kind() == ErrorKind::Interrupted => (),
-                Err(e) => return Err(e.into()),
-            }
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -255,7 +241,7 @@ impl FileStream {
         let file = self.file.try_file()?;
 
         let mut ret = vec![0; len];
-        let i = CapWrapper::read_at(file, &mut ret, *cursor as _)?;
+        let i = CapFileWrapper(file).read_at(&mut ret, *cursor as _)?;
         if i == 0 {
             self.closed = true;
             return Ok(Vec::new());
@@ -275,7 +261,7 @@ impl FileStream {
         let file = self.file.try_file()?;
 
         let mut buf = [0; 4096];
-        let i = CapWrapper::read_at(file, &mut buf[..len.min(4096)], *cursor as _)?;
+        let i = CapFileWrapper(file).read_at(&mut buf[..len.min(4096)], *cursor as _)?;
         if i == 0 {
             self.closed = true;
         }
@@ -293,7 +279,7 @@ impl FileStream {
             OpenMode::Read(_) => return Err(ErrorKind::PermissionDenied.into()),
             OpenMode::Write(cursor) => {
                 while !buf.is_empty() {
-                    let l = file.write_at(buf, *cursor as _)?;
+                    let l = CapFileWrapper(file).write_at(buf, *cursor as _)?;
                     if l == 0 {
                         self.closed = true;
                         break;
@@ -304,7 +290,7 @@ impl FileStream {
             }
             OpenMode::Append => {
                 while !buf.is_empty() {
-                    let l = file.append(buf)?;
+                    let l = CapFileWrapper(file).append(buf)?;
                     if l == 0 {
                         self.closed = true;
                         break;

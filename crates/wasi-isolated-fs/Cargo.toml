@@ -10,7 +10,8 @@ publish = false
 cap-std = "^4.0"
 cap-fs-ext = "^4.0"
 fs-set-times = "^0.20"
-system-interface = { version = "^0.27", features = ["cap_std_impls"] }
+io-lifetimes = "^3.0"
+system-interface = "^0.27"
 
 scopeguard = { workspace = true }
 anyhow = { workspace = true }

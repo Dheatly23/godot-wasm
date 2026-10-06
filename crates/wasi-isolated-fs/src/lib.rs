@@ -1,3 +1,4 @@
+mod cap_file_wrap;
 pub mod clock;
 pub mod context;
 pub mod errors;

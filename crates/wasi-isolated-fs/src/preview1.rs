@@ -12,12 +12,12 @@ use camino::{Utf8Path, Utf8PathBuf};
 use cap_fs_ext::{DirExt, FileTypeExt, MetadataExt, OpenOptionsFollowExt, OpenOptionsMaybeDirExt};
 use fs_set_times::SetTimes;
 use smallvec::SmallVec;
-use system_interface::fs::FileIoExt;
 use tracing::{Level, debug, debug_span, info, instrument, warn};
 use wasmtime::{Error as AnyError, Result as AnyResult};
 use wiggle::{GuestError, GuestMemory, GuestPtr, GuestType, Region};
 
 use crate::bindings::types::*;
+use crate::cap_file_wrap::CapFileWrapper;
 use crate::context::{WasiContext, try_iso_fs};
 use crate::errors::StreamError;
 use crate::fs_host::Descriptor;
@@ -785,7 +785,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             FdItem::P1File(P1File {
                 desc: P1Desc::HostFS(v),
                 ..
-            }) => v.file()?.advise(
+            }) => CapFileWrapper(v.file()?).advise(
                 off,
                 len,
                 match advice {
@@ -1140,7 +1140,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     }
 
                     let mut ret = vec![0; EMPTY_BUF.len().min(len.try_into()?)];
-                    let l = crate::fs_host::CapWrapper::read_at(v, &mut ret, offset)?;
+                    let l = CapFileWrapper(v).read_at(&mut ret, offset)?;
                     ret.truncate(l);
                     has_read = true;
                     Ok((ret.into(), l as Size))
@@ -1218,7 +1218,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
             }) => {
                 let v = v.write()?.file()?;
                 memio.write(|s| {
-                    let l = v.write_at(s, offset)?;
+                    let l = CapFileWrapper(v).write_at(s, offset)?;
                     offset += l as Filesize;
                     Ok(l as Size)
                 })
@@ -1277,7 +1277,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
 
                     let mut ret =
                         vec![0; EMPTY_BUF.len().min(len.try_into().unwrap_or(usize::MAX))];
-                    let l = crate::fs_host::CapWrapper::read_at(v, &mut ret, *c as _)?;
+                    let l = CapFileWrapper(v).read_at(&mut ret, *c as _)?;
                     ret.truncate(l);
                     *c += l as u64;
                     has_read = true;
@@ -1595,7 +1595,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 if let Some(c) = cursor {
                     let old = *c;
                     let r = memio.write(|s| {
-                        let l = v.write_at(s, *c)?;
+                        let l = CapFileWrapper(v).write_at(s, *c)?;
                         *c += l as u64;
                         Ok(l as Size)
                     });
@@ -1605,7 +1605,7 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                     r
                 } else {
                     memio.write(|s| {
-                        let l = v.append(s)?;
+                        let l = CapFileWrapper(v).append(s)?;
                         Ok(l as Size)
                     })
                 }

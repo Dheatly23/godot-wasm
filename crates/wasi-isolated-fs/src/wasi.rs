@@ -11,11 +11,12 @@ use cap_fs_ext::{
 use cap_std::fs::{Dir as CapDir, FileType, Metadata, OpenOptions};
 use fs_set_times::{SetTimes, SystemTimeSpec};
 use rand::prelude::*;
-use system_interface::fs::{Advice, FdFlags, FileIoExt, GetSetFdFlags};
+use system_interface::fs::{Advice, FdFlags, GetSetFdFlags};
 use tracing::{Level, instrument};
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
+use crate::cap_file_wrap::CapFileWrapper;
 use crate::context::{Stdin, WasiContext, try_iso_fs};
 use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
 use crate::fs_isolated::{AccessMode, CreateParams, OpenMode};
@@ -586,7 +587,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
     ) -> Result<(), errors::StreamError> {
         match self.items.get_item(res)? {
             items::Desc::IsoFSNode(_) => (),
-            items::Desc::HostFSDesc(v) => v.file()?.advise(
+            items::Desc::HostFSDesc(v) => CapFileWrapper(v.file()?).advise(
                 off,
                 len,
                 match advice {
@@ -728,7 +729,7 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
             items::Desc::HostFSDesc(v) => {
                 let v = v.read()?.file()?;
                 let mut ret = vec![0; len];
-                let i = HostCapWrapper::read_at(v, &mut ret, off)?;
+                let i = CapFileWrapper(v).read_at(&mut ret, off)?;
                 if !ret.is_empty() && i == 0 {
                     (Vec::new(), true)
                 } else {
@@ -751,7 +752,9 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
                 v.write(&buf, off.try_into()?)?;
                 buf.len() as _
             }
-            items::Desc::HostFSDesc(v) => v.write()?.file()?.write_at(&buf, off)? as _,
+            items::Desc::HostFSDesc(v) => {
+                CapFileWrapper(v.write()?.file()?).write_at(&buf, off)? as _
+            }
         })
     }
 
