@@ -11,12 +11,11 @@ use cap_fs_ext::{
 use cap_std::fs::{Dir as CapDir, FileType, Metadata, OpenOptions};
 use fs_set_times::{SetTimes, SystemTimeSpec};
 use rand::prelude::*;
-use system_interface::fs::{Advice, FdFlags, GetSetFdFlags};
 use tracing::{Level, instrument};
 use wasmtime::component::Resource;
 
 use crate::bindings::wasi;
-use crate::cap_file_wrap::CapFileWrapper;
+use crate::cap_file_wrap::{Advice, CapFileWrapper, FdFlags, get_fdflags};
 use crate::context::{Stdin, WasiContext, try_iso_fs};
 use crate::fs_host::{CapWrapper as HostCapWrapper, Descriptor};
 use crate::fs_isolated::{AccessMode, CreateParams, OpenMode};
@@ -624,8 +623,8 @@ impl wasi::filesystem::types::HostDescriptor for WasiContext {
             items::Desc::IsoFSNode(v) => v.file_flags(),
             items::Desc::HostFSDesc(v) => {
                 let f = match &**v.desc() {
-                    Descriptor::File(v) => v.get_fd_flags(),
-                    Descriptor::Dir(v) => v.get_fd_flags(),
+                    Descriptor::File(v) => get_fdflags(v),
+                    Descriptor::Dir(v) => get_fdflags(v),
                 }?;
 
                 let mut r = wasi::filesystem::types::DescriptorFlags::empty();

@@ -6,7 +6,6 @@ use std::sync::Arc;
 use anyhow::Result as AnyResult;
 use cap_fs_ext::MetadataExt;
 use cap_std::fs::{Dir as CapDir, DirEntry, File as CapFile, Metadata, ReadDir as CapReadDir};
-use cfg_if::cfg_if;
 use parking_lot::Mutex;
 
 use crate::bindings::wasi;
@@ -62,19 +61,18 @@ impl Descriptor {
 }
 
 fn err_sync_handle(e: IoError) -> Result<(), IoError> {
-    cfg_if! {
+    cfg_select! {
         // On windows, `sync_data` uses `FileFlushBuffers` which fails with
         // `ERROR_ACCESS_DENIED` if the file is not upen for writing. Ignore
         // this error, for POSIX compatibility.
-        if #[cfg(windows)] {
+        windows => {
             if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED as _) {
                 Ok(())
             } else {
                 Err(e)
             }
-        } else {
-            Err(e)
         }
+        _ => Err(e),
     }
 }
 

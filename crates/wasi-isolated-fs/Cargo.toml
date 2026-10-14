@@ -7,23 +7,26 @@ license = "Apache-2.0"
 publish = false
 
 [dependencies]
+bitflags = "^2"
 cap-std = "^4.0"
 cap-fs-ext = "^4.0"
 fs-set-times = "^0.20"
 io-lifetimes = "^3.0"
-system-interface = "^0.27"
 
 scopeguard = { workspace = true }
 anyhow = { workspace = true }
-cfg-if = { workspace = true }
 parking_lot = { workspace = true }
-slab = { workspace = true }
-bytes = { workspace = true }
 memchr = { workspace = true }
 camino = { workspace = true }
 rand_xoshiro = { workspace = true }
 wiggle = { workspace = true }
 tracing = { workspace = true }
+
+[dependencies.rustix]
+version = "^1.1"
+features = [
+  "fs",
+]
 
 [dependencies.wasmtime]
 workspace = true

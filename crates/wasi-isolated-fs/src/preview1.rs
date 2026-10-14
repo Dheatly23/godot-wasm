@@ -789,12 +789,12 @@ impl crate::bindings::wasi_snapshot_preview1::WasiSnapshotPreview1 for WasiConte
                 off,
                 len,
                 match advice {
-                    Advice::Normal => system_interface::fs::Advice::Normal,
-                    Advice::Sequential => system_interface::fs::Advice::Sequential,
-                    Advice::Random => system_interface::fs::Advice::Random,
-                    Advice::Willneed => system_interface::fs::Advice::WillNeed,
-                    Advice::Dontneed => system_interface::fs::Advice::DontNeed,
-                    Advice::Noreuse => system_interface::fs::Advice::NoReuse,
+                    Advice::Normal => crate::cap_file_wrap::Advice::Normal,
+                    Advice::Sequential => crate::cap_file_wrap::Advice::Sequential,
+                    Advice::Random => crate::cap_file_wrap::Advice::Random,
+                    Advice::Willneed => crate::cap_file_wrap::Advice::WillNeed,
+                    Advice::Dontneed => crate::cap_file_wrap::Advice::DontNeed,
+                    Advice::Noreuse => crate::cap_file_wrap::Advice::NoReuse,
                 },
             )?,
             FdItem::P1File(_)

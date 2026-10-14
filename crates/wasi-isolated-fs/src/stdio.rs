@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result as AnyResult;
-use cfg_if::cfg_if;
 use memchr::memchr_iter;
 use parking_lot::{Condvar, Mutex};
 use scopeguard::{defer, guard, guard_on_unwind};
@@ -366,13 +365,10 @@ pub trait HostStdout: Debug {
     fn flush(&self) -> IoResult<()>;
 }
 
-cfg_if! {
-    if #[cfg(test)] {
-        const BUF_LEN: usize = 256;
-    } else {
-        const BUF_LEN: usize = 1024;
-    }
-}
+const BUF_LEN: usize = cfg_select! {
+    test => 256,
+    _ => 1024,
+};
 
 pub struct LineBuffer {
     buf: Box<[u8; BUF_LEN]>,

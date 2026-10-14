@@ -10,7 +10,6 @@ use std::time::SystemTime;
 
 use anyhow::{Error, Result as AnyResult};
 use camino::{Utf8Component, Utf8Path};
-use cfg_if::cfg_if;
 use parking_lot::{Mutex, MutexGuard, RwLock, RwLockWriteGuard};
 use smallvec::SmallVec;
 use tracing::instrument;
@@ -191,15 +190,14 @@ impl Timestamp {
 
 type FileChunk = SmallVec<[u8; 16]>;
 
-cfg_if! {
-    if #[cfg(test)] {
-        const MAX_SHIFT: u8 = 10;
-        const MIN_SHIFT: u8 = 6;
-    } else {
-        const MAX_SHIFT: u8 = 16;
-        const MIN_SHIFT: u8 = 12;
-    }
-}
+const MAX_SHIFT: u8 = cfg_select! {
+    test => 10,
+    _ => 16,
+};
+const MIN_SHIFT: u8 = cfg_select! {
+    test => 6,
+    _ => 12,
+};
 
 const MAX_SECTOR: usize = 1 << MAX_SHIFT;
 const MIN_SECTOR: usize = 1 << MIN_SHIFT;
